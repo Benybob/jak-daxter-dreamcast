@@ -1,0 +1,48 @@
+{
+  "ai_assisted": true,
+  "ai_tool": "OpenAI Codex",
+  "scope": "Local checkpoint evidence; not a CI result or full game boot",
+  "upstream_base_commit": "6076aab5a95955443a9e1ed8f72a25bc0e2fcf9d",
+  "local_port_checkpoint_commit": "2862034df5101e9b9197be6f66ad512a042982b9",
+  "host_tests_passed": 98,
+  "runtime_native_checks_passed": 7982,
+  "numeric_native_checks_passed": 39,
+  "retail_object_native_checks_passed": 182,
+  "retail_v4_objects_passed": 668,
+  "retail_archives": 36,
+  "system_ram_bytes": 16777216,
+  "physical_hardware_tested": false,
+  "game_playable": false,
+  "compiler": "SH-4 GCC 15.1.0 -m4-single -ml",
+  "kos": "2.2.1",
+  "flycast": "2.7",
+  "shift_probe_bytes": {
+    "optimized": 836,
+    "unoptimized": 3244
+  },
+  "real_scene": {
+    "triangles": 7784,
+    "geometry_bytes": 213120,
+    "vq_texture_bytes": 6144,
+    "reference_texture_bytes": 32768,
+    "vram_free_bytes": 4361896
+  },
+  "native_results": {
+    "runtime": {
+      "result": "PASS",
+      "elf_sha256": "3639ced12ef948cf2b3988787a40e61f1c4e4f37d6596cdaf9bfbf828c4207d9"
+    },
+    "objects": {
+      "result": "PASS",
+      "elf_sha256": "963fc8a70643c2dd9f8e038fb2b3b7eb15750570468f7a3b25a5f0063051a0c8"
+    },
+    "numeric": {
+      "result": "PASS",
+      "elf_sha256": "83ea558f30e866dee335efa57adcd671828ff9ab188f6566ddef394618285b7f"
+    },
+    "vq": {
+      "result": "PASS",
+      "elf_sha256": "a06f7a04170d0c8ed224674f9dfaa210f18d52de2cc573ce0e2cec127da2c305"
+    }
+  }
+}

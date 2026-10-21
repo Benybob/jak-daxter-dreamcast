@@ -49,6 +49,7 @@ class IR_Return : public IR {
 class IR_LoadConstant64 : public IR {
  public:
   IR_LoadConstant64(const RegVal* dest, u64 value);
+  u64 value() const { return m_value; }
   std::string print() override;
   RegAllocInstr to_rai() override;
   void do_codegen_x86(emitter::ObjectGenerator* gen,
@@ -66,6 +67,7 @@ class IR_LoadConstant64 : public IR {
 class IR_LoadSymbolPointer : public IR {
  public:
   IR_LoadSymbolPointer(const RegVal* dest, std::string name);
+  const std::string& symbol() const { return m_name; }
   std::string print() override;
   RegAllocInstr to_rai() override;
   void do_codegen_x86(emitter::ObjectGenerator* gen,
@@ -83,6 +85,7 @@ class IR_LoadSymbolPointer : public IR {
 class IR_SetSymbolValue : public IR {
  public:
   IR_SetSymbolValue(const SymbolVal* dest, const RegVal* src);
+  const std::string& symbol() const { return m_dest->name(); }
   std::string print() override;
   RegAllocInstr to_rai() override;
   void do_codegen_x86(emitter::ObjectGenerator* gen,
@@ -100,6 +103,8 @@ class IR_SetSymbolValue : public IR {
 class IR_GetSymbolValue : public IR {
  public:
   IR_GetSymbolValue(const RegVal* dest, const SymbolVal* src, bool sext);
+  const std::string& symbol() const { return m_src->name(); }
+  bool signed_value() const { return m_sext; }
   std::string print() override;
   RegAllocInstr to_rai() override;
   void do_codegen_x86(emitter::ObjectGenerator* gen,
@@ -139,6 +144,9 @@ class IR_FunctionCall : public IR {
                   std::vector<RegVal*> args,
                   std::vector<emitter::Register> arg_regs,
                   std::optional<emitter::Register> ret_reg);
+  const RegVal* function() const { return m_func; }
+  const RegVal* result() const { return m_ret; }
+  const std::vector<RegVal*>& arguments() const { return m_args; }
   std::string print() override;
   RegAllocInstr to_rai() override;
   void do_codegen_x86(emitter::ObjectGenerator* gen,
@@ -177,6 +185,7 @@ class IR_RegValAddr : public IR {
 class IR_StaticVarAddr : public IR {
  public:
   IR_StaticVarAddr(const RegVal* dest, const StaticObject* src);
+  const StaticObject* object() const { return m_src; }
   std::string print() override;
   RegAllocInstr to_rai() override;
   void do_codegen_x86(emitter::ObjectGenerator* gen,
@@ -194,6 +203,7 @@ class IR_StaticVarAddr : public IR {
 class IR_StaticVarLoad : public IR {
  public:
   IR_StaticVarLoad(const RegVal* dest, const StaticObject* src);
+  const StaticObject* object() const { return m_src; }
   std::string print() override;
   RegAllocInstr to_rai() override;
   void do_codegen_x86(emitter::ObjectGenerator* gen,
@@ -211,6 +221,7 @@ class IR_StaticVarLoad : public IR {
 class IR_FunctionAddr : public IR {
  public:
   IR_FunctionAddr(const RegVal* dest, FunctionEnv* src);
+  FunctionEnv* function() const { return m_src; }
   std::string print() override;
   RegAllocInstr to_rai() override;
   void do_codegen_x86(emitter::ObjectGenerator* gen,
@@ -265,6 +276,7 @@ class IR_IntegerMath : public IR {
                         const AllocationResult& allocs,
                         emitter::IR_Record irec) override;
   IntegerMathKind get_kind() const { return m_kind; }
+  u8 shift_amount() const { return m_shift_amount; }
 
  protected:
   IntegerMathKind m_kind;
@@ -455,6 +467,8 @@ class IR_LoadConstOffset : public IR_Asm {
                      const RegVal* base,
                      MemLoadInfo info,
                      bool use_coloring = true);
+  int offset() const { return m_offset; }
+  const MemLoadInfo& load_info() const { return m_info; }
   std::string print() override;
   RegAllocInstr to_rai() override;
   void do_codegen_x86(emitter::ObjectGenerator* gen,
@@ -478,6 +492,8 @@ class IR_StoreConstOffset : public IR_Asm {
                       const RegVal* base,
                       int size,
                       bool use_coloring = true);
+  int offset() const { return m_offset; }
+  int size() const { return m_size; }
   std::string print() override;
   RegAllocInstr to_rai() override;
   void do_codegen_x86(emitter::ObjectGenerator* gen,

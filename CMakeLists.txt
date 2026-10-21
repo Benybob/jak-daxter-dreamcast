@@ -307,6 +307,14 @@ add_subdirectory(game)
 # build the compiler
 add_subdirectory(goalc)
 
+# AI-assisted Dreamcast workbench: export typed frontend IR without desktop
+# register allocation/code generation. Disabled for ordinary OpenGOAL builds.
+option(BUILD_DREAMCAST_HOST_TOOLS "Build Dreamcast typed IR exporter" OFF)
+if(BUILD_DREAMCAST_HOST_TOOLS)
+    add_executable(goalc-dreamcast-ir ports/dreamcast/host_compiler/export_ir.cpp)
+    target_link_libraries(goalc-dreamcast-ir compiler)
+endif()
+
 # build standalone tools
 add_subdirectory(tools)
 

@@ -1,0 +1,5 @@
+;; Minimal original-frontend local-vs-argument export regression (AI-assisted).
+(defun dc-readiness-local ((arg int))
+  (local-vars (scratch int))
+  (set! scratch (+ arg 1))
+  scratch)

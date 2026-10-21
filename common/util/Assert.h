@@ -21,7 +21,7 @@
                                         const char* function,
                                         const std::string_view& msg);
 
-#ifdef _WIN32
+#ifdef _MSC_VER
 #define __PRETTY_FUNCTION__ __FUNCSIG__
 #endif
 

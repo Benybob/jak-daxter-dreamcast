@@ -1,0 +1,16 @@
+;; AI-assisted startup probes; not original gameplay.
+(define-extern dc-init-external int)
+(define dc-init-runs 0)
+(define dc-init-value 37)
+(define dc-init-truth #t)
+(defun dc-init-read () dc-init-value)
+(defun dc-init-bump ()
+  (set! dc-init-value (+ dc-init-value 5))
+  dc-init-value)
+(define dc-init-alias dc-init-read)
+(define dc-init-via-call (dc-init-bump))
+(set! dc-init-external (+ dc-init-external 1))
+(set! dc-init-runs (+ dc-init-runs 1))
+(defun dc-init-result () (+ dc-init-value dc-init-via-call))
+(defun dc-init-alias-value () dc-init-alias)
+#f

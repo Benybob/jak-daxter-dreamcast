@@ -1,0 +1,4 @@
+;; Minimal shared return destination regression (AI-assisted).
+(defun dc-readiness-early ((arg int))
+  (when (= arg 1) (return 77))
+  99)

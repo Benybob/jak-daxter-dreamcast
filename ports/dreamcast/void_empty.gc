@@ -1,0 +1,2 @@
+;; An initializer-only source can legitimately generate no IR (AI-assisted).
+(none)

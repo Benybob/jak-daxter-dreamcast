@@ -1,0 +1,10 @@
+;; AI-assisted native-runtime probes. Not original Jak gameplay.
+(define dc-runtime-counter 0)
+(defun dc-runtime-read () dc-runtime-counter)
+(defun dc-runtime-write ((value int)) (set! dc-runtime-counter value))
+(defun dc-runtime-false () #f)
+(defun dc-runtime-true () #t)
+(defun dc-runtime-not ((value object)) (if value #f #t))
+(defun dc-runtime-empty () '())
+(defun dc-runtime-call-read () (dc-runtime-read))
+(defun dc-runtime-constant () 99)

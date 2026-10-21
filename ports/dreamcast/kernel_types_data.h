@@ -1,0 +1,56 @@
+/* Original Jak 1 fixed-type schema (AI-assisted). */
+#ifndef DC_KERNEL_TYPES_DATA_H
+#define DC_KERNEL_TYPES_DATA_H
+#include "goal_runtime.h"
+typedef struct { uint32_t offset,parent; const char *name; uint16_t methods,heap_base,size; } dc_kernel_type_schema;
+static const dc_kernel_type_schema dc_kernel_types[] = {
+{DC_FIX_SYM_OBJECT_TYPE,DC_FIX_SYM_OBJECT_TYPE,"object",9u,0u,4u},
+{DC_FIX_SYM_STRUCTURE_TYPE,DC_FIX_SYM_OBJECT_TYPE,"structure",9u,0u,4u},
+{DC_FIX_SYM_BASIC_TYPE,DC_FIX_SYM_STRUCTURE_TYPE,"basic",9u,0u,4u},
+{DC_FIX_SYM_SYMBOL_TYPE,DC_FIX_SYM_BASIC_TYPE,"symbol",9u,0u,8u},
+{DC_FIX_SYM_TYPE_TYPE,DC_FIX_SYM_BASIC_TYPE,"type",9u,0u,56u},
+{DC_FIX_SYM_STRING_TYPE,DC_FIX_SYM_BASIC_TYPE,"string",9u,0u,8u},
+{DC_FIX_SYM_FUNCTION_TYPE,DC_FIX_SYM_BASIC_TYPE,"function",9u,0u,4u},
+{DC_FIX_SYM_VU_FUNCTION_TYPE,DC_FIX_SYM_STRUCTURE_TYPE,"vu-function",9u,0u,16u},
+{DC_FIX_SYM_LINK_BLOCK,DC_FIX_SYM_BASIC_TYPE,"link-block",9u,0u,12u},
+{DC_FIX_SYM_KHEAP,DC_FIX_SYM_STRUCTURE_TYPE,"kheap",9u,0u,16u},
+{DC_FIX_SYM_ARRAY_TYPE,DC_FIX_SYM_BASIC_TYPE,"array",9u,0u,16u},
+{DC_FIX_SYM_PAIR_TYPE,DC_FIX_SYM_OBJECT_TYPE,"pair",9u,0u,8u},
+{DC_FIX_SYM_PROCESS_TREE_TYPE,DC_FIX_SYM_BASIC_TYPE,"process-tree",14u,0u,32u},
+{DC_FIX_SYM_PROCESS_TYPE,DC_FIX_SYM_PROCESS_TREE_TYPE,"process",14u,0u,112u},
+{DC_FIX_SYM_THREAD_TYPE,DC_FIX_SYM_BASIC_TYPE,"thread",12u,0u,40u},
+{DC_FIX_SYM_CONNECTABLE_TYPE,DC_FIX_SYM_STRUCTURE_TYPE,"connectable",9u,0u,16u},
+{DC_FIX_SYM_STACK_FRAME_TYPE,DC_FIX_SYM_BASIC_TYPE,"stack-frame",9u,0u,12u},
+{DC_FIX_SYM_FILE_STREAM_TYPE,DC_FIX_SYM_BASIC_TYPE,"file-stream",9u,0u,20u},
+{DC_FIX_SYM_POINTER_TYPE,DC_FIX_SYM_OBJECT_TYPE,"pointer",9u,0u,4u},
+{DC_FIX_SYM_NUMBER_TYPE,DC_FIX_SYM_OBJECT_TYPE,"number",9u,0u,8u},
+{DC_FIX_SYM_FLOAT_TYPE,DC_FIX_SYM_NUMBER_TYPE,"float",9u,0u,4u},
+{DC_FIX_SYM_INTEGER_TYPE,DC_FIX_SYM_NUMBER_TYPE,"integer",9u,0u,8u},
+{DC_FIX_SYM_BINTEGER_TYPE,DC_FIX_SYM_INTEGER_TYPE,"binteger",9u,0u,8u},
+{DC_FIX_SYM_SINTEGER_TYPE,DC_FIX_SYM_INTEGER_TYPE,"sinteger",9u,0u,8u},
+{DC_FIX_SYM_INT8_TYPE,DC_FIX_SYM_SINTEGER_TYPE,"int8",9u,0u,1u},
+{DC_FIX_SYM_INT16_TYPE,DC_FIX_SYM_SINTEGER_TYPE,"int16",9u,0u,2u},
+{DC_FIX_SYM_INT32_TYPE,DC_FIX_SYM_SINTEGER_TYPE,"int32",9u,0u,4u},
+{DC_FIX_SYM_INT64_TYPE,DC_FIX_SYM_SINTEGER_TYPE,"int64",9u,0u,8u},
+{DC_FIX_SYM_INT128_TYPE,DC_FIX_SYM_SINTEGER_TYPE,"int128",9u,0u,16u},
+{DC_FIX_SYM_UINTEGER_TYPE,DC_FIX_SYM_INTEGER_TYPE,"uintger",9u,0u,8u},
+{DC_FIX_SYM_UINT8_TYPE,DC_FIX_SYM_UINTEGER_TYPE,"uint8",9u,0u,1u},
+{DC_FIX_SYM_UINT16_TYPE,DC_FIX_SYM_UINTEGER_TYPE,"uint16",9u,0u,2u},
+{DC_FIX_SYM_UINT32_TYPE,DC_FIX_SYM_UINTEGER_TYPE,"uint32",9u,0u,4u},
+{DC_FIX_SYM_UINT64_TYPE,DC_FIX_SYM_UINTEGER_TYPE,"uint64",9u,0u,8u},
+{DC_FIX_SYM_UINT128_TYPE,DC_FIX_SYM_UINTEGER_TYPE,"uint128",9u,0u,16u},
+};
+typedef struct { uint32_t offset; const char *name; } dc_kernel_placeholder;
+static const dc_kernel_placeholder dc_kernel_placeholders[] = {
+{DC_FIX_SYM_LEVEL,"level"},
+{DC_FIX_SYM_ART_GROUP,"art-group"},
+{DC_FIX_SYM_TX_PAGE_DIR,"texture-page-dir"},
+{DC_FIX_SYM_TX_PAGE,"texture-page"},
+{DC_FIX_SYM_SOUND,"sound"},
+{DC_FIX_SYM_DGO,"dgo"},
+};
+#define DC_KERNEL_TYPE_COUNT 35u
+#define DC_KERNEL_PLACEHOLDER_COUNT 6u
+/* game/kernel/jak1/kscheme.cpp SHA256 384df2fd2507132f0f0de3805a428e2a3283ebcf02b925c5d5472ba35a9e27f8 */
+/* common/symbols.h SHA256 3e40627d6a54a493a92d4ccb6e695a5c0150c04ee97f147b92d5985661a5cee6 */
+#endif

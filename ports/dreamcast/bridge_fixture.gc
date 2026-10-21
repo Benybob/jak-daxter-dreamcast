@@ -1,0 +1,8 @@
+;; AI-assisted native allocation and stack-argument probes.
+(define-extern dc-c-type-of (function object type))
+(defun dc-bridge-cons ((car-value object) (cdr-value object)) (cons car-value cdr-value))
+(defun dc-bridge-type ((value object)) (dc-c-type-of value))
+(defun dc-bridge-third ((a int) (b int) (c int)) c)
+(defun dc-bridge-eighth ((a int) (b int) (c int) (d int) (e int) (f int) (g int) (h int)) h)
+(defun dc-bridge-stack-call ((value int)) (dc-bridge-eighth 1 2 3 4 5 6 7 value))
+(defun dc-bridge-return-cdr ((heap symbol) (kind type) (a object) (b object)) b)

@@ -1,0 +1,10 @@
+;; A serialized module with native startup/private graph data (AI-assisted).
+(define dc-file-value 37)
+(define dc-file-text "native-file")
+(define dc-file-pairs '(#t "native-file"))
+(defun dc-file-read () dc-file-value)
+(defun dc-file-add ((value int)) (+ value dc-file-value))
+(defun dc-file-string () dc-file-text)
+(defun dc-file-list () dc-file-pairs)
+(define dc-file-applied (dc-file-add 5))
+(none)

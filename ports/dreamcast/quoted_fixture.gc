@@ -1,0 +1,6 @@
+;; AI-assisted original quote/static-pair path probes.
+(define dc-quoted-list '(alpha -2 "text" (nested #t)))
+(defun dc-quoted-root () dc-quoted-list)
+(defun dc-quoted-literal () '(repeat repeat))
+(defun dc-quoted-head () (car dc-quoted-list))
+#f

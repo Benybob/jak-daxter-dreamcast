@@ -1,0 +1,17 @@
+;; AI-assisted GOAL source for typed frontend -> native SH-4 integration tests.
+;; This file is a compiler probe, not original Jak gameplay.
+(defun dc-goal-add ((a int) (b int)) (+ a b))
+(defun dc-goal-sub ((a int) (b int)) (- a b))
+(defun dc-goal-choose ((a int))
+  (if (< a 0) (- 0 a) (+ a 5)))
+(defun dc-goal-factorial ((a int))
+  (let ((result 1))
+    (while (> a 1)
+      (set! result (* result a))
+      (set! a (- a 1)))
+    result))
+(defun dc-goal-float ((a float) (b float)) (- a b))
+(defun dc-goal-call ((a int) (b int))
+  (+ (dc-goal-add a b) (dc-goal-sub a b)))
+(defun dc-goal-float-call ((a float) (b float))
+  (- (dc-goal-float a b) (dc-goal-float b a)))

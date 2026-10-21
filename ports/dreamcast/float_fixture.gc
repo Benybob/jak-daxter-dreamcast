@@ -1,0 +1,12 @@
+;; AI-assisted floating-point control and conversion probes.
+(defun dc-fp-eq ((x float) (y float)) (if (= x y) 1 0))
+(defun dc-fp-ne ((x float) (y float)) (if (!= x y) 1 0))
+(defun dc-fp-lt ((x float) (y float)) (if (< x y) 1 0))
+(defun dc-fp-le ((x float) (y float)) (if (<= x y) 1 0))
+(defun dc-fp-gt ((x float) (y float)) (if (> x y) 1 0))
+(defun dc-fp-ge ((x float) (y float)) (if (>= x y) 1 0))
+(defun dc-fp-to-int ((x float)) (the int x))
+(defun dc-fp-to-float ((x int)) (the float x))
+(defun dc-fp-min ((x float) (y float)) (fmin x y))
+(defun dc-fp-max ((x float) (y float)) (fmax x y))
+(defun dc-fp-sqrt ((x float)) (sqrtf-no-fabs x))

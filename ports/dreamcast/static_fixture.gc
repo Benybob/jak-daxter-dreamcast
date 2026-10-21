@@ -1,0 +1,11 @@
+;; AI-assisted static-data probes, not original gameplay.
+(define dc-static-text "Dreamcast static GOAL")
+(define dc-static-float 3.25)
+(defun dc-static-read-text () dc-static-text)
+(defun dc-static-literal () "literal address")
+(defun dc-static-read-float () dc-static-float)
+(defun dc-static-number () 3.25)
+(defun dc-static-float-add ((value float)) (+ value 1.5))
+(defun dc-static-string-length ((value string)) (-> value allocated-length))
+(defun dc-static-first-char ((value string)) (-> value data 0))
+#f

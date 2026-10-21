@@ -1,0 +1,11 @@
+;; Low-32 native division and original unsigned extension contract (AI-assisted).
+(defun dc-div-signed ((a int) (b int)) (/ a b))
+(defun dc-div-signed-rem ((a int) (b int)) (mod a b))
+(defun dc-div-unsigned ((a uint) (b uint)) (/ a b))
+(defun dc-div-unsigned-rem ((a uint) (b uint)) (mod a b))
+(defun dc-div-mix ((a int) (b int)) (+ (/ a b) (mod a b)))
+(defun dc-div-call ((a int) (b int))
+  (let ((live (logxor a #x1020304050607080)))
+    (+ (dc-div-signed a b) live)))
+(defun dc-div-same ((a int)) (/ a a))
+(defun dc-div-seven ((a int)) (/ a 7))

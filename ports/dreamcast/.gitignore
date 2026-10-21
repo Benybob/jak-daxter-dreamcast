@@ -1,0 +1,9 @@
+/build/
+/*.o
+/*.elf
+/romdisk.img
+/romdisk_tmp.*
+/romdisk/probe.dgo
+/romdisk/*.dcm
+/romdisk/*.dct
+__pycache__/

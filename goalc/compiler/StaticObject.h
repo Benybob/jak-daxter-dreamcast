@@ -192,6 +192,8 @@ class StaticResult {
 class StaticPair : public StaticStructure {
  public:
   StaticPair(StaticResult car, StaticResult cdr, int _seg);
+  const StaticResult& car() const { return m_car; }
+  const StaticResult& cdr() const { return m_cdr; }
   int get_addr_offset() const override;
   void generate(emitter::ObjectGenerator* gen) override;
   void generate_item(const StaticResult& item, int offset);

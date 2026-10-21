@@ -1,0 +1,246 @@
+// AI-assisted typed IR bridge. Uses the original OpenGOAL reader, macro
+// expansion and typechecker. No desktop machine code is emitted or executed.
+#include <algorithm>
+#include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <iostream>
+#include <unordered_set>
+#include <unordered_map>
+#include "common/log/log.h"
+#include "common/util/FileUtil.h"
+#include "common/util/json_util.h"
+#include "goalc/compiler/Compiler.h"
+#include "goalc/compiler/StaticObject.h"
+
+static const char* reg_class(RegClass value) {
+  switch(value) {
+    case RegClass::GPR_64: return "gpr64";
+    case RegClass::FLOAT: return "float";
+    case RegClass::INT_128: return "int128";
+    case RegClass::VECTOR_FLOAT: return "vector_float";
+    default: return "invalid";
+  }
+}
+
+using StaticNames=std::unordered_map<const StaticObject*,std::string>;
+static std::string native_value_type(const TypeSpec& spec,const TypeSystem& types) {
+  if(spec.base_type()=="none" || spec.base_type()=="function") return spec.print();
+  const auto* type=types.lookup_type(spec);
+  // User-defined reference types are 32-bit addresses in scalar containers.
+  // Non-reference aggregates and their 128-bit values stay unsupported.
+  if(type->is_reference() && type->get_load_size()==4) return "object";
+  return spec.print();
+}
+static uint32_t float_bits(float value) {
+  uint32_t bits; std::memcpy(&bits,&value,4); return bits;
+}
+static json static_atom(const StaticResult& value,const StaticNames& names) {
+  if(value.is_reference()) return {{"kind","data"},{"target",names.at(value.reference())}};
+  if(value.is_symbol()) return {{"kind","pointer"},{"target",value.symbol_name()}};
+  if(value.is_func()) return {{"kind","function"},{"target",value.function()->name()}};
+  if(value.is_constant_data() && value.constant().size()==8 && integer_fits(value.constant_u64(),4,true))
+    return {{"kind","constant"},{"value_bits",static_cast<uint32_t>(value.constant_s32())}};
+  return {{"kind","unsupported"}};
+}
+static json instruction(IR* ir,const StaticNames& statics,const TypeSystem& types) {
+  const auto rai=ir->to_rai();
+  json output={{"kind","unsupported"},{"text",ir->print()},
+               {"reads",json::array()},{"writes",json::array()},{"jumps",rai.jumps}};
+  for(const auto& r:rai.read) output["reads"].push_back(r.id);
+  for(const auto& r:rai.write) output["writes"].push_back(r.id);
+  if(auto* constant=dynamic_cast<IR_LoadConstant64*>(ir)) {
+    output["kind"]="constant"; output["value"]=constant->value();
+  } else if(auto* load=dynamic_cast<IR_StaticVarLoad*>(ir)) {
+    if(auto* value=dynamic_cast<const StaticFloat*>(load->object())) {
+      output["kind"]="float_constant"; output["value_bits"]=float_bits(value->value);
+    }
+  } else if(auto* address=dynamic_cast<IR_StaticVarAddr*>(ir)) {
+    output["kind"]="static_address"; output["static_id"]=statics.at(address->object());
+  } else if(auto* symbol=dynamic_cast<IR_LoadSymbolPointer*>(ir)) {
+    output["kind"]="symbol_pointer"; output["symbol"]=symbol->symbol();
+  } else if(auto* symbol_value=dynamic_cast<IR_GetSymbolValue*>(ir)) {
+    output["kind"]="symbol_value"; output["symbol"]=symbol_value->symbol();
+    output["signed"]=symbol_value->signed_value();
+  } else if(auto* set_symbol=dynamic_cast<IR_SetSymbolValue*>(ir)) {
+    output["kind"]="set_symbol"; output["symbol"]=set_symbol->symbol();
+  } else if(auto* function=dynamic_cast<IR_FunctionAddr*>(ir)) {
+    output["kind"]="function_address"; output["function"]=function->function()->name();
+  } else if(auto* load=dynamic_cast<IR_LoadConstOffset*>(ir)) {
+    output["kind"]="load_memory"; output["offset"]=load->offset();
+    output["size"]=load->load_info().size; output["signed"]=load->load_info().sign_extend;
+    output["memory_class"]=reg_class(load->load_info().reg);
+  } else if(auto* store=dynamic_cast<IR_StoreConstOffset*>(ir)) {
+    output["kind"]="store_memory"; output["offset"]=store->offset(); output["size"]=store->size();
+  } else if(auto* call=dynamic_cast<IR_FunctionCall*>(ir)) {
+    if(rai.write.size()!=2) throw std::runtime_error("unexpected call write layout");
+    output["kind"]="call";
+    // The desktop emitter temporarily rebases/clobbers the function register.
+    // Native SH-4 uses its absolute address directly; only the result is written.
+    output["writes"]=call->result()->type().print()=="none" ? json::array() : json::array({rai.write[1].id});
+    output["abi"]={{"parameters",json::array()},{"return_type",call->result()->type().print()}};
+    for(const auto* argument:call->arguments()) output["abi"]["parameters"].push_back(argument->type().print());
+    output["function_type"]=call->function()->type().print();
+    output["abi"]["return_abi_type"]=native_value_type(call->result()->type(),types);
+    output["abi"]["parameter_abi_types"]=json::array();
+    for(const auto* argument:call->arguments())
+      output["abi"]["parameter_abi_types"].push_back(native_value_type(argument->type(),types));
+  } else if(dynamic_cast<IR_RegSet*>(ir)) {
+    output["kind"]="move";
+  } else if(dynamic_cast<IR_FloatToInt*>(ir)) {
+    output["kind"]="float_to_int";
+  } else if(dynamic_cast<IR_IntToFloat*>(ir)) {
+    output["kind"]="int_to_float";
+  } else if(auto* integer=dynamic_cast<IR_IntegerMath*>(ir)) {
+    static const char* names[]={"add64","sub64","imul32","imul64","idiv32","udiv32",
+      "shlv64","sarv64","shrv64","shl64","sar64","shr64","imod32","umod32",
+      "or64","and64","xor64","not64"};
+    const auto index=static_cast<unsigned>(integer->get_kind());
+    if(index>=sizeof(names)/sizeof(names[0])) throw std::runtime_error("unknown integer IR");
+    output["kind"]=names[index];
+    if (integer->get_kind()==IntegerMathKind::SHL_64 || integer->get_kind()==IntegerMathKind::SAR_64 ||
+        integer->get_kind()==IntegerMathKind::SHR_64) output["shift"]=integer->shift_amount();
+  } else if(auto* floating=dynamic_cast<IR_FloatMath*>(ir)) {
+    static const char* names[]={"div_float","mul_float","add_float","sub_float","min_float","max_float","sqrt_float"};
+    const auto index=static_cast<unsigned>(floating->get_kind());
+    if(index>=sizeof(names)/sizeof(names[0])) throw std::runtime_error("unknown float IR");
+    output["kind"]=names[index];
+  } else if(auto* branch=dynamic_cast<IR_ConditionalBranch*>(ir)) {
+    static const char* names[]={"ne","eq","le","lt","gt","ge","invalid"};
+    output["kind"]="branch";
+    output["condition"]=names[static_cast<unsigned>(branch->condition.kind)];
+    output["signed"]=branch->condition.is_signed;
+    output["float"]=branch->condition.is_float;
+    output["target"]=branch->label.idx;
+  } else if(dynamic_cast<IR_GotoLabel*>(ir)) {
+    output["kind"]="goto";
+    if(rai.jumps.size()!=1) throw std::runtime_error("unresolved goto");
+    output["target"]=rai.jumps[0];
+  } else if(dynamic_cast<IR_Return*>(ir)) {
+    output["kind"]="return";
+  } else if(dynamic_cast<IR_Null*>(ir)||dynamic_cast<IR_Nop*>(ir)||dynamic_cast<IR_ValueReset*>(ir)) {
+    output["kind"]="nop";
+  }
+  return output;
+}
+
+int main(int argc,char** argv) {
+  if(argc<4) {
+    std::cerr<<"Usage: goalc-dreamcast-ir PROJECT_ROOT SOURCE.gc OUTPUT.json [TOP_LEVEL_DEFUN ...]\n";
+    return 2;
+  }
+  try {
+    lg::initialize();
+    if(!file_util::setup_project_path(fs::path(argv[1])))
+      throw std::runtime_error("project setup failed");
+    Compiler compiler(GameVersion::Jak1,emitter::InstructionSet::X86);
+    auto source=compiler.get_goos().reader.read_from_file({std::filesystem::absolute(argv[2]).string()});
+    // Select original reader objects without copying or rewriting game bodies.
+    // This is for isolated leaf-function tests; dependencies must be explicit.
+    if(argc>4) {
+      std::unordered_set<std::string> missing;
+      for(int i=4;i<argc;++i)
+        if(!missing.insert(argv[i]).second) throw std::runtime_error("duplicate selected defun");
+      std::vector<goos::Object> selected;
+      auto forms=source.as_pair()->cdr;
+      while(forms.is_pair()) {
+        const auto form=forms.as_pair()->car;
+        if(form.is_pair() && form.as_pair()->car.is_symbol("defun")) {
+          const auto tail=form.as_pair()->cdr;
+          if(tail.is_pair() && tail.as_pair()->car.is_symbol() &&
+             missing.erase(tail.as_pair()->car.as_symbol().name_ptr)) selected.push_back(form);
+        }
+        forms=forms.as_pair()->cdr;
+      }
+      if(!missing.empty()) throw std::runtime_error("selected top-level defun not found: "+*missing.begin());
+      auto body=goos::Object::make_empty_list();
+      for(auto it=selected.rbegin();it!=selected.rend();++it) body=goos::PairObject::make_new(*it,body);
+      source=goos::PairObject::make_new(goos::Object::make_symbol(&compiler.get_goos().reader.symbolTable,"top-level"),body);
+    }
+    auto* file=compiler.compile_object_file("dreamcast-export",source,true);
+    json output={{"format_version",1},{"frontend","OpenGOAL original typed frontend"},
+                 {"scope","SH-4 lowering input; unsupported IR remains explicit"},
+                 {"source",std::filesystem::absolute(argv[2]).string()},{"functions",json::array()}};
+    StaticNames statics;
+    output["statics"]=json::array();
+    for(const auto& object:file->statics()) {
+      const auto id="static_"+std::to_string(statics.size());
+      statics.emplace(object.get(),id);
+    }
+    for(const auto& object:file->statics()) {
+      const auto& id=statics.at(object.get());
+      json entry={{"id",id},{"kind","unsupported"},{"description",object->print()}};
+      if(auto* string=dynamic_cast<const StaticString*>(object.get())) {
+        entry["kind"]="string";
+        entry["text_bytes"]=std::vector<uint8_t>(string->text.begin(),string->text.end());
+      } else if(auto* floating=dynamic_cast<const StaticFloat*>(object.get())) {
+        entry["kind"]="float"; entry["value_bits"]=float_bits(floating->value);
+      } else if(auto* pair=dynamic_cast<const StaticPair*>(object.get())) {
+        entry["kind"]="pair";
+        entry["car"]=static_atom(pair->car(),statics); entry["cdr"]=static_atom(pair->cdr(),statics);
+      }
+      output["statics"].push_back(std::move(entry));
+    }
+    for(const auto& function:file->functions()) {
+      json fn={{"name",function->name()},{"asm",function->is_asm_func},
+               {"return_type","none"},{"return_abi_type","none"},
+               {"top_level",function.get()==&file->top_level_function()},
+               {"registers",json::array()},{"parameters",json::array()},{"instructions",json::array()}};
+      std::vector<std::pair<int,json>> parameters;
+      std::unordered_set<int> entry_registers;
+      if(!function->code().empty() && dynamic_cast<IR_ValueReset*>(function->code().front().get()))
+        for(const auto& reg:function->code().front()->to_rai().write) entry_registers.insert(reg.id);
+      for(const auto& [name,value]:function->params) {
+        // FunctionEnv::params names mutable local copies, not the incoming
+        // constrained values. Follow the original entry copy explicitly.
+        int incoming=-1;
+        const int local=value->ireg().id;
+        if(entry_registers.count(local)) incoming=local;
+        for(const auto& op:function->code()) {
+          if(!dynamic_cast<IR_RegSet*>(op.get())) continue;
+          const auto rai=op->to_rai();
+          if(rai.write.size()==1 && rai.read.size()==1 && rai.write[0].id==local &&
+             entry_registers.count(rai.read[0].id)) { incoming=rai.read[0].id; break; }
+        }
+        if(incoming<0) throw std::runtime_error("parameter has no incoming IR value");
+        parameters.emplace_back(local,json{{"name",name.name_ptr},{"register",incoming},
+                                           {"local_register",local},{"type",value->type().print()},
+                                           {"abi_type",native_value_type(value->type(),compiler.type_system())}});
+      }
+      std::sort(parameters.begin(),parameters.end(),[](const auto& a,const auto& b){return a.first<b.first;});
+      for(const auto& parameter:parameters) fn["parameters"].push_back(parameter.second);
+      std::unordered_set<int> no_values;
+      for(const auto& value:function->reg_vals()) {
+        fn["registers"].push_back({{"id",value->ireg().id},{"class",reg_class(value->ireg().reg_class)},
+                                  {"type",value->type().print()},
+                                  {"abi_type",native_value_type(value->type(),compiler.type_system())}});
+        if(value->type().print()=="none") no_values.insert(value->ireg().id);
+      }
+      for(const auto& op:function->code()) {
+        auto exported=instruction(op.get(),statics,compiler.type_system());
+        const auto rai=op->to_rai();
+        // The original frontend copies its phantom call-result register even
+        // for (none). No native value exists; retain its IR index as a no-op.
+        if(dynamic_cast<IR_RegSet*>(op.get()) && rai.read.size()==1 && rai.write.size()==1 &&
+           no_values.count(rai.read[0].id) && no_values.count(rai.write[0].id)) {
+          exported["kind"]="nop"; exported["reads"]=json::array(); exported["writes"]=json::array();
+        }
+        fn["instructions"].push_back(std::move(exported));
+        if(auto* ret=dynamic_cast<IR_Return*>(op.get()))
+          if(ret->value()) {
+            fn["return_type"]=ret->value()->type().print();
+            fn["return_abi_type"]=native_value_type(ret->value()->type(),compiler.type_system());
+          }
+      }
+      output["functions"].push_back(std::move(fn));
+    }
+    std::ofstream stream(std::filesystem::path(argv[3]),std::ios::binary);
+    if(!stream) throw std::runtime_error("cannot open IR output");
+    stream<<output.dump(2)<<'\n';
+    if(!stream) throw std::runtime_error("IR write failed");
+    return 0;
+  } catch(const std::exception& error) {
+    std::cerr<<"Dreamcast frontend export failed: "<<error.what()<<'\n';
+    return 1;
+  }
+}
