@@ -161,6 +161,7 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
             registers=[dict(r,type=r.get('abi_type',r['type'])) for r in function['registers']],
             parameters=[dict(p,type=p.get('abi_type',p['type'])) for p in function['parameters']])
     if function.get('asm'): raise ValueError('inline/assembly functions unsupported')
+    if function.get('implicit_parameters'): raise ValueError('implicit process/self entry ABI not implemented')
     value_types=INTEGER_VALUE_TYPES|(TAGGED_VALUE_TYPES if runtime else frozenset())
     void_return=runtime and function.get('return_type')=='none'
     if not void_return and scalar_kind(function.get('return_type'),runtime) not in value_types|{'float'}:

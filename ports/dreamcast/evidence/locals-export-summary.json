@@ -1,0 +1,29 @@
+{
+  "ai_assisted": true,
+  "scope": "Original source export/lowering investigation; no target execution",
+  "frontend_sha256": "218fc2bbd936b9110d53d8180bcc37b6a881880fcbce1fd1892afc75f2a6b25f",
+  "source_sha256": "863652a5423cf8f534456a29ed453e61f97e5218b5e715670784cfe5fbe167e5",
+  "cases": [
+    {
+      "case": "find-parent-method",
+      "frontend_exported": true,
+      "functions": 2,
+      "named_local_functions": 1,
+      "arguments": [
+        "child-type",
+        "method-id"
+      ],
+      "locals": [
+        "current-method"
+      ],
+      "native_lowered": false,
+      "diagnostic": "value-returning function has a reachable fallthrough without a return"
+    },
+    {
+      "case": "complete-gcommon",
+      "frontend_exported": true,
+      "functions": 66,
+      "named_local_functions": 5
+    }
+  ]
+}

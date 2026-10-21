@@ -98,10 +98,14 @@ def main():
     subprocess.run(command,check=True)
     subprocess.run([sys.executable,str(port/'embed_native_fixture.py'),str(port/'build/native_fixture.dcn'),
                     str(port/'build/native_file_blob.h')],check=True)
+    command=compiler+['--source',str(port/'locals_fixture.gc'),'--header',str(port/'build/locals_fixture.h')]
+    for name in ('zero','basic','mutate','eight','float','branch'): command+=['--function','dc-local-'+name]
+    command+=['--function','(method score dc-local-record)']
+    subprocess.run(command,check=True)
     subprocess.run([sys.executable,str(port/'build_dreamcast.py'),'--target','jak-dc-runtime-goal.elf'],check=True)
     if args.verify:
         subprocess.run([sys.executable,str(port/'verify_backend.py'),str(args.flycast),
                         str(port/'jak-dc-runtime-goal.elf'),'--nm',str(args.nm),'--output',str(args.output),
-                        '--tests','7982','--suite','runtime-goal'],check=True)
+                        '--tests','8014','--suite','runtime-goal'],check=True)
 
 if __name__=='__main__': main()

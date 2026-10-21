@@ -291,3 +291,10 @@ The separate original-data diagnostic passes 182 native checks; the read-only
 parser accepts all 668 V4 objects across 36 local retail archives. This validates
 data relocations, not execution of original MIPS code or a full kernel boot.
 Earlier numbered measurements above describe their named historical probes.
+
+The named-local continuation is documented in LOCAL_VARIABLES.md. It preserves
+entry ABI argument order independently of named locals, rejects unsupported
+fixed process/self entries and retains definite-assignment validation. The
+current runtime suite is 8,014 checks with 106 host tests; earlier counts refer
+to their dated checkpoints. Complete gcommon exports 66 typed functions, but
+full-module SH-4 lowering and kernel execution remain unfinished.

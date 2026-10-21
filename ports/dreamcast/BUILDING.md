@@ -43,7 +43,8 @@ The object suite without retail archives has 98 checks; the 182-check local
 result included two original assets from the owner's ISO. Compiler/runtime and
 numeric probes use source/synthetic fixtures and need no ISO. Some host tests
 skip independent assembler/GCC oracles until the SH-4 SDK is installed; rerun
-the host wrapper after SDK setup to cover those tests.
+the host wrapper after both SDK and frontend setup to cover those tests,
+including the original-frontend named-local integration tests.
 
 To reproduce the two small known compiler gaps:
 
