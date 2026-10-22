@@ -157,10 +157,19 @@ def main():
     command=compiler+['--source',str(port/'build/mixed_stack_fixture.gc'),'--header',str(port/'build/mixed_stack_fixture.h')]
     for name in generate()[2]: command+=['--function',name]
     subprocess.run(command,check=True)
+    command=compiler+['--source',str(port.parents[1]/'goal_src/jak1/kernel/gkernel.gc'),
+                      '--select-defuns','--header',str(port/'build/original_process_tree.h')]
+    for source in (port.parents[1]/'goal_src/jak1/kernel/gcommon.gc',port/'scalar_validation_context.gc',
+                   port.parents[1]/'goal_src/jak1/kernel/gkernel-h.gc',port.parents[1]/'goal_src/jak1/kernel/gstring-h.gc',
+                   port.parents[1]/'goal_src/jak1/kernel/gkernel.gc'):
+        command+=['--preload',str(source)]
+    for name in ('iterate-process-tree','execute-process-tree','search-process-tree','change-parent'):
+        command+=['--function',name]
+    subprocess.run(command,check=True)
     subprocess.run([sys.executable,str(port/'build_dreamcast.py'),'--target','jak-dc-runtime-goal.elf'],check=True)
     if args.verify:
         subprocess.run([sys.executable,str(port/'verify_backend.py'),str(args.flycast),
                         str(port/'jak-dc-runtime-goal.elf'),'--nm',str(args.nm),'--output',str(args.output),
-                        '--tests','10613','--suite','runtime-goal'],check=True)
+                        '--tests','11217','--suite','runtime-goal'],check=True)
 
 if __name__=='__main__': main()

@@ -8,7 +8,7 @@ Most compiler/runtime work uses synthetic fixtures and needs no original assets.
 | --- | --- | --- |
 | Remaining full-kernel target configuration | GOAL, platform runtime | Scalar validator now uses explicit stock-RAM/table limits; audit remaining profiler/PC branches, scratchpad and MMIO before original startup |
 | Remaining variadic and vector ABI | SH-4 GCC, GOAL | Fixed scalar mixed calls through eight arguments now pass, including integer stack spills; independently verify mixed variadic and vector boundaries |
-| Remaining kernel sequencing and heaps | GOAL, runtime systems | Nine original system globals now initialize explicitly; implement measured native process heaps, context/thread setup and remaining original module dependencies |
+| Remaining kernel sequencing and heaps | GOAL, runtime systems | Nine original globals initialize and four original process-tree algorithms execute; implement measured original allocation, process heaps and context/thread startup |
 | PowerVR scene pipeline | KOS, PVR, graphics | Measured culling/material deduplication and bounded residency on synthetic fixtures before expanding game scenes |
 | Hardware validation | Dreamcast development | Reproduce asset-free native diagnostics on hardware with toolchain, load method, RAM use and failures documented |
 
@@ -114,3 +114,8 @@ See [MIXED_STACK_ABI.md](MIXED_STACK_ABI.md). (AI-assisted).
 
 Copy-only integer/tagged stack returns now use two loads and an RTS delay slot: six bytes with no frame. GNU checks cover all six stack positions; existing native boundary cases still pass. The same mixed probe module shrinks by 7,600 bytes (15.3%); whole diagnostic code saves 7,948 bytes and arena saves 7,952 bytes. These are size measurements, not timing benchmarks. Full kernel/gameplay, process heaps and remaining platform/ABI dependencies remain unfinished.
 See [STACK_COPY_LEAVES.md](STACK_COPY_LEAVES.md). (AI-assisted).
+
+## Completed: Original process-tree traversal and reparenting
+
+Four unchanged original kernel routines now traverse, filter, search and reparent bounded native process-tree fixtures. Two host tests pin original bodies/imports and field layouts; 604 new native checks cover 128 mask/callback combinations, subtree pruning, mutation-safe sibling traversal, searches, reparenting and stable handle fields. These fixtures have no runnable threads; allocation, heaps, scheduler startup and complete gameplay remain unfinished.
+See [PROCESS_TREE_NATIVE.md](PROCESS_TREE_NATIVE.md). (AI-assisted).
