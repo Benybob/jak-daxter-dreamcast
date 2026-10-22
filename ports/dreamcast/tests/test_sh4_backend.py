@@ -115,7 +115,7 @@ class AssemblerOracleTest(unittest.TestCase):
                              '.align 2\n.Lvalue:\n.long 0x12345678\n.Lresume:\n.rept 104\nnop\n.endr\nrts\nnop')
         code,relocs,stats=e.finish_with_stats(literal_islands=True)
         self.assertEqual(code,oracle); self.assertEqual(relocs,[])
-        self.assertEqual(stats,dict(instruction_bytes=len(e.code)+4,expanded_conditional_branches=0,literal_islands=1))
+        self.assertEqual(stats,dict(instruction_bytes=len(e.code)+4,expanded_conditional_branches=0,literal_islands=1,far_branches=0))
         self.assertEqual(e.finish(literal_islands=True),(code,relocs))
 
     def test_literal_island_does_not_split_a_call_delay_slot(self):
@@ -172,6 +172,61 @@ class AssemblerOracleTest(unittest.TestCase):
                 if match: addresses.append(int(match[1],16))
             self.assertEqual(len(addresses),400)
             self.assertEqual([struct.unpack_from('<I',code,a)[0] for a in addresses],list(range(0x10000000,0x10000190)))
+
+    def test_far_forward_branch_preserves_r0_with_a_relative_delta(self):
+        e=Emitter(); e.branch('bra','end')
+        for _ in range(2201): e.nop()
+        e.label('end'); e.ret()
+        oracle=self.assemble('mov.l r0,@-r15\nmov.l .Ldelta,r0\n.Ljump:\nbraf r0\nmov.l @r15+,r0\n'
+                             '.align 2\n.Ldelta:\n.long .Lend-(.Ljump+4)\nnop\n.rept 2201\nnop\n.endr\n.Lend:\nrts\nnop')
+        code,relocs,stats=e.finish_with_stats(far_branches=True)
+        self.assertEqual(code,oracle); self.assertFalse(relocs); self.assertEqual(stats['far_branches'],1)
+        with self.assertRaisesRegex(ValueError,'branch range'): e.finish()
+
+    def test_far_backward_branch_matches_gnu_assembler(self):
+        e=Emitter(); e.label('start')
+        for _ in range(2201): e.nop()
+        e.branch('bra','start'); e.ret(); e.nop()
+        oracle=self.assemble('.Lstart:\n.rept 2201\nnop\n.endr\nmov.l r0,@-r15\nmov.l .Ldelta,r0\n'
+                             '.Ljump:\nbraf r0\nmov.l @r15+,r0\n.align 2\n.Ldelta:\n'
+                             '.long .Lstart-(.Ljump+4)\nnop\nrts\nnop\nnop')
+        self.assertEqual(e.finish(far_branches=True)[0],oracle)
+
+    def test_far_conditional_skips_the_entire_preserved_register_sequence(self):
+        e=Emitter(); e.branch('bt','end')
+        for _ in range(2200): e.nop()
+        e.label('end'); e.ret()
+        oracle=self.assemble('bf .Lskip\nmov.l r0,@-r15\nmov.l .Ldelta,r0\n.Ljump:\nbraf r0\n'
+                             'mov.l @r15+,r0\n.align 2\n.Ldelta:\n.long .Lend-(.Ljump+4)\n'
+                             '.Lskip:\n.rept 2200\nnop\n.endr\n.Lend:\nrts\nnop')
+        code,_,stats=e.finish_with_stats(relax=True,far_branches=True)
+        self.assertEqual(code,oracle); self.assertEqual(stats['expanded_conditional_branches'],1)
+        self.assertEqual(stats['far_branches'],1)
+
+    def test_far_branches_and_symbol_literal_islands_match_the_same_gnu_layout(self):
+        e=Emitter(); e.literal(1,('symbol','external')); e.branch('bra','end')
+        for _ in range(2200): e.nop()
+        e.label('end'); e.literal(0,('symbol','external')); e.ret()
+        oracle=self.assemble('mov.l .Lfirst,r1\nmov.l r0,@-r15\nmov.l .Ldelta,r0\n.Ljump:\nbraf r0\n'
+                             'mov.l @r15+,r0\n.align 2\n.Ldelta:\n.long .Lend-(.Ljump+4)\nnop\n'
+                             '.rept 488\nnop\n.endr\nbra .Lresume\nnop\n.align 2\n.Lfirst:\n.long _external\n'
+                             '.Lresume:\n.rept 1712\nnop\n.endr\n.Lend:\nmov.l .Lsecond,r0\nrts\nnop\n'
+                             '.align 2\n.Lsecond:\n.long _external')
+        code,relocs,stats=e.finish_with_stats(literal_islands=True,far_branches=True)
+        self.assertEqual(code,oracle)
+        self.assertEqual(relocs,[dict(offset=1000,symbol='external'),dict(offset=4436,symbol='external')])
+        self.assertEqual((stats['far_branches'],stats['literal_islands']),(1,1))
+
+    def test_far_calls_and_changed_delay_slots_still_reject(self):
+        for kind in ('bsr','bra'):
+            e=Emitter(); e.branch(kind,'end')
+            if kind=='bra': struct.pack_into('<H',e.code,2,0xe001)
+            for _ in range(2200): e.nop()
+            e.label('end'); e.ret()
+            with self.subTest(kind=kind),self.assertRaisesRegex(ValueError,'branch range|NOP delay slot'):
+                e.finish(far_branches=True)
+        e=Emitter(); e.branch('bra','near'); e.nop(); e.label('near'); e.ret()
+        self.assertEqual(e.finish(),e.finish(relax=True,literal_islands=True,far_branches=True))
 
     def test_islands_preserve_small_function_bytes_and_reject_literal_delay_slots(self):
         e=Emitter(); e.call_symbol('helper'); e.ret()

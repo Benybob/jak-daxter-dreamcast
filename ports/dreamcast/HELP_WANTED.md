@@ -6,6 +6,8 @@ Most compiler/runtime work uses synthetic fixtures and needs no original assets.
 
 | Task | Useful experience | Concrete acceptance target |
 | --- | --- | --- |
+| Dreamcast compiler target configuration | GOAL, platform runtime | Explicit stock-RAM limits, profiler/PC branches and MMIO handling; verify original bodies without executing desktop startup |
+| Vector and mixed argument ABI | SH-4 GCC, GOAL | Independent ABI oracles and native boundary tests before enabling original vector/mixed calls |
 | Kernel sequencing and heaps | GOAL, runtime systems | Explicit target configuration and original startup/module dependencies execute within measured stock RAM bounds |
 | PowerVR scene pipeline | KOS, PVR, graphics | Measured culling/material deduplication and bounded residency on synthetic fixtures before expanding game scenes |
 | Hardware validation | Dreamcast development | Reproduce asset-free native diagnostics on hardware with toolchain, load method, RAM use and failures documented |
@@ -40,9 +42,11 @@ The initial inventory (before the named-local fix) found that of 47 isolated
 original gcommon defuns, 31 lowered, six failed lowering and ten failed
 frontend export. Some failures are missing dependencies caused by isolation.
 These are compile-only results, not link/execution or full-file coverage.
-Original sort hits the PC-relative literal range limit; qmem-copy variants need
-explicit 128-bit/vector work. Full gcommon now exports 66 typed functions; its lowering/execution remains
-open. The new full-export standalone lowering inventory is 54 of 66; this
+Original sort now executes on SH-4. Original valid? lowers with explicit
+fixed-register roles and far jumps but is not executed; its desktop memory
+constants still need target configuration. Qmem-copy variants need explicit
+128-bit/vector work. Full gcommon now exports 66 typed functions; its lowering/execution remains
+open. The latest full-export standalone lowering inventory is 57 of 66; this
 does not link or execute the whole module. Gkernel/gstate need earlier globals/types
 and original module context.
 
@@ -68,3 +72,8 @@ See [C_IDENTIFIERS.md](C_IDENTIFIERS.md). (AI-assisted).
 
 Original identical rlet aliases now export once with fixed-register roles and reset metadata. Supported symbol-table resets map to native s7; missing initialization, unknown roles and mutation still reject. Six host tests and 15 new native checks pass. Original valid? advances to a long-branch limit and still needs target memory constants; it is not executed. Full kernel/gameplay remains unfinished.
 See [FIXED_REGISTERS.md](FIXED_REGISTERS.md). (AI-assisted).
+
+## Completed: Native SH-4 far branches
+
+Relative far jumps now preserve both return halves, native stack, PR and T flags while sharing layout with literal pools. Five GNU assembler checks and 40 new native cases pass. Original valid? now lowers to 8,248 bytes, but is compile-only pending Dreamcast target constants. Standalone full-gcommon lowering reaches 57 of 66; full kernel/gameplay remains unfinished.
+See [FAR_BRANCHES.md](FAR_BRANCHES.md). (AI-assisted).

@@ -27,8 +27,8 @@ Discuss scope on **this fork**, and keep changes small enough to review.
 
 | Area | Locally verified scope |
 | --- | --- |
-| Host | 128 tests pass with the complete local SDK/oracle setup |
-| Native runtime | 8,267 checks in Flycast, stock 16 MiB RAM |
+| Host | 133 tests pass with the complete local SDK/oracle setup |
+| Native runtime | 8,307 checks in Flycast, stock 16 MiB RAM |
 | Original data | 182 native checks; all 668 V4 data objects across 36 local archives validate |
 | Numeric regression | 39 native checks |
 | GOAL backend | Original typed frontend to native SH-4; scalar calls, classes/methods, void startup, private data, 64-bit shifts and 32-bit division |
@@ -52,16 +52,16 @@ the local checkpoint, not a GitHub Actions run.
 
 ## Latest completed contributor task
 
-Original identical rlet aliases now export once with fixed-register roles and reset metadata. Supported symbol-table resets map to native s7; missing initialization, unknown roles and mutation still reject. Six host tests and 15 new native checks pass. Original valid? advances to a long-branch limit and still needs target memory constants; it is not executed. Full kernel/gameplay remains unfinished.
+Relative far jumps now preserve both return halves, native stack, PR and T flags while sharing layout with literal pools. Five GNU assembler checks and 40 new native cases pass. Original valid? now lowers to 8,248 bytes, but is compile-only pending Dreamcast target constants. Standalone full-gcommon lowering reaches 57 of 66; full kernel/gameplay remains unfinished.
 
-See [FIXED_REGISTERS.md](ports/dreamcast/FIXED_REGISTERS.md). Full kernel/gameplay remains unfinished.
+See [FAR_BRANCHES.md](ports/dreamcast/FAR_BRANCHES.md). Full kernel/gameplay remains unfinished.
 
 ## Build and orientation
 
 Source is in `ports/dreamcast/`. Follow [BUILDING.md](ports/dreamcast/BUILDING.md).
 The verified baseline is OpenGOAL `6076aab5a95955443a9e1ed8f72a25bc0e2fcf9d`;
 the latest locally verified port checkpoint is
-`b6f21097389cabbe88803ef41970b9e4fde9d071`.
+`2e96cfc8700498cff366d3e47cf7cc84d53db26c`.
 
 No ISO, BIOS, extracted textures/models, converted game scenes or ELF binaries
 embedding game assets are uploaded. Use assets extracted locally from your own

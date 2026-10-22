@@ -563,7 +563,7 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
     e.label('epilogue'); e.mov(15,14); adjust_stack(frame)
     for reg in (9,8,14): e.rr(0x6006,reg,15)
     e.word(0x4f26); e.ret()
-    data,relocations,layout=e.finish_with_stats(relax=True,literal_islands=True)
+    data,relocations,layout=e.finish_with_stats(relax=True,literal_islands=True,far_branches=True)
     instruction_bytes=layout['instruction_bytes']
     return data,{'name':function['name'],'bytes':len(data),'stack_bytes':frame+16,'relocations':relocations,
                 'optimization':'stack_slot_reuse' if optimize else 'stack_baseline','instruction_stream_bytes':instruction_bytes,
@@ -571,6 +571,7 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
                 'baseline_stack_bytes':len(registers)*8+16,'coalesced_stack_moves':coalesced_moves,
                 'expanded_conditional_branches':layout['expanded_conditional_branches'],
                 'literal_islands':layout['literal_islands'],
+                'far_branches':layout.get('far_branches',0),
                 'literal_pool_and_alignment_bytes':len(data)-instruction_bytes,
                 'minimum_32_byte_cache_lines':(len(data)+31)//32}
 

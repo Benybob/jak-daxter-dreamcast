@@ -104,8 +104,8 @@ class Emitter:
                    'bra' if offset in expanded else kind,name) for offset,kind,name in self.branches]
         return code,branches,{name:mapped(offset) for name,offset in self.labels.items()},[(mapped(offset),key) for offset,key in self.literals]
 
-    def instruction_size(self,relax=False,literal_islands=False):
-        return self.finish_with_stats(relax,literal_islands)[2]['instruction_bytes']
+    def instruction_size(self,relax=False,literal_islands=False,far_branches=False):
+        return self.finish_with_stats(relax,literal_islands,far_branches)[2]['instruction_bytes']
 
     def _finish_terminal(self,relax=False):
         code,branches,labels,literals=self._layout(relax)
@@ -140,7 +140,7 @@ class Emitter:
         return (word>>12 in (0xa,0xb) or word in (0x000b,0x002b) or
                 word&0xf0ff in (0x400b,0x402b,0x0003,0x0023) or word&0xff00 in (0x8d00,0x8f00))
 
-    def _finish_islands(self,relax):
+    def _finish_islands(self,relax,literal_islands=True,far_branches=False):
         """Lay out pool skips and branch expansions together; preserve all delay slots."""
         literal_at=dict(self.literals)
         if len(literal_at)!=len(self.literals): raise ValueError('duplicate literal instruction')
@@ -150,10 +150,10 @@ class Emitter:
         if any(offset in unsafe for offset in literal_at):
             raise ValueError('PC-relative literal in a delay slot is unsupported')
         if len(self.code) in unsafe: raise ValueError('missing branch delay slot')
-        expanded=set()
+        expanded=set(); far=set()
         while True:
             code=bytearray(); mapped={}; pending=[]; keys={}; relocations=[]; islands=0
-            instruction_bytes=0
+            instruction_bytes=0; relative_jumps=[]
             def pool(skip):
                 nonlocal islands,instruction_bytes
                 if not pending: return
@@ -182,10 +182,30 @@ class Emitter:
                 # bytes of margin cover the next expansion, load and delay slot.
                 if pending and offset not in unsafe:
                     end=((len(code)+7)&~3)+4*len(keys)
-                    earliest=min((position+4)&~3 for position,_ in pending)
-                    if end-earliest>=1000: pool(True)
+                    earliest=(pending[0][0]+4)&~3
+                    if literal_islands and end-earliest>=1000: pool(True)
                 mapped[offset]=len(code)
-                if offset in expanded:
+                if offset in far:
+                    kind,target=branch_at[offset]
+                    conditional=kind in ('bt','bf')
+                    if conditional:
+                        inverse=0x8b00 if kind=='bt' else 0x8900
+                        skip=len(code); code.extend(struct.pack('<H',inverse)); instruction_bytes+=2
+                    elif kind!='bra' or words.get(offset+2)!=0x0009:
+                        raise ValueError('far branch requires BRA with a NOP delay slot')
+                    # GCC-compatible writable stack: preserve r0 in the BRAF
+                    # delay slot, keep T/PR/r1 intact, and use a relative delta
+                    # so copied native modules require no address relocation.
+                    code.extend(struct.pack('<H',0x2f06))  # mov.l r0,@-r15
+                    load=len(code); code.extend(b'\0\xd0')
+                    jump=len(code); code.extend(struct.pack('<2H',0x0023,0x60f6))
+                    instruction_bytes+=8
+                    if len(code)%4: code.extend(b'\x09\x00')
+                    data=len(code); code.extend(b'\0'*4)
+                    struct.pack_into('<H',code,load,0xd000|((data-((load+4)&~3))//4))
+                    relative_jumps.append((data,jump,target))
+                    if conditional: struct.pack_into('<H',code,skip,inverse|((len(code)-(skip+4))//2))
+                elif offset in expanded:
                     inverse=0x8b00 if branch_at[offset][0]=='bt' else 0x8900
                     code.extend(struct.pack('<3H',inverse|1,0xa000,0x0009)); instruction_bytes+=6
                 else:
@@ -194,9 +214,10 @@ class Emitter:
                     code.extend(self.code[offset:offset+2]); instruction_bytes+=2
             mapped[len(self.code)]=len(code)
             pool(False)
-            added=set()
+            added=set(); added_far=set()
             for offset,kind,name in self.branches:
                 if name not in self.labels: raise ValueError('undefined label')
+                if offset in far: continue
                 position=mapped[offset]+(2 if offset in expanded else 0)
                 delta=mapped[self.labels[name]]-(position+4)
                 if delta%2: raise ValueError('unaligned branch')
@@ -207,22 +228,30 @@ class Emitter:
                     bits=8
                 else: bits=12
                 displacement=delta//2
-                if not -(1<<(bits-1))<=displacement<(1<<(bits-1)): raise ValueError('branch range exceeded')
+                if not -(1<<(bits-1))<=displacement<(1<<(bits-1)):
+                    if far_branches and kind in ('bra','bt','bf'):
+                        added_far.add(offset); continue
+                    raise ValueError('branch range exceeded')
                 original=struct.unpack_from('<H',code,position)[0]
                 struct.pack_into('<H',code,position,original|(displacement&((1<<bits)-1)))
-            if added:
-                expanded.update(added); continue
+            if added or added_far:
+                expanded.update(added); far.update(added_far); continue
+            for data,jump,name in relative_jumps:
+                delta=mapped[self.labels[name]]-(jump+4)
+                if not -(1<<31)<=delta<(1<<31): raise ValueError('far branch relative delta range exceeded')
+                struct.pack_into('<i',code,data,delta)
             return bytes(code),relocations,dict(instruction_bytes=instruction_bytes,
-                expanded_conditional_branches=len(expanded),literal_islands=islands)
+                expanded_conditional_branches=len(expanded),literal_islands=islands,far_branches=len(far))
 
-    def finish_with_stats(self,relax=False,literal_islands=False):
+    def finish_with_stats(self,relax=False,literal_islands=False,far_branches=False):
         try: return self._finish_terminal(relax)
         except ValueError as error:
-            if not literal_islands or str(error)!='literal pool range exceeded': raise
-        return self._finish_islands(relax)
+            if not ((literal_islands and str(error)=='literal pool range exceeded') or
+                    (far_branches and str(error)=='branch range exceeded')): raise
+        return self._finish_islands(relax,literal_islands,far_branches)
 
-    def finish(self,relax=False,literal_islands=False):
-        return self.finish_with_stats(relax,literal_islands)[:2]
+    def finish(self,relax=False,literal_islands=False,far_branches=False):
+        return self.finish_with_stats(relax,literal_islands,far_branches)[:2]
 
 def probes():
     result={}

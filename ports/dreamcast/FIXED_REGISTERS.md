@@ -1,5 +1,9 @@
 # Explicit symbol-table role for original rlet registers
 
+Historical fixed-role checkpoint. [FAR_BRANCHES.md](FAR_BRANCHES.md) removes
+valid?'s later branch-range blocker; target memory constants remain open.
+(AI-assisted).
+
 2026-10-21. (AI-assisted). Original rlet may reuse a constrained desktop
 register through several RegVal aliases with the same virtual ID. The exporter
 previously emitted duplicate register records. Original valid? encountered four

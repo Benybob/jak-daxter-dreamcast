@@ -1,5 +1,8 @@
 # Bounded SH-4 literal islands
 
+Historical pool checkpoint. [FAR_BRANCHES.md](FAR_BRANCHES.md) adds the later
+native far-jump support while preserving compact pool layouts. (AI-assisted).
+
 2026-10-21. (AI-assisted). SH-4 mov.l PC-relative loads address an aligned
 forward 32-bit literal within 1,020 bytes. A single pool after the function
 blocked original sort and mem-print even when their instructions were valid.
