@@ -9,6 +9,7 @@
 #include "kernel_type_cases.h"
 #include "thread_stack_cases.h"
 #include "code_entry_cases.h"
+#include "scalar_call_cases.h"
 uint32_t dc_runtime_stack_call_cases(dc_goal_runtime *,dc_runtime_check,void *,unsigned *,dc_goal_cache_sync);
 void dc_runtime_register_snapshot_cases(dc_runtime_check,void *,unsigned *);
 #include "build/runtime_fixture.h"
@@ -51,6 +52,7 @@ uint32_t dc_runtime_process_query_cases(dc_goal_runtime *,dc_runtime_check,void 
 uint32_t dc_runtime_call_guard_cases(dc_goal_runtime *,dc_runtime_check,void *,unsigned *,dc_goal_cache_sync);
 uint32_t dc_runtime_cpu_thread_cases(dc_goal_runtime *,dc_runtime_check,void *,unsigned *,dc_goal_cache_sync);
 uint32_t dc_runtime_fiber_cases(dc_goal_runtime *,dc_runtime_check,void *,unsigned *,dc_goal_cache_sync);
+uint32_t dc_runtime_fiber_words_cases(dc_goal_runtime *,dc_runtime_check,void *,unsigned *,dc_goal_cache_sync);
 uint32_t dc_runtime_activation_cases(dc_goal_runtime *,dc_runtime_check,void *,unsigned *,dc_goal_cache_sync);
 static void sync_code(uint32_t allocation,uint32_t bytes,void *context) {
   (void)context;
@@ -199,8 +201,10 @@ uint32_t dc_runtime_goal_cases(void *memory,uint32_t capacity,dc_runtime_check c
   dc_thread_stack_cases(check,context,&id);
   dc_runtime_register_snapshot_cases(check,context,&id);
   dc_code_entry_cases(check,context,&id);
+  dc_scalar_call_cases(check,context,&id);
   code_bytes+=dc_runtime_stack_call_cases(&rt,check,context,&id,sync_code);
   code_bytes+=dc_runtime_activation_cases(&rt,check,context,&id,sync_code);
+  code_bytes+=dc_runtime_fiber_words_cases(&rt,check,context,&id,sync_code);
   code_bytes+=dc_runtime_fiber_cases(&rt,check,context,&id,sync_code);
   dc_goal_clear_core_bridges(&rt);
   snprintf(description,description_bytes,"GOAL=%lu init/lists=pass arena=%lu symbols=%lu",

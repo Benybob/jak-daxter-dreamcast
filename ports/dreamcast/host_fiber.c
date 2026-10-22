@@ -54,5 +54,29 @@ int main(void) {
  CHECK(!dc_goal_fiber_step(&fiber,0,&value));CHECK(fiber.phase==DC_FIBER_DONE);
  CHECK(dc_goal_fiber_clear(&fiber));CHECK(fiber.phase==DC_FIBER_EMPTY && !fiber.image.valid);
  CHECK(!dc_goal_fiber_step(&fiber,0,&value));CHECK(!dc_goal_fiber_clear(NULL));CHECK(value==0x1122334455667788ull);
+ {
+  uint64_t words[8],expected[8],zero[8]={0};unsigned i;
+  for(i=0;i<8;++i)words[i]=expected[i]=UINT64_C(0xabcdef1234567890)+UINT64_C(0x1234567887654321)*i;
+  CHECK(dc_goal_fiber_init_words(&fiber,&rt,process,12400,thread,stack,16384,entry,8,words));
+  CHECK(fiber.argument_count==8);CHECK(memcmp(fiber.arguments,expected,sizeof expected)==0);
+  memset(words,0,sizeof words);CHECK(memcmp(fiber.arguments,expected,sizeof expected)==0);
+  CHECK(dc_goal_fiber_init_words(&fiber,&rt,process,12400,thread,stack,16384,entry,6,fiber.arguments));
+  CHECK(fiber.argument_count==6);CHECK(memcmp(fiber.arguments,expected,6*sizeof *expected)==0);
+  CHECK(fiber.arguments[6]==0 && fiber.arguments[7]==0);
+  CHECK(!dc_goal_fiber_step(&fiber,0,&value));CHECK(fiber.phase==DC_FIBER_NEW);
+  CHECK(!dc_goal_fiber_init_words(&fiber,&rt,process,12400,thread,stack,16384,entry,9,(const uint64_t *)(uintptr_t)1));
+  CHECK(fiber.phase==DC_FIBER_EMPTY && !fiber.image.valid);CHECK(fiber.argument_count==0);
+  CHECK(!dc_goal_fiber_init_words(&fiber,&rt,process,12400,thread,stack,16384,entry,1,NULL));
+  CHECK(fiber.phase==DC_FIBER_EMPTY);CHECK(rt.error==DC_GOAL_BAD_ARGUMENT);
+  CHECK(dc_goal_fiber_init_words(&fiber,&rt,process,12400,thread,stack,16384,entry,8,expected));
+  CHECK(!dc_goal_fiber_init_words(&fiber,NULL,process,12400,thread,stack,16384,entry,8,(const uint64_t *)(uintptr_t)1));
+  CHECK(fiber.phase==DC_FIBER_EMPTY);
+  CHECK(!dc_goal_fiber_init_words((dc_goal_fiber *)memory,&rt,process,12400,thread,stack,16384,entry,8,expected));
+  CHECK(memcmp(before,memory,used)==0);CHECK(rt.used==used);
+  CHECK(dc_goal_fiber_init_words(&fiber,&rt,process,12400,thread,stack,16384,entry,8,expected));
+  CHECK(dc_goal_fiber_init(&fiber,&rt,process,12400,thread,stack,16384,entry));
+  CHECK(fiber.argument_count==0);CHECK(memcmp(fiber.arguments,zero,sizeof zero)==0);
+  CHECK(dc_goal_fiber_clear(&fiber));
+ }
  free(allocation);free(before);printf("{\"tests\":%u,\"passed\":%u}\n",total,passed);return total!=passed;
 }

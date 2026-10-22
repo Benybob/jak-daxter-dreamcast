@@ -10,12 +10,14 @@ typedef struct {
  uint32_t magic;enum dc_goal_fiber_phase phase;dc_goal_runtime *runtime;
  uint32_t process,reservation,thread,stack_base,stack_bytes,entry,root_expected_sp,root_live;
  uint64_t value,resume_value;
+ unsigned argument_count;uint64_t arguments[8];
  struct dc_goal_native_regs root,native_thread;
  dc_goal_thread_stack image;
 } dc_goal_fiber;
 /* Metadata is stable caller-owned C storage OUTSIDE rt's arena/working stack;
- * keep it live until clear. Code/stack/metadata pinned and quiescent. User entry
- * is trusted zeroarg uint64 ABI; no signature or ownership inferred from pointer.
+ * keep it live until clear. Code/stack/metadata pinned and quiescent. Default init
+ * uses trusted zeroarg uint64 ABI; init_words uses its explicit scalar prototype.
+ * No signature or ownership is inferred from a pointer.
  * Stack owned/adequate, >=4096B, base/top16aligned; original CPU/process spans
  * and backup capacity explicit. No original CPU PC/SP/register fields rewritten.
  * No implicit process binding/activation, exceptions/longjmp/GC/OS migration. */
@@ -23,6 +25,13 @@ typedef struct {
  * active initialization is rejected before disturbing the running anchor. */
 int dc_goal_fiber_init(dc_goal_fiber *,dc_goal_runtime *,uint32_t process,uint32_t reservation,
                        uint32_t thread,uint32_t stack_base,uint32_t stack_bytes,uint32_t entry);
+/* Same lifecycle, with0..8 explicit uint64 scalar arguments. Input is a valid C
+ * vector, copied before owned metadata is invalidated; later input changes do
+ * not affect the context. Entry must match that exact prototype. No inference,
+ * floats/structures/varargs or new implicit-self-with-arguments ABI. */
+int dc_goal_fiber_init_words(dc_goal_fiber *,dc_goal_runtime *,uint32_t process,uint32_t reservation,
+                             uint32_t thread,uint32_t stack_base,uint32_t stack_bytes,uint32_t entry,
+                             unsigned argument_count,const uint64_t *arguments);
 /* Root must run outside working stack. out is separate valid caller C storage
  * outside the runtime object/arena/context;
  * unchanged on failure. resume_value is returned by the blocked yield on resume.

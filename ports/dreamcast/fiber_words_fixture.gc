@@ -1,0 +1,13 @@
+;; Explicit scalar startup arguments across native yields (AI-assisted), ISC.
+(define-extern dc-c-fiber-yield (function uint uint))
+(define-extern dc-fiber-pop (function object))
+(defun dc-fiber-words-six ((a uint) (b uint) (c uint) (d uint) (e uint) (f uint))
+  (let ((x (+ a (imul64 b 3) (imul64 c 5) (imul64 d 7) (imul64 e 11) (imul64 f 13))))
+    (dc-fiber-pop)
+    (let ((sent (dc-c-fiber-yield (logxor x #x123456789abcdef0))))
+      (dc-fiber-pop)
+      (+ x sent))))
+(defun dc-fiber-words-eight ((a uint) (b uint) (c uint) (d uint) (e uint) (f uint) (g uint) (h uint))
+  (let ((first (dc-fiber-words-six a b c d e f))
+        (last (+ g (imul64 h 17))))
+    (+ first last (dc-c-fiber-yield (logxor last #x1020304050607080)))))

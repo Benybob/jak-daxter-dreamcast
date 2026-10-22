@@ -1,5 +1,6 @@
 /* Two original CPU backups sharing a native working stack (AI-assisted), ISC. */
 #include "goal_fiber.h"
+#include "fiber_test_support.h"
 #include "fiber_bounds_cases.h"
 #include "goal_bridge.h"
 #include "runtime_cases.h"
@@ -30,6 +31,9 @@ static int guarded_step(dc_goal_fiber *fiber,uint64_t send,uint64_t *out,unsigne
   canary[0]==0x11223344 && canary[1]==0x55667788 && canary[2]==0x99aabbcc && canary[3]==0xddeeff00;
  return result;
 }
+int dc_runtime_fiber_checked_step(dc_goal_fiber *fiber,uint64_t send,uint64_t *out,unsigned *intact){
+ return guarded_step(fiber,send,out,intact);
+}
 /* Alternate root depths so a previous step's stack anchor cannot be reused. */
 __attribute__((noinline)) static int deep_step(dc_goal_fiber *fiber,uint64_t send,uint64_t *out,unsigned *intact){
  volatile uint32_t pad[128];unsigned i;int event;
@@ -53,6 +57,7 @@ static uint64_t native_body(void){
   if(native_action==3)native_rejected=dc_goal_fiber_step(fiber,0,&ignored);
   if(native_action==4)native_rejected=(unsigned)dc_goal_fiber_yield(NULL,0);
   if(native_action==5)native_rejected=dc_goal_activate_process(fiber->runtime,0,0,0,0,0,0);
+  if(native_action==6)native_rejected=(unsigned)dc_goal_fiber_init_words(fiber,fiber->runtime,fiber->process,fiber->reservation,fiber->thread,fiber->stack_base,fiber->stack_bytes,fiber->entry,9,(const uint64_t *)(uintptr_t)1);
   return 0x12345678;
  }
  before_fpul=0x55aa33ccu^fiber->process;
@@ -203,7 +208,7 @@ uint32_t dc_runtime_fiber_cases(dc_goal_runtime *rt,dc_runtime_check check,void 
   dc_goal_clear_process_context(rt);
  }
  /* Active metadata mutation/reentry cannot abandon the fresh root anchor. */
- for(native_action=1;native_action<=5;++native_action){
+ for(native_action=1;native_action<=6;++native_action){
   CHECK(dc_goal_fiber_init(&fibers[0],rt,owners[0],12400,threads[0],base,16384,native_entry),1,"fresh active-operation rejection context");
   CHECK(dc_goal_bind_process_context(rt,owners[0],12400),1,"active-operation owner bound");
   native_rejected=99;value=0x1122334455667788ull;

@@ -189,3 +189,8 @@ See [COOPERATIVE_FIBERS.md](COOPERATIVE_FIBERS.md). (AI-assisted).
 
 Unchanged original process.activate now assigns a PID, initializes its main CPU thread and attaches a fresh base process to an empty tree on native SH-4. Read-only preflight rejects unsupported/stale state before body writes; original mem-set32!, CPU construction and change-parent remain the executed dependencies. Grok audited the original contract and reviewed the wrapper; Codex independently verifies 331 new native checks. Processes become ready without running game code. Scheduler/argument/cleanup integration, GC, unwinding and gameplay remain unfinished. (AI-assisted)
 See [PROCESS_ACTIVATION.md](PROCESS_ACTIVATION.md). (AI-assisted).
+
+## Completed: Explicit scalar startup arguments across native yields
+
+Native fibers now copy and deliver zero through eight explicit 64-bit scalar arguments while preserving the zero-argument API. Six/eight-argument GOAL routines survive nested yields, overwritten input arrays and a destroyed shared working stack, and call unchanged original remove-exit under explicit process binding. Grok supplied the isolated 400-byte SH-4 C adapter; Codex independently verifies 527 new native checks plus 93 lifecycle and 438 C ABI host checks. Original set-to-run/scheduling/cleanup, GC, unwinding and gameplay remain unfinished. (AI-assisted)
+See [SCALAR_FIBER_ARGUMENTS.md](SCALAR_FIBER_ARGUMENTS.md). (AI-assisted).

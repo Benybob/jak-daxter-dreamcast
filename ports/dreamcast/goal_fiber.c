@@ -2,6 +2,7 @@
  * Native continuation PCs are a closed set of platform shim labels. This is not
  * original scheduler integration or general exception/failure unwinding. */
 #include "goal_fiber.h"
+#include "goal_scalar_call.h"
 #include "fiber_bounds.h"
 #ifdef __DREAMCAST__
 #include "goal_bridge.h"
@@ -52,8 +53,9 @@ static int view_ok(const dc_goal_fiber *f) {
 void dc_goal_fiber_bootstrap(void) __attribute__((noreturn));
 void dc_goal_fiber_bootstrap(void) {
  dc_goal_fiber *f=current;uint64_t value;struct dc_goal_native_regs terminal;
- if(!f || f->magic!=FIBER_MAGIC || f->phase!=DC_FIBER_RUNNING || !root_ok(f))abort();
- value=((uint64_t(*)(void))(uintptr_t)f->entry)();
+ if(!f || f->magic!=FIBER_MAGIC || f->phase!=DC_FIBER_RUNNING || !root_ok(f) || f->argument_count>8)abort();
+ value=0;
+ if(!dc_goal_scalar_call(f->entry,f->argument_count,f->arguments,&value))bad(f->runtime);
  f->value=value;f->phase=f->runtime->error==DC_GOAL_OK?DC_FIBER_DONE:DC_FIBER_FAULT;
  if(!root_ok(f) || !dc_goal_native_regs_snapshot(&terminal) ||
     !dc_fiber_leave_push_ok(f->stack_base,f->stack_bytes,terminal.sp))abort();
@@ -62,14 +64,19 @@ void dc_goal_fiber_bootstrap(void) {
  abort();
 }
 #endif
-int dc_goal_fiber_init(dc_goal_fiber *f,dc_goal_runtime *rt,uint32_t process,uint32_t reservation,
-                       uint32_t thread,uint32_t stack_base,uint32_t stack_bytes,uint32_t entry) {
+int dc_goal_fiber_init_words(dc_goal_fiber *f,dc_goal_runtime *rt,uint32_t process,uint32_t reservation,
+                             uint32_t thread,uint32_t stack_base,uint32_t stack_bytes,uint32_t entry,
+                             unsigned argument_count,const uint64_t *arguments) {
  dc_goal_code_entry_info code;
+ uint64_t copied[8]={0};unsigned i;
  if(current || !f)return bad(rt);
  /* Safe owned metadata is invalidated on an inactive failed rebind, including
   * a null runtime. Reject aliases before touching another live object. */
  if(rt && (overlap(address(f),sizeof *f,address(rt),sizeof *rt) ||
     (rt->memory && overlap(address(f),sizeof *f,address(rt->memory),rt->capacity))))return bad(rt);
+ if(argument_count>8 || (argument_count && !arguments)) {memset(f,0,sizeof *f);return bad(rt);}
+ /* An explicit inactive rebind may use the old owned vector as input. */
+ if(rt && rt->memory)for(i=0;i<argument_count;++i)copied[i]=arguments[i];
  memset(f,0,sizeof *f);
  if(!rt || !rt->memory)return bad(rt);
 #ifdef __DREAMCAST__
@@ -81,11 +88,16 @@ int dc_goal_fiber_init(dc_goal_fiber *f,dc_goal_runtime *rt,uint32_t process,uin
  if(!dc_goal_thread_stack_open(&f->image,rt,process,reservation,thread,stack_base,stack_bytes))return 0;
  f->runtime=rt;f->process=process;f->reservation=reservation;f->thread=thread;
  f->stack_base=stack_base;f->stack_bytes=stack_bytes;f->entry=entry;
+ f->argument_count=argument_count;memcpy(f->arguments,copied,sizeof copied);
  f->native_thread.sp=stack_base+stack_bytes;
 #ifdef __DREAMCAST__
  f->native_thread.pr=PC(dc_goal_context_boot_raw);
 #endif
  f->magic=FIBER_MAGIC;f->phase=DC_FIBER_NEW;rt->error=DC_GOAL_OK;return 1;
+}
+int dc_goal_fiber_init(dc_goal_fiber *f,dc_goal_runtime *rt,uint32_t process,uint32_t reservation,
+                       uint32_t thread,uint32_t stack_base,uint32_t stack_bytes,uint32_t entry) {
+ return dc_goal_fiber_init_words(f,rt,process,reservation,thread,stack_base,stack_bytes,entry,0,NULL);
 }
 int dc_goal_fiber_clear(dc_goal_fiber *f) {
  if(!f)return 0;
@@ -101,6 +113,7 @@ int dc_goal_fiber_step(dc_goal_fiber *f,uint64_t resume_value,uint64_t *out) {
  if(current || !out || (f->phase!=DC_FIBER_NEW && f->phase!=DC_FIBER_SUSPENDED))return bad(rt);
  if(!storage_ok(rt,f,sizeof *f) || !storage_ok(rt,out,sizeof *out) ||
     overlap(address(out),sizeof *out,address(f),sizeof *f))return bad(rt);
+ if(f->argument_count>8)return fault(f,DC_GOAL_BAD_ARGUMENT);
  if(f->stack_bytes<4096 || (f->stack_base&15u) || (f->stack_bytes&15u) ||
     f->stack_bytes>UINT32_MAX-f->stack_base)return fault(f,DC_GOAL_BAD_ARGUMENT);
  working=dc_goal_resolve(rt,f->stack_base,f->stack_bytes);
