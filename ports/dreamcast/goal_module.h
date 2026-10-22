@@ -26,6 +26,12 @@ typedef void (*dc_goal_cache_sync)(uint32_t allocation,uint32_t bytes,void *cont
 typedef struct {
   uint32_t functions,code_bytes,arena_bytes,temporary_bytes,data_objects,data_bytes;
 } dc_goal_module_result;
+typedef struct { uint32_t entry,bytes,symbol; } dc_goal_code_entry_info;
+/* Read-only provenance query for an EXACT current export entry, not an
+ * interior continuation or code-integrity/security check. Runtime/code/records
+ * must be pinned and quiescent; out is separate caller-owned C storage.
+ * Clears out on failure. Successful lookup never executes the function. */
+int dc_goal_code_entry(dc_goal_runtime *rt,uint32_t entry,dc_goal_code_entry_info *out);
 int dc_goal_load_module(dc_goal_runtime *rt,const dc_goal_code_export *functions,uint32_t count,
                          dc_goal_cache_sync sync,void *context,dc_goal_module_result *result);
 int dc_goal_load_module_data(dc_goal_runtime *rt,const dc_goal_code_export *functions,uint32_t count,

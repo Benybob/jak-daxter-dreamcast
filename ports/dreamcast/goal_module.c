@@ -8,6 +8,44 @@
 #include <string.h>
 
 enum import_kind { IMPORT_CELL,IMPORT_POINTER,IMPORT_FUNCTION,IMPORT_TYPE,IMPORT_DATA };
+typedef struct { uint32_t entry,bytes,symbol,next; } code_record;
+typedef char code_record_size[sizeof(code_record)==16?1:-1];
+static int code_error(dc_goal_runtime *rt,enum dc_goal_error error) {
+  if(rt) rt->error=error;
+  return 0;
+}
+int dc_goal_code_entry(dc_goal_runtime *rt,uint32_t entry,dc_goal_code_entry_info *out) {
+  uint32_t at,i,previous_entry=UINT32_MAX;
+  code_record found={0,0,0,0};
+  if(out) memset(out,0,sizeof *out);
+  if(!rt || !rt->memory || !out) return code_error(rt,DC_GOAL_BAD_ARGUMENT);
+  if(!entry || entry==rt->s7 || (entry&3u)) return code_error(rt,DC_GOAL_BAD_FUNCTION);
+  if(rt->used>rt->capacity || rt->code_registry_count>rt->used/sizeof(code_record))
+    return code_error(rt,DC_GOAL_BAD_MODULE);
+  at=rt->code_registry_head;
+  for(i=0;i<rt->code_registry_count;++i) {
+    code_record record;
+    const void *p;
+    if(!at || (at&15u) || !(p=dc_goal_resolve(rt,at,sizeof record)))
+      return code_error(rt,DC_GOAL_BAD_MODULE);
+    memcpy(&record,p,sizeof record);
+    if(record.entry<4u || (record.entry&3u) || record.bytes<2u ||
+       (record.bytes&1u) || record.bytes>UINT32_MAX-4u || record.entry>=previous_entry || record.entry>at ||
+       record.bytes>at-record.entry || (record.next && record.next>=at) ||
+       !dc_goal_resolve(rt,record.entry-4u,record.bytes+4u) ||
+       dc_goal_type_of(rt,record.symbol)!=rt->symbol_type)
+      return code_error(rt,DC_GOAL_BAD_MODULE);
+    if(record.entry==entry) found=record;
+    previous_entry=record.entry;
+    at=record.next;
+  }
+  if(at) return code_error(rt,DC_GOAL_BAD_MODULE);
+  if(!found.entry || dc_goal_type_of(rt,entry)!=rt->function_type ||
+     dc_goal_symbol_value(rt,found.symbol)!=entry)
+    return code_error(rt,DC_GOAL_BAD_FUNCTION);
+  out->entry=found.entry;out->bytes=found.bytes;out->symbol=found.symbol;
+  rt->error=DC_GOAL_OK;return 1;
+}
 static const char *import_name(const char *symbol,enum import_kind *kind) {
   static const char *prefixes[]={"cell:","pointer:","function:","type:","data:"};
   unsigned i;
@@ -96,6 +134,10 @@ int dc_goal_load_module_data(dc_goal_runtime *rt,const dc_goal_code_export *func
       dc_goal_type_of(rt,rt->function_type)!=rt->type_type) {
     rt->error=DC_GOAL_BAD_TYPE; return 0;
   }
+  if(rt->code_registry_count>rt->used/sizeof(code_record) ||
+     (!rt->code_registry_head)!=(rt->code_registry_count==0)) {
+    rt->error=DC_GOAL_BAD_MODULE;return 0;
+  }
   saved=*rt;
   snapshot=malloc(DC_GOAL_SYMBOL_BYTES+data_count*4u);
   if (!snapshot) { rt->error=DC_GOAL_OUT_OF_MEMORY; return 0; }
@@ -149,6 +191,19 @@ int dc_goal_load_module_data(dc_goal_runtime *rt,const dc_goal_code_export *func
     uint32_t function=dc_goal_symbol_value(rt,dc_goal_find(rt,functions[i].name));
     sync(function-4u,functions[i].bytes+4u,context);
   }
+  /* Publish provenance only after relocation/cache work. These append-only
+   * records share the allocator transaction: saved=*rt restores head/count and
+   * used on any failure, with no older record modified. */
+  for(i=0;i<count;++i) {
+    code_record record;
+    uint32_t allocation=dc_goal_alloc(rt,sizeof record);
+    if(!allocation) goto rollback;
+    record.symbol=dc_goal_find(rt,functions[i].name);
+    record.entry=dc_goal_symbol_value(rt,record.symbol);
+    record.bytes=functions[i].bytes;record.next=rt->code_registry_head;
+    memcpy(dc_goal_resolve(rt,allocation,sizeof record),&record,sizeof record);
+    rt->code_registry_head=allocation;++rt->code_registry_count;
+  }
   result->functions=count; result->code_bytes=total_code;
   result->arena_bytes=rt->used-saved.used; result->temporary_bytes=DC_GOAL_SYMBOL_BYTES+data_count*4u;
   result->data_objects=data_count; result->data_bytes=total_data;
@@ -169,14 +224,14 @@ int dc_goal_load_module(dc_goal_runtime *rt,const dc_goal_code_export *functions
 
 static uint32_t initializer_entry(dc_goal_runtime *rt,const char *name) {
   uint32_t symbol,function;
+  dc_goal_code_entry_info info;
   if (!rt || !name) {
     if (rt) rt->error=DC_GOAL_BAD_ARGUMENT;
     return 0;
   }
   symbol=dc_goal_find(rt,name);
   function=symbol?dc_goal_symbol_value(rt,symbol):0;
-  if (!function || dc_goal_type_of(rt,function)!=rt->function_type ||
-      !dc_goal_resolve(rt,function,2)) {
+  if (!dc_goal_code_entry(rt,function,&info)) {
     rt->error=DC_GOAL_BAD_MODULE; return 0;
   }
   return function;

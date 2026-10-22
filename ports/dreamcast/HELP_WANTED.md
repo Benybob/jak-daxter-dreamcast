@@ -169,3 +169,8 @@ See [CONTEXT_ABI_AUDIT.md](CONTEXT_ABI_AUDIT.md). (AI-assisted).
 
 An 80-byte native SH-4 leaf snapshots selected GPR/FPU/control registers into a separate 60-byte caller buffer, rejecting null or misaligned pointers and unsupported FPSCR modes before stores. Grok supplied and reviewed the isolated proposal; independent Codex assembly/C tests add 3,034 native checks covering 108 bit-pattern, status, guard and rejection scenarios. Two host target-tool tests verify C99/C++11 layout and real C linkage. This is observation only; register restoration, process activation, stack switching and gameplay remain unfinished. (AI-assisted)
 See [REGISTER_SNAPSHOT.md](REGISTER_SNAPSHOT.md). (AI-assisted).
+
+## Completed: Exact loader-installed native function entries
+
+The module loader records exact function entries, byte lengths and owning symbols after cache synchronization. Explicit scalar/void initializers now reject fabricated function objects and stale entries. A bounded read-only query checks strict ordering and current ownership; 271 shared host/SH4 checks cover corruption, duplicates, replacement, no-write queries and partial-registration OOM rollback. Grok's review prompted the duplicate-entry regression. This is initial-entry provenance; continuation validation, restoration, stack switching and gameplay remain unfinished. (AI-assisted)
+See [CODE_ENTRY_PROVENANCE.md](CODE_ENTRY_PROVENANCE.md). (AI-assisted).

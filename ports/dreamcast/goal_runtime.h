@@ -21,6 +21,8 @@ typedef struct {
   uint32_t object_type,structure_type,basic_type,type_type,symbol_type;
   uint32_t string_type,function_type,pair_type,binteger_type;
   uint32_t number_type,integer_type;
+  /* Private plain-arena records of exact loader-installed code entries. */
+  uint32_t code_registry_head,code_registry_count;
   enum dc_goal_error error;
 } dc_goal_runtime;
 
