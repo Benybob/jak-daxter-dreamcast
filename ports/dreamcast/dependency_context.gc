@@ -1,0 +1,7 @@
+;; Compiler context and separately loaded native dependencies (AI-assisted).
+(defconstant DC_CONTEXT_STEP 17)
+(declare-type dc-context-future basic)
+(deftype dc-context-record (basic) ((value int32) (next dc-context-future)) :no-inspect)
+(define dc-context-seed 23)
+(defun dc-context-helper ((arg int)) (+ arg dc-context-seed))
+(none)

@@ -122,10 +122,16 @@ def main():
     for name in ('read','low','high','alias'): command+=['--function','dc-fixed-'+name]
     subprocess.run(command,check=True)
     subprocess.run([sys.executable,str(port/'make_far_fixture.py')],check=True)
+    subprocess.run(compiler+['--source',str(port/'dependency_context.gc'),'--function','dc-context-helper',
+                             '--initializer','dc-context-top-level','--header',str(port/'build/dependency_context.h')],check=True)
+    command=compiler+['--source',str(port/'dependency_fixture.gc'),'--preload',str(port/'dependency_context.gc'),
+                      '--header',str(port/'build/dependency_fixture.h')]
+    for name in ('compute','call','field','forward'): command+=['--function','dc-context-'+name]
+    subprocess.run(command,check=True)
     subprocess.run([sys.executable,str(port/'build_dreamcast.py'),'--target','jak-dc-runtime-goal.elf'],check=True)
     if args.verify:
         subprocess.run([sys.executable,str(port/'verify_backend.py'),str(args.flycast),
                         str(port/'jak-dc-runtime-goal.elf'),'--nm',str(args.nm),'--output',str(args.output),
-                        '--tests','8307','--suite','runtime-goal'],check=True)
+                        '--tests','8336','--suite','runtime-goal'],check=True)
 
 if __name__=='__main__': main()

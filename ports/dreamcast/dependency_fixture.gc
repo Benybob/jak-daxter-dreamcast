@@ -1,0 +1,6 @@
+;; These original frontend forms require the explicitly supplied context (AI-assisted).
+(defun dc-context-compute ((arg int)) (+ arg DC_CONTEXT_STEP))
+(defun dc-context-call ((arg int)) (dc-context-helper (+ arg DC_CONTEXT_STEP)))
+(defun dc-context-field ((record dc-context-record)) (-> record value))
+(defun dc-context-forward ((record dc-context-record)) (the-as basic (-> record next)))
+(none)

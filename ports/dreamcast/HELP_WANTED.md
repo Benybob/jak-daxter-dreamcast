@@ -47,8 +47,9 @@ fixed-register roles and far jumps but is not executed; its desktop memory
 constants still need target configuration. Qmem-copy variants need explicit
 128-bit/vector work. Full gcommon now exports 66 typed functions; its lowering/execution remains
 open. The latest full-export standalone lowering inventory is 57 of 66; this
-does not link or execute the whole module. Gkernel/gstate need earlier globals/types
-and original module context.
+does not link or execute the whole module. Explicit ordered context now exports original gkernel/gstate with 76/7 typed
+functions; 50/3 lower individually under unchanged desktop configuration.
+These modules are not linked/executed on Dreamcast; see SOURCE_CONTEXT.md.
 
 Full-file target setup must also address upstream PC_PORT/BIG_MEMORY settings,
 MMIO, profiler hooks and memory limits. Do not execute desktop-configured
@@ -77,3 +78,8 @@ See [FIXED_REGISTERS.md](FIXED_REGISTERS.md). (AI-assisted).
 
 Relative far jumps now preserve both return halves, native stack, PR and T flags while sharing layout with literal pools. Five GNU assembler checks and 40 new native cases pass. Original valid? now lowers to 8,248 bytes, but is compile-only pending Dreamcast target constants. Standalone full-gcommon lowering reaches 57 of 66; full kernel/gameplay remains unfinished.
 See [FAR_BRANCHES.md](FAR_BRANCHES.md). (AI-assisted).
+
+## Completed: Ordered original kernel source context
+
+Explicit ordered source preloads now supply real macros, constants and types without loading native modules or running startup. Original gcommon/gkernel/gstate export 66/76/7 functions; 57/50/3 lower individually under unchanged desktop configuration. Five host tests and 29 new native checks verify separate module loading, explicit initialization and cross-module bindings. Dreamcast target configuration and full kernel/gameplay remain unfinished.
+See [SOURCE_CONTEXT.md](SOURCE_CONTEXT.md). (AI-assisted).

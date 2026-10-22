@@ -14,6 +14,7 @@ def main():
     parser.add_argument('--frontend',type=Path,required=True)
     parser.add_argument('--source',type=Path,default=port/'goal_fixture.gc')
     parser.add_argument('--function',action='append',default=[])
+    parser.add_argument('--preload',type=Path,action='append',default=[],help='Compile original source context in order before exporting the main module; does not run target startup')
     parser.add_argument('--select-defuns',action='store_true',help='Read selected original forms without compiling their enclosing file')
     parser.add_argument('--header',type=Path,default=port/'build/goal_fixture.h')
     parser.add_argument('--msys',type=Path,default=Path('C:/msys64'))
@@ -33,6 +34,10 @@ def main():
     if os.name=='nt':
         env['PATH']=str(args.msys.resolve()/'mingw64/bin')+os.pathsep+env['PATH']
     command=[str(args.frontend.resolve()),str(port.parents[1]),str(args.source.resolve()),str(intermediate)]
+    dependencies=[p.resolve() for p in args.preload]
+    if len(dependencies)!=len(set(dependencies)) or args.source.resolve() in dependencies:
+        parser.error('duplicate or self-referential preload source')
+    for source in dependencies: command+=['--preload',str(source)]
     if args.select_defuns: command+=args.function
     subprocess.run(command,env=env,check=True)
     command=[sys.executable,str(port/'lower_sh4_ir.py'),str(intermediate),'--header',str(header),'--manifest',str(manifest)]
@@ -48,6 +53,7 @@ def main():
             'initializer':args.initializer,
             'source':str(args.source.resolve()),
             'source_sha256':hashlib.sha256(args.source.read_bytes()).hexdigest(),
+            'preloads':[{'source':str(p),'sha256':hashlib.sha256(p.read_bytes()).hexdigest()} for p in dependencies],
             'frontend_sha256':hashlib.sha256(args.frontend.read_bytes()).hexdigest(),
             'ir_sha256':hashlib.sha256(intermediate.read_bytes()).hexdigest(),
             'header_sha256':hashlib.sha256(header.read_bytes()).hexdigest(),

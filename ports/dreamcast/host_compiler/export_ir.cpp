@@ -26,7 +26,7 @@ static const char* reg_class(RegClass value) {
 using StaticNames=std::unordered_map<const StaticObject*,std::string>;
 static std::string native_value_type(const TypeSpec& spec,const TypeSystem& types) {
   if(spec.base_type()=="none" || spec.base_type()=="function") return spec.print();
-  const auto* type=types.lookup_type(spec);
+  const auto* type=types.lookup_type_allow_partial_def(spec);
   // User-defined reference types are 32-bit addresses in scalar containers.
   // Non-reference aggregates and their 128-bit values stay unsupported.
   if(type->is_reference() && type->get_load_size()==4) return "object";
@@ -193,7 +193,7 @@ static json instruction(IR* ir,const StaticNames& statics,const TypeSystem& type
 
 int main(int argc,char** argv) {
   if(argc<4) {
-    std::cerr<<"Usage: goalc-dreamcast-ir PROJECT_ROOT SOURCE.gc OUTPUT.json [TOP_LEVEL_DEFUN ...]\n";
+    std::cerr<<"Usage: goalc-dreamcast-ir PROJECT_ROOT SOURCE.gc OUTPUT.json [--preload CONTEXT.gc] [TOP_LEVEL_DEFUN ...]\n";
     return 2;
   }
   try {
@@ -201,13 +201,29 @@ int main(int argc,char** argv) {
     if(!file_util::setup_project_path(fs::path(argv[1])))
       throw std::runtime_error("project setup failed");
     Compiler compiler(GameVersion::Jak1,emitter::InstructionSet::X86);
+    std::vector<std::string> preloads,selected_names;
+    std::unordered_set<std::string> context_paths;
+    context_paths.insert(std::filesystem::weakly_canonical(argv[2]).string());
+    for(int i=4;i<argc;++i) {
+      if(std::string(argv[i])=="--preload") {
+        if(++i>=argc) throw std::runtime_error("--preload requires a source path");
+        const auto path=std::filesystem::weakly_canonical(argv[i]);
+        if(!std::filesystem::is_regular_file(path) || !context_paths.insert(path.string()).second)
+          throw std::runtime_error("missing, duplicate or self-referential preload source");
+        preloads.push_back(path.string());
+      } else selected_names.push_back(argv[i]);
+    }
+    for(size_t i=0;i<preloads.size();++i) {
+      const auto context=compiler.get_goos().reader.read_from_file({preloads[i]});
+      compiler.compile_object_file("dreamcast-context-"+std::to_string(i),context,true);
+    }
     auto source=compiler.get_goos().reader.read_from_file({std::filesystem::absolute(argv[2]).string()});
     // Select original reader objects without copying or rewriting game bodies.
     // This is for isolated leaf-function tests; dependencies must be explicit.
-    if(argc>4) {
+    if(!selected_names.empty()) {
       std::unordered_set<std::string> missing;
-      for(int i=4;i<argc;++i)
-        if(!missing.insert(argv[i]).second) throw std::runtime_error("duplicate selected defun");
+      for(const auto& name:selected_names)
+        if(!missing.insert(name).second) throw std::runtime_error("duplicate selected defun");
       std::vector<goos::Object> selected;
       auto forms=source.as_pair()->cdr;
       while(forms.is_pair()) {
@@ -227,6 +243,7 @@ int main(int argc,char** argv) {
     auto* file=compiler.compile_object_file("dreamcast-export",source,true);
     json output={{"format_version",1},{"frontend","OpenGOAL original typed frontend"},
                  {"scope","SH-4 lowering input; unsupported IR remains explicit"},
+                 {"preloads",preloads},
                  {"source",std::filesystem::absolute(argv[2]).string()},{"functions",json::array()}};
     StaticNames statics;
     output["statics"]=json::array();
