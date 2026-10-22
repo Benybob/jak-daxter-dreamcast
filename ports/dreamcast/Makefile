@@ -63,8 +63,10 @@ goal_runtime_dc.o: goal_runtime_dc.c goal_runtime.h goal_layout.h
 goal_module.o: goal_module.h goal_runtime.h goal_layout.h
 goal_bridge.o: goal_bridge.c goal_bridge.h goal_module.h goal_runtime.h goal_layout.h goal_process_heap.h
 goal_process_heap.o: goal_process_heap.c goal_process_heap.h goal_runtime.h goal_layout.h
+goal_thread_stack.o: goal_thread_stack.c goal_thread_stack.h goal_process_heap.h goal_runtime.h
+thread_stack_cases.o: thread_stack_cases.c thread_stack_cases.h goal_thread_stack.h goal_kernel_types.h goal_runtime.h
 process_heap_cases.o: process_heap_cases.c process_heap_cases.h goal_process_heap.h goal_kernel_types.h goal_runtime.h
-runtime_goal_cases.o: runtime_goal_cases.c runtime_cases.h kernel_type_cases.h goal_module.h goal_bridge.h goal_runtime.h goal_layout.h build/runtime_fixture.h build/runtime_identity.h build/runtime_identity_baseline.h build/initializer_fixture.h
+runtime_goal_cases.o: runtime_goal_cases.c runtime_cases.h kernel_type_cases.h thread_stack_cases.h goal_module.h goal_bridge.h goal_runtime.h goal_layout.h build/runtime_fixture.h build/runtime_identity.h build/runtime_identity_baseline.h build/initializer_fixture.h
 	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -I. -c runtime_goal_cases.c -o $@
 
 runtime_goal_main.o: runtime_main.c runtime_cases.h
@@ -133,7 +135,7 @@ runtime_process_query_cases.o: runtime_process_query_cases.c runtime_cases.h goa
 	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -I. -c runtime_process_query_cases.c -o $@
 runtime_call_guard_cases.o: runtime_call_guard_cases.c runtime_cases.h goal_bridge.h goal_runtime.h build/call_guard_fixture.h
 	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -I. -c runtime_call_guard_cases.c -o $@
-runtime_cpu_thread_cases.o: runtime_cpu_thread_cases.c runtime_cases.h goal_bridge.h goal_runtime.h build/original_cpu_thread.h
+runtime_cpu_thread_cases.o: runtime_cpu_thread_cases.c runtime_cases.h goal_bridge.h goal_runtime.h goal_thread_stack.h build/original_cpu_thread.h
 	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -I. -c runtime_cpu_thread_cases.c -o $@
 runtime_division_cases.o: runtime_division_cases.c runtime_cases.h goal_bridge.h goal_module.h goal_runtime.h division_vectors.h build/division_fixture.h build/original_division.h
 	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -I. -c runtime_division_cases.c -o $@
@@ -144,7 +146,7 @@ runtime_native_file_cases.o: runtime_native_file_cases.c runtime_cases.h goal_na
 kernel_types_data.h: generate_kernel_types.py ../../game/kernel/jak1/kscheme.cpp ../../common/symbols.h
 	$(PYTHON) generate_kernel_types.py
 
-jak-dc-runtime-goal.elf: runtime_goal_main.o runtime_goal_cases.o runtime_memory_cases.o runtime_static_cases.o runtime_float_cases.o runtime_bridge_cases.o runtime_quoted_cases.o runtime_void_cases.o runtime_type_cases.o runtime_shift_cases.o runtime_shift_baseline.o runtime_division_cases.o runtime_native_file_cases.o runtime_locals_cases.o runtime_early_cases.o runtime_sort_cases.o runtime_operator_cases.o runtime_fixed_cases.o runtime_far_cases.o runtime_dependency_cases.o runtime_mixed_cases.o runtime_validation_cases.o runtime_kernel_globals_cases.o runtime_enum_cases.o runtime_mixed_stack_cases.o runtime_process_tree_cases.o runtime_process_new_cases.o runtime_process_heap_cases.o runtime_structured_cases.o runtime_process_entry_cases.o runtime_process_query_cases.o runtime_call_guard_cases.o runtime_cpu_thread_cases.o goal_native_file.o type_cases.o kernel_type_cases.o goal_kernel_types.o runtime_cases.o goal_runtime.o goal_runtime_dc.o goal_module.o goal_bridge.o goal_process_heap.o process_heap_cases.o
+jak-dc-runtime-goal.elf: runtime_goal_main.o runtime_goal_cases.o runtime_memory_cases.o runtime_static_cases.o runtime_float_cases.o runtime_bridge_cases.o runtime_quoted_cases.o runtime_void_cases.o runtime_type_cases.o runtime_shift_cases.o runtime_shift_baseline.o runtime_division_cases.o runtime_native_file_cases.o runtime_locals_cases.o runtime_early_cases.o runtime_sort_cases.o runtime_operator_cases.o runtime_fixed_cases.o runtime_far_cases.o runtime_dependency_cases.o runtime_mixed_cases.o runtime_validation_cases.o runtime_kernel_globals_cases.o runtime_enum_cases.o runtime_mixed_stack_cases.o runtime_process_tree_cases.o runtime_process_new_cases.o runtime_process_heap_cases.o runtime_structured_cases.o runtime_process_entry_cases.o runtime_process_query_cases.o runtime_call_guard_cases.o runtime_cpu_thread_cases.o goal_native_file.o type_cases.o kernel_type_cases.o goal_kernel_types.o runtime_cases.o goal_runtime.o goal_runtime_dc.o goal_module.o goal_bridge.o goal_process_heap.o process_heap_cases.o goal_thread_stack.o thread_stack_cases.o
 	kos-cc -o $@ $^
 goal_layout.h: generate_runtime_layout.py ../../common/goal_constants.h ../../common/symbols.h ../../game/kernel/jak1/kscheme.h
 	$(PYTHON) generate_runtime_layout.py
@@ -182,10 +184,13 @@ romdisk/fixture.dcm: make_scene_fixture.py convert_scene.py
 	$(PYTHON) make_scene_fixture.py build/fixture.glb
 	$(PYTHON) convert_scene.py build/fixture.glb $@
 
-host: build/dgo-probe$(HOST_EXE) build/scene-check$(HOST_EXE) build/textured-check$(HOST_EXE) build/runtime-check$(HOST_EXE) build/module-check$(HOST_EXE) build/float-check$(HOST_EXE) build/vq-encode$(HOST_EXE) build/type-check$(HOST_EXE) build/object-check$(HOST_EXE) build/object-load-check$(HOST_EXE) build/kernel-types-check$(HOST_EXE) build/shift-check$(HOST_EXE) build/division-check$(HOST_EXE) build/native-file-check$(HOST_EXE) build/process-heap-check$(HOST_EXE)
+host: build/dgo-probe$(HOST_EXE) build/scene-check$(HOST_EXE) build/textured-check$(HOST_EXE) build/runtime-check$(HOST_EXE) build/module-check$(HOST_EXE) build/float-check$(HOST_EXE) build/vq-encode$(HOST_EXE) build/type-check$(HOST_EXE) build/object-check$(HOST_EXE) build/object-load-check$(HOST_EXE) build/kernel-types-check$(HOST_EXE) build/shift-check$(HOST_EXE) build/division-check$(HOST_EXE) build/native-file-check$(HOST_EXE) build/process-heap-check$(HOST_EXE) build/thread-stack-check$(HOST_EXE)
 build/process-heap-check$(HOST_EXE): host_process_heap.c process_heap_cases.c process_heap_cases.h goal_process_heap.c goal_process_heap.h goal_kernel_types.c goal_runtime.c goal_runtime.h goal_layout.h
 	mkdir -p build
 	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -pedantic host_process_heap.c process_heap_cases.c goal_process_heap.c goal_kernel_types.c goal_runtime.c -o $@
+build/thread-stack-check$(HOST_EXE): host_thread_stack.c thread_stack_cases.c thread_stack_cases.h goal_thread_stack.c goal_thread_stack.h goal_process_heap.c goal_process_heap.h goal_kernel_types.c goal_runtime.c goal_runtime.h goal_layout.h
+	mkdir -p build
+	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -pedantic host_thread_stack.c thread_stack_cases.c goal_thread_stack.c goal_process_heap.c goal_kernel_types.c goal_runtime.c -o $@
 build/native-file-check$(HOST_EXE): host_native_file.c goal_native_file.c goal_native_file.h goal_module.c goal_module.h goal_runtime.c goal_runtime.h goal_layout.h
 	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -pedantic host_native_file.c goal_native_file.c goal_module.c goal_runtime.c -o $@
 build/division-check$(HOST_EXE): host_division.c division_vectors.h
@@ -233,6 +238,7 @@ test: host
 	$(PYTHON) -m unittest discover -s tests -v
 
 clean:
+	rm -f goal_thread_stack.o thread_stack_cases.o
 	rm -f goal_process_heap.o process_heap_cases.o runtime_process_heap_cases.o runtime_structured_cases.o runtime_process_entry_cases.o runtime_process_query_cases.o runtime_call_guard_cases.o runtime_cpu_thread_cases.o
 	rm -f runtime_validation_cases.o runtime_kernel_globals_cases.o runtime_enum_cases.o runtime_mixed_stack_cases.o runtime_process_tree_cases.o runtime_process_new_cases.o
 	rm -f runtime_locals_cases.o runtime_early_cases.o runtime_sort_cases.o runtime_operator_cases.o runtime_fixed_cases.o runtime_far_cases.o runtime_dependency_cases.o runtime_mixed_cases.o

@@ -7,6 +7,7 @@
 #include "goal_bridge.h"
 #include "runtime_cases.h"
 #include "kernel_type_cases.h"
+#include "thread_stack_cases.h"
 #include "build/runtime_fixture.h"
 #include "build/initializer_fixture.h"
 #include "build/runtime_identity.h"
@@ -190,6 +191,7 @@ uint32_t dc_runtime_goal_cases(void *memory,uint32_t capacity,dc_runtime_check c
   code_bytes+=dc_runtime_process_query_cases(&rt,check,context,&id,sync_code);
   code_bytes+=dc_runtime_call_guard_cases(&rt,check,context,&id,sync_code);
   code_bytes+=dc_runtime_cpu_thread_cases(&rt,check,context,&id,sync_code);
+  dc_thread_stack_cases(check,context,&id);
   dc_goal_clear_core_bridges(&rt);
   snprintf(description,description_bytes,"GOAL=%lu init/lists=pass arena=%lu symbols=%lu",
            (unsigned long)code_bytes,(unsigned long)rt.used,(unsigned long)rt.symbol_count);

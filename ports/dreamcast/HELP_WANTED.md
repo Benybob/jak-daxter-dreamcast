@@ -154,3 +154,8 @@ See [CALL_GUARDS.md](CALL_GUARDS.md). (AI-assisted).
 
 An explicit C bootstrap entry validates an owned process reservation and disjoint execution-stack span before calling the unchanged original main CPU-thread constructor. Two host tests and 142 native checks verify original type flags/field offsets, strict heap bounds, no-write failures and three data-only constructions. It does not initialize a runnable PC, activate processes or switch threads. Full platform startup, GC, failure unwinding and gameplay remain unfinished. (AI-assisted)
 See [CPU_THREAD_CONSTRUCTION.md](CPU_THREAD_CONSTRUCTION.md). (AI-assisted).
+
+## Completed: Bounded exact CPU-thread stack images
+
+An explicit C helper validates the original allocated CPU-thread and copies an exact bounded execution-stack suffix to and from its backup payload. Independent byte-pattern, guard, metadata and state tests cover every length from zero through 256 bytes, with additional integration checks on threads built by the unchanged original constructor. Grok supplied an isolated proposal; Codex corrected two defects and independently tested the integrated implementation. This milestone does not save registers or switch threads. Full kernel startup, GC, failure unwinding and gameplay remain unfinished. (AI-assisted)
+See [THREAD_STACK_IMAGES.md](THREAD_STACK_IMAGES.md). (AI-assisted).

@@ -219,6 +219,6 @@ def main():
     if args.verify:
         subprocess.run([sys.executable,str(port/'verify_backend.py'),str(args.flycast),
                         str(port/'jak-dc-runtime-goal.elf'),'--nm',str(args.nm),'--output',str(args.output),
-                        '--tests','12576','--suite','runtime-goal'],check=True)
+                        '--tests','16813','--suite','runtime-goal'],check=True)
 
 if __name__=='__main__': main()

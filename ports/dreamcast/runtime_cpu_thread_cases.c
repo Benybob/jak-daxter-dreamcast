@@ -3,6 +3,7 @@
 #include <string.h>
 #include "goal_bridge.h"
 #include "runtime_cases.h"
+#include "goal_thread_stack.h"
 #include "build/original_cpu_thread.h"
 typedef uint64_t (*one)(uint64_t);
 typedef uint64_t (*two)(uint64_t,uint64_t);
@@ -21,7 +22,8 @@ uint32_t dc_runtime_cpu_thread_cases(dc_goal_runtime *rt,dc_runtime_check check,
   uint32_t type,thread_type=entry(rt,"thread"),process_type=entry(rt,"process"),name=dc_goal_intern(rt,"dc-cpu-owner");
   uint32_t owner,stack,raw,constructed,ctor_symbol,ctor,old_object,old_process,used,expected_cur,i,j;
   const uint32_t backups[]={0,64,256};
-  unsigned char expected[624],stack_before[1024],zero[344]={0};
+  unsigned char expected[624],stack_before[1024],zero[344]={0},thread_header[128];
+  dc_goal_thread_stack image;
   two new_process=(two)(uintptr_t)entry(rt,"dc-new-process");
   one asize;
   dc_goal_type_fields *schema;
@@ -120,6 +122,15 @@ uint32_t dc_runtime_cpu_thread_cases(dc_goal_runtime *rt,dc_runtime_check check,
     for(j=0;j<3;++j) CHECK(word(rt,constructed,36+j*8),0,"known saved-register lows stay zero before explicit context initialization");
     CHECK(dc_goal_construct_main_thread(rt,owner,624,stack,1024,name,backups[i]),0,"second construction cannot silently use temporary-thread branch");
     CHECK(rt->error,DC_GOAL_BAD_ARGUMENT,"repeated construction explicit unsupported-thread error");
+    memcpy(thread_header,dc_goal_resolve(rt,constructed-4,128),128);
+    CHECK(dc_goal_thread_stack_open(&image,rt,owner,624,constructed,stack,1024),1,"real original-constructed CPU thread opens bounded image view");
+    CHECK(dc_goal_thread_stack_backup(&image,stack+1024-(i?17:0)),1,"real constructor integrates exact image depth including zero/odd bytes");
+    CHECK(image.image_bytes,i?17:0,"native original thread image depth is exact");
+    CHECK(memcmp(thread_header,dc_goal_resolve(rt,constructed-4,128),128),0,"native backup preserves original CPU header/register block");
+    memset(dc_goal_resolve(rt,stack+1024-(i?17:0),i?17:0),0x3c,i?17:0);
+    CHECK(dc_goal_thread_stack_restore(&image),1,"real original thread image restores without executing thread");
+    CHECK(memcmp(stack_before,dc_goal_resolve(rt,stack,1024),1024),0,"real image restores exact execution data and preserves prefix");
+    CHECK(memcmp(thread_header,dc_goal_resolve(rt,constructed-4,128),128),0,"native restore preserves original PC/SP/registers/hooks");
   }
   CHECK(dc_goal_set_method(rt,rt->object_type,0,old_object),1,"object constructor binding restored");
   CHECK(dc_goal_set_method(rt,process_type,0,old_process),1,"process constructor binding restored");

@@ -27,8 +27,8 @@ Discuss scope on **this fork**, and keep changes small enough to review.
 
 | Area | Locally verified scope |
 | --- | --- |
-| Host | 186 tests pass with the complete local SDK/oracle setup |
-| Native runtime | 12,576 checks in Flycast, stock 16 MiB RAM |
+| Host | 187 tests pass with the complete local SDK/oracle setup |
+| Native runtime | 16,813 checks in Flycast, stock 16 MiB RAM |
 | Original data | 182 native checks; all 668 V4 data objects across 36 local archives validate |
 | Numeric regression | 39 native checks |
 | GOAL backend | Original typed frontend to native SH-4; scalar calls, classes/methods, void startup, private data, 64-bit shifts and 32-bit division |
@@ -52,16 +52,16 @@ the local checkpoint, not a GitHub Actions run.
 
 ## Latest completed contributor task
 
-An explicit C bootstrap entry validates an owned process reservation and disjoint execution-stack span before calling the unchanged original main CPU-thread constructor. Two host tests and 142 native checks verify original type flags/field offsets, strict heap bounds, no-write failures and three data-only constructions. It does not initialize a runnable PC, activate processes or switch threads. Full platform startup, GC, failure unwinding and gameplay remain unfinished. (AI-assisted)
+An explicit C helper validates the original allocated CPU-thread and copies an exact bounded execution-stack suffix to and from its backup payload. Independent byte-pattern, guard, metadata and state tests cover every length from zero through 256 bytes, with additional integration checks on threads built by the unchanged original constructor. Grok supplied an isolated proposal; Codex corrected two defects and independently tested the integrated implementation. This milestone does not save registers or switch threads. Full kernel startup, GC, failure unwinding and gameplay remain unfinished. (AI-assisted)
 
-See [CPU_THREAD_CONSTRUCTION.md](ports/dreamcast/CPU_THREAD_CONSTRUCTION.md). Full kernel/gameplay remains unfinished.
+See [THREAD_STACK_IMAGES.md](ports/dreamcast/THREAD_STACK_IMAGES.md). Full kernel/gameplay remains unfinished.
 
 ## Build and orientation
 
 Source is in `ports/dreamcast/`. Follow [BUILDING.md](ports/dreamcast/BUILDING.md).
 The verified baseline is OpenGOAL `6076aab5a95955443a9e1ed8f72a25bc0e2fcf9d`;
 the latest locally verified port checkpoint is
-`e79283948e9e27ab24268acbd487a031e21d0a03`.
+`09c0bfd705cee1b485b7db063a3d83581b54845b`.
 
 No ISO, BIOS, extracted textures/models, converted game scenes or ELF binaries
 embedding game assets are uploaded. Use assets extracted locally from your own
