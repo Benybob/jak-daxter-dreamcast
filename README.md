@@ -52,16 +52,16 @@ the local checkpoint, not a GitHub Actions run.
 
 ## Latest completed contributor task
 
-An explicit C helper validates the original allocated CPU-thread and copies an exact bounded execution-stack suffix to and from its backup payload. Independent byte-pattern, guard, metadata and state tests cover every length from zero through 256 bytes, with additional integration checks on threads built by the unchanged original constructor. Grok supplied an isolated proposal; Codex corrected two defects and independently tested the integrated implementation. This milestone does not save registers or switch threads. Full kernel startup, GC, failure unwinding and gameplay remain unfinished. (AI-assisted)
+A reproducible compile-only audit checks 24 register-preservation observations and installed SDK context offsets under the current GCC/KOS flags. It establishes the four-byte default ABI stack boundary and documents why a full KOS interrupt context cannot be placed in the original CPU-thread register area. Runtime source/binaries are unchanged; existing host/Flycast totals are preserved verification, not new execution tests. Actual saved-state roundtrips, thread switching and gameplay remain unfinished. (AI-assisted)
 
-See [THREAD_STACK_IMAGES.md](ports/dreamcast/THREAD_STACK_IMAGES.md). Full kernel/gameplay remains unfinished.
+See [CONTEXT_ABI_AUDIT.md](ports/dreamcast/CONTEXT_ABI_AUDIT.md). Full kernel/gameplay remains unfinished.
 
 ## Build and orientation
 
 Source is in `ports/dreamcast/`. Follow [BUILDING.md](ports/dreamcast/BUILDING.md).
 The verified baseline is OpenGOAL `6076aab5a95955443a9e1ed8f72a25bc0e2fcf9d`;
 the latest locally verified port checkpoint is
-`09c0bfd705cee1b485b7db063a3d83581b54845b`.
+`2374bc2af08a2fa4cec1e8c3186d875243d49678`.
 
 No ISO, BIOS, extracted textures/models, converted game scenes or ELF binaries
 embedding game assets are uploaded. Use assets extracted locally from your own

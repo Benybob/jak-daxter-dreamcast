@@ -159,3 +159,8 @@ See [CPU_THREAD_CONSTRUCTION.md](CPU_THREAD_CONSTRUCTION.md). (AI-assisted).
 
 An explicit C helper validates the original allocated CPU-thread and copies an exact bounded execution-stack suffix to and from its backup payload. Independent byte-pattern, guard, metadata and state tests cover every length from zero through 256 bytes, with additional integration checks on threads built by the unchanged original constructor. Grok supplied an isolated proposal; Codex corrected two defects and independently tested the integrated implementation. This milestone does not save registers or switch threads. Full kernel startup, GC, failure unwinding and gameplay remain unfinished. (AI-assisted)
 See [THREAD_STACK_IMAGES.md](THREAD_STACK_IMAGES.md). (AI-assisted).
+
+## Completed: Measured SH-4 compiler and context ABI audit
+
+A reproducible compile-only audit checks 24 register-preservation observations and installed SDK context offsets under the current GCC/KOS flags. It establishes the four-byte default ABI stack boundary and documents why a full KOS interrupt context cannot be placed in the original CPU-thread register area. Runtime source/binaries are unchanged; existing host/Flycast totals are preserved verification, not new execution tests. Actual saved-state roundtrips, thread switching and gameplay remain unfinished. (AI-assisted)
+See [CONTEXT_ABI_AUDIT.md](CONTEXT_ABI_AUDIT.md). (AI-assisted).
