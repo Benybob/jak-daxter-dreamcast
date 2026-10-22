@@ -68,3 +68,26 @@ class FrontendDependencyTest(unittest.TestCase):
         report=json.loads(header.with_suffix('.manifest.json').read_text())
         self.assertEqual(report['preloads'],[{'source':str(self.context.resolve()),
                             'sha256':hashlib.sha256(self.context.read_bytes()).hexdigest()}])
+
+    def test_selected_source_can_preload_its_context_but_full_self_compile_still_rejects(self):
+        extra=['--preload',str(self.context),'--preload',str(self.source)]
+        result=self.run_frontend(self.source,extra+['dc-context-forward'])
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        doc=json.loads(self.output.read_text())
+        self.assertTrue(doc['selected_source_preloaded'])
+        self.assertEqual([f['name'] for f in doc['functions'] if not f['top_level']],['dc-context-forward'])
+        self.assertNotEqual(self.run_frontend(self.source,extra).returncode,0)
+        self.assertNotEqual(self.run_frontend(self.source,extra+['--preload',str(self.source),'dc-context-forward']).returncode,0)
+
+    def test_selected_source_preload_manifest_records_explicit_context_and_selection(self):
+        header=self.output.with_suffix('.h')
+        result=subprocess.run([sys.executable,str(ROOT/'compile_goal_subset.py'),'--frontend',str(FRONTEND),
+            '--source',str(self.source),'--preload',str(self.context),'--preload',str(self.source),
+            '--select-defuns','--function','dc-context-forward','--header',str(header),'--runtime'],
+            env=self.env,capture_output=True,text=True)
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        report=json.loads(header.with_suffix('.manifest.json').read_text())
+        self.assertTrue(report['selected_source_preloaded'])
+        self.assertTrue(report['selected_original_defuns'])
+        self.assertEqual([p['sha256'] for p in report['preloads']],
+                         [hashlib.sha256(p.read_bytes()).hexdigest() for p in (self.context,self.source)])

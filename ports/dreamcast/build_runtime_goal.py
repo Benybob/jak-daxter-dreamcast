@@ -132,10 +132,18 @@ def main():
     for name in ('left','right','f0','f1','sum','floats','call','float-call','eight-last','eight-int'):
         command+=['--function','dc-mixed-'+name]
     subprocess.run(command,check=True)
+    validation=compiler+['--preload',str(port.parents[1]/'goal_src/jak1/kernel/gcommon.gc'),
+                         '--preload',str(port/'scalar_validation_context.gc')]
+    subprocess.run(validation+['--source',str(port.parents[1]/'goal_src/jak1/kernel/gcommon.gc'),
+        '--select-defuns','--function','valid?','--header',str(port/'build/original_valid.h')],check=True)
+    command=validation+['--source',str(port/'scalar_validation_fixture.gc'),
+                         '--header',str(port/'build/scalar_validation_fixture.h')]
+    for name in ('start','end','ram-end'): command+=['--function','dc-validation-'+name]
+    subprocess.run(command,check=True)
     subprocess.run([sys.executable,str(port/'build_dreamcast.py'),'--target','jak-dc-runtime-goal.elf'],check=True)
     if args.verify:
         subprocess.run([sys.executable,str(port/'verify_backend.py'),str(args.flycast),
                         str(port/'jak-dc-runtime-goal.elf'),'--nm',str(args.nm),'--output',str(args.output),
-                        '--tests','8399','--suite','runtime-goal'],check=True)
+                        '--tests','8476','--suite','runtime-goal'],check=True)
 
 if __name__=='__main__': main()

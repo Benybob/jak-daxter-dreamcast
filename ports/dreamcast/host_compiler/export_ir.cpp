@@ -203,7 +203,7 @@ int main(int argc,char** argv) {
     Compiler compiler(GameVersion::Jak1,emitter::InstructionSet::X86);
     std::vector<std::string> preloads,selected_names;
     std::unordered_set<std::string> context_paths;
-    context_paths.insert(std::filesystem::weakly_canonical(argv[2]).string());
+    const auto main_path=std::filesystem::weakly_canonical(argv[2]).string();
     for(int i=4;i<argc;++i) {
       if(std::string(argv[i])=="--preload") {
         if(++i>=argc) throw std::runtime_error("--preload requires a source path");
@@ -213,6 +213,9 @@ int main(int argc,char** argv) {
         preloads.push_back(path.string());
       } else selected_names.push_back(argv[i]);
     }
+    const bool selected_source_preloaded=context_paths.count(main_path)!=0;
+    if(selected_source_preloaded && selected_names.empty())
+      throw std::runtime_error("self-referential preload requires selected top-level defuns");
     for(size_t i=0;i<preloads.size();++i) {
       const auto context=compiler.get_goos().reader.read_from_file({preloads[i]});
       compiler.compile_object_file("dreamcast-context-"+std::to_string(i),context,true);
@@ -243,7 +246,7 @@ int main(int argc,char** argv) {
     auto* file=compiler.compile_object_file("dreamcast-export",source,true);
     json output={{"format_version",1},{"frontend","OpenGOAL original typed frontend"},
                  {"scope","SH-4 lowering input; unsupported IR remains explicit"},
-                 {"preloads",preloads},
+                 {"preloads",preloads},{"selected_source_preloaded",selected_source_preloaded},
                  {"source",std::filesystem::absolute(argv[2]).string()},{"functions",json::array()}};
     StaticNames statics;
     output["statics"]=json::array();

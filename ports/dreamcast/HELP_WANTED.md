@@ -6,7 +6,7 @@ Most compiler/runtime work uses synthetic fixtures and needs no original assets.
 
 | Task | Useful experience | Concrete acceptance target |
 | --- | --- | --- |
-| Dreamcast compiler target configuration | GOAL, platform runtime | Explicit stock-RAM limits, profiler/PC branches and MMIO handling; verify original bodies without executing desktop startup |
+| Remaining full-kernel target configuration | GOAL, platform runtime | Scalar validator now uses explicit stock-RAM/table limits; audit remaining profiler/PC branches, scratchpad and MMIO before original startup |
 | Vector and remaining mixed ABI | SH-4 GCC, GOAL | Register-only fixed mixed signatures now pass; independently verify mixed stack, variadic and vector boundaries before enabling them |
 | Kernel sequencing and heaps | GOAL, runtime systems | Explicit target configuration and original startup/module dependencies execute within measured stock RAM bounds |
 | PowerVR scene pipeline | KOS, PVR, graphics | Measured culling/material deduplication and bounded residency on synthetic fixtures before expanding game scenes |
@@ -42,9 +42,9 @@ The initial inventory (before the named-local fix) found that of 47 isolated
 original gcommon defuns, 31 lowered, six failed lowering and ten failed
 frontend export. Some failures are missing dependencies caused by isolation.
 These are compile-only results, not link/execution or full-file coverage.
-Original sort now executes on SH-4. Original valid? lowers with explicit
-fixed-register roles and far jumps but is not executed; its desktop memory
-constants still need target configuration. Qmem-copy variants need explicit
+Original sort now executes on SH-4. Original valid? now executes with an explicit Dreamcast scalar memory context;
+its original body is unchanged. Full-kernel target configuration remains open;
+see SCALAR_VALIDATION.md. Qmem-copy variants need explicit
 128-bit/vector work. Full gcommon now exports 66 typed functions; its lowering/execution remains
 open. The latest full-export standalone lowering inventory is 57 of 66; this
 does not link or execute the whole module. Explicit ordered context now exports original gkernel/gstate with 76/7 typed
@@ -88,3 +88,8 @@ See [SOURCE_CONTEXT.md](SOURCE_CONTEXT.md). (AI-assisted).
 
 Fixed mixed integer/float signatures now use independent GCC register streams, with at most two integer/tagged arguments and eight total arguments. An 88-probe GCC oracle, three frontend tests and 63 new native cases pass. Compact integer/float leaves remain six/four bytes. Mixed stack/variadic and vector ABIs remain blocked. Original kernel compilation coverage is unchanged; full kernel/gameplay and target configuration remain unfinished.
 See [MIXED_ABI.md](MIXED_ABI.md). (AI-assisted).
+
+## Completed: Explicit Dreamcast scalar memory context and original validator
+
+An explicit, hash-pinned scalar context gives the unchanged original valid? Dreamcast P0 RAM and native symbol-table bounds. Four host tests and 77 new native checks cover selection/provenance, boundary/tag/type checks and both previously excluded hash-bucket ranges. Full-file PC/profiler/MMIO configuration, original kernel startup, process heaps and gameplay remain unfinished.
+See [SCALAR_VALIDATION.md](SCALAR_VALIDATION.md). (AI-assisted).

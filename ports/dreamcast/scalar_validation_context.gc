@@ -1,0 +1,15 @@
+;; Explicit Dreamcast scalar validation context (AI-assisted), ISC.
+;; Preload original gcommon FIRST, then this context, then selected original
+;; valid?. This does not configure or initialize the complete kernel.
+;; Preserve PC_PORT: disabling it exposes PS2 MMIO/assembly paths. No scratchpad,
+;; profiler, process stack, heap or scheduler policy is enabled by this context.
+;; MMU-off cached P0 RAM: [0x0c000000,0x0d000000), stock 16 MiB.
+(defconstant END_OF_MEMORY #x0d000000)
+
+;; goal_layout.h: 16384 slots, 8 bytes/slot plus 8 bytes/slot metadata.
+;; s7 = table + (16384/2)*8 + 4. The original +/-32768 approximation
+;; excludes native hash buckets. Use the entire reserved 262144-byte table.
+(defmacro start-of-symbol-table ()
+  `(rlet ((st :reg r14 :reset-here #t :type uint)) (the uint (- st 65540))))
+(defmacro end-of-symbol-table ()
+  `(rlet ((st :reg r14 :reset-here #t :type uint)) (the uint (+ st 196604))))

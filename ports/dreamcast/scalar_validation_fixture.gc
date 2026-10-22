@@ -1,0 +1,4 @@
+;; Inspect the explicit scalar-validation context (AI-assisted), ISC.
+(defun dc-validation-start () (start-of-symbol-table))
+(defun dc-validation-end () (end-of-symbol-table))
+(defun dc-validation-ram-end () END_OF_MEMORY)

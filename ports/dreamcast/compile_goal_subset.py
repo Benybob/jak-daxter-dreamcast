@@ -35,7 +35,7 @@ def main():
         env['PATH']=str(args.msys.resolve()/'mingw64/bin')+os.pathsep+env['PATH']
     command=[str(args.frontend.resolve()),str(port.parents[1]),str(args.source.resolve()),str(intermediate)]
     dependencies=[p.resolve() for p in args.preload]
-    if len(dependencies)!=len(set(dependencies)) or args.source.resolve() in dependencies:
+    if len(dependencies)!=len(set(dependencies)) or (args.source.resolve() in dependencies and not args.select_defuns):
         parser.error('duplicate or self-referential preload source')
     for source in dependencies: command+=['--preload',str(source)]
     if args.select_defuns: command+=args.function
@@ -58,6 +58,7 @@ def main():
             'ir_sha256':hashlib.sha256(intermediate.read_bytes()).hexdigest(),
             'header_sha256':hashlib.sha256(header.read_bytes()).hexdigest(),
             'selected_original_defuns':args.select_defuns,
+            'selected_source_preloaded':args.source.resolve() in dependencies,
             'functions':json.loads(manifest.read_text())}
     document=json.loads(intermediate.read_text())
     data=module_data(document,{str(i):(b'',f) for i,f in enumerate(report['functions'])})

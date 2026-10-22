@@ -8,8 +8,10 @@ process/type context before native lowering could even be evaluated.
 The typed exporter now accepts repeated `--preload CONTEXT.gc` arguments. It
 compiles those unmodified source objects in order, then exports only the main
 file's functions and static objects. The host wrapper records each dependency
-path and SHA256 in the manifest. Duplicate, missing and self-referential
-preloads reject. The original type system's partial-definition lookup provides
+path and SHA256 in the manifest. Duplicate and missing preloads reject. Self-preloading the main file is allowed
+only with explicit selected top-level defuns; the context compiles first and only
+the selected reader forms export afterward. This is recorded in IR/manifests.
+Full-file self-preloading still rejects. The original type system's partial-definition lookup provides
 the declared reference parent's ABI for forward types; it does not fabricate
 field layouts or accept unknown types.
 

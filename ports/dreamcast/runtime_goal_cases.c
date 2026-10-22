@@ -34,6 +34,7 @@ uint32_t dc_runtime_fixed_cases(dc_goal_runtime *,dc_runtime_check,void *,unsign
 uint32_t dc_runtime_far_cases(dc_goal_runtime *,dc_runtime_check,void *,unsigned *,dc_goal_cache_sync);
 uint32_t dc_runtime_dependency_cases(dc_goal_runtime *,dc_runtime_check,void *,unsigned *,dc_goal_cache_sync);
 uint32_t dc_runtime_mixed_cases(dc_goal_runtime *,dc_runtime_check,void *,unsigned *,dc_goal_cache_sync);
+uint32_t dc_runtime_validation_cases(dc_goal_runtime *,dc_runtime_check,void *,unsigned *,dc_goal_cache_sync);
 static void sync_code(uint32_t allocation,uint32_t bytes,void *context) {
   (void)context;
   dcache_flush_range(allocation,bytes);
@@ -156,6 +157,7 @@ uint32_t dc_runtime_goal_cases(void *memory,uint32_t capacity,dc_runtime_check c
   code_bytes+=dc_runtime_far_cases(&rt,check,context,&id,sync_code);
   code_bytes+=dc_runtime_dependency_cases(&rt,check,context,&id,sync_code);
   code_bytes+=dc_runtime_mixed_cases(&rt,check,context,&id,sync_code);
+  code_bytes+=dc_runtime_validation_cases(&rt,check,context,&id,sync_code);
   dc_goal_clear_core_bridges(&rt);
   snprintf(description,description_bytes,"GOAL=%lu init/lists=pass arena=%lu symbols=%lu",
            (unsigned long)code_bytes,(unsigned long)rt.used,(unsigned long)rt.symbol_count);
