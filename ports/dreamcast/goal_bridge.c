@@ -8,6 +8,68 @@
 #endif
 static dc_goal_runtime *active_runtime;
 static dc_goal_process_heap active_process_heap;
+static dc_goal_process_heap execution_heap;
+static uint32_t execution_context;
+static unsigned char *context_fields(dc_goal_runtime *rt,uint32_t context) {
+  uint32_t type,symbol;
+  dc_goal_type_fields *schema;
+  symbol=dc_goal_find(rt,"kernel-context");
+  type=symbol?dc_goal_symbol_value(rt,symbol):0;
+  if(!context || !type || dc_goal_type_of(rt,type)!=rt->type_type ||
+     dc_goal_type_of(rt,context)!=type) return NULL;
+  schema=dc_goal_resolve(rt,type,sizeof(*schema));
+  if(!schema || schema->allocated_size!=48 || !dc_goal_resolve(rt,context-4,48)) return NULL;
+  return dc_goal_resolve(rt,context,44);
+}
+void dc_goal_clear_process_context(dc_goal_runtime *rt) {
+  unsigned char *fields;
+  uint32_t current;
+  enum dc_goal_error saved;
+  if(!rt || active_runtime!=rt) return;
+  saved=rt->error;
+  if(execution_context && (fields=context_fields(rt,execution_context))) {
+    memcpy(&current,fields+20,4);
+    if(current==execution_heap.process) memcpy(fields+20,&rt->s7,4);
+  }
+  memset(&execution_heap,0,sizeof(execution_heap)); execution_context=0;
+  memset(&active_process_heap,0,sizeof(active_process_heap));
+  rt->error=saved;
+}
+int dc_goal_bind_process_context(dc_goal_runtime *rt,uint32_t process,uint32_t allocation_bytes) {
+  dc_goal_process_heap candidate;
+  unsigned char *fields;
+  uint32_t symbol,context,current;
+  if(!rt || active_runtime!=rt) { if(rt) rt->error=DC_GOAL_BAD_ARGUMENT; return 0; }
+  dc_goal_clear_process_context(rt);
+  if(!dc_goal_process_heap_open(&candidate,rt,process,allocation_bytes)) return 0;
+  symbol=dc_goal_find(rt,"*kernel-context*");
+  context=symbol?dc_goal_symbol_value(rt,symbol):0;
+  fields=context_fields(rt,context);
+  if(!fields) { rt->error=DC_GOAL_BAD_ARGUMENT; return 0; }
+  memcpy(&current,fields+20,4);
+  if(current!=rt->s7) { rt->error=DC_GOAL_BAD_ARGUMENT; return 0; }
+  execution_context=context; execution_heap=candidate; active_process_heap=candidate;
+  memcpy(fields+20,&process,4); rt->error=DC_GOAL_OK; return 1;
+}
+static uint64_t current_process(void) {
+  dc_goal_runtime *rt=active_runtime;
+  dc_goal_process_heap candidate;
+  unsigned char *fields;
+  uint32_t symbol,current=0;
+  if(!rt) return 0;
+  symbol=dc_goal_find(rt,"*kernel-context*");
+  if(!execution_context || execution_heap.runtime!=rt ||
+     active_process_heap.runtime!=rt || active_process_heap.process!=execution_heap.process ||
+     active_process_heap.allocation_bytes!=execution_heap.allocation_bytes ||
+     !symbol || dc_goal_symbol_value(rt,symbol)!=execution_context ||
+     !dc_goal_process_heap_open(&candidate,rt,execution_heap.process,execution_heap.allocation_bytes) ||
+     !(fields=context_fields(rt,execution_context))) goto invalid;
+  memcpy(&current,fields+20,4);
+  if(current!=execution_heap.process) goto invalid;
+  rt->error=DC_GOAL_OK; return current;
+invalid:
+  dc_goal_clear_process_context(rt); rt->error=DC_GOAL_BAD_ARGUMENT; return 0;
+}
 static uint64_t new_pair(uint64_t heap,uint64_t type,uint64_t car,uint64_t cdr) {
   dc_goal_runtime *rt=active_runtime;
   if (!rt) return 0;
@@ -87,7 +149,7 @@ int dc_goal_install_core_bridges(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_
   return 1;
 }
 void dc_goal_clear_core_bridges(dc_goal_runtime *rt) {
-  if (active_runtime==rt) { memset(&active_process_heap,0,sizeof(active_process_heap)); active_runtime=NULL; }
+  if (active_runtime==rt) { dc_goal_clear_process_context(rt); active_runtime=NULL; }
 }
 int dc_goal_install_type_bridges(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_goal_module_result *result) {
   const unsigned char stub[12]={1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0};
@@ -134,9 +196,19 @@ int dc_goal_bind_process_heap(dc_goal_runtime *rt,uint32_t process,uint32_t allo
     return 0;
   }
   /* Invalid same-runtime binding must not retain a previous allocation target. */
-  memset(&active_process_heap,0,sizeof(active_process_heap));
+  dc_goal_clear_process_context(rt);
   return dc_goal_process_heap_open(&active_process_heap,rt,process,allocation_bytes);
 }
 void dc_goal_clear_process_heap(dc_goal_runtime *rt) {
-  if(active_runtime==rt) memset(&active_process_heap,0,sizeof(active_process_heap));
+  dc_goal_clear_process_context(rt);
+}
+
+int dc_goal_install_process_bridge(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_goal_module_result *result) {
+  unsigned char code[12]={1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0};
+  uint32_t target=(uint32_t)(uintptr_t)current_process;
+  dc_goal_code_export function={"dc-c-current-process",code,12,NULL,0};
+  if(!rt || !result) return 0;
+  if(active_runtime!=rt) { rt->error=DC_GOAL_BAD_ARGUMENT; return 0; }
+  memcpy(code+8,&target,4);
+  return dc_goal_load_module(rt,&function,1,sync,NULL,result);
 }

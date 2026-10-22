@@ -387,8 +387,14 @@ int main(int argc,char** argv) {
       for(const auto& constraint:function->constraints()) {
         if(!constraint.contrain_everywhere) continue;
         const auto name=constraint.desired_register.print(emitter::InstructionSet::X86);
+        bool process_self=false;
+        for(const auto& parameter:fn["implicit_parameters"])
+          if(parameter.at("register")==constraint.ireg.id && parameter.at("name")=="self" &&
+             parameter.at("type")=="process" && parameter.at("kind")=="fixed_entry")
+            process_self=true;
         json binding={{"register",constraint.ireg.id},{"frontend_register",name},
-                      {"role",name=="r14" ? "symbol_table" : "unsupported"}};
+                      {"role",name=="r14" ? "symbol_table" :
+                              (name=="r13" && process_self ? "process_self" : "unsupported")}};
         const auto found=fixed_registers.find(constraint.ireg.id);
         if(found!=fixed_registers.end()) {
           if(found->second!=binding) throw std::runtime_error("conflicting fixed register constraints");

@@ -8,7 +8,7 @@ Most compiler/runtime work uses synthetic fixtures and needs no original assets.
 | --- | --- | --- |
 | Remaining full-kernel target configuration | GOAL, platform runtime | Scalar validator now uses explicit stock-RAM/table limits; audit remaining profiler/PC branches, scratchpad and MMIO before original startup |
 | Remaining variadic and vector ABI | SH-4 GCC, GOAL | Fixed scalar mixed calls through eight arguments now pass, including integer stack spills; independently verify mixed variadic and vector boundaries |
-| Remaining process lifecycle and kernel startup | GOAL, runtime systems | Original context/global definitions, tree/constructors and bounded process allocation execute; implement implicit pp/self, failure unwinding, GC and context/thread startup |
+| Remaining process lifecycle and kernel startup | GOAL, runtime systems | Original context/globals/tree/constructors and guarded zero-argument self entry execute; extend ABI/context support, failure unwinding, GC and thread startup |
 | PowerVR scene pipeline | KOS, PVR, graphics | Measured culling/material deduplication and bounded residency on synthetic fixtures before expanding game scenes |
 | Hardware validation | Dreamcast development | Reproduce asset-free native diagnostics on hardware with toolchain, load method, RAM use and failures documented |
 
@@ -134,3 +134,8 @@ See [PROCESS_HEAPS.md](PROCESS_HEAPS.md). (AI-assisted).
 
 Typed structured static images now preserve original bytes and type/symbol/data/function relocations with strict closed-graph validation. An explicit inclusive global range executes the single unchanged original kernel-context definition, preserving flags/PID/false references while excluding later stack/scratchpad setup. Six host tests and 56 native checks pass. Full kernel startup, implicit pp/self, threads, GC, failure unwinding and gameplay remain unfinished.
 See [STRUCTURED_STATIC.md](STRUCTURED_STATIC.md). (AI-assisted).
+
+## Completed: Guarded original process self entry
+
+The unchanged original remove-exit behavior now executes through an explicit validated process execution context, distinct from allocation-only binding. Missing or stale context exits through the restored native frame before body memory access. The original kernel current-process field is bound and released deliberately; unsupported/resetless/mutable roles still reject. Seven new host tests and 91 native checks pass. Full kernel startup, thread switching, GC, failure unwinding and gameplay remain unfinished. (AI-assisted)
+See [PROCESS_ENTRY.md](PROCESS_ENTRY.md). (AI-assisted).

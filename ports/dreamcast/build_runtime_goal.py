@@ -191,10 +191,12 @@ def main():
     subprocess.run(compiler+process_context+['--source',str(port.parents[1]/'goal_src/jak1/kernel/gkernel.gc'),
         '--from-global','*kernel-context*','--prefix-through-global','*kernel-context*',
         '--initializer','dc-original-context-init','--header',str(port/'build/original_kernel_context.h')],check=True)
+    subprocess.run(compiler+process_context+['--source',str(port.parents[1]/'goal_src/jak1/kernel/gkernel.gc'),
+        '--function','remove-exit','--header',str(port/'build/original_process_entry.h')],check=True)
     subprocess.run([sys.executable,str(port/'build_dreamcast.py'),'--target','jak-dc-runtime-goal.elf'],check=True)
     if args.verify:
         subprocess.run([sys.executable,str(port/'verify_backend.py'),str(args.flycast),
                         str(port/'jak-dc-runtime-goal.elf'),'--nm',str(args.nm),'--output',str(args.output),
-                        '--tests','11757','--suite','runtime-goal'],check=True)
+                        '--tests','11848','--suite','runtime-goal'],check=True)
 
 if __name__=='__main__': main()

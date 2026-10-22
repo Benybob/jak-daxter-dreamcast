@@ -25,4 +25,14 @@ int dc_goal_install_object_bridge(dc_goal_runtime *rt,dc_goal_cache_sync sync,
  * fallback. No implicit pp/self ABI or thread context is installed. */
 int dc_goal_bind_process_heap(dc_goal_runtime *rt,uint32_t process,uint32_t allocation_bytes);
 void dc_goal_clear_process_heap(dc_goal_runtime *rt);
+/* Read-only implicit self entry: explicit, quiescent, unmoved base-process
+ * reservation, and the initialized original *kernel-context* object. Binding
+ * sets its current-process field; clear sets it back to #f if still owned.
+ * Allocation-only rebinding/clearing invalidates execution identity. A failed
+ * getter clears both bindings and returns zero with BAD_ARGUMENT before body
+ * memory access. No scheduler, nested contexts, GC or failure unwinding. */
+int dc_goal_install_process_bridge(dc_goal_runtime *rt,dc_goal_cache_sync sync,
+                                    dc_goal_module_result *result);
+int dc_goal_bind_process_context(dc_goal_runtime *rt,uint32_t process,uint32_t allocation_bytes);
+void dc_goal_clear_process_context(dc_goal_runtime *rt);
 #endif

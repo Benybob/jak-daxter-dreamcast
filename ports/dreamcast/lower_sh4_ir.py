@@ -194,7 +194,12 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
             registers=[dict(r,type=r.get('abi_type',r['type'])) for r in function['registers']],
             parameters=[dict(p,type=p.get('abi_type',p['type'])) for p in function['parameters']])
     if function.get('asm'): raise ValueError('inline/assembly functions unsupported')
-    if function.get('implicit_parameters'): raise ValueError('implicit process/self entry ABI not implemented')
+    implicit=function.get('implicit_parameters',[])
+    if implicit and (not runtime or len(implicit)!=1 or function['parameters'] or
+                     implicit[0].get('kind')!='fixed_entry' or implicit[0].get('name')!='self' or
+                     implicit[0].get('type')!='process' or implicit[0].get('abi_type')!='object' or
+                     function.get('return_type')!='object'):
+        raise ValueError('implicit process/self entry ABI not implemented for this signature')
     value_types=INTEGER_VALUE_TYPES|(TAGGED_VALUE_TYPES if runtime else frozenset())
     void_return=runtime and function.get('return_type')=='none'
     if not void_return and scalar_kind(function.get('return_type'),runtime) not in value_types|{'float'}:
@@ -211,24 +216,38 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
         index=binding['register']
         if index in fixed or index not in registers: raise ValueError('invalid fixed register metadata')
         if not runtime: raise ValueError('fixed runtime register requires native runtime profile')
-        if binding.get('frontend_register')!='r14' or binding.get('role')!='symbol_table':
+        process_self=(binding.get('frontend_register')=='r13' and binding.get('role')=='process_self' and
+                      implicit and implicit[0]['register']==index)
+        if not process_self and (binding.get('frontend_register')!='r14' or binding.get('role')!='symbol_table'):
             raise ValueError('fixed runtime register role not implemented')
-        if registers[index]['class']!='gpr64' or registers[index]['type'] not in ('uint','int','integer'):
+        if process_self:
+            if registers[index]['class']!='gpr64' or registers[index]['type']!='object':
+                raise ValueError('implicit self requires a process reference container')
+        elif registers[index]['class']!='gpr64' or registers[index]['type'] not in ('uint','int','integer'):
             raise ValueError('fixed symbol-table register requires an integer container')
         fixed[index]=binding
+    if implicit and (implicit[0]['register'] not in fixed or
+                     fixed[implicit[0]['register']].get('role')!='process_self'):
+        raise ValueError('implicit self is missing its fixed entry declaration')
     translated=[]
-    for op in function['instructions']:
+    for position,op in enumerate(function['instructions']):
+        if op['kind']=='current_process': raise ValueError('current process must originate from a fixed entry reset')
         if op['kind']=='fixed_register_reset':
             if op['reads'] or len(op['writes'])!=1 or len(op.get('bindings',[]))!=1:
                 raise ValueError('unsupported fixed register reset layout')
             index=op['writes'][0]
             if index not in fixed or op['bindings'][0]!=fixed[index]:
                 raise ValueError('fixed register reset does not match its declaration')
-            op=dict(op,kind='symbol_pointer',symbol='#f')
+            if fixed[index]['role']=='process_self':
+                if position!=0: raise ValueError('implicit self reset must be at function entry')
+                op=dict(op,kind='current_process')
+            else: op=dict(op,kind='symbol_pointer',symbol='#f')
         elif set(op['writes'])&fixed.keys():
-            raise ValueError('fixed symbol-table register mutation is unsupported')
+            raise ValueError('fixed runtime register mutation is unsupported')
         translated.append(op)
     function=dict(function,instructions=translated)
+    if implicit and (not translated or translated[0]['kind']!='current_process'):
+        raise ValueError('implicit self requires an explicit entry reset')
     validate_definitions(function,set(registers))
     module=module or {}
     statics=statics or {}
@@ -373,6 +392,12 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
         kind=op['kind']; reads=op['reads']; writes=op['writes']
         try:
             if kind=='nop': continue
+            if kind=='current_process':
+                e.literal(0,('symbol','function:dc-c-current-process'))
+                e.word(0x400b); e.nop()
+                e.rr(0x2008,0,0)  # TST R0,R0: missing context must exit before body memory access.
+                e.branch('bt','process_entry_failure')
+                store64(writes[0]); continue
             if kind=='symbol_pointer':
                 # A while-expression's unused #f result has no side effects.
                 # Never substitute a made-up address for a live GOAL symbol.
@@ -573,6 +598,9 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
         except (ValueError,KeyError,IndexError) as error:
             raise ValueError(f'{function["name"]} IR {position} ({op.get("text",kind)}): {error}') from error
     e.label('ir_'+str(len(instructions)))
+    if implicit:
+        e.branch('bra','epilogue')
+        e.label('process_entry_failure'); e.immediate(0,0); e.immediate(1,0)
     e.label('epilogue'); e.mov(15,14); adjust_stack(frame)
     for reg in (9,8,14): e.rr(0x6006,reg,15)
     e.word(0x4f26); e.ret()
