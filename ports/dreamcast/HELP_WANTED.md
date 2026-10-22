@@ -164,3 +164,8 @@ See [THREAD_STACK_IMAGES.md](THREAD_STACK_IMAGES.md). (AI-assisted).
 
 A reproducible compile-only audit checks 24 register-preservation observations and installed SDK context offsets under the current GCC/KOS flags. It establishes the four-byte default ABI stack boundary and documents why a full KOS interrupt context cannot be placed in the original CPU-thread register area. Runtime source/binaries are unchanged; existing host/Flycast totals are preserved verification, not new execution tests. Actual saved-state roundtrips, thread switching and gameplay remain unfinished. (AI-assisted)
 See [CONTEXT_ABI_AUDIT.md](CONTEXT_ABI_AUDIT.md). (AI-assisted).
+
+## Completed: Native same-stack register snapshot
+
+An 80-byte native SH-4 leaf snapshots selected GPR/FPU/control registers into a separate 60-byte caller buffer, rejecting null or misaligned pointers and unsupported FPSCR modes before stores. Grok supplied and reviewed the isolated proposal; independent Codex assembly/C tests add 3,034 native checks covering 108 bit-pattern, status, guard and rejection scenarios. Two host target-tool tests verify C99/C++11 layout and real C linkage. This is observation only; register restoration, process activation, stack switching and gameplay remain unfinished. (AI-assisted)
+See [REGISTER_SNAPSHOT.md](REGISTER_SNAPSHOT.md). (AI-assisted).

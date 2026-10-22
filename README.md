@@ -27,8 +27,8 @@ Discuss scope on **this fork**, and keep changes small enough to review.
 
 | Area | Locally verified scope |
 | --- | --- |
-| Host | 187 tests pass with the complete local SDK/oracle setup |
-| Native runtime | 16,813 checks in Flycast, stock 16 MiB RAM |
+| Host | 189 tests pass with the complete local SDK/oracle setup |
+| Native runtime | 19,847 checks in Flycast, stock 16 MiB RAM |
 | Original data | 182 native checks; all 668 V4 data objects across 36 local archives validate |
 | Numeric regression | 39 native checks |
 | GOAL backend | Original typed frontend to native SH-4; scalar calls, classes/methods, void startup, private data, 64-bit shifts and 32-bit division |
@@ -52,16 +52,16 @@ the local checkpoint, not a GitHub Actions run.
 
 ## Latest completed contributor task
 
-A reproducible compile-only audit checks 24 register-preservation observations and installed SDK context offsets under the current GCC/KOS flags. It establishes the four-byte default ABI stack boundary and documents why a full KOS interrupt context cannot be placed in the original CPU-thread register area. Runtime source/binaries are unchanged; existing host/Flycast totals are preserved verification, not new execution tests. Actual saved-state roundtrips, thread switching and gameplay remain unfinished. (AI-assisted)
+An 80-byte native SH-4 leaf snapshots selected GPR/FPU/control registers into a separate 60-byte caller buffer, rejecting null or misaligned pointers and unsupported FPSCR modes before stores. Grok supplied and reviewed the isolated proposal; independent Codex assembly/C tests add 3,034 native checks covering 108 bit-pattern, status, guard and rejection scenarios. Two host target-tool tests verify C99/C++11 layout and real C linkage. This is observation only; register restoration, process activation, stack switching and gameplay remain unfinished. (AI-assisted)
 
-See [CONTEXT_ABI_AUDIT.md](ports/dreamcast/CONTEXT_ABI_AUDIT.md). Full kernel/gameplay remains unfinished.
+See [REGISTER_SNAPSHOT.md](ports/dreamcast/REGISTER_SNAPSHOT.md). Full kernel/gameplay remains unfinished.
 
 ## Build and orientation
 
 Source is in `ports/dreamcast/`. Follow [BUILDING.md](ports/dreamcast/BUILDING.md).
 The verified baseline is OpenGOAL `6076aab5a95955443a9e1ed8f72a25bc0e2fcf9d`;
 the latest locally verified port checkpoint is
-`2374bc2af08a2fa4cec1e8c3186d875243d49678`.
+`4106558126c126ea033f006ed068d63b969e3a72`.
 
 No ISO, BIOS, extracted textures/models, converted game scenes or ELF binaries
 embedding game assets are uploaded. Use assets extracted locally from your own
