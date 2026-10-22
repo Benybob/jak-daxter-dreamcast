@@ -166,10 +166,21 @@ def main():
     for name in ('iterate-process-tree','execute-process-tree','search-process-tree','change-parent'):
         command+=['--function',name]
     subprocess.run(command,check=True)
+    process_context=[]
+    for source in (port.parents[1]/'goal_src/jak1/kernel/gcommon.gc',port/'scalar_validation_context.gc',
+                   port.parents[1]/'goal_src/jak1/kernel/gkernel-h.gc',port.parents[1]/'goal_src/jak1/kernel/gstring-h.gc'):
+        process_context+=['--preload',str(source)]
+    subprocess.run(compiler+process_context+['--source',str(port.parents[1]/'goal_src/jak1/kernel/gkernel.gc'),
+        '--function','(method new process-tree)','--function','(method new process)',
+        '--header',str(port/'build/original_process_new.h')],check=True)
+    command=compiler+process_context+['--source',str(port/'process_new_fixture.gc'),
+                                     '--header',str(port/'build/process_new_fixture.h')]
+    for name in ('tree','process','match'): command+=['--function','dc-new-'+name]
+    subprocess.run(command,check=True)
     subprocess.run([sys.executable,str(port/'build_dreamcast.py'),'--target','jak-dc-runtime-goal.elf'],check=True)
     if args.verify:
         subprocess.run([sys.executable,str(port/'verify_backend.py'),str(args.flycast),
                         str(port/'jak-dc-runtime-goal.elf'),'--nm',str(args.nm),'--output',str(args.output),
-                        '--tests','11217','--suite','runtime-goal'],check=True)
+                        '--tests','11520','--suite','runtime-goal'],check=True)
 
 if __name__=='__main__': main()

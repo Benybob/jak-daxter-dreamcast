@@ -4,7 +4,7 @@
 #include "goal_module.h"
 /* One active runtime, quiescent installation, scalar GCC ABI only.
  * Installs pair new (global selector only) and a namespaced type-of bridge.
- * No original heap object/process allocator or full kernel API yet. */
+ * No complete original heap/process allocator or full kernel API yet. */
 int dc_goal_install_core_bridges(dc_goal_runtime *rt,dc_goal_cache_sync sync,
                                   dc_goal_module_result *result);
 void dc_goal_clear_core_bridges(dc_goal_runtime *rt);
@@ -16,4 +16,8 @@ int dc_goal_install_type_bridges(dc_goal_runtime *rt,dc_goal_cache_sync sync,
  * bootstrap fault ABI, not complete original exception/process semantics. */
 int dc_goal_install_integer_bridge(dc_goal_runtime *rt,dc_goal_cache_sync sync,
                                     dc_goal_module_result *result);
+/* Explicit sized object.new(heap,type,size) for global basic allocation only.
+ * Does not supply process heaps, GC or exception/failure unwinding. */
+int dc_goal_install_object_bridge(dc_goal_runtime *rt,dc_goal_cache_sync sync,
+                                   dc_goal_module_result *result);
 #endif

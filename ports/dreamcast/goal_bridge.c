@@ -40,6 +40,15 @@ static uint64_t new_basic(uint64_t heap,uint64_t type) {
   fields=dc_goal_resolve(rt,(uint32_t)type,sizeof(*fields));
   return fields?dc_goal_new_basic(rt,(uint32_t)type,fields->allocated_size):0;
 }
+static uint64_t new_object(uint64_t heap,uint64_t type,uint64_t size) {
+  dc_goal_runtime *rt=active_runtime;
+  if (!rt) return 0;
+  if (heap!=rt->s7+DC_FIX_SYM_GLOBAL_HEAP || type>UINT32_MAX || size>UINT32_MAX ||
+      !dc_goal_is_subtype(rt,(uint32_t)type,rt->basic_type)) {
+    rt->error=DC_GOAL_BAD_ARGUMENT; return 0;
+  }
+  return dc_goal_new_basic(rt,(uint32_t)type,(uint32_t)size);
+}
 static uint64_t integer_error(uint64_t kind) {
   if (active_runtime) active_runtime->error=kind==1?DC_GOAL_DIVIDE_BY_ZERO:
                                             (kind==2?DC_GOAL_INTEGER_OVERFLOW:DC_GOAL_BAD_ARGUMENT);
@@ -93,4 +102,16 @@ int dc_goal_install_integer_bridge(dc_goal_runtime *rt,dc_goal_cache_sync sync,d
   if (active_runtime!=rt) { rt->error=DC_GOAL_BAD_ARGUMENT; return 0; }
   memcpy(code+8,&target,4);
   return dc_goal_load_module(rt,&function,1,sync,NULL,result);
+}
+
+
+int dc_goal_install_object_bridge(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_goal_module_result *result) {
+  unsigned char code[12]={1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0};
+  uint32_t target=(uint32_t)(uintptr_t)new_object;
+  dc_goal_code_export function={"dc-c-object-new",code,12,NULL,0};
+  if (!rt || !result) return 0;
+  if (active_runtime!=rt) { rt->error=DC_GOAL_BAD_ARGUMENT; return 0; }
+  memcpy(code+8,&target,4);
+  if (!dc_goal_load_module(rt,&function,1,sync,NULL,result)) return 0;
+  return dc_goal_set_method(rt,rt->object_type,0,dc_goal_symbol_value(rt,dc_goal_find(rt,"dc-c-object-new")));
 }

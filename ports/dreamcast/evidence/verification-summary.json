@@ -3,9 +3,9 @@
   "ai_tool": "OpenAI Codex",
   "scope": "Local checkpoint evidence; not a CI result or full game boot",
   "upstream_base_commit": "6076aab5a95955443a9e1ed8f72a25bc0e2fcf9d",
-  "local_port_checkpoint_commit": "efe3375718cef437c225d05a5b8cd77804cd17fc",
-  "host_tests_passed": 161,
-  "runtime_native_checks_passed": 11217,
+  "local_port_checkpoint_commit": "44791fccdddddd5308395bfe5256b817a87ebfc6",
+  "host_tests_passed": 163,
+  "runtime_native_checks_passed": 11520,
   "numeric_native_checks_passed": 39,
   "retail_object_native_checks_passed": 182,
   "retail_v4_objects_passed": 668,
@@ -30,7 +30,7 @@
   "native_results": {
     "runtime": {
       "result": "PASS",
-      "elf_sha256": "77d7a87b67a996398e8bacd5ce00124147e8a59a71f340903c8250d470a0105f"
+      "elf_sha256": "f16de4a653cfe7ede8a5fbff14f2a7636ffe0ae84ffef8e454c70c4fe242c848"
     },
     "objects": {
       "result": "PASS",
@@ -45,9 +45,9 @@
       "elf_sha256": "a06f7a04170d0c8ed224674f9dfaa210f18d52de2cc573ce0e2cec127da2c305"
     }
   },
-  "runtime_code_bytes": 116358,
-  "runtime_arena_used": 408816,
+  "runtime_code_bytes": 118918,
+  "runtime_arena_used": 414192,
   "runtime_arena_capacity": 1048576,
-  "installed_symbols": 577,
+  "installed_symbols": 586,
   "frontend_sha256": "479bf03cafe881f7c7663b17885dfde8edfad5bb6afa79e9617a7b94e63849c3"
 }

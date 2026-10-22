@@ -8,7 +8,7 @@ Most compiler/runtime work uses synthetic fixtures and needs no original assets.
 | --- | --- | --- |
 | Remaining full-kernel target configuration | GOAL, platform runtime | Scalar validator now uses explicit stock-RAM/table limits; audit remaining profiler/PC branches, scratchpad and MMIO before original startup |
 | Remaining variadic and vector ABI | SH-4 GCC, GOAL | Fixed scalar mixed calls through eight arguments now pass, including integer stack spills; independently verify mixed variadic and vector boundaries |
-| Remaining kernel sequencing and heaps | GOAL, runtime systems | Nine original globals initialize and four original process-tree algorithms execute; implement measured original allocation, process heaps and context/thread startup |
+| Remaining kernel sequencing and heaps | GOAL, runtime systems | Original globals, tree algorithms and process constructors now execute with bounded global allocation; implement process heaps, failure unwinding and context/thread startup |
 | PowerVR scene pipeline | KOS, PVR, graphics | Measured culling/material deduplication and bounded residency on synthetic fixtures before expanding game scenes |
 | Hardware validation | Dreamcast development | Reproduce asset-free native diagnostics on hardware with toolchain, load method, RAM use and failures documented |
 
@@ -119,3 +119,8 @@ See [STACK_COPY_LEAVES.md](STACK_COPY_LEAVES.md). (AI-assisted).
 
 Four unchanged original kernel routines now traverse, filter, search and reparent bounded native process-tree fixtures. Two host tests pin original bodies/imports and field layouts; 604 new native checks cover 128 mask/callback combinations, subtree pruning, mutation-safe sibling traversal, searches, reparenting and stable handle fields. These fixtures have no runnable threads; allocation, heaps, scheduler startup and complete gameplay remain unfinished.
 See [PROCESS_TREE_NATIVE.md](PROCESS_TREE_NATIVE.md). (AI-assisted).
+
+## Completed: Original process constructors and bounded sized allocation
+
+Unchanged original process-tree/process constructors now run through compiled GOAL method dispatch and an explicit global-only sized object.new bridge. Two host tests pin original calls/layouts; 303 new native checks cover allocation guards, eight reservation sizes, original state/heap fields, stable handles and integration with original reparent/search. These objects remain dead without threads; complete process heaps, failure unwinding, scheduler and gameplay remain unfinished.
+See [PROCESS_CONSTRUCTORS.md](PROCESS_CONSTRUCTORS.md). (AI-assisted).

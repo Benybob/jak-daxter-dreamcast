@@ -1,0 +1,5 @@
+;; Native dispatch into unchanged original constructors (AI-assisted), ISC.
+(define *dc-new-target* (the process-tree #f))
+(defun dc-new-tree ((name basic)) (new 'global 'process-tree name))
+(defun dc-new-process ((name basic) (bytes int)) (new 'global 'process name bytes))
+(defun dc-new-match ((node process-tree)) (eq? node *dc-new-target*))
