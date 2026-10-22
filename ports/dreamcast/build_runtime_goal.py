@@ -177,10 +177,14 @@ def main():
                                      '--header',str(port/'build/process_new_fixture.h')]
     for name in ('tree','process','match'): command+=['--function','dc-new-'+name]
     subprocess.run(command,check=True)
+    command=compiler+process_context+['--source',str(port/'process_heap_fixture.gc'),
+                                     '--header',str(port/'build/process_heap_fixture.h')]
+    for name in ('create','read','tree'): command+=['--function','dc-process-heap-'+name]
+    subprocess.run(command,check=True)
     subprocess.run([sys.executable,str(port/'build_dreamcast.py'),'--target','jak-dc-runtime-goal.elf'],check=True)
     if args.verify:
         subprocess.run([sys.executable,str(port/'verify_backend.py'),str(args.flycast),
                         str(port/'jak-dc-runtime-goal.elf'),'--nm',str(args.nm),'--output',str(args.output),
-                        '--tests','11520','--suite','runtime-goal'],check=True)
+                        '--tests','11701','--suite','runtime-goal'],check=True)
 
 if __name__=='__main__': main()

@@ -9,15 +9,20 @@ int dc_goal_install_core_bridges(dc_goal_runtime *rt,dc_goal_cache_sync sync,
                                   dc_goal_module_result *result);
 void dc_goal_clear_core_bridges(dc_goal_runtime *rt);
 /* Requires the same active core runtime; installs original type/new and
- * method-set! paths plus bounded global basic allocation. */
+ * method-set! paths plus bounded basic allocation (global or explicit process span). */
 int dc_goal_install_type_bridges(dc_goal_runtime *rt,dc_goal_cache_sync sync,
                                   dc_goal_module_result *result);
 /* Scalar integer faults return zero and set runtime error status. This is a
  * bootstrap fault ABI, not complete original exception/process semantics. */
 int dc_goal_install_integer_bridge(dc_goal_runtime *rt,dc_goal_cache_sync sync,
                                     dc_goal_module_result *result);
-/* Explicit sized object.new(heap,type,size) for global basic allocation only.
- * Does not supply process heaps, GC or exception/failure unwinding. */
+/* Explicit sized object.new(heap,type,size): global, or explicitly bound process
+ * reservation. No GC, thread switching or exception/failure unwinding. */
 int dc_goal_install_object_bridge(dc_goal_runtime *rt,dc_goal_cache_sync sync,
                                    dc_goal_module_result *result);
+/* Caller owns the full unmoved process reservation, including 112-byte header/
+ * fields. Same-runtime binding failure clears the old target, with no global
+ * fallback. No implicit pp/self ABI or thread context is installed. */
+int dc_goal_bind_process_heap(dc_goal_runtime *rt,uint32_t process,uint32_t allocation_bytes);
+void dc_goal_clear_process_heap(dc_goal_runtime *rt);
 #endif

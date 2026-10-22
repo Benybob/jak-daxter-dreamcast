@@ -2,10 +2,12 @@
 #include <stdint.h>
 #include <string.h>
 #include "goal_bridge.h"
+#include "goal_process_heap.h"
 #ifndef __DREAMCAST__
 #error These boxed tail bridges require native SH-4 code execution.
 #endif
 static dc_goal_runtime *active_runtime;
+static dc_goal_process_heap active_process_heap;
 static uint64_t new_pair(uint64_t heap,uint64_t type,uint64_t car,uint64_t cdr) {
   dc_goal_runtime *rt=active_runtime;
   if (!rt) return 0;
@@ -33,21 +35,30 @@ static uint64_t new_basic(uint64_t heap,uint64_t type) {
   dc_goal_runtime *rt=active_runtime;
   dc_goal_type_fields *fields;
   if (!rt) return 0;
-  if (heap!=rt->s7+DC_FIX_SYM_GLOBAL_HEAP || type>UINT32_MAX ||
+  if (type>UINT32_MAX ||
       !dc_goal_is_subtype(rt,(uint32_t)type,rt->basic_type)) {
     rt->error=DC_GOAL_BAD_ARGUMENT; return 0;
   }
   fields=dc_goal_resolve(rt,(uint32_t)type,sizeof(*fields));
-  return fields?dc_goal_new_basic(rt,(uint32_t)type,fields->allocated_size):0;
+  if(!fields) return 0;
+  if(heap==rt->s7+DC_FIX_SYM_GLOBAL_HEAP)
+    return dc_goal_new_basic(rt,(uint32_t)type,fields->allocated_size);
+  if(heap==rt->s7+DC_FIX_SYM_PROCESS_TYPE && active_process_heap.runtime==rt)
+    return dc_goal_process_new_basic(&active_process_heap,(uint32_t)type,fields->allocated_size);
+  rt->error=DC_GOAL_BAD_ARGUMENT; return 0;
 }
 static uint64_t new_object(uint64_t heap,uint64_t type,uint64_t size) {
   dc_goal_runtime *rt=active_runtime;
   if (!rt) return 0;
-  if (heap!=rt->s7+DC_FIX_SYM_GLOBAL_HEAP || type>UINT32_MAX || size>UINT32_MAX ||
+  if (type>UINT32_MAX || size>UINT32_MAX ||
       !dc_goal_is_subtype(rt,(uint32_t)type,rt->basic_type)) {
     rt->error=DC_GOAL_BAD_ARGUMENT; return 0;
   }
-  return dc_goal_new_basic(rt,(uint32_t)type,(uint32_t)size);
+  if(heap==rt->s7+DC_FIX_SYM_GLOBAL_HEAP)
+    return dc_goal_new_basic(rt,(uint32_t)type,(uint32_t)size);
+  if(heap==rt->s7+DC_FIX_SYM_PROCESS_TYPE && active_process_heap.runtime==rt)
+    return dc_goal_process_new_basic(&active_process_heap,(uint32_t)type,(uint32_t)size);
+  rt->error=DC_GOAL_BAD_ARGUMENT; return 0;
 }
 static uint64_t integer_error(uint64_t kind) {
   if (active_runtime) active_runtime->error=kind==1?DC_GOAL_DIVIDE_BY_ZERO:
@@ -76,7 +87,7 @@ int dc_goal_install_core_bridges(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_
   return 1;
 }
 void dc_goal_clear_core_bridges(dc_goal_runtime *rt) {
-  if (active_runtime==rt) active_runtime=NULL;
+  if (active_runtime==rt) { memset(&active_process_heap,0,sizeof(active_process_heap)); active_runtime=NULL; }
 }
 int dc_goal_install_type_bridges(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_goal_module_result *result) {
   const unsigned char stub[12]={1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0};
@@ -114,4 +125,18 @@ int dc_goal_install_object_bridge(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc
   memcpy(code+8,&target,4);
   if (!dc_goal_load_module(rt,&function,1,sync,NULL,result)) return 0;
   return dc_goal_set_method(rt,rt->object_type,0,dc_goal_symbol_value(rt,dc_goal_find(rt,"dc-c-object-new")));
+}
+
+
+int dc_goal_bind_process_heap(dc_goal_runtime *rt,uint32_t process,uint32_t allocation_bytes) {
+  if(!rt || active_runtime!=rt) {
+    if(rt) rt->error=DC_GOAL_BAD_ARGUMENT;
+    return 0;
+  }
+  /* Invalid same-runtime binding must not retain a previous allocation target. */
+  memset(&active_process_heap,0,sizeof(active_process_heap));
+  return dc_goal_process_heap_open(&active_process_heap,rt,process,allocation_bytes);
+}
+void dc_goal_clear_process_heap(dc_goal_runtime *rt) {
+  if(active_runtime==rt) memset(&active_process_heap,0,sizeof(active_process_heap));
 }

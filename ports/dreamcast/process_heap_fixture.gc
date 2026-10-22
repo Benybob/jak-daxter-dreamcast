@@ -1,0 +1,10 @@
+;; Explicit bounded process allocation probes (AI-assisted), ISC.
+(deftype dc-process-heap-record (basic)
+  ((value int64))
+  :size-assert 16)
+(defun dc-process-heap-create ((value int))
+  (let ((record (new 'process 'dc-process-heap-record)))
+    (set! (-> record value) value)
+    record))
+(defun dc-process-heap-read ((record dc-process-heap-record)) (-> record value))
+(defun dc-process-heap-tree ((name basic)) (new 'process 'process-tree name))

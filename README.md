@@ -27,8 +27,8 @@ Discuss scope on **this fork**, and keep changes small enough to review.
 
 | Area | Locally verified scope |
 | --- | --- |
-| Host | 163 tests pass with the complete local SDK/oracle setup |
-| Native runtime | 11,520 checks in Flycast, stock 16 MiB RAM |
+| Host | 165 tests pass with the complete local SDK/oracle setup |
+| Native runtime | 11,701 checks in Flycast, stock 16 MiB RAM |
 | Original data | 182 native checks; all 668 V4 data objects across 36 local archives validate |
 | Numeric regression | 39 native checks |
 | GOAL backend | Original typed frontend to native SH-4; scalar calls, classes/methods, void startup, private data, 64-bit shifts and 32-bit division |
@@ -52,16 +52,16 @@ the local checkpoint, not a GitHub Actions run.
 
 ## Latest completed contributor task
 
-Unchanged original process-tree/process constructors now run through compiled GOAL method dispatch and an explicit global-only sized object.new bridge. Two host tests pin original calls/layouts; 303 new native checks cover allocation guards, eight reservation sizes, original state/heap fields, stable handles and integration with original reparent/search. These objects remain dead without threads; complete process heaps, failure unwinding, scheduler and gameplay remain unfinished.
+Original process allocation now rounds/clears spans and advances original heap-cur with its strict end comparison, using explicit known process reservations. Global and process bridge paths remain distinct; missing/invalid targets reject without global fallback. 102 shared host/SH-4 C guards and 79 native GOAL integration checks pass, including original constructors/validator. Implicit pp/self, threads, GC and failure unwinding remain unfinished.
 
-See [PROCESS_CONSTRUCTORS.md](ports/dreamcast/PROCESS_CONSTRUCTORS.md). Full kernel/gameplay remains unfinished.
+See [PROCESS_HEAPS.md](ports/dreamcast/PROCESS_HEAPS.md). Full kernel/gameplay remains unfinished.
 
 ## Build and orientation
 
 Source is in `ports/dreamcast/`. Follow [BUILDING.md](ports/dreamcast/BUILDING.md).
 The verified baseline is OpenGOAL `6076aab5a95955443a9e1ed8f72a25bc0e2fcf9d`;
 the latest locally verified port checkpoint is
-`44791fccdddddd5308395bfe5256b817a87ebfc6`.
+`b168131f7266c8bc9d7b6082a5bcdac2f0e18bda`.
 
 No ISO, BIOS, extracted textures/models, converted game scenes or ELF binaries
 embedding game assets are uploaded. Use assets extracted locally from your own

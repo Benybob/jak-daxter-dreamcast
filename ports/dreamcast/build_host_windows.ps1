@@ -40,5 +40,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Integer shift oracle compilation failed' }
 if ($LASTEXITCODE -ne 0) { throw 'Integer division oracle compilation failed' }
 & $Compiler @flags (Join-Path $port 'host_native_file.c') (Join-Path $port 'goal_native_file.c') (Join-Path $port 'goal_module.c') (Join-Path $port 'goal_runtime.c') -o (Join-Path $build 'native-file-check.exe')
 if ($LASTEXITCODE -ne 0) { throw 'Native module-file checker compilation failed' }
+& $Compiler @flags (Join-Path $port 'host_process_heap.c') (Join-Path $port 'process_heap_cases.c') (Join-Path $port 'goal_process_heap.c') (Join-Path $port 'goal_kernel_types.c') (Join-Path $port 'goal_runtime.c') -o (Join-Path $build 'process-heap-check.exe')
+if ($LASTEXITCODE -ne 0) { throw 'Process heap checker compilation failed' }
 & $pythonCommand -m unittest discover -s (Join-Path $port 'tests') -v
 if ($LASTEXITCODE -ne 0) { throw 'Host tests failed' }

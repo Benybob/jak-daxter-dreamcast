@@ -8,7 +8,7 @@ Most compiler/runtime work uses synthetic fixtures and needs no original assets.
 | --- | --- | --- |
 | Remaining full-kernel target configuration | GOAL, platform runtime | Scalar validator now uses explicit stock-RAM/table limits; audit remaining profiler/PC branches, scratchpad and MMIO before original startup |
 | Remaining variadic and vector ABI | SH-4 GCC, GOAL | Fixed scalar mixed calls through eight arguments now pass, including integer stack spills; independently verify mixed variadic and vector boundaries |
-| Remaining kernel sequencing and heaps | GOAL, runtime systems | Original globals, tree algorithms and process constructors now execute with bounded global allocation; implement process heaps, failure unwinding and context/thread startup |
+| Remaining process lifecycle and kernel startup | GOAL, runtime systems | Original globals/tree/constructors and explicitly bound process allocations execute; implement implicit pp/self, failure unwinding, GC and context/thread startup |
 | PowerVR scene pipeline | KOS, PVR, graphics | Measured culling/material deduplication and bounded residency on synthetic fixtures before expanding game scenes |
 | Hardware validation | Dreamcast development | Reproduce asset-free native diagnostics on hardware with toolchain, load method, RAM use and failures documented |
 
@@ -124,3 +124,8 @@ See [PROCESS_TREE_NATIVE.md](PROCESS_TREE_NATIVE.md). (AI-assisted).
 
 Unchanged original process-tree/process constructors now run through compiled GOAL method dispatch and an explicit global-only sized object.new bridge. Two host tests pin original calls/layouts; 303 new native checks cover allocation guards, eight reservation sizes, original state/heap fields, stable handles and integration with original reparent/search. These objects remain dead without threads; complete process heaps, failure unwinding, scheduler and gameplay remain unfinished.
 See [PROCESS_CONSTRUCTORS.md](PROCESS_CONSTRUCTORS.md). (AI-assisted).
+
+## Completed: Bounded original process-heap allocation
+
+Original process allocation now rounds/clears spans and advances original heap-cur with its strict end comparison, using explicit known process reservations. Global and process bridge paths remain distinct; missing/invalid targets reject without global fallback. 102 shared host/SH-4 C guards and 79 native GOAL integration checks pass, including original constructors/validator. Implicit pp/self, threads, GC and failure unwinding remain unfinished.
+See [PROCESS_HEAPS.md](PROCESS_HEAPS.md). (AI-assisted).

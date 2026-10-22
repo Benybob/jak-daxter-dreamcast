@@ -1,3 +1,7 @@
+Current extension: explicit process reservations now support bounded allocation.
+See [PROCESS_HEAPS.md](PROCESS_HEAPS.md). The global-only milestone figures and
+scope below are historical. (AI-assisted).
+
 # Original process constructors and bounded sized allocation
 
 2026-10-21. (AI-assisted). The unchanged original new methods for process-tree
