@@ -7,7 +7,7 @@ Most compiler/runtime work uses synthetic fixtures and needs no original assets.
 | Task | Useful experience | Concrete acceptance target |
 | --- | --- | --- |
 | Dreamcast compiler target configuration | GOAL, platform runtime | Explicit stock-RAM limits, profiler/PC branches and MMIO handling; verify original bodies without executing desktop startup |
-| Vector and mixed argument ABI | SH-4 GCC, GOAL | Independent ABI oracles and native boundary tests before enabling original vector/mixed calls |
+| Vector and remaining mixed ABI | SH-4 GCC, GOAL | Register-only fixed mixed signatures now pass; independently verify mixed stack, variadic and vector boundaries before enabling them |
 | Kernel sequencing and heaps | GOAL, runtime systems | Explicit target configuration and original startup/module dependencies execute within measured stock RAM bounds |
 | PowerVR scene pipeline | KOS, PVR, graphics | Measured culling/material deduplication and bounded residency on synthetic fixtures before expanding game scenes |
 | Hardware validation | Dreamcast development | Reproduce asset-free native diagnostics on hardware with toolchain, load method, RAM use and failures documented |
@@ -83,3 +83,8 @@ See [FAR_BRANCHES.md](FAR_BRANCHES.md). (AI-assisted).
 
 Explicit ordered source preloads now supply real macros, constants and types without loading native modules or running startup. Original gcommon/gkernel/gstate export 66/76/7 functions; 57/50/3 lower individually under unchanged desktop configuration. Five host tests and 29 new native checks verify separate module loading, explicit initialization and cross-module bindings. Dreamcast target configuration and full kernel/gameplay remain unfinished.
 See [SOURCE_CONTEXT.md](SOURCE_CONTEXT.md). (AI-assisted).
+
+## Completed: Mixed scalar register arguments and calls
+
+Fixed mixed integer/float signatures now use independent GCC register streams, with at most two integer/tagged arguments and eight total arguments. An 88-probe GCC oracle, three frontend tests and 63 new native cases pass. Compact integer/float leaves remain six/four bytes. Mixed stack/variadic and vector ABIs remain blocked. Original kernel compilation coverage is unchanged; full kernel/gameplay and target configuration remain unfinished.
+See [MIXED_ABI.md](MIXED_ABI.md). (AI-assisted).

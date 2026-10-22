@@ -73,6 +73,7 @@ def argument_return_leaf(function):
     if result is None: return None
     floating=function['return_type']=='float'
     if (function['parameters'][result]['type']=='float')!=floating: return None
+    result=sum((p['type']=='float')==floating for p in function['parameters'][:result])
     if not floating and result>=2: return None  # stack argument needs the incoming frame
     e=Emitter()
     if floating:
@@ -239,12 +240,14 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
     if any(r['class'] not in ('gpr64','float') for r in registers.values()):
         raise ValueError('128-bit/vector register lowering not implemented')
     parameter_types=[scalar_kind(p['type'],runtime) for p in function['parameters']]
-    if len({kind=='float' for kind in parameter_types})>1:
-        raise ValueError('mixed integer/float argument ABI not verified')
+    if len(parameter_types)>8: raise ValueError('more than eight arguments unsupported')
+    if len({p['register'] for p in function['parameters']})!=len(function['parameters']):
+        raise ValueError('duplicate incoming argument register')
+    if len({kind=='float' for kind in parameter_types})>1 and sum(kind!='float' for kind in parameter_types)>2:
+        raise ValueError('mixed integer/float stack argument ABI not verified')
     for kind in parameter_types:
         if kind not in value_types|{'float'}:
             raise ValueError('bootstrap ABI currently accepts numeric parameters only' if not runtime else 'unsupported tagged/scalar parameter')
-    if len(parameter_types)>8: raise ValueError('more than eight arguments unsupported')
     if void_return and all(op['kind']=='nop' for op in function['instructions']):
         e=Emitter(); e.ret(); data,relocations=e.finish()
         return data,{'name':function['name'],'bytes':len(data),'stack_bytes':0,
@@ -333,8 +336,6 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
     for reg in (14,8,9): e.rr(0x2006,15,reg)
     adjust_stack(-frame); e.mov(14,15)
     gpr_args=float_args=0
-    if len({p['type']=='float' for p in function['parameters']})>1:
-        raise ValueError('mixed integer/float argument ABI not verified')
     for parameter in function['parameters']:
         index=parameter['register']
         if parameter['type']=='float':
@@ -458,23 +459,29 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
                 if len(args)!=len(parameters): raise ValueError('linked function argument count mismatch')
                 if len(args)>8: raise ValueError('more than eight call arguments unsupported')
                 kinds={p['type']=='float' for p in parameters}
-                if len(kinds)>1: raise ValueError('mixed integer/float call ABI not verified')
-                outgoing=max(0,len(parameters)-2)*8 if kinds=={False} else 0
+                integer_count=sum(p['type']!='float' for p in parameters)
+                if len(kinds)>1:
+                    if integer_count>2: raise ValueError('mixed integer/float stack call ABI not verified')
+                    if '_varargs_' in op.get('function_type',''):
+                        raise ValueError('mixed variadic call ABI not verified')
+                outgoing=max(0,integer_count-2)*8
                 adjust_stack(-outgoing)
-                for index,(argument,parameter) in enumerate(zip(args,parameters)):
+                integer_index=float_index=0
+                for argument,parameter in zip(args,parameters):
                     if parameter['type']=='float':
-                        if index>=8 or registers[argument]['type']!='float': raise ValueError('unsupported float call argument')
-                        native=FLOAT_ARGUMENT_REGISTERS[index]
+                        if float_index>=8 or registers[argument]['type']!='float': raise ValueError('unsupported float call argument')
+                        native=FLOAT_ARGUMENT_REGISTERS[float_index]; float_index+=1
                         if registers[argument]['class']=='float': load_float(argument,native)
                         else:
                             load64(argument); e.word(0x405a); e.word(0xf00d|(native<<8))
                     else:
                         if scalar_kind(parameter['type'],runtime) not in value_types or scalar_kind(registers[argument]['type'],runtime) not in value_types:
                             raise ValueError('unsupported integer call argument')
-                        if index<2: load64(argument,4+index*2,5+index*2)
+                        if integer_index<2: load64(argument,4+integer_index*2,5+integer_index*2)
                         else:
-                            load64(argument); e.mov(2,15); e.add_immediate(2,(index-2)*8)
+                            load64(argument); e.mov(2,15); e.add_immediate(2,(integer_index-2)*8)
                             e.store(2,0); e.add_immediate(2,4); e.store(2,1)
+                        integer_index+=1
                 load64(reads[0]); e.word(0x400b); e.nop()  # jsr @r0, PR saved in prologue
                 adjust_stack(outgoing)
                 if void_call: pass  # no value exists in R0:R1 or FR0 to save

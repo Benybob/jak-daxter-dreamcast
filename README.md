@@ -27,8 +27,8 @@ Discuss scope on **this fork**, and keep changes small enough to review.
 
 | Area | Locally verified scope |
 | --- | --- |
-| Host | 138 tests pass with the complete local SDK/oracle setup |
-| Native runtime | 8,336 checks in Flycast, stock 16 MiB RAM |
+| Host | 142 tests pass with the complete local SDK/oracle setup |
+| Native runtime | 8,399 checks in Flycast, stock 16 MiB RAM |
 | Original data | 182 native checks; all 668 V4 data objects across 36 local archives validate |
 | Numeric regression | 39 native checks |
 | GOAL backend | Original typed frontend to native SH-4; scalar calls, classes/methods, void startup, private data, 64-bit shifts and 32-bit division |
@@ -52,16 +52,16 @@ the local checkpoint, not a GitHub Actions run.
 
 ## Latest completed contributor task
 
-Explicit ordered source preloads now supply real macros, constants and types without loading native modules or running startup. Original gcommon/gkernel/gstate export 66/76/7 functions; 57/50/3 lower individually under unchanged desktop configuration. Five host tests and 29 new native checks verify separate module loading, explicit initialization and cross-module bindings. Dreamcast target configuration and full kernel/gameplay remain unfinished.
+Fixed mixed integer/float signatures now use independent GCC register streams, with at most two integer/tagged arguments and eight total arguments. An 88-probe GCC oracle, three frontend tests and 63 new native cases pass. Compact integer/float leaves remain six/four bytes. Mixed stack/variadic and vector ABIs remain blocked. Original kernel compilation coverage is unchanged; full kernel/gameplay and target configuration remain unfinished.
 
-See [SOURCE_CONTEXT.md](ports/dreamcast/SOURCE_CONTEXT.md). Full kernel/gameplay remains unfinished.
+See [MIXED_ABI.md](ports/dreamcast/MIXED_ABI.md). Full kernel/gameplay remains unfinished.
 
 ## Build and orientation
 
 Source is in `ports/dreamcast/`. Follow [BUILDING.md](ports/dreamcast/BUILDING.md).
 The verified baseline is OpenGOAL `6076aab5a95955443a9e1ed8f72a25bc0e2fcf9d`;
 the latest locally verified port checkpoint is
-`26bc3bd7a5928cd571380fcdef533d0d7f6b1044`.
+`7e40ff2b19913197718b69aa69c559c4b5ef4df0`.
 
 No ISO, BIOS, extracted textures/models, converted game scenes or ELF binaries
 embedding game assets are uploaded. Use assets extracted locally from your own

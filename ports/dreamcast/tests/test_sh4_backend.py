@@ -21,6 +21,28 @@ GCC=BIN/('sh-elf-gcc'+EXE)
 
 @unittest.skipUnless(GCC.is_file(),'SH-4 GCC required for independent ABI oracle')
 class GccAbiOracleTest(unittest.TestCase):
+    def test_mixed_register_streams_follow_independent_gcc_positions(self):
+        patterns=[{i} for i in range(8)]+[{1,4},{0,7},{6,7}]
+        sources=[]
+        for p,integers in enumerate(patterns):
+            parameters=','.join(('unsigned long long' if i in integers else 'float')+' a'+str(i) for i in range(8))
+            for i in range(8):
+                result='unsigned long long' if i in integers else 'float'
+                sources.append(f'{result} mixed_p{p}_arg{i}({parameters}) {{ return a{i}; }}')
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory); c=root/'oracle.c'; asm=root/'oracle.s'; c.write_text('\n'.join(sources))
+            subprocess.run([str(GCC),'-O2','-m4-single','-ml','-S',str(c),'-o',str(asm)],check=True,capture_output=True)
+            assembly=asm.read_text()
+            for p,integers in enumerate(patterns):
+                gp=fp=0
+                for i in range(8):
+                    body=re.search(f'_mixed_p{p}_arg{i}:'+r'(.*?)\.size',assembly,re.DOTALL)[1]
+                    if i in integers:
+                        self.assertRegex(body,r'mov\s+r'+str(4+gp*2)+r',r0')
+                        self.assertRegex(body,r'mov\s+r'+str(5+gp*2)+r',r1'); gp+=1
+                    else:
+                        self.assertRegex(body,r'fmov\s+fr'+str(FLOAT_ARGUMENT_REGISTERS[fp])+r',fr0'); fp+=1
+
     def test_all_eight_64_bit_integer_argument_positions(self):
         params=','.join('unsigned long long a'+str(i) for i in range(8))
         source='\n'.join(f'unsigned long long native_arg{i}({params}) {{ return a{i}; }}' for i in range(8))

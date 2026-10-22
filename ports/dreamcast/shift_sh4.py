@@ -44,6 +44,7 @@ def shift_return_leaf(function):
     """Coalesce copy-only one-shift returns directly through the GCC registers."""
     from sh4_backend import Emitter
     if function.get('return_type') in ('float','none'): return None
+    if any(p['type']=='float' for p in function['parameters']): return None
     registers={r['id']:r for r in function['registers']}
     origin={p['register']:('parameter',i) for i,p in enumerate(function['parameters'])}
     result=None; shifts=0

@@ -128,10 +128,14 @@ def main():
                       '--header',str(port/'build/dependency_fixture.h')]
     for name in ('compute','call','field','forward'): command+=['--function','dc-context-'+name]
     subprocess.run(command,check=True)
+    command=compiler+['--source',str(port/'mixed_fixture.gc'),'--header',str(port/'build/mixed_fixture.h')]
+    for name in ('left','right','f0','f1','sum','floats','call','float-call','eight-last','eight-int'):
+        command+=['--function','dc-mixed-'+name]
+    subprocess.run(command,check=True)
     subprocess.run([sys.executable,str(port/'build_dreamcast.py'),'--target','jak-dc-runtime-goal.elf'],check=True)
     if args.verify:
         subprocess.run([sys.executable,str(port/'verify_backend.py'),str(args.flycast),
                         str(port/'jak-dc-runtime-goal.elf'),'--nm',str(args.nm),'--output',str(args.output),
-                        '--tests','8336','--suite','runtime-goal'],check=True)
+                        '--tests','8399','--suite','runtime-goal'],check=True)
 
 if __name__=='__main__': main()

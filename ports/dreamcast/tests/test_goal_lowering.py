@@ -332,7 +332,7 @@ class UnsupportedGoalTest(unittest.TestCase):
         fn=leaf(); fn['instructions']=[]
         with self.assertRaisesRegex(ValueError,'no return'): compile_function(fn)
         fn=leaf(); fn['parameters'].append({'name':'f','register':0,'type':'float'})
-        with self.assertRaisesRegex(ValueError,'mixed integer/float'): compile_function(fn)
+        with self.assertRaisesRegex(ValueError,'duplicate incoming argument'): compile_function(fn)
 
     def test_module_selection_rejects_ambiguity(self):
         fn=leaf()

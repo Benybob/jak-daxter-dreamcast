@@ -1,0 +1,13 @@
+;; Fixed-signature register-only mixed scalar ABI regressions (AI-assisted).
+(defun dc-mixed-left ((f float) (a int) (g float) (b int)) a)
+(defun dc-mixed-right ((f float) (a int) (g float) (b int)) b)
+(defun dc-mixed-f0 ((f float) (a int) (g float) (b int)) f)
+(defun dc-mixed-f1 ((f float) (a int) (g float) (b int)) g)
+(defun dc-mixed-sum ((f float) (a int) (g float) (b int)) (+ a b (the int f) (the int g)))
+(defun dc-mixed-floats ((f float) (a int) (g float) (b int)) (+ f g))
+(defun dc-mixed-call ((f float) (a int) (g float) (b int)) (+ a (dc-mixed-sum f a g b)))
+(defun dc-mixed-float-call ((f float) (a int) (g float) (b int)) (+ 0.5 (dc-mixed-floats f a g b)))
+(defun dc-mixed-eight-last ((f0 float) (i0 int) (f1 float) (f2 float) (i1 int) (f3 float) (f4 float) (f5 float)) f5)
+(defun dc-mixed-eight-int ((f0 float) (i0 int) (f1 float) (f2 float) (i1 int) (f3 float) (f4 float) (f5 float)) i1)
+(defun dc-mixed-stack ((a int) (f float) (b int) (c int)) (+ a b c (the int f)))
+(none)
