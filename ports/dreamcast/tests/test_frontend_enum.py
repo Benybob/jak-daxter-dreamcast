@@ -46,14 +46,13 @@ class FrontendEnumTest(unittest.TestCase):
                 self.assertEqual((op['size'],op['signed']),(width//8,sign=='s'))
                 self.assertTrue(compile_function(fn,runtime=True)[0])
 
-    def test_enum_call_classifications_and_mixed_stack_guard(self):
+    def test_enum_call_classifications_include_verified_mixed_integer_stack(self):
         for name in ('call','mixed','mixed-call','bits32','bits64'):
             with self.subTest(name=name): self.assertTrue(compile_function(self.functions['dc-enum-'+name],runtime=True)[0])
         fn=self.functions['dc-enum-call']
         calls=[op for op in fn['instructions'] if op['kind']=='call']
         self.assertEqual([op['abi']['parameter_abi_types'] for op in calls],[['uint'],['int']])
-        with self.assertRaisesRegex(ValueError,'mixed integer/float stack argument'):
-            compile_function(self.functions['dc-enum-mixed-stack'],runtime=True)
+        self.assertTrue(compile_function(self.functions['dc-enum-mixed-stack'],runtime=True)[0])
 
     def test_unclassified_enum_and_wide_register_guards_remain_strict(self):
         fn=copy.deepcopy(self.functions['dc-enum-u32'])

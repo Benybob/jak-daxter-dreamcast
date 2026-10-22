@@ -243,8 +243,6 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
     if len(parameter_types)>8: raise ValueError('more than eight arguments unsupported')
     if len({p['register'] for p in function['parameters']})!=len(function['parameters']):
         raise ValueError('duplicate incoming argument register')
-    if len({kind=='float' for kind in parameter_types})>1 and sum(kind!='float' for kind in parameter_types)>2:
-        raise ValueError('mixed integer/float stack argument ABI not verified')
     for kind in parameter_types:
         if kind not in value_types|{'float'}:
             raise ValueError('bootstrap ABI currently accepts numeric parameters only' if not runtime else 'unsupported tagged/scalar parameter')
@@ -461,7 +459,6 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
                 kinds={p['type']=='float' for p in parameters}
                 integer_count=sum(p['type']!='float' for p in parameters)
                 if len(kinds)>1:
-                    if integer_count>2: raise ValueError('mixed integer/float stack call ABI not verified')
                     if '_varargs_' in op.get('function_type',''):
                         raise ValueError('mixed variadic call ABI not verified')
                 outgoing=max(0,integer_count-2)*8

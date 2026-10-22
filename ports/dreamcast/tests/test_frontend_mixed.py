@@ -31,9 +31,8 @@ class FrontendMixedTest(unittest.TestCase):
                 if name in ('left','right','eight-int'): self.assertEqual(len(data),6)
                 if name in ('f0','f1','eight-last'): self.assertEqual(len(data),4)
 
-    def test_mixed_stack_arguments_remain_unverified_and_rejected(self):
-        with self.assertRaisesRegex(ValueError,'mixed integer/float stack argument'):
-            compile_function(self.functions['dc-mixed-stack'],runtime=True)
+    def test_mixed_integer_stack_arguments_lower_after_gcc_oracle_verification(self):
+        self.assertTrue(compile_function(self.functions['dc-mixed-stack'],runtime=True)[0])
 
     def test_mixed_variadic_call_is_not_treated_as_a_fixed_signature(self):
         fn=copy.deepcopy(self.functions['dc-mixed-call'])

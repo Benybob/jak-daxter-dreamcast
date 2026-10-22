@@ -7,7 +7,7 @@ Most compiler/runtime work uses synthetic fixtures and needs no original assets.
 | Task | Useful experience | Concrete acceptance target |
 | --- | --- | --- |
 | Remaining full-kernel target configuration | GOAL, platform runtime | Scalar validator now uses explicit stock-RAM/table limits; audit remaining profiler/PC branches, scratchpad and MMIO before original startup |
-| Vector and remaining mixed ABI | SH-4 GCC, GOAL | Register-only fixed mixed signatures now pass; independently verify mixed stack, variadic and vector boundaries before enabling them |
+| Remaining variadic and vector ABI | SH-4 GCC, GOAL | Fixed scalar mixed calls through eight arguments now pass, including integer stack spills; independently verify mixed variadic and vector boundaries |
 | Remaining kernel sequencing and heaps | GOAL, runtime systems | Nine original system globals now initialize explicitly; implement measured native process heaps, context/thread setup and remaining original module dependencies |
 | PowerVR scene pipeline | KOS, PVR, graphics | Measured culling/material deduplication and bounded residency on synthetic fixtures before expanding game scenes |
 | Hardware validation | Dreamcast development | Reproduce asset-free native diagnostics on hardware with toolchain, load method, RAM use and failures documented |
@@ -104,3 +104,8 @@ See [KERNEL_GLOBAL_STARTUP.md](KERNEL_GLOBAL_STARTUP.md). (AI-assisted).
 
 Original EnumType width and signedness now classify unboxed 8/16/32/64-bit values at scalar ABI boundaries, preserving semantic enum names and original typed loads. Four host tests and 168 new native checks cover signed extremes, high halves, compact leaves, construction, calls and mixed register entry. Four more original gkernel routines lower (54/76), but remain compile-only. Full target setup, process heaps, kernel/gameplay and remaining mixed/vector ABIs are unfinished.
 See [ENUM_ABI.md](ENUM_ABI.md). (AI-assisted).
+
+## Completed: Fixed mixed scalar calls with integer stack arguments
+
+Fixed mixed signatures now permit integer stack spills through eight total arguments. An independent GCC oracle verifies all 376 spilled mixed layouts (2,767 return probes); 226 frontend functions and 1,937 new native checks verify entries, calls, payloads, live values and stack restoration. Mixed variadic/vector ABIs remain blocked. The original scalar validator and bounded nine-global startup still pass; full kernel/gameplay and process heaps remain unfinished.
+See [MIXED_STACK_ABI.md](MIXED_STACK_ABI.md). (AI-assisted).

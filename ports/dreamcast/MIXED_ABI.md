@@ -1,3 +1,8 @@
+Current extension: fixed mixed signatures now permit integer stack spills
+through eight total arguments; mixed variadic/vector support remains open.
+See [MIXED_STACK_ABI.md](MIXED_STACK_ABI.md). The milestone figures below are
+historical. (AI-assisted).
+
 # Fixed-signature mixed scalar register ABI
 
 2026-10-21. (AI-assisted). Mixed integer/float signatures previously rejected

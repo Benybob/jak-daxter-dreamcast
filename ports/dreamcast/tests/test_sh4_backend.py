@@ -1,5 +1,6 @@
 """Check emitted machine bytes against GNU assembler, not an emulator model."""
 import os
+import itertools
 from pathlib import Path
 import struct
 import re
@@ -40,6 +41,42 @@ class GccAbiOracleTest(unittest.TestCase):
                     if i in integers:
                         self.assertRegex(body,r'mov\s+r'+str(4+gp*2)+r',r0')
                         self.assertRegex(body,r'mov\s+r'+str(5+gp*2)+r',r1'); gp+=1
+                    else:
+                        self.assertRegex(body,r'fmov\s+fr'+str(FLOAT_ARGUMENT_REGISTERS[fp])+r',fr0'); fp+=1
+
+    def test_mixed_integer_stack_positions_follow_gcc_for_every_fixed_layout(self):
+        patterns=[]; sources=[]
+        for count in range(4,9):
+            for integer_count in range(3,count):
+                for indices in itertools.combinations(range(count),integer_count):
+                    patterns.append((count,set(indices)))
+        self.assertEqual(len(patterns),376)
+        for p,(count,integers) in enumerate(patterns):
+            parameters=','.join(('unsigned long long' if i in integers else 'float')+' a'+str(i) for i in range(count))
+            for i in range(count):
+                result='unsigned long long' if i in integers else 'float'
+                sources.append(f'{result} mixed_stack_p{p}_arg{i}({parameters}) {{ return a{i}; }}')
+        self.assertEqual(len(sources),2767)
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory); c=root/'oracle.c'; asm=root/'oracle.s'; c.write_text('\n'.join(sources))
+            subprocess.run([str(GCC),'-O2','-m4-single','-ml','-S',str(c),'-o',str(asm)],check=True,capture_output=True)
+            assembly=asm.read_text()
+            bodies=dict(re.findall(r'_mixed_stack_p(\d+_arg\d+):(.*?)\.size',assembly,re.DOTALL))
+            self.assertEqual(len(bodies),2767)
+            for p,(count,integers) in enumerate(patterns):
+                gp=fp=0
+                for i in range(count):
+                    body=bodies[f'{p}_arg{i}']
+                    if i in integers:
+                        if gp<2:
+                            self.assertRegex(body,r'mov\s+r'+str(4+gp*2)+r',r0')
+                            self.assertRegex(body,r'mov\s+r'+str(5+gp*2)+r',r1')
+                        else:
+                            offset=(gp-2)*8
+                            pattern=r'mov.l\s+@r15,r0' if not offset else r'mov.l\s+@\('+str(offset)+r',r15\),r0'
+                            self.assertRegex(body,pattern)
+                            self.assertRegex(body,r'mov.l\s+@\('+str(offset+4)+r',r15\),r1')
+                        gp+=1
                     else:
                         self.assertRegex(body,r'fmov\s+fr'+str(FLOAT_ARGUMENT_REGISTERS[fp])+r',fr0'); fp+=1
 
