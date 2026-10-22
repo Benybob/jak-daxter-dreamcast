@@ -27,8 +27,8 @@ Discuss scope on **this fork**, and keep changes small enough to review.
 
 | Area | Locally verified scope |
 | --- | --- |
-| Host | 178 tests pass with the complete local SDK/oracle setup |
-| Native runtime | 11,848 checks in Flycast, stock 16 MiB RAM |
+| Host | 181 tests pass with the complete local SDK/oracle setup |
+| Native runtime | 12,356 checks in Flycast, stock 16 MiB RAM |
 | Original data | 182 native checks; all 668 V4 data objects across 36 local archives validate |
 | Numeric regression | 39 native checks |
 | GOAL backend | Original typed frontend to native SH-4; scalar calls, classes/methods, void startup, private data, 64-bit shifts and 32-bit division |
@@ -52,16 +52,16 @@ the local checkpoint, not a GitHub Actions run.
 
 ## Latest completed contributor task
 
-The unchanged original remove-exit behavior now executes through an explicit validated process execution context, distinct from allocation-only binding. Missing or stale context exits through the restored native frame before body memory access. The original kernel current-process field is bound and released deliberately; unsupported/resetless/mutable roles still reject. Seven new host tests and 91 native checks pass. Full kernel startup, thread switching, GC, failure unwinding and gameplay remain unfinished. (AI-assisted)
+Original process-by-name, process-not-name and process-count now execute with their three original anonymous callbacks, original name= and string=, original traversal, and explicit original null-context/search-global startup slices. Three host tests and 508 native checks verify callback closure, mixed symbol/string comparisons, first-match ordering, counts and unchanged tree/context memory. Full kernel startup, threads, GC, failure unwinding and gameplay remain unfinished. (AI-assisted)
 
-See [PROCESS_ENTRY.md](ports/dreamcast/PROCESS_ENTRY.md). Full kernel/gameplay remains unfinished.
+See [PROCESS_QUERIES.md](ports/dreamcast/PROCESS_QUERIES.md). Full kernel/gameplay remains unfinished.
 
 ## Build and orientation
 
 Source is in `ports/dreamcast/`. Follow [BUILDING.md](ports/dreamcast/BUILDING.md).
 The verified baseline is OpenGOAL `6076aab5a95955443a9e1ed8f72a25bc0e2fcf9d`;
 the latest locally verified port checkpoint is
-`c5d30603182f5055d1735388a35cdb6f64321b2f`.
+`c7e98b33d117e968f6b8e2a66b6e61368777c7b3`.
 
 No ISO, BIOS, extracted textures/models, converted game scenes or ELF binaries
 embedding game assets are uploaded. Use assets extracted locally from your own

@@ -139,3 +139,8 @@ See [STRUCTURED_STATIC.md](STRUCTURED_STATIC.md). (AI-assisted).
 
 The unchanged original remove-exit behavior now executes through an explicit validated process execution context, distinct from allocation-only binding. Missing or stale context exits through the restored native frame before body memory access. The original kernel current-process field is bound and released deliberately; unsupported/resetless/mutable roles still reject. Seven new host tests and 91 native checks pass. Full kernel startup, thread switching, GC, failure unwinding and gameplay remain unfinished. (AI-assisted)
 See [PROCESS_ENTRY.md](PROCESS_ENTRY.md). (AI-assisted).
+
+## Completed: Original process queries and name comparisons
+
+Original process-by-name, process-not-name and process-count now execute with their three original anonymous callbacks, original name= and string=, original traversal, and explicit original null-context/search-global startup slices. Three host tests and 508 native checks verify callback closure, mixed symbol/string comparisons, first-match ordering, counts and unchanged tree/context memory. Full kernel startup, threads, GC, failure unwinding and gameplay remain unfinished. (AI-assisted)
+See [PROCESS_QUERIES.md](PROCESS_QUERIES.md). (AI-assisted).

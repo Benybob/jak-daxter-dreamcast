@@ -193,10 +193,25 @@ def main():
         '--initializer','dc-original-context-init','--header',str(port/'build/original_kernel_context.h')],check=True)
     subprocess.run(compiler+process_context+['--source',str(port.parents[1]/'goal_src/jak1/kernel/gkernel.gc'),
         '--function','remove-exit','--header',str(port/'build/original_process_entry.h')],check=True)
+    command=compiler+process_context+['--source',str(port.parents[1]/'goal_src/jak1/kernel/gkernel.gc'),
+        '--header',str(port/'build/original_process_query.h')]
+    for name in ('process-by-name','process-not-name','process-count','anon-function-0','anon-function-1','anon-function-2'):
+        command+=['--function',name]
+    subprocess.run(command,check=True)
+    for start,end,stem,init in (('*null-kernel-context*','*null-kernel-context*','original_null_context','dc-null-context-init'),
+                              ('*global-search-name*','*global-search-count*','original_query_globals','dc-query-globals-init')):
+        subprocess.run(compiler+process_context+['--source',str(port.parents[1]/'goal_src/jak1/kernel/gkernel.gc'),
+            '--from-global',start,'--prefix-through-global',end,'--initializer',init,
+            '--header',str(port/'build'/f'{stem}.h')],check=True)
+    subprocess.run(compiler+['--source',str(port.parents[1]/'goal_src/jak1/kernel/gstring.gc'),
+        '--preload',str(port.parents[1]/'goal_src/jak1/kernel/gcommon.gc'),
+        '--preload',str(port.parents[1]/'goal_src/jak1/kernel/gstring-h.gc'),
+        '--select-defuns','--function','string=','--function','name=',
+        '--header',str(port/'build/original_name_compare.h')],check=True)
     subprocess.run([sys.executable,str(port/'build_dreamcast.py'),'--target','jak-dc-runtime-goal.elf'],check=True)
     if args.verify:
         subprocess.run([sys.executable,str(port/'verify_backend.py'),str(args.flycast),
                         str(port/'jak-dc-runtime-goal.elf'),'--nm',str(args.nm),'--output',str(args.output),
-                        '--tests','11848','--suite','runtime-goal'],check=True)
+                        '--tests','12356','--suite','runtime-goal'],check=True)
 
 if __name__=='__main__': main()
