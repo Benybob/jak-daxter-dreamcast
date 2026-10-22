@@ -27,8 +27,8 @@ Discuss scope on **this fork**, and keep changes small enough to review.
 
 | Area | Locally verified scope |
 | --- | --- |
-| Host | 195 tests pass with the complete local SDK/oracle setup |
-| Native runtime | 21,849 checks in Flycast, stock 16 MiB RAM |
+| Host | 196 tests pass with the complete local SDK/oracle setup |
+| Native runtime | 22,105 checks in Flycast, stock 16 MiB RAM |
 | Original data | 182 native checks; all 668 V4 data objects across 36 local archives validate |
 | Numeric regression | 39 native checks |
 | GOAL backend | Original typed frontend to native SH-4; scalar calls, classes/methods, void startup, private data, 64-bit shifts and 32-bit division |
@@ -52,16 +52,16 @@ the local checkpoint, not a GitHub Actions run.
 
 ## Latest completed contributor task
 
-Native fibers now copy and deliver zero through eight explicit 64-bit scalar arguments while preserving the zero-argument API. Six/eight-argument GOAL routines survive nested yields, overwritten input arrays and a destroyed shared working stack, and call unchanged original remove-exit under explicit process binding. Grok supplied the isolated 400-byte SH-4 C adapter; Codex independently verifies 527 new native checks plus 93 lifecycle and 438 C ABI host checks. Original set-to-run/scheduling/cleanup, GC, unwinding and gameplay remain unfinished. (AI-assisted)
+The guarded unchanged original void stack-size-set! method now resizes a real activated main CPU thread's backup. Original activation, resizing, six scalar startup arguments, yield, poisoned-stack restoration and completion work together under an explicit C driver and process binding. Grok supplied the read-only checker; Codex corrected its false-symbol marker and independently verifies 256 new native checks, including stale handles, active mutation and canonical original-export identity. Original scheduler/arming/deactivation, GC, unwinding and gameplay remain unfinished. (AI-assisted)
 
-See [SCALAR_FIBER_ARGUMENTS.md](ports/dreamcast/SCALAR_FIBER_ARGUMENTS.md). Full kernel/gameplay remains unfinished.
+See [THREAD_BACKUP_RESIZE.md](ports/dreamcast/THREAD_BACKUP_RESIZE.md). Full kernel/gameplay remains unfinished.
 
 ## Build and orientation
 
 Source is in `ports/dreamcast/`. Follow [BUILDING.md](ports/dreamcast/BUILDING.md).
 The verified baseline is OpenGOAL `6076aab5a95955443a9e1ed8f72a25bc0e2fcf9d`;
 the latest locally verified port checkpoint is
-`0b9c953cfb18667b2574ecb8e36ca31ddf0ef89d`.
+`540fe9660916cc1b0d1bd25defb4b8e0b118b131`.
 
 No ISO, BIOS, extracted textures/models, converted game scenes or ELF binaries
 embedding game assets are uploaded. Use assets extracted locally from your own

@@ -74,7 +74,8 @@ uint32_t dc_runtime_activation_cases(dc_goal_runtime *rt,dc_runtime_check check,
    {cpu+16,entry(rt,"mem-set32!")},{dc_goal_find(rt,"mem-set32!"),rt->s7},
    {proc_type+12,(word(rt,proc_type+12)&0xffff0000u)|16u},
    {cpu+8,(word(rt,cpu+8)&0xffff0000u)|129u},
-   {owners[0]+80,owners[0]+92},{owners[0]+80,owners[0]-4+1136+16}};
+   {owners[0]+80,owners[0]+92},{owners[0]+80,owners[0]-4+1136+16},
+   {dc_goal_find(rt,"(method activate process)"),entry(rt,"dc-div-signed")}};
   for(i=0;i<sizeof cases/sizeof cases[0];++i){
    uint32_t saved=word(rt,cases[i].at);put(rt,cases[i].at,cases[i].value);
    memcpy(owner_before,dc_goal_resolve(rt,owners[0]-4,1136),1136);memcpy(root_before,dc_goal_resolve(rt,roots[0]-4,32),32);

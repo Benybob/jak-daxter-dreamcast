@@ -56,4 +56,11 @@ int dc_goal_install_fiber_bridge(dc_goal_runtime *,dc_goal_cache_sync,dc_goal_mo
  * No rollback of target effects, derived process, scheduler or GC support. */
 uint32_t dc_goal_activate_process(dc_goal_runtime *,uint32_t process,uint32_t reservation,
                                  uint32_t destination,uint32_t stack_base,uint32_t stack_bytes,uint32_t name);
+/* Original void stack-size-set! on an owned fresh main CPU thread. No live
+ * native contexts may use this thread; active fibers are rejected. Checked
+ * aligned sizes and strict heap headroom, no intervening allocation for a size
+ * change. Same-size no-op may follow later allocation. Borrowed image views
+ * must be reopened. No payload clearing, bindings, execution or scheduler. */
+int dc_goal_resize_main_backup(dc_goal_runtime *,uint32_t process,uint32_t reservation,
+                               uint32_t thread,uint32_t stack_base,uint32_t stack_bytes,uint32_t backup_bytes);
 #endif

@@ -89,6 +89,12 @@ uint32_t dc_runtime_cpu_thread_cases(dc_goal_runtime *rt,dc_runtime_check check,
   CHECK(dc_goal_construct_main_thread(rt,owner,624,stack,1024,name,64),0,"missing original constructor refuses to allocate/write");
   CHECK(rt->error,DC_GOAL_BAD_MODULE,"missing original constructor explicit error");
   CHECK(dc_goal_set_symbol(rt,ctor_symbol,ctor),1,"unchanged original constructor binding restored");
+  CHECK(dc_goal_set_symbol(rt,ctor_symbol,entry(rt,"dc-div-signed")),1,"registered foreign entry selected for constructor rejection");
+  CHECK(dc_goal_construct_main_thread(rt,owner,624,stack,1024,name,64),0,"constructor rejects a registered alias with foreign owning symbol");
+  CHECK(rt->error,DC_GOAL_BAD_MODULE,"foreign constructor identity is an unsupported module");
+  CHECK(memcmp(expected,dc_goal_resolve(rt,owner-4,624),624),0,"foreign registered entry never executes or mutates owner");
+  CHECK(rt->used,used,"foreign constructor rejection allocates no arena bytes");
+  CHECK(dc_goal_set_symbol(rt,ctor_symbol,ctor),1,"canonical original constructor restored after alias probe");
   CHECK(memcmp(expected,dc_goal_resolve(rt,owner-4,624),624),0,"all additional rejection paths preserve full process reservation");
   CHECK(rt->used,used,"all constructor preflight failures allocate nothing");
   for(i=0;i<3;++i) {

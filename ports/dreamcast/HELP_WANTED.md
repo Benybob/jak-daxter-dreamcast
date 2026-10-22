@@ -194,3 +194,8 @@ See [PROCESS_ACTIVATION.md](PROCESS_ACTIVATION.md). (AI-assisted).
 
 Native fibers now copy and deliver zero through eight explicit 64-bit scalar arguments while preserving the zero-argument API. Six/eight-argument GOAL routines survive nested yields, overwritten input arrays and a destroyed shared working stack, and call unchanged original remove-exit under explicit process binding. Grok supplied the isolated 400-byte SH-4 C adapter; Codex independently verifies 527 new native checks plus 93 lifecycle and 438 C ABI host checks. Original set-to-run/scheduling/cleanup, GC, unwinding and gameplay remain unfinished. (AI-assisted)
 See [SCALAR_FIBER_ARGUMENTS.md](SCALAR_FIBER_ARGUMENTS.md). (AI-assisted).
+
+## Completed: Original main-thread backup sizing and startup chain
+
+The guarded unchanged original void stack-size-set! method now resizes a real activated main CPU thread's backup. Original activation, resizing, six scalar startup arguments, yield, poisoned-stack restoration and completion work together under an explicit C driver and process binding. Grok supplied the read-only checker; Codex corrected its false-symbol marker and independently verifies 256 new native checks, including stale handles, active mutation and canonical original-export identity. Original scheduler/arming/deactivation, GC, unwinding and gameplay remain unfinished. (AI-assisted)
+See [THREAD_BACKUP_RESIZE.md](THREAD_BACKUP_RESIZE.md). (AI-assisted).

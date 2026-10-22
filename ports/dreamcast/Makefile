@@ -146,7 +146,7 @@ runtime_native_file_cases.o: runtime_native_file_cases.c runtime_cases.h goal_na
 kernel_types_data.h: generate_kernel_types.py ../../game/kernel/jak1/kscheme.cpp ../../common/symbols.h
 	$(PYTHON) generate_kernel_types.py
 
-jak-dc-runtime-goal.elf: runtime_fiber_words_cases.o goal_scalar_call.o scalar_call_cases.o runtime_activation_cases.o native_context_swap.o goal_fiber.o runtime_fiber_cases.o native_stack_call.o goal_stack_call.o runtime_stack_call_cases.o code_entry_cases.o goal_register_snapshot.o register_snapshot_probe.o runtime_register_snapshot_cases.o runtime_goal_main.o runtime_goal_cases.o runtime_memory_cases.o runtime_static_cases.o runtime_float_cases.o runtime_bridge_cases.o runtime_quoted_cases.o runtime_void_cases.o runtime_type_cases.o runtime_shift_cases.o runtime_shift_baseline.o runtime_division_cases.o runtime_native_file_cases.o runtime_locals_cases.o runtime_early_cases.o runtime_sort_cases.o runtime_operator_cases.o runtime_fixed_cases.o runtime_far_cases.o runtime_dependency_cases.o runtime_mixed_cases.o runtime_validation_cases.o runtime_kernel_globals_cases.o runtime_enum_cases.o runtime_mixed_stack_cases.o runtime_process_tree_cases.o runtime_process_new_cases.o runtime_process_heap_cases.o runtime_structured_cases.o runtime_process_entry_cases.o runtime_process_query_cases.o runtime_call_guard_cases.o runtime_cpu_thread_cases.o goal_native_file.o type_cases.o kernel_type_cases.o goal_kernel_types.o runtime_cases.o goal_runtime.o goal_runtime_dc.o goal_module.o goal_bridge.o goal_process_heap.o process_heap_cases.o goal_thread_stack.o thread_stack_cases.o
+jak-dc-runtime-goal.elf: goal_thread_resize.o thread_resize_cases.o runtime_thread_resize_cases.o runtime_fiber_words_cases.o goal_scalar_call.o scalar_call_cases.o runtime_activation_cases.o native_context_swap.o goal_fiber.o runtime_fiber_cases.o native_stack_call.o goal_stack_call.o runtime_stack_call_cases.o code_entry_cases.o goal_register_snapshot.o register_snapshot_probe.o runtime_register_snapshot_cases.o runtime_goal_main.o runtime_goal_cases.o runtime_memory_cases.o runtime_static_cases.o runtime_float_cases.o runtime_bridge_cases.o runtime_quoted_cases.o runtime_void_cases.o runtime_type_cases.o runtime_shift_cases.o runtime_shift_baseline.o runtime_division_cases.o runtime_native_file_cases.o runtime_locals_cases.o runtime_early_cases.o runtime_sort_cases.o runtime_operator_cases.o runtime_fixed_cases.o runtime_far_cases.o runtime_dependency_cases.o runtime_mixed_cases.o runtime_validation_cases.o runtime_kernel_globals_cases.o runtime_enum_cases.o runtime_mixed_stack_cases.o runtime_process_tree_cases.o runtime_process_new_cases.o runtime_process_heap_cases.o runtime_structured_cases.o runtime_process_entry_cases.o runtime_process_query_cases.o runtime_call_guard_cases.o runtime_cpu_thread_cases.o goal_native_file.o type_cases.o kernel_type_cases.o goal_kernel_types.o runtime_cases.o goal_runtime.o goal_runtime_dc.o goal_module.o goal_bridge.o goal_process_heap.o process_heap_cases.o goal_thread_stack.o thread_stack_cases.o
 	kos-cc -o $@ $^
 goal_layout.h: generate_runtime_layout.py ../../common/goal_constants.h ../../common/symbols.h ../../game/kernel/jak1/kscheme.h
 	$(PYTHON) generate_runtime_layout.py
@@ -238,6 +238,7 @@ test: host
 	$(PYTHON) -m unittest discover -s tests -v
 
 clean:
+	rm -f goal_thread_resize.o thread_resize_cases.o runtime_thread_resize_cases.o
 	rm -f runtime_fiber_words_cases.o
 	rm -f goal_scalar_call.o scalar_call_cases.o
 	rm -f runtime_activation_cases.o
@@ -324,3 +325,14 @@ runtime_fiber_words_cases.o: runtime_fiber_words_cases.c fiber_test_support.h go
 	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -I. -c $< -o $@
 runtime_fiber_cases.o: fiber_test_support.h
 build/fiber-check$(HOST_EXE): goal_scalar_call.h
+
+# Guard the original void main-thread backup setter (AI-assisted).
+goal_thread_resize.o: goal_thread_resize.c goal_thread_resize.h goal_thread_stack.h goal_runtime.h
+thread_resize_cases.o: thread_resize_cases.c thread_resize_cases.h goal_thread_resize.h goal_kernel_types.h
+runtime_thread_resize_cases.o: runtime_thread_resize_cases.c goal_bridge.h goal_thread_resize.h goal_fiber.h fiber_test_support.h runtime_cases.h build/original_thread_resize.h
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -I. -c $< -o $@
+goal_bridge.o: goal_thread_resize.h
+runtime_goal_cases.o: thread_resize_cases.h
+host: build/thread-resize-check$(HOST_EXE)
+build/thread-resize-check$(HOST_EXE): host_thread_resize.c thread_resize_cases.c thread_resize_cases.h goal_thread_resize.c goal_thread_resize.h goal_thread_stack.c goal_thread_stack.h goal_process_heap.c goal_kernel_types.c goal_runtime.c
+	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -pedantic host_thread_resize.c thread_resize_cases.c goal_thread_resize.c goal_thread_stack.c goal_process_heap.c goal_kernel_types.c goal_runtime.c -o $@

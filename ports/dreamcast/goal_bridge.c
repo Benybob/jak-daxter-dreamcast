@@ -4,6 +4,7 @@
 #include <string.h>
 #include "goal_bridge.h"
 #include "goal_fiber.h"
+#include "goal_thread_resize.h"
 #include "goal_process_heap.h"
 #ifndef __DREAMCAST__
 #error These boxed tail bridges require native SH-4 code execution.
@@ -229,6 +230,7 @@ uint32_t dc_goal_construct_main_thread(dc_goal_runtime *rt,uint32_t process,uint
                                        uint32_t stack_base,uint32_t stack_bytes,uint32_t name,uint32_t backup_bytes) {
   typedef uint64_t (*constructor)(uint64_t,uint64_t,uint64_t,uint64_t,uint64_t,uint64_t);
   dc_goal_process_heap heap;
+  dc_goal_code_entry_info provenance;
   dc_goal_type_fields *schema;
   unsigned char *fields;
   uint32_t symbol,type,thread_type,top,cur,main_thread,top_thread,body,bytes;
@@ -258,6 +260,9 @@ uint32_t dc_goal_construct_main_thread(dc_goal_runtime *rt,uint32_t process,uint
   symbol=dc_goal_find(rt,"(method new cpu-thread)"); body=symbol?dc_goal_symbol_value(rt,symbol):0;
   if(!body || dc_goal_type_of(rt,body)!=rt->function_type || !dc_goal_resolve(rt,body,2)) {
     rt->error=DC_GOAL_BAD_MODULE; return 0;
+  }
+  if(!dc_goal_code_entry(rt,body,&provenance) || provenance.symbol!=symbol) {
+    rt->error=DC_GOAL_BAD_MODULE;return 0;
   }
   /* Original main-thread branch bumps heap-cur and initializes data only.
    * Reject every unsupported temporary-thread path before entering its body. */
@@ -358,6 +363,7 @@ uint32_t dc_goal_activate_process(dc_goal_runtime *rt,uint32_t process,uint32_t 
  for(i=0;i<4;++i) {
   symbol=dc_goal_find(rt,names[i]);body[i]=symbol?dc_goal_symbol_value(rt,symbol):0;
   if(!dc_goal_code_entry(rt,body[i],&code[i]))return 0;
+  if(code[i].symbol!=symbol) {rt->error=DC_GOAL_BAD_FUNCTION;return 0;}
   if(activation_overlap(stack_base,stack_bytes,body[i]-4,code[i].bytes+4) ||
      activation_write_alias(process,reservation,destination,context,body[i]-4,code[i].bytes+4))goto bad;
  }
@@ -369,4 +375,20 @@ bad:
  rt->error=DC_GOAL_BAD_ARGUMENT;return 0;
 oom:
  rt->error=DC_GOAL_OUT_OF_MEMORY;return 0;
+}
+
+int dc_goal_resize_main_backup(dc_goal_runtime *rt,uint32_t process,uint32_t reservation,
+                               uint32_t thread,uint32_t stack_base,uint32_t stack_bytes,uint32_t backup_bytes) {
+ typedef void (*setter)(uint64_t,uint64_t);
+ dc_goal_code_entry_info code;
+ uint32_t symbol,body;
+ if(!rt || active_runtime!=rt || dc_goal_fiber_current()) {if(rt)rt->error=DC_GOAL_BAD_ARGUMENT;return 0;}
+ if(!dc_goal_thread_resize_check(rt,process,reservation,thread,stack_base,stack_bytes,backup_bytes))return 0;
+ symbol=dc_goal_find(rt,"(method stack-size-set! thread)");body=symbol?dc_goal_symbol_value(rt,symbol):0;
+ if(!dc_goal_code_entry(rt,body,&code))return 0;
+ if(code.symbol!=symbol) {rt->error=DC_GOAL_BAD_FUNCTION;return 0;}
+ if(activation_overlap(process-4,reservation,body-4,code.bytes+4)) {rt->error=DC_GOAL_BAD_ARGUMENT;return 0;}
+ rt->error=DC_GOAL_OK;
+ ((setter)(uintptr_t)body)(thread,backup_bytes);
+ return rt->error==DC_GOAL_OK;
 }
