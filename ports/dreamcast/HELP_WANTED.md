@@ -149,3 +149,8 @@ See [PROCESS_QUERIES.md](PROCESS_QUERIES.md). (AI-assisted).
 
 Native runtime call sites now reject zero/#f targets for live function cells, dynamic arguments and virtual methods. A strict core fault bridge reports BAD_FUNCTION and exits the current caller through its restored frame, defining integer/float error returns and skipping continuation effects. Three host tests and 78 native checks pass, including missing-import rollback and stack/float/void recovery. General error propagation, failure unwinding, threads, GC and gameplay remain unfinished. (AI-assisted)
 See [CALL_GUARDS.md](CALL_GUARDS.md). (AI-assisted).
+
+## Completed: Bounded original main CPU-thread construction
+
+An explicit C bootstrap entry validates an owned process reservation and disjoint execution-stack span before calling the unchanged original main CPU-thread constructor. Two host tests and 142 native checks verify original type flags/field offsets, strict heap bounds, no-write failures and three data-only constructions. It does not initialize a runnable PC, activate processes or switch threads. Full platform startup, GC, failure unwinding and gameplay remain unfinished. (AI-assisted)
+See [CPU_THREAD_CONSTRUCTION.md](CPU_THREAD_CONSTRUCTION.md). (AI-assisted).

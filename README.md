@@ -27,8 +27,8 @@ Discuss scope on **this fork**, and keep changes small enough to review.
 
 | Area | Locally verified scope |
 | --- | --- |
-| Host | 184 tests pass with the complete local SDK/oracle setup |
-| Native runtime | 12,434 checks in Flycast, stock 16 MiB RAM |
+| Host | 186 tests pass with the complete local SDK/oracle setup |
+| Native runtime | 12,576 checks in Flycast, stock 16 MiB RAM |
 | Original data | 182 native checks; all 668 V4 data objects across 36 local archives validate |
 | Numeric regression | 39 native checks |
 | GOAL backend | Original typed frontend to native SH-4; scalar calls, classes/methods, void startup, private data, 64-bit shifts and 32-bit division |
@@ -52,16 +52,16 @@ the local checkpoint, not a GitHub Actions run.
 
 ## Latest completed contributor task
 
-Native runtime call sites now reject zero/#f targets for live function cells, dynamic arguments and virtual methods. A strict core fault bridge reports BAD_FUNCTION and exits the current caller through its restored frame, defining integer/float error returns and skipping continuation effects. Three host tests and 78 native checks pass, including missing-import rollback and stack/float/void recovery. General error propagation, failure unwinding, threads, GC and gameplay remain unfinished. (AI-assisted)
+An explicit C bootstrap entry validates an owned process reservation and disjoint execution-stack span before calling the unchanged original main CPU-thread constructor. Two host tests and 142 native checks verify original type flags/field offsets, strict heap bounds, no-write failures and three data-only constructions. It does not initialize a runnable PC, activate processes or switch threads. Full platform startup, GC, failure unwinding and gameplay remain unfinished. (AI-assisted)
 
-See [CALL_GUARDS.md](ports/dreamcast/CALL_GUARDS.md). Full kernel/gameplay remains unfinished.
+See [CPU_THREAD_CONSTRUCTION.md](ports/dreamcast/CPU_THREAD_CONSTRUCTION.md). Full kernel/gameplay remains unfinished.
 
 ## Build and orientation
 
 Source is in `ports/dreamcast/`. Follow [BUILDING.md](ports/dreamcast/BUILDING.md).
 The verified baseline is OpenGOAL `6076aab5a95955443a9e1ed8f72a25bc0e2fcf9d`;
 the latest locally verified port checkpoint is
-`b05a1702cb0e49037c75fd225ba1a5f1ef2a9061`.
+`e79283948e9e27ab24268acbd487a031e21d0a03`.
 
 No ISO, BIOS, extracted textures/models, converted game scenes or ELF binaries
 embedding game assets are uploaded. Use assets extracted locally from your own

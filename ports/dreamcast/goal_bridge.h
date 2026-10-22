@@ -36,4 +36,12 @@ int dc_goal_install_process_bridge(dc_goal_runtime *rt,dc_goal_cache_sync sync,
                                     dc_goal_module_result *result);
 int dc_goal_bind_process_context(dc_goal_runtime *rt,uint32_t process,uint32_t allocation_bytes);
 void dc_goal_clear_process_context(dc_goal_runtime *rt);
+/* Data-only first CPU-thread construction through the unchanged original
+ * native constructor. Caller owns the unmoved process reservation and a
+ * disjoint aligned execution-stack span in rt's arena. Main/top thread must
+ * both be false. Base cpu-thread only, aligned backup size, strict process
+ * heap fit. No temporary threads, PC initialization, execution or switching.
+ * Allocation/execution bindings are not changed. No body writes on rejection. */
+uint32_t dc_goal_construct_main_thread(dc_goal_runtime *rt,uint32_t process,uint32_t reservation_bytes,
+                                       uint32_t stack_base,uint32_t stack_bytes,uint32_t name,uint32_t backup_bytes);
 #endif

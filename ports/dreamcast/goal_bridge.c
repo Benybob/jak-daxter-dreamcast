@@ -219,3 +219,43 @@ int dc_goal_install_process_bridge(dc_goal_runtime *rt,dc_goal_cache_sync sync,d
   memcpy(code+8,&target,4);
   return dc_goal_load_module(rt,&function,1,sync,NULL,result);
 }
+
+uint32_t dc_goal_construct_main_thread(dc_goal_runtime *rt,uint32_t process,uint32_t reservation_bytes,
+                                       uint32_t stack_base,uint32_t stack_bytes,uint32_t name,uint32_t backup_bytes) {
+  typedef uint64_t (*constructor)(uint64_t,uint64_t,uint64_t,uint64_t,uint64_t,uint64_t);
+  dc_goal_process_heap heap;
+  dc_goal_type_fields *schema;
+  unsigned char *fields;
+  uint32_t symbol,type,thread_type,top,cur,main_thread,top_thread,body,bytes;
+  if(!rt || active_runtime!=rt) { if(rt) rt->error=DC_GOAL_BAD_ARGUMENT; return 0; }
+  if(!dc_goal_process_heap_open(&heap,rt,process,reservation_bytes)) return 0;
+  symbol=dc_goal_find(rt,"cpu-thread"); type=symbol?dc_goal_symbol_value(rt,symbol):0;
+  thread_type=dc_goal_symbol_value(rt,rt->s7+DC_FIX_SYM_THREAD_TYPE);
+  if(!type || dc_goal_type_of(rt,type)!=rt->type_type ||
+     !(schema=dc_goal_resolve(rt,type,sizeof(*schema))) || schema->allocated_size!=128 ||
+     schema->num_methods!=12 || schema->parent!=thread_type || dc_goal_type_of(rt,name)!=rt->symbol_type) {
+    rt->error=DC_GOAL_BAD_TYPE; return 0;
+  }
+  if(!stack_bytes || ((stack_base|stack_bytes|backup_bytes)&15u) || stack_bytes<16 ||
+     stack_bytes>UINT32_MAX-stack_base || backup_bytes>stack_bytes || backup_bytes>UINT32_MAX-128u) {
+    rt->error=DC_GOAL_BAD_ARGUMENT; return 0;
+  }
+  if(!dc_goal_resolve(rt,stack_base,stack_bytes)) return 0;
+  if(stack_base<process-4+reservation_bytes && stack_base+stack_bytes>process-4) {
+    rt->error=DC_GOAL_BAD_ARGUMENT; return 0;
+  }
+  fields=dc_goal_resolve(rt,process,108);
+  if(!fields) return 0;
+  memcpy(&main_thread,fields+40,4); memcpy(&top_thread,fields+44,4);
+  if(main_thread!=rt->s7 || top_thread!=rt->s7) { rt->error=DC_GOAL_BAD_ARGUMENT; return 0; }
+  memcpy(&cur,fields+84,4); memcpy(&top,fields+80,4); bytes=128+backup_bytes;
+  if(bytes>=top-cur) { rt->error=DC_GOAL_OUT_OF_MEMORY; return 0; }
+  symbol=dc_goal_find(rt,"(method new cpu-thread)"); body=symbol?dc_goal_symbol_value(rt,symbol):0;
+  if(!body || dc_goal_type_of(rt,body)!=rt->function_type || !dc_goal_resolve(rt,body,2)) {
+    rt->error=DC_GOAL_BAD_MODULE; return 0;
+  }
+  /* Original main-thread branch bumps heap-cur and initializes data only.
+   * Reject every unsupported temporary-thread path before entering its body. */
+  return (uint32_t)((constructor)(uintptr_t)body)(rt->s7+DC_FIX_SYM_PROCESS_TYPE,type,process,name,
+                                                 backup_bytes,stack_base+stack_bytes);
+}

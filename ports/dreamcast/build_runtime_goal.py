@@ -212,10 +212,13 @@ def main():
     for name in ('identity','float-identity','effect','last','int','float','void','eight','dynamic'):
         command+=['--function','dc-call-guard-'+name]
     subprocess.run(command,check=True)
+    subprocess.run(compiler+process_context+['--source',str(port.parents[1]/'goal_src/jak1/kernel/gkernel.gc'),
+        '--function','(method new cpu-thread)','--function','(method asize-of cpu-thread)',
+        '--header',str(port/'build/original_cpu_thread.h')],check=True)
     subprocess.run([sys.executable,str(port/'build_dreamcast.py'),'--target','jak-dc-runtime-goal.elf'],check=True)
     if args.verify:
         subprocess.run([sys.executable,str(port/'verify_backend.py'),str(args.flycast),
                         str(port/'jak-dc-runtime-goal.elf'),'--nm',str(args.nm),'--output',str(args.output),
-                        '--tests','12434','--suite','runtime-goal'],check=True)
+                        '--tests','12576','--suite','runtime-goal'],check=True)
 
 if __name__=='__main__': main()
