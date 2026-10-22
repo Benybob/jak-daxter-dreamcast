@@ -46,5 +46,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Process heap checker compilation failed' }
 if ($LASTEXITCODE -ne 0) { throw 'Thread stack checker compilation failed' }
 & $Compiler @flags (Join-Path $port 'host_code_entry.c') (Join-Path $port 'code_entry_cases.c') (Join-Path $port 'goal_module.c') (Join-Path $port 'goal_runtime.c') -o (Join-Path $build 'code-entry-check.exe')
 if ($LASTEXITCODE -ne 0) { throw 'Code entry checker compilation failed' }
+& $Compiler @flags (Join-Path $port 'host_stack_call.c') (Join-Path $port 'goal_stack_call.c') (Join-Path $port 'goal_module.c') (Join-Path $port 'goal_runtime.c') -o (Join-Path $build 'stack-call-check.exe')
+if ($LASTEXITCODE -ne 0) { throw 'Stack call boundary checker compilation failed' }
 & $pythonCommand -m unittest discover -s (Join-Path $port 'tests') -v
 if ($LASTEXITCODE -ne 0) { throw 'Host tests failed' }

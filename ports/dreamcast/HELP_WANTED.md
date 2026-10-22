@@ -174,3 +174,8 @@ See [REGISTER_SNAPSHOT.md](REGISTER_SNAPSHOT.md). (AI-assisted).
 
 The module loader records exact function entries, byte lengths and owning symbols after cache synchronization. Explicit scalar/void initializers now reject fabricated function objects and stale entries. A bounded read-only query checks strict ordering and current ownership; 271 shared host/SH4 checks cover corruption, duplicates, replacement, no-write queries and partial-registration OOM rollback. Grok's review prompted the duplicate-entry regression. This is initial-entry provenance; continuation validation, restoration, stack switching and gameplay remain unfinished. (AI-assisted)
 See [CODE_ENTRY_PROVENANCE.md](CODE_ENTRY_PROVENANCE.md). (AI-assisted).
+
+## Completed: Registered calls on an owned alternate stack
+
+A validated synchronous native primitive calls a registered zero-argument scalar entry on a separate owned stack and returns to the C caller. Grok supplied and reviewed the 84-byte raw assembly; independent tests add 488 native checks, including varying 64-bit results, target FPU modes, guards, rejection, nesting and unchanged original remove-exit with explicit process binding. The original behavior now runs on its constructed CPU thread's stack. This is call/return; suspension, continuation restoration, scheduling and gameplay remain unfinished. (AI-assisted)
+See [STACK_CALL.md](STACK_CALL.md). (AI-assisted).
