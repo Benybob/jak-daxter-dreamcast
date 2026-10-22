@@ -179,3 +179,8 @@ See [CODE_ENTRY_PROVENANCE.md](CODE_ENTRY_PROVENANCE.md). (AI-assisted).
 
 A validated synchronous native primitive calls a registered zero-argument scalar entry on a separate owned stack and returns to the C caller. Grok supplied and reviewed the 84-byte raw assembly; independent tests add 488 native checks, including varying 64-bit results, target FPU modes, guards, rejection, nesting and unchanged original remove-exit with explicit process binding. The original behavior now runs on its constructed CPU thread's stack. This is call/return; suspension, continuation restoration, scheduling and gameplay remain unfinished. (AI-assisted)
 See [STACK_CALL.md](STACK_CALL.md). (AI-assisted).
+
+## Completed: Cooperative GOAL suspension with shared stack images
+
+A guarded native SH-4 fiber engine now suspends and resumes registered GOAL entries while preserving callee registers and exact stack images. Two GOAL contexts share one deliberately destroyed working stack and call unchanged original remove-exit under explicit process binding. Grok supplied the isolated assembly and reviewed the engine; Codex fixed two word-push boundary gaps and independently verified 385 new native checks. Original scheduling, activation, GC, failure unwinding and gameplay remain unfinished. (AI-assisted)
+See [COOPERATIVE_FIBERS.md](COOPERATIVE_FIBERS.md). (AI-assisted).

@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <string.h>
 #include "goal_bridge.h"
+#include "goal_fiber.h"
 #include "goal_process_heap.h"
 #ifndef __DREAMCAST__
 #error These boxed tail bridges require native SH-4 code execution.
@@ -158,6 +159,9 @@ int dc_goal_install_core_bridges(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_
 void dc_goal_clear_core_bridges(dc_goal_runtime *rt) {
   if (active_runtime==rt) { dc_goal_clear_process_context(rt); active_runtime=NULL; }
 }
+int dc_goal_core_bridges_active(const dc_goal_runtime *rt) {
+  return rt && active_runtime==rt;
+}
 int dc_goal_install_type_bridges(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_goal_module_result *result) {
   const unsigned char stub[12]={1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0};
   unsigned char code[3][12];
@@ -258,4 +262,17 @@ uint32_t dc_goal_construct_main_thread(dc_goal_runtime *rt,uint32_t process,uint
    * Reject every unsupported temporary-thread path before entering its body. */
   return (uint32_t)((constructor)(uintptr_t)body)(rt->s7+DC_FIX_SYM_PROCESS_TYPE,type,process,name,
                                                  backup_bytes,stack_base+stack_bytes);
+}
+
+/* Explicit cooperative-yield bootstrap bridge (AI-assisted). */
+static uint64_t fiber_yield(uint64_t value) {
+ dc_goal_fiber *fiber=dc_goal_fiber_current();
+ return dc_goal_fiber_yield(active_runtime?active_runtime:(fiber?fiber->runtime:NULL),value);
+}
+int dc_goal_install_fiber_bridge(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_goal_module_result *result) {
+ unsigned char code[12]={1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0};
+ dc_goal_code_export function={"dc-c-fiber-yield",code,12,NULL,0};
+ uint32_t target=(uint32_t)(uintptr_t)fiber_yield;
+ if(!rt || active_runtime!=rt) {if(rt)rt->error=DC_GOAL_BAD_ARGUMENT;return 0;}
+ memcpy(code+8,&target,4);return dc_goal_load_module(rt,&function,1,sync,NULL,result);
 }

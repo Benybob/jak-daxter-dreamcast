@@ -9,6 +9,8 @@
 int dc_goal_install_core_bridges(dc_goal_runtime *rt,dc_goal_cache_sync sync,
                                   dc_goal_module_result *result);
 void dc_goal_clear_core_bridges(dc_goal_runtime *rt);
+/* Borrowed ownership check; does not install or infer execution identity. */
+int dc_goal_core_bridges_active(const dc_goal_runtime *rt);
 /* Requires the same active core runtime; installs original type/new and
  * method-set! paths plus bounded basic allocation (global or explicit process span). */
 int dc_goal_install_type_bridges(dc_goal_runtime *rt,dc_goal_cache_sync sync,
@@ -44,4 +46,6 @@ void dc_goal_clear_process_context(dc_goal_runtime *rt);
  * Allocation/execution bindings are not changed. No body writes on rejection. */
 uint32_t dc_goal_construct_main_thread(dc_goal_runtime *rt,uint32_t process,uint32_t reservation_bytes,
                                        uint32_t stack_base,uint32_t stack_bytes,uint32_t name,uint32_t backup_bytes);
+/* Explicit cooperative-yield bridge; no original scheduler/activation. */
+int dc_goal_install_fiber_bridge(dc_goal_runtime *,dc_goal_cache_sync,dc_goal_module_result *);
 #endif

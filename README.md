@@ -27,8 +27,8 @@ Discuss scope on **this fork**, and keep changes small enough to review.
 
 | Area | Locally verified scope |
 | --- | --- |
-| Host | 191 tests pass with the complete local SDK/oracle setup |
-| Native runtime | 20,606 checks in Flycast, stock 16 MiB RAM |
+| Host | 192 tests pass with the complete local SDK/oracle setup |
+| Native runtime | 20,991 checks in Flycast, stock 16 MiB RAM |
 | Original data | 182 native checks; all 668 V4 data objects across 36 local archives validate |
 | Numeric regression | 39 native checks |
 | GOAL backend | Original typed frontend to native SH-4; scalar calls, classes/methods, void startup, private data, 64-bit shifts and 32-bit division |
@@ -52,16 +52,16 @@ the local checkpoint, not a GitHub Actions run.
 
 ## Latest completed contributor task
 
-A validated synchronous native primitive calls a registered zero-argument scalar entry on a separate owned stack and returns to the C caller. Grok supplied and reviewed the 84-byte raw assembly; independent tests add 488 native checks, including varying 64-bit results, target FPU modes, guards, rejection, nesting and unchanged original remove-exit with explicit process binding. The original behavior now runs on its constructed CPU thread's stack. This is call/return; suspension, continuation restoration, scheduling and gameplay remain unfinished. (AI-assisted)
+A guarded native SH-4 fiber engine now suspends and resumes registered GOAL entries while preserving callee registers and exact stack images. Two GOAL contexts share one deliberately destroyed working stack and call unchanged original remove-exit under explicit process binding. Grok supplied the isolated assembly and reviewed the engine; Codex fixed two word-push boundary gaps and independently verified 385 new native checks. Original scheduling, activation, GC, failure unwinding and gameplay remain unfinished. (AI-assisted)
 
-See [STACK_CALL.md](ports/dreamcast/STACK_CALL.md). Full kernel/gameplay remains unfinished.
+See [COOPERATIVE_FIBERS.md](ports/dreamcast/COOPERATIVE_FIBERS.md). Full kernel/gameplay remains unfinished.
 
 ## Build and orientation
 
 Source is in `ports/dreamcast/`. Follow [BUILDING.md](ports/dreamcast/BUILDING.md).
 The verified baseline is OpenGOAL `6076aab5a95955443a9e1ed8f72a25bc0e2fcf9d`;
 the latest locally verified port checkpoint is
-`e6ac6b08cfaccab488154441a5265ef709a566e3`.
+`d3225d8c4c854a0c81b40a59dcdf944e7166cab1`.
 
 No ISO, BIOS, extracted textures/models, converted game scenes or ELF binaries
 embedding game assets are uploaded. Use assets extracted locally from your own
