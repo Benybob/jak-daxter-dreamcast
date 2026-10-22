@@ -144,3 +144,8 @@ See [PROCESS_ENTRY.md](PROCESS_ENTRY.md). (AI-assisted).
 
 Original process-by-name, process-not-name and process-count now execute with their three original anonymous callbacks, original name= and string=, original traversal, and explicit original null-context/search-global startup slices. Three host tests and 508 native checks verify callback closure, mixed symbol/string comparisons, first-match ordering, counts and unchanged tree/context memory. Full kernel startup, threads, GC, failure unwinding and gameplay remain unfinished. (AI-assisted)
 See [PROCESS_QUERIES.md](PROCESS_QUERIES.md). (AI-assisted).
+
+## Completed: Guarded missing native function calls
+
+Native runtime call sites now reject zero/#f targets for live function cells, dynamic arguments and virtual methods. A strict core fault bridge reports BAD_FUNCTION and exits the current caller through its restored frame, defining integer/float error returns and skipping continuation effects. Three host tests and 78 native checks pass, including missing-import rollback and stack/float/void recovery. General error propagation, failure unwinding, threads, GC and gameplay remain unfinished. (AI-assisted)
+See [CALL_GUARDS.md](CALL_GUARDS.md). (AI-assisted).

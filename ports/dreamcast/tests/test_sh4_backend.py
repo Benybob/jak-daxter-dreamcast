@@ -22,6 +22,14 @@ GCC=BIN/('sh-elf-gcc'+EXE)
 
 @unittest.skipUnless(GCC.is_file(),'SH-4 GCC required for independent ABI oracle')
 class GccAbiOracleTest(unittest.TestCase):
+    def test_float_fault_return_encoding_against_gnu_assembler(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source=Path(directory)/'zero.s'; obj=source.with_suffix('.o'); binary=source.with_suffix('.bin')
+            source.write_text('.text\nfldi0 fr0\nrts\nnop\n')
+            subprocess.run([str(ASSEMBLER),'-little','-o',str(obj),str(source)],check=True,capture_output=True)
+            subprocess.run([str(OBJCOPY),'-O','binary','-j','.text',str(obj),str(binary)],check=True,capture_output=True)
+            self.assertEqual(binary.read_bytes(),bytes.fromhex('8df00b000900'))
+
     def test_mixed_register_streams_follow_independent_gcc_positions(self):
         patterns=[{i} for i in range(8)]+[{1,4},{0,7},{6,7}]
         sources=[]

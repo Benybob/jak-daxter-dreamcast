@@ -28,8 +28,8 @@ uint32_t dc_runtime_bridge_cases(dc_goal_runtime *rt,dc_runtime_check check,void
       !dc_goal_load_module(rt,goal_bridge_fixture_exports,GOAL_BRIDGE_FIXTURE_EXPORT_COUNT,sync,NULL,&module)) {
     CHECK(rt->error,0,"native bridge installation"); return 0;
   }
-  CHECK(bridges.functions,2,"two native boxed C bridges");
-  CHECK(bridges.code_bytes,24,"compact tail bridge code size");
+  CHECK(bridges.functions,3,"three native boxed C bridges");
+  CHECK(bridges.code_bytes,36,"compact tail bridge code size");
   CHECK(dc_goal_find(rt,"global"),rt->s7+DC_FIX_SYM_GLOBAL_HEAP,"original fixed global selector slot");
   CHECK(dc_goal_symbol_value(rt,rt->s7+DC_FIX_SYM_GLOBAL_HEAP),rt->s7,"bridge setup preserves existing global symbol value");
   dc_goal_set_symbol(rt,rt->s7+DC_FIX_SYM_GLOBAL_HEAP,0);

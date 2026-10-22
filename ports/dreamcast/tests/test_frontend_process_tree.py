@@ -45,7 +45,7 @@ class FrontendProcessTreeTest(unittest.TestCase):
         self.assertEqual([f['name'] for f in report['functions']],names)
         self.assertEqual({r['symbol'] for f in report['functions'] for r in f['relocations']},
             {'cell:iterate-process-tree','cell:execute-process-tree','cell:search-process-tree',
-             'pointer:#f','pointer:#t','pointer:dead'})
+             'pointer:#f','pointer:#t','pointer:dead','function:dc-c-call-error'})
 
     def test_fixture_field_offsets_and_context_size_match_original_declarations(self):
         source=Path(self.directory.name)/'fields.gc'

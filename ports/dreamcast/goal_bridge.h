@@ -3,7 +3,8 @@
 #define DC_GOAL_BRIDGE_H
 #include "goal_module.h"
 /* One active runtime, quiescent installation, scalar GCC ABI only.
- * Installs pair new (global selector only) and a namespaced type-of bridge.
+ * Installs pair new (global selector only), namespaced type-of and missing-call
+ * error bridges. Install before linking runtime modules containing calls.
  * No complete original heap/process allocator or full kernel API yet. */
 int dc_goal_install_core_bridges(dc_goal_runtime *rt,dc_goal_cache_sync sync,
                                   dc_goal_module_result *result);

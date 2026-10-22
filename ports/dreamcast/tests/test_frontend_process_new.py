@@ -37,7 +37,7 @@ class FrontendProcessNewTest(unittest.TestCase):
         self.assertIsNone(report['initializer'])
         self.assertEqual(report['static_data_bytes'],0)
         self.assertEqual({r['symbol'] for f in report['functions'] for r in f['relocations']},
-            {'cell:object','cell:process','cell:symbol','pointer:#f','pointer:dead'})
+            {'cell:object','cell:process','cell:symbol','pointer:#f','pointer:dead','function:dc-c-call-error'})
         doc=json.loads(header.with_suffix('.ir.json').read_text())
         for fn in (f for f in doc['functions'] if f['name'] in names):
             self.assertFalse(fn['implicit_parameters'])

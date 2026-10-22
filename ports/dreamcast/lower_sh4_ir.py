@@ -386,6 +386,7 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
                 e.load(0,8); e.add_immediate(8,4); e.load(1,8); store64(index)
             gpr_args+=1
     instructions=function['instructions']
+    guarded_calls=runtime and any(op['kind']=='call' for op in instructions)
     used={value for op in instructions for value in op['reads']}
     for position,op in enumerate(instructions):
         e.label('ir_'+str(position))
@@ -513,7 +514,11 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
                             load64(argument); e.mov(2,15); e.add_immediate(2,(integer_index-2)*8)
                             e.store(2,0); e.add_immediate(2,4); e.store(2,1)
                         integer_index+=1
-                load64(reads[0]); e.word(0x400b); e.nop()  # jsr @r0, PR saved in prologue
+                load64(reads[0])
+                if runtime:
+                    e.rr(0x2008,0,0); e.branch('bt','call_failure')
+                    e.literal(2,('symbol','pointer:#f')); e.rr(0x3000,0,2); e.branch('bt','call_failure')
+                e.word(0x400b); e.nop()  # jsr @r0, PR saved in prologue
                 adjust_stack(outgoing)
                 if void_call: pass  # no value exists in R0:R1 or FR0 to save
                 elif target['return_type']=='float':
@@ -598,8 +603,16 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
         except (ValueError,KeyError,IndexError) as error:
             raise ValueError(f'{function["name"]} IR {position} ({op.get("text",kind)}): {error}') from error
     e.label('ir_'+str(len(instructions)))
-    if implicit:
+    if implicit or guarded_calls:
         e.branch('bra','epilogue')
+    if guarded_calls:
+        e.label('call_failure'); e.literal(0,('symbol','function:dc-c-call-error'))
+        e.word(0x400b); e.nop()
+        # The boxed fault bridge returns uint64 zero. Floating callers must
+        # explicitly define FR0; void callers promise no result register.
+        if function['return_type']=='float': e.word(0xf08d)  # FLDI0 FR0
+        e.branch('bra','epilogue')
+    if implicit:
         e.label('process_entry_failure'); e.immediate(0,0); e.immediate(1,0)
     e.label('epilogue'); e.mov(15,14); adjust_stack(frame)
     for reg in (9,8,14): e.rr(0x6006,reg,15)

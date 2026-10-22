@@ -44,6 +44,7 @@ uint32_t dc_runtime_process_heap_cases(dc_goal_runtime *,dc_runtime_check,void *
 uint32_t dc_runtime_structured_cases(dc_goal_runtime *,dc_runtime_check,void *,unsigned *,dc_goal_cache_sync);
 uint32_t dc_runtime_process_entry_cases(dc_goal_runtime *,dc_runtime_check,void *,unsigned *,dc_goal_cache_sync);
 uint32_t dc_runtime_process_query_cases(dc_goal_runtime *,dc_runtime_check,void *,unsigned *,dc_goal_cache_sync);
+uint32_t dc_runtime_call_guard_cases(dc_goal_runtime *,dc_runtime_check,void *,unsigned *,dc_goal_cache_sync);
 static void sync_code(uint32_t allocation,uint32_t bytes,void *context) {
   (void)context;
   dcache_flush_range(allocation,bytes);
@@ -55,7 +56,7 @@ static uint32_t entry(dc_goal_runtime *rt,const char *name) {
 uint32_t dc_runtime_goal_cases(void *memory,uint32_t capacity,dc_runtime_check check,
                                 void *context,char *description,size_t description_bytes) {
   dc_goal_runtime rt;
-  dc_goal_module_result fixture,identity,baseline,initialization;
+  dc_goal_module_result fixture,identity,baseline,initialization,bootstrap;
   uint32_t read,write,call_read,counter,optimized,string,pair,code_bytes;
   uint64_t values[7];
   unsigned id=81,i;
@@ -64,6 +65,16 @@ uint32_t dc_runtime_goal_cases(void *memory,uint32_t capacity,dc_runtime_check c
     CHECK(0,1,"compiled runtime initialization"); return 0;
   }
   CHECK(rt.base&0xe0000000u,0,"native GOAL uses low cached P0 addresses");
+  {
+    uint32_t used=rt.used,symbols=rt.symbol_count;
+    CHECK(dc_goal_load_module(&rt,goal_runtime_fixture_exports,GOAL_RUNTIME_FIXTURE_EXPORT_COUNT,
+                             sync_code,NULL,&fixture),0,"runtime calls require a strict installed fault bridge");
+    CHECK(rt.error,DC_GOAL_BAD_MODULE,"missing call fault bridge explicit module error");
+    CHECK(rt.used,used,"missing call fault bridge rolls back arena");
+    CHECK(rt.symbol_count,symbols,"missing call fault bridge rolls back namespace");
+  }
+  CHECK(dc_goal_install_core_bridges(&rt,sync_code,&bootstrap),1,"core call fault bridge installed before runtime code");
+  CHECK(bootstrap.functions,3,"core installation exposes pair/type/call-error bridges");
   if (!dc_goal_load_module(&rt,goal_runtime_fixture_exports,GOAL_RUNTIME_FIXTURE_EXPORT_COUNT,
                           sync_code,NULL,&fixture)) {
     CHECK(rt.error,0,"compiled fixture module load"); return 0;
@@ -118,7 +129,7 @@ uint32_t dc_runtime_goal_cases(void *memory,uint32_t capacity,dc_runtime_check c
   CHECK(baseline.code_bytes,72,"original identity unoptimized size");
   for (i=0;i<7;++i) CHECK(((goal_one)(uintptr_t)entry(&rt,"identity"))(values[i]),
                          ((goal_one)(uintptr_t)optimized)(values[i]),"original baseline and optimized identity agree");
-  code_bytes=fixture.code_bytes+identity.code_bytes+baseline.code_bytes;
+  code_bytes=bootstrap.code_bytes+fixture.code_bytes+identity.code_bytes+baseline.code_bytes;
   dc_goal_set_symbol(&rt,dc_goal_intern(&rt,"dc-init-external"),9);
   if (!dc_goal_load_module(&rt,goal_initializer_fixture_exports,GOAL_INITIALIZER_FIXTURE_EXPORT_COUNT,
                           sync_code,NULL,&initialization)) {
@@ -176,6 +187,7 @@ uint32_t dc_runtime_goal_cases(void *memory,uint32_t capacity,dc_runtime_check c
   code_bytes+=dc_runtime_structured_cases(&rt,check,context,&id,sync_code);
   code_bytes+=dc_runtime_process_entry_cases(&rt,check,context,&id,sync_code);
   code_bytes+=dc_runtime_process_query_cases(&rt,check,context,&id,sync_code);
+  code_bytes+=dc_runtime_call_guard_cases(&rt,check,context,&id,sync_code);
   dc_goal_clear_core_bridges(&rt);
   snprintf(description,description_bytes,"GOAL=%lu init/lists=pass arena=%lu symbols=%lu",
            (unsigned long)code_bytes,(unsigned long)rt.used,(unsigned long)rt.symbol_count);

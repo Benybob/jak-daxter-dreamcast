@@ -46,7 +46,7 @@ class FrontendProcessQueryTest(unittest.TestCase):
         self.assertEqual({r['symbol'] for f in report['functions'] for r in f['relocations']},
             {'function:anon-function-0','function:anon-function-1','function:anon-function-2',
              'cell:*global-search-name*','cell:*global-search-count*','cell:*null-kernel-context*',
-             'cell:search-process-tree','cell:iterate-process-tree','cell:name=','pointer:#f','pointer:#t'})
+             'cell:search-process-tree','cell:iterate-process-tree','cell:name=','pointer:#f','pointer:#t','function:dc-c-call-error'})
 
     def test_comparison_bodies_use_original_byte_access_and_symbol_string_offset(self):
         report,doc=self.build(self.base/'gstring.gc','compare',['string=','name='],['--select-defuns'],True)
@@ -57,7 +57,7 @@ class FrontendProcessQueryTest(unittest.TestCase):
         self.assertTrue(all(o['size']==1 and not o['signed'] for o in loads))
         self.assertIn(0x20000,[o['value'] for o in functions['name=']['instructions'] if o['kind']=='constant'])
         self.assertEqual({r['symbol'] for f in report['functions'] for r in f['relocations']},
-                         {'cell:string','cell:symbol','cell:string=','pointer:#f','pointer:#t'})
+                         {'cell:string','cell:symbol','cell:string=','pointer:#f','pointer:#t','function:dc-c-call-error'})
 
     def test_original_null_context_and_search_globals_initialize_only_requested_forms(self):
         report,doc=self.build(self.base/'gkernel.gc','null',extra=['--from-global','*null-kernel-context*',
