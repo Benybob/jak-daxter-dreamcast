@@ -109,3 +109,8 @@ See [ENUM_ABI.md](ENUM_ABI.md). (AI-assisted).
 
 Fixed mixed signatures now permit integer stack spills through eight total arguments. An independent GCC oracle verifies all 376 spilled mixed layouts (2,767 return probes); 226 frontend functions and 1,937 new native checks verify entries, calls, payloads, live values and stack restoration. Mixed variadic/vector ABIs remain blocked. The original scalar validator and bounded nine-global startup still pass; full kernel/gameplay and process heaps remain unfinished.
 See [MIXED_STACK_ABI.md](MIXED_STACK_ABI.md). (AI-assisted).
+
+## Completed: Six-byte SH-4 stack argument returns
+
+Copy-only integer/tagged stack returns now use two loads and an RTS delay slot: six bytes with no frame. GNU checks cover all six stack positions; existing native boundary cases still pass. The same mixed probe module shrinks by 7,600 bytes (15.3%); whole diagnostic code saves 7,948 bytes and arena saves 7,952 bytes. These are size measurements, not timing benchmarks. Full kernel/gameplay, process heaps and remaining platform/ABI dependencies remain unfinished.
+See [STACK_COPY_LEAVES.md](STACK_COPY_LEAVES.md). (AI-assisted).

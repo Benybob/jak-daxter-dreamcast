@@ -44,3 +44,16 @@ class FrontendMixedStackTest(unittest.TestCase):
         fn=copy.deepcopy(self.functions['dc-ms-p9-a7'])
         fn['parameters'].append(copy.deepcopy(fn['parameters'][-1]))
         with self.assertRaisesRegex(ValueError,'more than eight arguments'): compile_function(fn,runtime=True)
+
+    def test_copy_only_returns_use_six_byte_integer_or_four_byte_float_leaves(self):
+        stacked=0
+        for name in generate()[2]:
+            if name.endswith('-call') or name in ('dc-ms-live','dc-ms-repeat'): continue
+            fn=self.functions[name]; blob,report=compile_function(fn,runtime=True)
+            self.assertEqual(len(blob),4 if fn['return_type']=='float' else 6)
+            self.assertEqual(report['stack_bytes'],0)
+            if report['optimization']=='coalesced_stack_argument_return':
+                stacked+=1
+                baseline,_=compile_function(fn,runtime=True,optimize=False)
+                self.assertGreater(len(baseline),len(blob))
+        self.assertGreater(stacked,0)

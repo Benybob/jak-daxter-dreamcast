@@ -74,15 +74,24 @@ def argument_return_leaf(function):
     floating=function['return_type']=='float'
     if (function['parameters'][result]['type']=='float')!=floating: return None
     result=sum((p['type']=='float')==floating for p in function['parameters'][:result])
-    if not floating and result>=2: return None  # stack argument needs the incoming frame
     e=Emitter()
+    stacked=not floating and result>=2
     if floating:
         e.word(0x000b); e.fmov(0,FLOAT_ARGUMENT_REGISTERS[result])
+    elif stacked:
+        offset=(result-2)*8
+        # No prologue: incoming GCC stack slots remain relative to R15.
+        # MOV.L displacement is an unsigned word index (0..15).
+        if offset>56: return None
+        if offset: e.word(0x50f0|(offset//4))
+        else: e.load(0,15)
+        e.word(0x000b)
+        e.word(0x51f0|((offset+4)//4))  # useful RTS delay slot
     else:
         e.mov(0,4+result*2); e.word(0x000b); e.mov(1,5+result*2)
     data,relocations=e.finish()
     return data,{'name':function['name'],'bytes':len(data),'stack_bytes':0,
-                 'relocations':relocations,'optimization':'coalesced_argument_return',
+                 'relocations':relocations,'optimization':'coalesced_stack_argument_return' if stacked else 'coalesced_argument_return',
                  'instruction_stream_bytes':len(e.code),'literal_pool_and_alignment_bytes':0,
                  'minimum_32_byte_cache_lines':(len(data)+31)//32}
 

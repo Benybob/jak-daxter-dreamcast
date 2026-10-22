@@ -27,7 +27,7 @@ Discuss scope on **this fork**, and keep changes small enough to review.
 
 | Area | Locally verified scope |
 | --- | --- |
-| Host | 157 tests pass with the complete local SDK/oracle setup |
+| Host | 159 tests pass with the complete local SDK/oracle setup |
 | Native runtime | 10,613 checks in Flycast, stock 16 MiB RAM |
 | Original data | 182 native checks; all 668 V4 data objects across 36 local archives validate |
 | Numeric regression | 39 native checks |
@@ -52,16 +52,16 @@ the local checkpoint, not a GitHub Actions run.
 
 ## Latest completed contributor task
 
-Fixed mixed signatures now permit integer stack spills through eight total arguments. An independent GCC oracle verifies all 376 spilled mixed layouts (2,767 return probes); 226 frontend functions and 1,937 new native checks verify entries, calls, payloads, live values and stack restoration. Mixed variadic/vector ABIs remain blocked. The original scalar validator and bounded nine-global startup still pass; full kernel/gameplay and process heaps remain unfinished.
+Copy-only integer/tagged stack returns now use two loads and an RTS delay slot: six bytes with no frame. GNU checks cover all six stack positions; existing native boundary cases still pass. The same mixed probe module shrinks by 7,600 bytes (15.3%); whole diagnostic code saves 7,948 bytes and arena saves 7,952 bytes. These are size measurements, not timing benchmarks. Full kernel/gameplay, process heaps and remaining platform/ABI dependencies remain unfinished.
 
-See [MIXED_STACK_ABI.md](ports/dreamcast/MIXED_STACK_ABI.md). Full kernel/gameplay remains unfinished.
+See [STACK_COPY_LEAVES.md](ports/dreamcast/STACK_COPY_LEAVES.md). Full kernel/gameplay remains unfinished.
 
 ## Build and orientation
 
 Source is in `ports/dreamcast/`. Follow [BUILDING.md](ports/dreamcast/BUILDING.md).
 The verified baseline is OpenGOAL `6076aab5a95955443a9e1ed8f72a25bc0e2fcf9d`;
 the latest locally verified port checkpoint is
-`a239c08e2bb05b0eddee39d7824ad83fcde929a2`.
+`579cc3a9e90c32fe00aaf1ce5af23aa7ba2babe3`.
 
 No ISO, BIOS, extracted textures/models, converted game scenes or ELF binaries
 embedding game assets are uploaded. Use assets extracted locally from your own

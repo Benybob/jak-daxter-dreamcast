@@ -1,0 +1,282 @@
+{
+  "ai_assisted": true,
+  "scope": "Compiled code sizes for same synthetic GOAL IR; not a timing benchmark",
+  "prior_local_commit": "a239c08e2bb05b0eddee39d7824ad83fcde929a2",
+  "ir_sha256": "afee775601e3450eeb7534b0f4358a4ddf09b9f4da69a193bac81e0fb6a637b6",
+  "before_bytes": 49518,
+  "after_bytes": 41918,
+  "changed_functions": 45,
+  "functions": [
+    {
+      "name": "dc-ms-p0-a2",
+      "before": 102,
+      "after": 6,
+      "optimization": "coalesced_stack_argument_return"
+    },
+    {
+      "name": "dc-ms-p1-a3",
+      "before": 102,
+      "after": 6,
+      "optimization": "coalesced_stack_argument_return"
+    },
+    {
+      "name": "dc-ms-p2-a3",
+      "before": 102,
+      "after": 6,
+      "optimization": "coalesced_stack_argument_return"
+    },
+    {
+      "name": "dc-ms-p3-a3",
+      "before": 102,
+      "after": 6,
+      "optimization": "coalesced_stack_argument_return"
+    },
+    {
+      "name": "dc-ms-p4-a2",
+      "before": 182,
+      "after": 6,
+      "optimization": "coalesced_stack_argument_return"
+    },
+    {
+      "name": "dc-ms-p4-a3",
+      "before": 182,
+      "after": 6,
+      "optimization": "coalesced_stack_argument_return"
+    },
+    {
+      "name": "dc-ms-p5-a6",
+      "before": 182,
+      "after": 6,
+      "optimization": "coalesced_stack_argument_return"
+    },
+    {
+      "name": "dc-ms-p5-a7",
+      "before": 182,
+      "after": 6,
+      "optimization": "coalesced_stack_argument_return"
+    },
+    {
+      "name": "dc-ms-p6-a4",
+      "before": 182,
+      "after": 6,
+      "optimization": "coalesced_stack_argument_return"
+    },
+    {
+      "name": "dc-ms-p6-a6",
+      "before": 182,
+      "after": 6,
+      "optimization": "coalesced_stack_argument_return"
+    },
+    {
+      "name": "dc-ms-p6-a7",
+      "before": 182,
+      "after": 6,
+      "optimization": "coalesced_stack_argument_return"
+    },
+    {
+      "name": "dc-ms-p7-a3",
+      "before": 182,
+      "after": 6,
+      "optimization": "coalesced_stack_argument_return"
+    },
+    {
+      "name": "dc-ms-p7-a5",
+      "before": 182,
+      "after": 6,
+      "optimization": "coalesced_stack_argument_return"
+    },
+    {
+      "name": "dc-ms-p7-a7",
+      "before": 182,
+      "after": 6,
+      "optimization": "coalesced_stack_argument_return"
+    },
+    {
+      "name": "dc-ms-p8-a2",
+      "before": 182,
+      "after": 6,
+      "optimization": "coalesced_stack_argument_return"
+    },
+    {
+      "name": "dc-ms-p8-a3",
+      "before": 182,
+      "after": 6,
+      "optimization": "coalesced_stack_argument_return"
+    },
+    {
+      "name": "dc-ms-p8-a4",
+      "before": 182,
+      "after": 6,
+      "optimization": "coalesced_stack_argument_return"
+    },
+    {
+      "name": "dc-ms-p8-a5",
+      "before": 182,
+      "after": 6,
+      "optimization": "coalesced_stack_argument_return"
+    },
+    {
+      "name": "dc-ms-p8-a6",
+      "before": 182,
+      "after": 6,
+      "optimization": "coalesced_stack_argument_return"
+    },
+    {
+      "name": "dc-ms-p9-a3",
+      "before": 182,
+      "after": 6,
+      "optimization": "coalesced_stack_argument_return"
+    },
+    {
+      "name": "dc-ms-p9-a4",
+      "before": 182,
+      "after": 6,
+      "optimization": "coalesced_stack_argument_return"
+    },
+    {
+      "name": "dc-ms-p9-a5",
+      "before": 182,
+      "after": 6,
+      "optimization": "coalesced_stack_argument_return"
+    },
+    {
+      "name": "dc-ms-p9-a6",
+      "before": 182,
+      "after": 6,
+      "optimization": "coalesced_stack_argument_return"
+    },
+    {
+      "name": "dc-ms-p9-a7",
+      "before": 182,
+      "after": 6,
+      "optimization": "coalesced_stack_argument_return"
+    },
+    {
+      "name": "dc-ms-p10-a2",
+      "before": 182,
+      "after": 6,
+      "optimization": "coalesced_stack_argument_return"
+    },
+    {
+      "name": "dc-ms-p10-a3",
+      "before": 182,
+      "after": 6,
+      "optimization": "coalesced_stack_argument_return"
+    },
+    {
+      "name": "dc-ms-p10-a4",
+      "before": 182,
+      "after": 6,
+      "optimization": "coalesced_stack_argument_return"
+    },
+    {
+      "name": "dc-ms-p11-a5",
+      "before": 182,
+      "after": 6,
+      "optimization": "coalesced_stack_argument_return"
+    },
+    {
+      "name": "dc-ms-p11-a6",
+      "before": 182,
+      "after": 6,
+      "optimization": "coalesced_stack_argument_return"
+    },
+    {
+      "name": "dc-ms-p11-a7",
+      "before": 182,
+      "after": 6,
+      "optimization": "coalesced_stack_argument_return"
+    },
+    {
+      "name": "dc-ms-p12-a2",
+      "before": 182,
+      "after": 6,
+      "optimization": "coalesced_stack_argument_return"
+    },
+    {
+      "name": "dc-ms-p12-a6",
+      "before": 182,
+      "after": 6,
+      "optimization": "coalesced_stack_argument_return"
+    },
+    {
+      "name": "dc-ms-p12-a7",
+      "before": 182,
+      "after": 6,
+      "optimization": "coalesced_stack_argument_return"
+    },
+    {
+      "name": "dc-ms-p13-a3",
+      "before": 182,
+      "after": 6,
+      "optimization": "coalesced_stack_argument_return"
+    },
+    {
+      "name": "dc-ms-p13-a4",
+      "before": 182,
+      "after": 6,
+      "optimization": "coalesced_stack_argument_return"
+    },
+    {
+      "name": "dc-ms-p13-a5",
+      "before": 182,
+      "after": 6,
+      "optimization": "coalesced_stack_argument_return"
+    },
+    {
+      "name": "dc-ms-p13-a6",
+      "before": 182,
+      "after": 6,
+      "optimization": "coalesced_stack_argument_return"
+    },
+    {
+      "name": "dc-ms-p14-a4",
+      "before": 182,
+      "after": 6,
+      "optimization": "coalesced_stack_argument_return"
+    },
+    {
+      "name": "dc-ms-p14-a5",
+      "before": 182,
+      "after": 6,
+      "optimization": "coalesced_stack_argument_return"
+    },
+    {
+      "name": "dc-ms-p14-a6",
+      "before": 182,
+      "after": 6,
+      "optimization": "coalesced_stack_argument_return"
+    },
+    {
+      "name": "dc-ms-p14-a7",
+      "before": 182,
+      "after": 6,
+      "optimization": "coalesced_stack_argument_return"
+    },
+    {
+      "name": "dc-ms-p15-a3",
+      "before": 182,
+      "after": 6,
+      "optimization": "coalesced_stack_argument_return"
+    },
+    {
+      "name": "dc-ms-p15-a4",
+      "before": 182,
+      "after": 6,
+      "optimization": "coalesced_stack_argument_return"
+    },
+    {
+      "name": "dc-ms-p15-a5",
+      "before": 182,
+      "after": 6,
+      "optimization": "coalesced_stack_argument_return"
+    },
+    {
+      "name": "dc-ms-p15-a6",
+      "before": 182,
+      "after": 6,
+      "optimization": "coalesced_stack_argument_return"
+    }
+  ],
+  "unchanged_functions": 181
+}

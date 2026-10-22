@@ -147,14 +147,15 @@ class LinkedModuleTest(unittest.TestCase):
         fn['instructions'][1]['abi']['parameters']=[]
         with self.assertRaisesRegex(ValueError,'argument count'): compile_module(doc,['caller'],runtime=True)
 
-    def test_stack_argument_return_does_not_use_register_leaf_shortcut(self):
+    def test_stack_argument_return_loads_incoming_stack_without_a_frame(self):
         fn=leaf()
         fn['registers']=[{'id':i,'class':'gpr64','type':'int'} for i in range(3)]
         fn['parameters']=[{'name':str(i),'register':i,'type':'int'} for i in range(3)]
         fn['instructions']=[{'kind':'return','reads':[2],'writes':[]}]
         _,report=compile_function(fn)
-        self.assertNotEqual(report['optimization'],'coalesced_argument_return')
-        self.assertGreater(report['stack_bytes'],0)
+        self.assertEqual(report['optimization'],'coalesced_stack_argument_return')
+        self.assertEqual(report['stack_bytes'],0)
+        self.assertEqual(report['bytes'],6)
 
     def test_static_string_preserves_raw_bytes_and_original_layout(self):
         fn=leaf(); fn['parameters']=[]; fn['return_type']='string'

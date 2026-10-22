@@ -351,6 +351,21 @@ class AssemblerOracleTest(unittest.TestCase):
                 e=Emitter(); emit_shift64(e,kind,count)
                 self.assertEqual(e.finish()[0],self.assemble(source))
 
+    def test_stack_copy_leaves_and_return_delay_slots_against_gnu_assembler(self):
+        for position in range(2,8):
+            fn={'name':'stack-copy','return_type':'int',
+                'registers':[{'id':i,'class':'gpr64','type':'int'} for i in range(8)],
+                'parameters':[{'name':str(i),'register':i,'type':'int'} for i in range(8)],
+                'instructions':[{'kind':'return','reads':[position],'writes':[]}]}
+            code,report=compile_function(fn)
+            offset=(position-2)*8
+            low='mov.l @r15,r0' if not offset else f'mov.l @({offset},r15),r0'
+            oracle=self.assemble(low+f'\nrts\nmov.l @({offset+4},r15),r1')
+            self.assertEqual(code,oracle)
+            self.assertEqual(len(code),6)
+            self.assertEqual(report['optimization'],'coalesced_stack_argument_return')
+            self.assertEqual(report['stack_bytes'],0)
+
     def test_shift_leaf_coalescing_and_delay_slot_against_gnu_assembler(self):
         fn={'name':'shift','return_type':'int','registers':[{'id':0,'class':'gpr64','type':'int'}],
             'parameters':[{'register':0,'type':'int'}],
