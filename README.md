@@ -23,7 +23,7 @@ Start with [CONTRIBUTING.md](CONTRIBUTING.md) and the
 regressions are included; most compiler/host work needs no game ISO.
 Discuss scope on **this fork**, and keep changes small enough to review.
 
-## Current evidence â€” 2026-10-21
+## Current evidence — 2026-10-21
 
 | Area | Locally verified scope |
 | --- | --- |
