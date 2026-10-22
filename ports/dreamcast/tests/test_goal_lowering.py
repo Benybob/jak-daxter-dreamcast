@@ -5,7 +5,7 @@ import sys
 import unittest
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
-from lower_sh4_ir import compile_function,compile_module,module_data,allocate_slots
+from lower_sh4_ir import compile_function,compile_module,module_data,allocate_slots,native_identifiers
 
 def leaf():
     return {'name':'identity','asm':False,'return_type':'int',
@@ -23,6 +23,29 @@ def linked_caller():
     return fn
 
 class LinkedModuleTest(unittest.TestCase):
+    def test_punctuation_digit_unicode_and_reserved_names_are_distinct(self):
+        names=['+','-','*','/','1/','a-b','a_b','Case','case','_dc_utf8_2b','\u03bb','_']
+        identifiers=native_identifiers(names)
+        self.assertEqual(len({name.upper() for name in identifiers.values()}),len(names))
+        self.assertEqual(identifiers,native_identifiers(reversed(names)))
+        for name,identifier in identifiers.items():
+            self.assertRegex(identifier,r'^[A-Za-z_][A-Za-z0-9_]*$')
+            if identifier.startswith('_dc_utf8_'):
+                self.assertEqual(bytes.fromhex(identifier[len('_dc_utf8_'):]).decode('utf-8'),name)
+
+    def test_compiled_module_preserves_original_symbol_names_and_all_entries(self):
+        names=['+','-','/','1/','a-b','a_b']
+        doc={'format_version':1,'functions':[dict(leaf(),name=name) for name in names]}
+        objects=compile_module(doc,names,runtime=True)
+        self.assertEqual({report['name'] for _,report in objects.values()},set(names))
+        self.assertEqual(len(objects),len(names))
+        self.assertEqual(objects,compile_module(doc,reversed(names),runtime=True))
+
+    def test_legacy_unique_identifiers_and_invalid_name_guards(self):
+        self.assertEqual(native_identifiers(['dc-goal-add','identity']),{'dc-goal-add':'dc_goal_add','identity':'identity'})
+        for names in ([''],['same','same'],[None],['bad\0name']):
+            with self.subTest(names=names),self.assertRaises(ValueError): native_identifiers(names)
+
     def test_user_reference_types_use_original_abi_metadata(self):
         fn=leaf(); fn['return_type']='user-reference'; fn['return_abi_type']='object'
         fn['registers'][0].update(type='user-reference',abi_type='object')

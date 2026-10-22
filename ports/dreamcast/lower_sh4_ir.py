@@ -18,6 +18,29 @@ FLOAT_ARGUMENT_REGISTERS=(5,4,7,6,9,8,11,10)
 INTEGER_VALUE_TYPES=frozenset(('int','uint','integer'))
 TAGGED_VALUE_TYPES=frozenset(('object','basic','symbol','type','string','pair','function','pointer'))
 
+def native_identifiers(names):
+    """Readable legacy spellings when unique; reversible UTF-8 names otherwise.
+
+    Group case-insensitively because generated offset macros use uppercase.
+    The encoded prefix is reserved even for otherwise valid source names.
+    Native bindings and relocations retain their original GOAL symbol strings.
+    """
+    names=list(names)
+    if any(not isinstance(name,str) or not name or '\0' in name for name in names):
+        raise ValueError('function identifier requires a nonempty name')
+    if len(names)!=len(set(names)): raise ValueError('duplicate identifier name')
+    prefix='_dc_utf8_'
+    bases={name:re.sub('[^A-Za-z0-9_]','_',name) for name in names}
+    counts={}
+    for base in bases.values(): counts[base.upper()]=counts.get(base.upper(),0)+1
+    result={}
+    for name,base in bases.items():
+        result[name]=(prefix+name.encode('utf-8').hex() if counts[base.upper()]>1 or
+                      base[0].isdigit() or base.lower().startswith(prefix) else base)
+    if len({name.upper() for name in result.values()})!=len(names):
+        raise ValueError('ambiguous native identifiers')
+    return result
+
 def scalar_kind(name,runtime):
     # Function signatures describe tagged native addresses, not a wider value.
     if runtime and name and name.startswith('(function ') and name.endswith(')'):
@@ -547,10 +570,10 @@ def compile_module(doc,names,runtime=False,optimize=True,initializer=None):
     statics={s['id']:s for s in doc.get('statics',[])}
     if len(statics)!=len(doc.get('statics',[])): raise ValueError('duplicate static object id')
     module={name:functions[name] for name in names if name in functions}
+    identifiers=native_identifiers(names)
     for name in names:
         if name not in functions: raise ValueError('missing function '+name)
-        identifier=re.sub('[^A-Za-z0-9_]','_',name)
-        if not identifier or identifier[0].isdigit() or identifier in outputs: raise ValueError('invalid/colliding C identifier')
+        identifier=identifiers[name]
         outputs[identifier]=compile_function(functions[name],module,runtime,optimize,statics)
     if runtime: module_data(doc,outputs)
     return outputs
@@ -633,8 +656,9 @@ if __name__=='__main__':
                 lines += ['{'+str(r['offset'])+'u,'+c_string(r['symbol'])+'},' for r in report['relocations']]
                 lines.append('};')
             elif not args.runtime:
+                identifiers=native_identifiers(sorted({r['symbol'] for r in report['relocations']}))
                 for relocation in report['relocations']:
-                    symbol=re.sub('[^A-Za-z0-9_]','_',relocation['symbol']).upper()
+                    symbol=identifiers[relocation['symbol']].upper()
                     lines.append(f'#define GOAL_{name.upper()}_{symbol}_OFFSET {relocation["offset"]}u')
             manifest.append(report)
         if args.runtime:

@@ -114,10 +114,14 @@ def main():
     subprocess.run(command,check=True)
     subprocess.run(compiler+['--source',str(port.parents[1]/'goal_src/jak1/kernel/gcommon.gc'),
                              '--select-defuns','--function','sort','--header',str(port/'build/original_sort.h')],check=True)
+    command=compiler+['--source',str(port.parents[1]/'goal_src/jak1/kernel/gcommon.gc'),
+                      '--select-defuns','--header',str(port/'build/original_operators.h')]
+    for name in ('1/','+','-','*','/','mod','rem'): command+=['--function',name]
+    subprocess.run(command,check=True)
     subprocess.run([sys.executable,str(port/'build_dreamcast.py'),'--target','jak-dc-runtime-goal.elf'],check=True)
     if args.verify:
         subprocess.run([sys.executable,str(port/'verify_backend.py'),str(args.flycast),
                         str(port/'jak-dc-runtime-goal.elf'),'--nm',str(args.nm),'--output',str(args.output),
-                        '--tests','8193','--suite','runtime-goal'],check=True)
+                        '--tests','8252','--suite','runtime-goal'],check=True)
 
 if __name__=='__main__': main()

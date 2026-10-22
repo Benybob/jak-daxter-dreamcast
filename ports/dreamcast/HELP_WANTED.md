@@ -6,7 +6,6 @@ Most compiler/runtime work uses synthetic fixtures and needs no original assets.
 
 | Task | Useful experience | Concrete acceptance target |
 | --- | --- | --- |
-| Stable symbol mangling | Python, compiler tooling | 1/, +, - and other colliding names coexist in one generated module with deterministic distinct identifiers |
 | Kernel sequencing and heaps | GOAL, runtime systems | Explicit target configuration and original startup/module dependencies execute within measured stock RAM bounds |
 | PowerVR scene pipeline | KOS, PVR, graphics | Measured culling/material deduplication and bounded residency on synthetic fixtures before expanding game scenes |
 | Hardware validation | Dreamcast development | Reproduce asset-free native diagnostics on hardware with toolchain, load method, RAM use and failures documented |
@@ -59,3 +58,8 @@ progression, disc packaging and hardware support remain much larger milestones.
 
 Bounded literal pools now share layout with branch relaxation while protecting delay slots. Original sort runs with numeric/boolean callbacks, duplicates, empty/singleton and dotted lists; 105 new native checks pass. Original sort and mem-print now lower; standalone full-gcommon coverage is 56 of 66. Mem-print is compile-only. Next: remaining metadata, stable identifiers and explicit original kernel startup dependencies.
 See [LITERAL_POOLS.md](LITERAL_POOLS.md). (AI-assisted).
+
+## Completed: Distinct original GOAL operator bindings
+
+Original 1/, +, -, *, /, mod and rem now coexist in one native module without C-label collisions. Three host tests and 59 new native checks cover naming, signed integer operations and original reciprocal saturation behavior. Runtime bindings preserve exact GOAL symbol names. Next: explicit fixed-register metadata and original kernel dependency setup; whole-game playability remains unfinished.
+See [C_IDENTIFIERS.md](C_IDENTIFIERS.md). (AI-assisted).
