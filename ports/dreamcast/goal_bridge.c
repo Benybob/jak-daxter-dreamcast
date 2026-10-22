@@ -1,5 +1,6 @@
 /* Native scalar GOAL -> C tail bridges (AI-assisted), ISC. */
 #include <stdint.h>
+#include <limits.h>
 #include <string.h>
 #include "goal_bridge.h"
 #include "goal_fiber.h"
@@ -275,4 +276,97 @@ int dc_goal_install_fiber_bridge(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_
  uint32_t target=(uint32_t)(uintptr_t)fiber_yield;
  if(!rt || active_runtime!=rt) {if(rt)rt->error=DC_GOAL_BAD_ARGUMENT;return 0;}
  memcpy(code+8,&target,4);return dc_goal_load_module(rt,&function,1,sync,NULL,result);
+}
+
+/* First activation is deliberately narrower than original process.activate.
+ * The original body remains unchanged; inspect every supported dependency
+ * before its status/PID/heap/tree writes. Caller owns all pinned spans. */
+static uint32_t activation_word(const unsigned char *p,unsigned off) {
+ uint32_t v;memcpy(&v,p+off,4);return v;
+}
+static int activation_overlap(uint32_t a,uint32_t an,uint32_t b,uint32_t bn) {
+ return an && bn && (a<=b?b-a<an:a-b<bn);
+}
+static int activation_write_alias(uint32_t process,uint32_t reservation,uint32_t dest,uint32_t ctx,
+                                   uint32_t address,uint32_t bytes) {
+ return activation_overlap(process-4,reservation,address,bytes) ||
+  activation_overlap(dest-4,32,address,bytes) || activation_overlap(ctx-4,48,address,bytes);
+}
+uint32_t dc_goal_activate_process(dc_goal_runtime *rt,uint32_t process,uint32_t reservation,
+                                 uint32_t destination,uint32_t stack_base,uint32_t stack_bytes,uint32_t name) {
+ typedef uint64_t (*activate)(uint64_t,uint64_t,uint64_t,uint64_t);
+ const char *names[]={"(method activate process)","(method new cpu-thread)","mem-set32!","change-parent"};
+ dc_goal_process_heap heap;
+ dc_goal_code_entry_info code[4];
+ dc_goal_type_fields *schema;
+ unsigned char *p,*d,*c;
+ uint32_t process_type,tree_type,cpu,thread_type,symbol,context,body[4],i,name_type,type_bytes,tree_bytes,cpu_bytes,dead,value;
+ if(!rt || active_runtime!=rt) {if(rt)rt->error=DC_GOAL_BAD_ARGUMENT;return 0;}
+ if(dc_goal_fiber_current())goto bad;
+ if(!dc_goal_process_heap_open(&heap,rt,process,reservation))return 0;
+ process_type=dc_goal_symbol_value(rt,rt->s7+DC_FIX_SYM_PROCESS_TYPE);
+ schema=dc_goal_resolve(rt,process_type,sizeof *schema);
+ if(!schema || schema->heap_base!=0)goto bad;
+ type_bytes=20u+4u*schema->num_methods;
+ p=dc_goal_resolve(rt,process,108);if(!p)return 0;
+ dead=dc_goal_find(rt,"dead");
+ if(!dead || activation_word(p,32)!=dead || activation_word(p,40)!=rt->s7 ||
+    activation_word(p,44)!=rt->s7 || activation_word(p,8)!=rt->s7 ||
+    activation_word(p,12)!=rt->s7 || activation_word(p,16)!=rt->s7 ||
+    activation_word(p,20)!=process+24 || activation_word(p,24)!=process ||
+    activation_word(p,84)!=process+108)goto bad;
+ /* Original activate constructs 128+256 bytes at the reset heap base. */
+ if(activation_word(p,80)-(process+108)<=384u)goto oom;
+ symbol=dc_goal_find(rt,"process-tree");tree_type=symbol?dc_goal_symbol_value(rt,symbol):0;
+ if(!tree_type || dc_goal_type_of(rt,destination)!=tree_type)goto bad;
+ schema=dc_goal_resolve(rt,tree_type,sizeof *schema);
+ if(!schema || schema->allocated_size!=32)goto bad;
+ tree_bytes=20u+4u*schema->num_methods;
+ d=dc_goal_resolve(rt,destination,28);if(!d)return 0;
+ if(!(activation_word(d,4)&256u) || activation_word(d,8)!=rt->s7 ||
+    activation_word(d,12)!=rt->s7 || activation_word(d,16)!=rt->s7 ||
+    activation_word(d,20)!=destination+24 || activation_word(d,24)!=destination)goto bad;
+ name_type=dc_goal_type_of(rt,name);
+ if(name_type!=rt->symbol_type && name_type!=rt->string_type)goto bad;
+ symbol=dc_goal_find(rt,"*kernel-context*");context=symbol?dc_goal_symbol_value(rt,symbol):0;
+ c=context_fields(rt,context);
+ if(!c || activation_word(c,20)!=rt->s7 || activation_word(c,24)!=rt->s7 ||
+    activation_word(c,12)>=INT32_MAX)goto bad;
+ if(activation_overlap(process-4,reservation,destination-4,32) ||
+    activation_overlap(process-4,reservation,context-4,48) ||
+    activation_overlap(destination-4,32,context-4,48))goto bad;
+ symbol=dc_goal_find(rt,"cpu-thread");cpu=symbol?dc_goal_symbol_value(rt,symbol):0;
+ thread_type=dc_goal_symbol_value(rt,rt->s7+DC_FIX_SYM_THREAD_TYPE);
+ if(!cpu || dc_goal_type_of(rt,cpu)!=rt->type_type)goto bad;
+ schema=dc_goal_resolve(rt,cpu,sizeof *schema);
+ if(!schema || schema->allocated_size!=128 || schema->num_methods!=12 || schema->parent!=thread_type)goto bad;
+ cpu_bytes=20u+4u*schema->num_methods;
+ if(stack_bytes<4096 || ((stack_base|stack_bytes)&15u) || stack_bytes>UINT32_MAX-stack_base)goto bad;
+ if(!dc_goal_resolve(rt,stack_base,stack_bytes))return 0;
+ if(activation_overlap(stack_base,stack_bytes,process-4,reservation) ||
+    activation_overlap(stack_base,stack_bytes,destination-4,32) ||
+    activation_overlap(stack_base,stack_bytes,context-4,48) ||
+    activation_overlap(stack_base,stack_bytes,rt->table,DC_GOAL_SYMBOL_BYTES) ||
+    activation_overlap(stack_base,stack_bytes,process_type-4,type_bytes) ||
+    activation_overlap(stack_base,stack_bytes,tree_type-4,tree_bytes) ||
+    activation_overlap(stack_base,stack_bytes,cpu-4,cpu_bytes))goto bad;
+ /* Body write spans must also exclude namespace, schemas and dependency code. */
+ if(activation_write_alias(process,reservation,destination,context,rt->table,DC_GOAL_SYMBOL_BYTES) ||
+    activation_write_alias(process,reservation,destination,context,process_type-4,type_bytes) ||
+    activation_write_alias(process,reservation,destination,context,tree_type-4,tree_bytes) ||
+    activation_write_alias(process,reservation,destination,context,cpu-4,cpu_bytes))goto bad;
+ for(i=0;i<4;++i) {
+  symbol=dc_goal_find(rt,names[i]);body[i]=symbol?dc_goal_symbol_value(rt,symbol):0;
+  if(!dc_goal_code_entry(rt,body[i],&code[i]))return 0;
+  if(activation_overlap(stack_base,stack_bytes,body[i]-4,code[i].bytes+4) ||
+     activation_write_alias(process,reservation,destination,context,body[i]-4,code[i].bytes+4))goto bad;
+ }
+ if(dc_goal_get_method(rt,cpu,0)!=body[1])goto bad;
+ rt->error=DC_GOAL_OK;
+ value=(uint32_t)((activate)(uintptr_t)body[0])(process,destination,name,stack_base+stack_bytes);
+ return rt->error==DC_GOAL_OK?value:0;
+bad:
+ rt->error=DC_GOAL_BAD_ARGUMENT;return 0;
+oom:
+ rt->error=DC_GOAL_OUT_OF_MEMORY;return 0;
 }

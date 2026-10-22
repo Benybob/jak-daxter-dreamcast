@@ -184,3 +184,8 @@ See [STACK_CALL.md](STACK_CALL.md). (AI-assisted).
 
 A guarded native SH-4 fiber engine now suspends and resumes registered GOAL entries while preserving callee registers and exact stack images. Two GOAL contexts share one deliberately destroyed working stack and call unchanged original remove-exit under explicit process binding. Grok supplied the isolated assembly and reviewed the engine; Codex fixed two word-push boundary gaps and independently verified 385 new native checks. Original scheduling, activation, GC, failure unwinding and gameplay remain unfinished. (AI-assisted)
 See [COOPERATIVE_FIBERS.md](COOPERATIVE_FIBERS.md). (AI-assisted).
+
+## Completed: Guarded unchanged original process activation
+
+Unchanged original process.activate now assigns a PID, initializes its main CPU thread and attaches a fresh base process to an empty tree on native SH-4. Read-only preflight rejects unsupported/stale state before body writes; original mem-set32!, CPU construction and change-parent remain the executed dependencies. Grok audited the original contract and reviewed the wrapper; Codex independently verifies 331 new native checks. Processes become ready without running game code. Scheduler/argument/cleanup integration, GC, unwinding and gameplay remain unfinished. (AI-assisted)
+See [PROCESS_ACTIVATION.md](PROCESS_ACTIVATION.md). (AI-assisted).

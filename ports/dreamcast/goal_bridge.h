@@ -48,4 +48,12 @@ uint32_t dc_goal_construct_main_thread(dc_goal_runtime *rt,uint32_t process,uint
                                        uint32_t stack_base,uint32_t stack_bytes,uint32_t name,uint32_t backup_bytes);
 /* Explicit cooperative-yield bridge; no original scheduler/activation. */
 int dc_goal_install_fiber_bridge(dc_goal_runtime *,dc_goal_cache_sync,dc_goal_module_result *);
+/* Original process.activate on a fresh base process and empty base tree only.
+ * Explicit pinned owner/stack spans; no allocation/self binding is inferred.
+ * Preflight rejects unsupported schema, live context, scratchpad, bad entries,
+ * stack overlap and insufficient original 256-byte backup reservation before
+ * body effects. Success creates/attaches a ready process; never runs its code.
+ * No rollback of target effects, derived process, scheduler or GC support. */
+uint32_t dc_goal_activate_process(dc_goal_runtime *,uint32_t process,uint32_t reservation,
+                                 uint32_t destination,uint32_t stack_base,uint32_t stack_bytes,uint32_t name);
 #endif
