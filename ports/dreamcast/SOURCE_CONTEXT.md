@@ -63,3 +63,9 @@ To inspect gstate, use the same context plus gkernel.gc. Paths above assume the
 documented adjacent og-host workspace. Relevant host tests skip without the
 frontend/SDK. Build one SH-4 target at a time; do not relink the Windows frontend
 while a compiler client is using it.
+
+A bounded original system-global startup prefix now executes separately; see
+[KERNEL_GLOBAL_STARTUP.md](KERNEL_GLOBAL_STARTUP.md). `--prefix-through-global`
+retains contiguous original forms through a unique top-level define, records
+its boundary/count, and requires explicit native initialization. This does not
+start the whole original kernel module. (AI-assisted).

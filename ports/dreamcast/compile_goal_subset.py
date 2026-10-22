@@ -16,6 +16,7 @@ def main():
     parser.add_argument('--function',action='append',default=[])
     parser.add_argument('--preload',type=Path,action='append',default=[],help='Compile original source context in order before exporting the main module; does not run target startup')
     parser.add_argument('--select-defuns',action='store_true',help='Read selected original forms without compiling their enclosing file')
+    parser.add_argument('--prefix-through-global',help='Compile an unchanged original source prefix ending at this unique top-level define; requires an explicit initializer')
     parser.add_argument('--header',type=Path,default=port/'build/goal_fixture.h')
     parser.add_argument('--msys',type=Path,default=Path('C:/msys64'))
     parser.add_argument('--runtime',action='store_true')
@@ -27,6 +28,8 @@ def main():
         parser.error('select at least one function or an initializer')
     if args.select_defuns and not args.function:
         parser.error('--select-defuns requires at least one original defun')
+    if args.prefix_through_global and (args.select_defuns or args.initializer is None):
+        parser.error('--prefix-through-global requires an initializer and cannot select defuns')
     header=args.header.resolve(); header.parent.mkdir(parents=True,exist_ok=True)
     intermediate=header.with_suffix('.ir.json')
     manifest=header.with_suffix('.manifest.json')
@@ -39,6 +42,7 @@ def main():
         parser.error('duplicate or self-referential preload source')
     for source in dependencies: command+=['--preload',str(source)]
     if args.select_defuns: command+=args.function
+    if args.prefix_through_global: command+=['--prefix-through-global',args.prefix_through_global]
     subprocess.run(command,env=env,check=True)
     command=[sys.executable,str(port/'lower_sh4_ir.py'),str(intermediate),'--header',str(header),'--manifest',str(manifest)]
     for name in args.function: command+=['--function',name]
@@ -61,6 +65,7 @@ def main():
             'selected_source_preloaded':args.source.resolve() in dependencies,
             'functions':json.loads(manifest.read_text())}
     document=json.loads(intermediate.read_text())
+    report['source_selection']=document['source_selection']
     data=module_data(document,{str(i):(b'',f) for i,f in enumerate(report['functions'])})
     referenced={d['name'] for d in data}
     report['static_data']=[s for s in document.get('statics',[]) if s['id'] in referenced]

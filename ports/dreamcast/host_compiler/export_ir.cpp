@@ -193,7 +193,7 @@ static json instruction(IR* ir,const StaticNames& statics,const TypeSystem& type
 
 int main(int argc,char** argv) {
   if(argc<4) {
-    std::cerr<<"Usage: goalc-dreamcast-ir PROJECT_ROOT SOURCE.gc OUTPUT.json [--preload CONTEXT.gc] [TOP_LEVEL_DEFUN ...]\n";
+    std::cerr<<"Usage: goalc-dreamcast-ir PROJECT_ROOT SOURCE.gc OUTPUT.json [--preload CONTEXT.gc] [--prefix-through-global NAME | TOP_LEVEL_DEFUN ...]\n";
     return 2;
   }
   try {
@@ -202,6 +202,7 @@ int main(int argc,char** argv) {
       throw std::runtime_error("project setup failed");
     Compiler compiler(GameVersion::Jak1,emitter::InstructionSet::X86);
     std::vector<std::string> preloads,selected_names;
+    std::string prefix_global;
     std::unordered_set<std::string> context_paths;
     const auto main_path=std::filesystem::weakly_canonical(argv[2]).string();
     for(int i=4;i<argc;++i) {
@@ -211,8 +212,15 @@ int main(int argc,char** argv) {
         if(!std::filesystem::is_regular_file(path) || !context_paths.insert(path.string()).second)
           throw std::runtime_error("missing, duplicate or self-referential preload source");
         preloads.push_back(path.string());
+      } else if(std::string(argv[i])=="--prefix-through-global") {
+        if(++i>=argc || !prefix_global.empty())
+          throw std::runtime_error("--prefix-through-global requires one unique global name");
+        prefix_global=argv[i];
+        if(prefix_global.empty()) throw std::runtime_error("empty prefix boundary global");
       } else selected_names.push_back(argv[i]);
     }
+    if(!prefix_global.empty() && !selected_names.empty())
+      throw std::runtime_error("prefix selection and selected defuns are mutually exclusive");
     const bool selected_source_preloaded=context_paths.count(main_path)!=0;
     if(selected_source_preloaded && selected_names.empty())
       throw std::runtime_error("self-referential preload requires selected top-level defuns");
@@ -243,10 +251,33 @@ int main(int argc,char** argv) {
       for(auto it=selected.rbegin();it!=selected.rend();++it) body=goos::PairObject::make_new(*it,body);
       source=goos::PairObject::make_new(goos::Object::make_symbol(&compiler.get_goos().reader.symbolTable,"top-level"),body);
     }
+    json source_selection={{"kind",selected_names.empty()?"full_source":"selected_defuns"}};
+    if(!prefix_global.empty()) {
+      std::vector<goos::Object> prefix;
+      bool boundary_found=false;
+      auto forms=source.as_pair()->cdr;
+      while(forms.is_pair()) {
+        const auto form=forms.as_pair()->car;
+        bool is_boundary=false;
+        if(form.is_pair() && form.as_pair()->car.is_symbol("define")) {
+          const auto tail=form.as_pair()->cdr;
+          is_boundary=tail.is_pair() && tail.as_pair()->car.is_symbol(prefix_global);
+        }
+        if(is_boundary && boundary_found) throw std::runtime_error("ambiguous prefix boundary global");
+        if(!boundary_found) prefix.push_back(form);
+        if(is_boundary) boundary_found=true;
+        forms=forms.as_pair()->cdr;
+      }
+      if(!boundary_found) throw std::runtime_error("prefix boundary global not found: "+prefix_global);
+      auto body=goos::Object::make_empty_list();
+      for(auto it=prefix.rbegin();it!=prefix.rend();++it) body=goos::PairObject::make_new(*it,body);
+      source=goos::PairObject::make_new(goos::Object::make_symbol(&compiler.get_goos().reader.symbolTable,"top-level"),body);
+      source_selection={{"kind","prefix_through_global"},{"global",prefix_global},{"top_level_forms",prefix.size()}};
+    }
     auto* file=compiler.compile_object_file("dreamcast-export",source,true);
     json output={{"format_version",1},{"frontend","OpenGOAL original typed frontend"},
                  {"scope","SH-4 lowering input; unsupported IR remains explicit"},
-                 {"preloads",preloads},{"selected_source_preloaded",selected_source_preloaded},
+                 {"preloads",preloads},{"selected_source_preloaded",selected_source_preloaded},{"source_selection",source_selection},
                  {"source",std::filesystem::absolute(argv[2]).string()},{"functions",json::array()}};
     StaticNames statics;
     output["statics"]=json::array();

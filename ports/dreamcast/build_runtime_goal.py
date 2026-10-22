@@ -140,10 +140,18 @@ def main():
                          '--header',str(port/'build/scalar_validation_fixture.h')]
     for name in ('start','end','ram-end'): command+=['--function','dc-validation-'+name]
     subprocess.run(command,check=True)
+    command=compiler+['--source',str(port.parents[1]/'goal_src/jak1/kernel/gkernel.gc'),
+                      '--prefix-through-global','*last-loado-debug-usage*',
+                      '--initializer','dc-original-kernel-globals-init',
+                      '--header',str(port/'build/original_kernel_globals.h')]
+    for source in (port.parents[1]/'goal_src/jak1/kernel/gcommon.gc',port/'scalar_validation_context.gc',
+                   port.parents[1]/'goal_src/jak1/kernel/gkernel-h.gc',port.parents[1]/'goal_src/jak1/kernel/gstring-h.gc'):
+        command+=['--preload',str(source)]
+    subprocess.run(command,check=True)
     subprocess.run([sys.executable,str(port/'build_dreamcast.py'),'--target','jak-dc-runtime-goal.elf'],check=True)
     if args.verify:
         subprocess.run([sys.executable,str(port/'verify_backend.py'),str(args.flycast),
                         str(port/'jak-dc-runtime-goal.elf'),'--nm',str(args.nm),'--output',str(args.output),
-                        '--tests','8476','--suite','runtime-goal'],check=True)
+                        '--tests','8508','--suite','runtime-goal'],check=True)
 
 if __name__=='__main__': main()

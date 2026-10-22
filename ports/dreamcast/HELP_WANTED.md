@@ -8,7 +8,7 @@ Most compiler/runtime work uses synthetic fixtures and needs no original assets.
 | --- | --- | --- |
 | Remaining full-kernel target configuration | GOAL, platform runtime | Scalar validator now uses explicit stock-RAM/table limits; audit remaining profiler/PC branches, scratchpad and MMIO before original startup |
 | Vector and remaining mixed ABI | SH-4 GCC, GOAL | Register-only fixed mixed signatures now pass; independently verify mixed stack, variadic and vector boundaries before enabling them |
-| Kernel sequencing and heaps | GOAL, runtime systems | Explicit target configuration and original startup/module dependencies execute within measured stock RAM bounds |
+| Remaining kernel sequencing and heaps | GOAL, runtime systems | Nine original system globals now initialize explicitly; implement measured native process heaps, context/thread setup and remaining original module dependencies |
 | PowerVR scene pipeline | KOS, PVR, graphics | Measured culling/material deduplication and bounded residency on synthetic fixtures before expanding game scenes |
 | Hardware validation | Dreamcast development | Reproduce asset-free native diagnostics on hardware with toolchain, load method, RAM use and failures documented |
 
@@ -93,3 +93,8 @@ See [MIXED_ABI.md](MIXED_ABI.md). (AI-assisted).
 
 An explicit, hash-pinned scalar context gives the unchanged original valid? Dreamcast P0 RAM and native symbol-table bounds. Four host tests and 77 new native checks cover selection/provenance, boundary/tag/type checks and both previously excluded hash-bucket ranges. Full-file PC/profiler/MMIO configuration, original kernel startup, process heaps and gameplay remain unfinished.
 See [SCALAR_VALIDATION.md](SCALAR_VALIDATION.md). (AI-assisted).
+
+## Completed: Original kernel system-global startup prefix
+
+A provenance-pinned contiguous prefix of original gkernel.gc now initializes its first nine system globals natively, including boxed versions, boot mode and counters. Four host tests and 32 new native checks verify ordering, explicit startup, values and exclusion of later stack/scratchpad setup. The incremental runner dependency is fixed. This is bounded global initialization; full target configuration, process heaps, kernel dispatch and gameplay remain unfinished.
+See [KERNEL_GLOBAL_STARTUP.md](KERNEL_GLOBAL_STARTUP.md). (AI-assisted).
