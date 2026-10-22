@@ -48,7 +48,8 @@ see SCALAR_VALIDATION.md. Qmem-copy variants need explicit
 128-bit/vector work. Full gcommon now exports 66 typed functions; its lowering/execution remains
 open. The latest full-export standalone lowering inventory is 57 of 66; this
 does not link or execute the whole module. Explicit ordered context now exports original gkernel/gstate with 76/7 typed
-functions; 50/3 lower individually under unchanged desktop configuration.
+functions; 54/3 now lower individually under unchanged desktop configuration
+after declared scalar enum ABI classification (see ENUM_ABI.md).
 These modules are not linked/executed on Dreamcast; see SOURCE_CONTEXT.md.
 
 Full-file target setup must also address upstream PC_PORT/BIG_MEMORY settings,
@@ -98,3 +99,8 @@ See [SCALAR_VALIDATION.md](SCALAR_VALIDATION.md). (AI-assisted).
 
 A provenance-pinned contiguous prefix of original gkernel.gc now initializes its first nine system globals natively, including boxed versions, boot mode and counters. Four host tests and 32 new native checks verify ordering, explicit startup, values and exclusion of later stack/scratchpad setup. The incremental runner dependency is fixed. This is bounded global initialization; full target configuration, process heaps, kernel dispatch and gameplay remain unfinished.
 See [KERNEL_GLOBAL_STARTUP.md](KERNEL_GLOBAL_STARTUP.md). (AI-assisted).
+
+## Completed: Declared scalar enum ABI
+
+Original EnumType width and signedness now classify unboxed 8/16/32/64-bit values at scalar ABI boundaries, preserving semantic enum names and original typed loads. Four host tests and 168 new native checks cover signed extremes, high halves, compact leaves, construction, calls and mixed register entry. Four more original gkernel routines lower (54/76), but remain compile-only. Full target setup, process heaps, kernel/gameplay and remaining mixed/vector ABIs are unfinished.
+See [ENUM_ABI.md](ENUM_ABI.md). (AI-assisted).

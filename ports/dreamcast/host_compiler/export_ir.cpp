@@ -27,6 +27,15 @@ using StaticNames=std::unordered_map<const StaticObject*,std::string>;
 static std::string native_value_type(const TypeSpec& spec,const TypeSystem& types) {
   if(spec.base_type()=="none" || spec.base_type()=="function") return spec.print();
   const auto* type=types.lookup_type_allow_partial_def(spec);
+  // Preserve GOAL enum names separately; their declared underlying scalar
+  // layout determines the native ABI. Never treat 128-bit/vector enums as GPRs.
+  if(const auto* enumeration=dynamic_cast<const EnumType*>(type)) {
+    const int bytes=enumeration->get_load_size();
+    if(!enumeration->is_boxed() && enumeration->get_offset()==0 &&
+       enumeration->get_preferred_reg_class()==RegClass::GPR_64 &&
+       (bytes==1 || bytes==2 || bytes==4 || bytes==8))
+      return enumeration->get_load_signed()?"int":"uint";
+  }
   // User-defined reference types are 32-bit addresses in scalar containers.
   // Non-reference aggregates and their 128-bit values stay unsupported.
   if(type->is_reference() && type->get_load_size()==4) return "object";

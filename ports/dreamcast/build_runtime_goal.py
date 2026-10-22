@@ -148,10 +148,14 @@ def main():
                    port.parents[1]/'goal_src/jak1/kernel/gkernel-h.gc',port.parents[1]/'goal_src/jak1/kernel/gstring-h.gc'):
         command+=['--preload',str(source)]
     subprocess.run(command,check=True)
+    command=compiler+['--source',str(port/'enum_fixture.gc'),'--header',str(port/'build/enum_fixture.h')]
+    for name in ('u32','u64','s32','s64','call','mixed','mixed-call','load-u32','load-s32','load-u64','load-s64','bits32','bits64','u8','u16','s8','s16','load-u8','load-s8','load-u16','load-s16'):
+        command+=['--function','dc-enum-'+name]
+    subprocess.run(command,check=True)
     subprocess.run([sys.executable,str(port/'build_dreamcast.py'),'--target','jak-dc-runtime-goal.elf'],check=True)
     if args.verify:
         subprocess.run([sys.executable,str(port/'verify_backend.py'),str(args.flycast),
                         str(port/'jak-dc-runtime-goal.elf'),'--nm',str(args.nm),'--output',str(args.output),
-                        '--tests','8508','--suite','runtime-goal'],check=True)
+                        '--tests','8676','--suite','runtime-goal'],check=True)
 
 if __name__=='__main__': main()

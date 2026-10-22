@@ -27,8 +27,8 @@ Discuss scope on **this fork**, and keep changes small enough to review.
 
 | Area | Locally verified scope |
 | --- | --- |
-| Host | 150 tests pass with the complete local SDK/oracle setup |
-| Native runtime | 8,508 checks in Flycast, stock 16 MiB RAM |
+| Host | 154 tests pass with the complete local SDK/oracle setup |
+| Native runtime | 8,676 checks in Flycast, stock 16 MiB RAM |
 | Original data | 182 native checks; all 668 V4 data objects across 36 local archives validate |
 | Numeric regression | 39 native checks |
 | GOAL backend | Original typed frontend to native SH-4; scalar calls, classes/methods, void startup, private data, 64-bit shifts and 32-bit division |
@@ -52,16 +52,16 @@ the local checkpoint, not a GitHub Actions run.
 
 ## Latest completed contributor task
 
-A provenance-pinned contiguous prefix of original gkernel.gc now initializes its first nine system globals natively, including boxed versions, boot mode and counters. Four host tests and 32 new native checks verify ordering, explicit startup, values and exclusion of later stack/scratchpad setup. The incremental runner dependency is fixed. This is bounded global initialization; full target configuration, process heaps, kernel dispatch and gameplay remain unfinished.
+Original EnumType width and signedness now classify unboxed 8/16/32/64-bit values at scalar ABI boundaries, preserving semantic enum names and original typed loads. Four host tests and 168 new native checks cover signed extremes, high halves, compact leaves, construction, calls and mixed register entry. Four more original gkernel routines lower (54/76), but remain compile-only. Full target setup, process heaps, kernel/gameplay and remaining mixed/vector ABIs are unfinished.
 
-See [KERNEL_GLOBAL_STARTUP.md](ports/dreamcast/KERNEL_GLOBAL_STARTUP.md). Full kernel/gameplay remains unfinished.
+See [ENUM_ABI.md](ports/dreamcast/ENUM_ABI.md). Full kernel/gameplay remains unfinished.
 
 ## Build and orientation
 
 Source is in `ports/dreamcast/`. Follow [BUILDING.md](ports/dreamcast/BUILDING.md).
 The verified baseline is OpenGOAL `6076aab5a95955443a9e1ed8f72a25bc0e2fcf9d`;
 the latest locally verified port checkpoint is
-`db3a8c51aa03d16b0b91fd1b1459b79e7624e6e4`.
+`a382993ca39a16a71067f03d8838d830dce95900`.
 
 No ISO, BIOS, extracted textures/models, converted game scenes or ELF binaries
 embedding game assets are uploaded. Use assets extracted locally from your own
