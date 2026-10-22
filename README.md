@@ -27,8 +27,8 @@ Discuss scope on **this fork**, and keep changes small enough to review.
 
 | Area | Locally verified scope |
 | --- | --- |
-| Host | 122 tests pass with the complete local SDK/oracle setup |
-| Native runtime | 8,252 checks in Flycast, stock 16 MiB RAM |
+| Host | 128 tests pass with the complete local SDK/oracle setup |
+| Native runtime | 8,267 checks in Flycast, stock 16 MiB RAM |
 | Original data | 182 native checks; all 668 V4 data objects across 36 local archives validate |
 | Numeric regression | 39 native checks |
 | GOAL backend | Original typed frontend to native SH-4; scalar calls, classes/methods, void startup, private data, 64-bit shifts and 32-bit division |
@@ -52,16 +52,16 @@ the local checkpoint, not a GitHub Actions run.
 
 ## Latest completed contributor task
 
-Original 1/, +, -, *, /, mod and rem now coexist in one native module without C-label collisions. Three host tests and 59 new native checks cover naming, signed integer operations and original reciprocal saturation behavior. Runtime bindings preserve exact GOAL symbol names. Next: explicit fixed-register metadata and original kernel dependency setup; whole-game playability remains unfinished.
+Original identical rlet aliases now export once with fixed-register roles and reset metadata. Supported symbol-table resets map to native s7; missing initialization, unknown roles and mutation still reject. Six host tests and 15 new native checks pass. Original valid? advances to a long-branch limit and still needs target memory constants; it is not executed. Full kernel/gameplay remains unfinished.
 
-See [C_IDENTIFIERS.md](ports/dreamcast/C_IDENTIFIERS.md). Full kernel/gameplay remains unfinished.
+See [FIXED_REGISTERS.md](ports/dreamcast/FIXED_REGISTERS.md). Full kernel/gameplay remains unfinished.
 
 ## Build and orientation
 
 Source is in `ports/dreamcast/`. Follow [BUILDING.md](ports/dreamcast/BUILDING.md).
 The verified baseline is OpenGOAL `6076aab5a95955443a9e1ed8f72a25bc0e2fcf9d`;
 the latest locally verified port checkpoint is
-`31a710f34e7677460bff0379c8cf8e4540997701`.
+`b6f21097389cabbe88803ef41970b9e4fde9d071`.
 
 No ISO, BIOS, extracted textures/models, converted game scenes or ELF binaries
 embedding game assets are uploaded. Use assets extracted locally from your own

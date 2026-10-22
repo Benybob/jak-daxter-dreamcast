@@ -196,6 +196,29 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
             raise ValueError('return value does not match function return type')
     registers={r['id']:r for r in function['registers']}
     if len(registers)!=len(function['registers']): raise ValueError('duplicate virtual register')
+    fixed={}
+    for binding in function.get('fixed_registers',[]):
+        index=binding['register']
+        if index in fixed or index not in registers: raise ValueError('invalid fixed register metadata')
+        if not runtime: raise ValueError('fixed runtime register requires native runtime profile')
+        if binding.get('frontend_register')!='r14' or binding.get('role')!='symbol_table':
+            raise ValueError('fixed runtime register role not implemented')
+        if registers[index]['class']!='gpr64' or registers[index]['type'] not in ('uint','int','integer'):
+            raise ValueError('fixed symbol-table register requires an integer container')
+        fixed[index]=binding
+    translated=[]
+    for op in function['instructions']:
+        if op['kind']=='fixed_register_reset':
+            if op['reads'] or len(op['writes'])!=1 or len(op.get('bindings',[]))!=1:
+                raise ValueError('unsupported fixed register reset layout')
+            index=op['writes'][0]
+            if index not in fixed or op['bindings'][0]!=fixed[index]:
+                raise ValueError('fixed register reset does not match its declaration')
+            op=dict(op,kind='symbol_pointer',symbol='#f')
+        elif set(op['writes'])&fixed.keys():
+            raise ValueError('fixed symbol-table register mutation is unsupported')
+        translated.append(op)
+    function=dict(function,instructions=translated)
     validate_definitions(function,set(registers))
     module=module or {}
     statics=statics or {}

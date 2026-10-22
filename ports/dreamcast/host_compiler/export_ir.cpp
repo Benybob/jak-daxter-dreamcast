@@ -288,18 +288,56 @@ int main(int argc,char** argv) {
       }
       fn["return_type"]=result_type.print();
       fn["return_abi_type"]=native_value_type(result_type,compiler.type_system());
+      std::unordered_map<int,json> fixed_registers;
+      fn["fixed_registers"]=json::array();
+      for(const auto& constraint:function->constraints()) {
+        if(!constraint.contrain_everywhere) continue;
+        const auto name=constraint.desired_register.print(emitter::InstructionSet::X86);
+        json binding={{"register",constraint.ireg.id},{"frontend_register",name},
+                      {"role",name=="r14" ? "symbol_table" : "unsupported"}};
+        const auto found=fixed_registers.find(constraint.ireg.id);
+        if(found!=fixed_registers.end()) {
+          if(found->second!=binding) throw std::runtime_error("conflicting fixed register constraints");
+        } else {
+          fixed_registers.emplace(constraint.ireg.id,binding);
+          fn["fixed_registers"].push_back(binding);
+        }
+      }
       std::unordered_set<int> no_values;
+      std::unordered_map<int,json> register_records;
+      std::unordered_map<int,size_t> alias_counts;
       for(const auto& value:function->reg_vals()) {
         const auto type=shared_exit && value.get()==shared_block->return_value ? result_type : value->type();
-        fn["registers"].push_back({{"id",value->ireg().id},{"class",reg_class(value->ireg().reg_class)},
-                                  {"type",type.print()},
-                                  {"abi_type",native_value_type(type,compiler.type_system())}});
+        const int id=value->ireg().id;
+        json record={{"id",id},{"class",reg_class(value->ireg().reg_class)},
+                     {"type",type.print()},{"abi_type",native_value_type(type,compiler.type_system())}};
+        const auto found=register_records.find(id);
+        if(found!=register_records.end()) {
+          if(!fixed_registers.count(id) || found->second!=record)
+            throw std::runtime_error("conflicting or non-fixed virtual register alias in "+function->name());
+        } else {
+          register_records.emplace(id,record); fn["registers"].push_back(record);
+        }
+        ++alias_counts[id];
         if(type.print()=="none") no_values.insert(value->ireg().id);
+      }
+      fn["register_aliases"]=json::array();
+      for(const auto& record:fn["registers"]) {
+        const int id=record.at("id").get<int>();
+        if(alias_counts.at(id)>1) fn["register_aliases"].push_back({{"register",id},{"count",alias_counts.at(id)}});
       }
       size_t position=0;
       for(const auto& op:function->code()) {
         auto exported=instruction(op.get(),statics,compiler.type_system());
         const auto rai=op->to_rai();
+        if(dynamic_cast<IR_ValueReset*>(op.get()) && !rai.write.empty()) {
+          bool all_fixed=true;
+          for(const auto& reg:rai.write) if(!fixed_registers.count(reg.id)) all_fixed=false;
+          if(all_fixed) {
+            exported["kind"]="fixed_register_reset"; exported["bindings"]=json::array();
+            for(const auto& reg:rai.write) exported["bindings"].push_back(fixed_registers.at(reg.id));
+          }
+        }
         // The original frontend copies its phantom call-result register even
         // for (none). No native value exists; retain its IR index as a no-op.
         if(dynamic_cast<IR_RegSet*>(op.get()) && rai.read.size()==1 && rai.write.size()==1 &&

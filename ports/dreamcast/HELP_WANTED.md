@@ -63,3 +63,8 @@ See [LITERAL_POOLS.md](LITERAL_POOLS.md). (AI-assisted).
 
 Original 1/, +, -, *, /, mod and rem now coexist in one native module without C-label collisions. Three host tests and 59 new native checks cover naming, signed integer operations and original reciprocal saturation behavior. Runtime bindings preserve exact GOAL symbol names. Next: explicit fixed-register metadata and original kernel dependency setup; whole-game playability remains unfinished.
 See [C_IDENTIFIERS.md](C_IDENTIFIERS.md). (AI-assisted).
+
+## Completed: Explicit native symbol-table register role
+
+Original identical rlet aliases now export once with fixed-register roles and reset metadata. Supported symbol-table resets map to native s7; missing initialization, unknown roles and mutation still reject. Six host tests and 15 new native checks pass. Original valid? advances to a long-branch limit and still needs target memory constants; it is not executed. Full kernel/gameplay remains unfinished.
+See [FIXED_REGISTERS.md](FIXED_REGISTERS.md). (AI-assisted).
