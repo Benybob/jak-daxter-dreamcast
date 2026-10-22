@@ -1,5 +1,8 @@
 # Named locals and real function arguments
 
+Historical named-local checkpoint. Shared early returns are now implemented
+and tested separately in [SHARED_EXITS.md](SHARED_EXITS.md). (AI-assisted).
+
 2026-10-21. (AI-assisted). The original compiler stores both function arguments
 and `(local-vars)` entries in FunctionEnv::params. The old exporter assumed each
 entry was an argument, then failed with `parameter has no incoming IR value`.

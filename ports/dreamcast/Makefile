@@ -95,6 +95,8 @@ runtime_shift_baseline.o: runtime_shift_baseline.c goal_module.h goal_runtime.h 
 
 runtime_locals_cases.o: runtime_locals_cases.c runtime_cases.h goal_module.h goal_runtime.h build/locals_fixture.h
 	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -I. -c runtime_locals_cases.c -o $@
+runtime_early_cases.o: runtime_early_cases.c runtime_cases.h goal_module.h goal_runtime.h build/early_fixture.h build/original_early.h
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -I. -c runtime_early_cases.c -o $@
 runtime_division_cases.o: runtime_division_cases.c runtime_cases.h goal_bridge.h goal_module.h goal_runtime.h division_vectors.h build/division_fixture.h build/original_division.h
 	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -I. -c runtime_division_cases.c -o $@
 goal_native_file.o: goal_native_file.c goal_native_file.h goal_module.h goal_runtime.h
@@ -104,7 +106,7 @@ runtime_native_file_cases.o: runtime_native_file_cases.c runtime_cases.h goal_na
 kernel_types_data.h: generate_kernel_types.py ../../game/kernel/jak1/kscheme.cpp ../../common/symbols.h
 	$(PYTHON) generate_kernel_types.py
 
-jak-dc-runtime-goal.elf: runtime_goal_main.o runtime_goal_cases.o runtime_memory_cases.o runtime_static_cases.o runtime_float_cases.o runtime_bridge_cases.o runtime_quoted_cases.o runtime_void_cases.o runtime_type_cases.o runtime_shift_cases.o runtime_shift_baseline.o runtime_division_cases.o runtime_native_file_cases.o runtime_locals_cases.o goal_native_file.o type_cases.o kernel_type_cases.o goal_kernel_types.o runtime_cases.o goal_runtime.o goal_runtime_dc.o goal_module.o goal_bridge.o
+jak-dc-runtime-goal.elf: runtime_goal_main.o runtime_goal_cases.o runtime_memory_cases.o runtime_static_cases.o runtime_float_cases.o runtime_bridge_cases.o runtime_quoted_cases.o runtime_void_cases.o runtime_type_cases.o runtime_shift_cases.o runtime_shift_baseline.o runtime_division_cases.o runtime_native_file_cases.o runtime_locals_cases.o runtime_early_cases.o goal_native_file.o type_cases.o kernel_type_cases.o goal_kernel_types.o runtime_cases.o goal_runtime.o goal_runtime_dc.o goal_module.o goal_bridge.o
 	kos-cc -o $@ $^
 goal_layout.h: generate_runtime_layout.py ../../common/goal_constants.h ../../common/symbols.h ../../game/kernel/jak1/kscheme.h
 	$(PYTHON) generate_runtime_layout.py
@@ -190,6 +192,7 @@ test: host
 	$(PYTHON) -m unittest discover -s tests -v
 
 clean:
+	rm -f runtime_locals_cases.o runtime_early_cases.o
 	rm -f runtime_native_file_cases.o goal_native_file.o
 	rm -f runtime_division_cases.o
 	rm -f runtime_shift_baseline.o

@@ -19,16 +19,16 @@ player, jumping, collision and a working camera. Before that, we need broader
 original kernel startup, process/heap support and module sequencing.
 
 Start with [CONTRIBUTING.md](CONTRIBUTING.md) and the
-[contributor task board](ports/dreamcast/HELP_WANTED.md). A resolved named-local regression and an open early-return
-reproduction are included; most compiler/host work needs no game ISO.
+[contributor task board](ports/dreamcast/HELP_WANTED.md). Resolved named-local and early-return
+regressions are included; most compiler/host work needs no game ISO.
 Discuss scope on **this fork**, and keep changes small enough to review.
 
-## Current evidence — 2026-10-21
+## Current evidence â€” 2026-10-21
 
 | Area | Locally verified scope |
 | --- | --- |
-| Host | 106 tests pass with the complete local SDK/oracle setup |
-| Native runtime | 8,014 checks in Flycast, stock 16 MiB RAM |
+| Host | 113 tests pass with the complete local SDK/oracle setup |
+| Native runtime | 8,088 checks in Flycast, stock 16 MiB RAM |
 | Original data | 182 native checks; all 668 V4 data objects across 36 local archives validate |
 | Numeric regression | 39 native checks |
 | GOAL backend | Original typed frontend to native SH-4; scalar calls, classes/methods, void startup, private data, 64-bit shifts and 32-bit division |
@@ -52,19 +52,20 @@ the local checkpoint, not a GitHub Actions run.
 
 ## Latest completed contributor task
 
-Named local variables no longer become fake ABI arguments. Eight new original-
-frontend tests and 32 additional native checks cover argument order, stack
-arguments, locals, floats and methods, while retaining initialization guards.
-Complete gcommon now exports 66 typed functions; whole-module execution remains
-unfinished. See [LOCAL_VARIABLES.md](ports/dreamcast/LOCAL_VARIABLES.md).
-The next compiler task is correct shared early-return handling.
+Shared function exits now preserve early return results and the original CFG.
+Seven new frontend tests and 74 native checks cover signed/float/tagged results,
+nested exits, stack arguments and unchanged original basic-type?, type-type?
+and find-parent-method execution. Identity remains six bytes. See
+[SHARED_EXITS.md](ports/dreamcast/SHARED_EXITS.md). Full kernel boot remains open.
+Next compiler tasks include literal pool islands, stable symbol identifiers
+and vector/mixed ABI work; original module dependencies need target setup.
 
 ## Build and orientation
 
 Source is in `ports/dreamcast/`. Follow [BUILDING.md](ports/dreamcast/BUILDING.md).
 The verified baseline is OpenGOAL `6076aab5a95955443a9e1ed8f72a25bc0e2fcf9d`;
 the latest locally verified port checkpoint is
-`666087a658cd6c01c7bb39d1fbbb0f7992bb36d0`.
+`4415ea2908034266b9164fcd38003469d4c1f805`.
 
 No ISO, BIOS, extracted textures/models, converted game scenes or ELF binaries
 embedding game assets are uploaded. Use assets extracted locally from your own

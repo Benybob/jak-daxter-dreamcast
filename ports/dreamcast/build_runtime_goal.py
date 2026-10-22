@@ -102,10 +102,17 @@ def main():
     for name in ('zero','basic','mutate','eight','float','branch'): command+=['--function','dc-local-'+name]
     command+=['--function','(method score dc-local-record)']
     subprocess.run(command,check=True)
+    command=compiler+['--source',str(port/'early_fixture.gc'),'--header',str(port/'build/early_fixture.h')]
+    for name in ('int','loop','float','effect','object','nested','eight'): command+=['--function','dc-early-'+name]
+    subprocess.run(command,check=True)
+    command=compiler+['--source',str(port.parents[1]/'goal_src/jak1/kernel/gcommon.gc'),
+                      '--select-defuns','--header',str(port/'build/original_early.h')]
+    for name in ('basic-type?','type-type?','find-parent-method'): command+=['--function',name]
+    subprocess.run(command,check=True)
     subprocess.run([sys.executable,str(port/'build_dreamcast.py'),'--target','jak-dc-runtime-goal.elf'],check=True)
     if args.verify:
         subprocess.run([sys.executable,str(port/'verify_backend.py'),str(args.flycast),
                         str(port/'jak-dc-runtime-goal.elf'),'--nm',str(args.nm),'--output',str(args.output),
-                        '--tests','8014','--suite','runtime-goal'],check=True)
+                        '--tests','8088','--suite','runtime-goal'],check=True)
 
 if __name__=='__main__': main()

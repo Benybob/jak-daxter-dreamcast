@@ -254,13 +254,49 @@ int main(int argc,char** argv) {
                {"top_level",function.get()==&file->top_level_function()},
                {"registers",json::array()},{"parameters",json::array()},{"instructions",json::array()}};
       export_parameters(*function,compiler.type_system(),fn);
+      BlockEnv* shared_block=nullptr;
+      for(const auto& environment:function->child_envs()) {
+        auto* block=dynamic_cast<BlockEnv*>(environment.get());
+        if(block && block->parent()==function.get() && block->name=="#f") {
+          if(shared_block) throw std::runtime_error("ambiguous function return block");
+          shared_block=block;
+        }
+      }
+      bool shared_exit=false,normal_return=false;
+      TypeSpec result_type("none");
+      for(const auto& op:function->code()) {
+        if(auto* ret=dynamic_cast<IR_Return*>(op.get())) {
+          if(ret->value()) { normal_return=true; result_type=ret->value()->type(); }
+        }
+        if(shared_block && shared_block->return_value && dynamic_cast<IR_RegSet*>(op.get())) {
+          const auto rai=op->to_rai();
+          if(rai.write.size()==1 && rai.write[0].id==shared_block->return_value->ireg().id)
+            shared_exit=true;
+        }
+      }
+      shared_exit=shared_exit && !function->is_asm_func;
+      if(shared_exit) {
+        if(shared_block->end_label.idx<0 ||
+           static_cast<size_t>(shared_block->end_label.idx)+1!=function->code().size() ||
+           !dynamic_cast<IR_Null*>(function->code().back().get()))
+          throw std::runtime_error("unsupported shared function exit layout");
+        if(normal_return) result_type=compiler.type_system().lowest_common_ancestor(shared_block->return_types);
+        else for(const auto& type:shared_block->return_types)
+          if(type!=TypeSpec("none")) throw std::runtime_error("value early return without a declared normal return is unsupported");
+        fn["shared_exit"]={{"register",shared_block->return_value->ireg().id},
+                           {"exit_ir",shared_block->end_label.idx}};
+      }
+      fn["return_type"]=result_type.print();
+      fn["return_abi_type"]=native_value_type(result_type,compiler.type_system());
       std::unordered_set<int> no_values;
       for(const auto& value:function->reg_vals()) {
+        const auto type=shared_exit && value.get()==shared_block->return_value ? result_type : value->type();
         fn["registers"].push_back({{"id",value->ireg().id},{"class",reg_class(value->ireg().reg_class)},
-                                  {"type",value->type().print()},
-                                  {"abi_type",native_value_type(value->type(),compiler.type_system())}});
-        if(value->type().print()=="none") no_values.insert(value->ireg().id);
+                                  {"type",type.print()},
+                                  {"abi_type",native_value_type(type,compiler.type_system())}});
+        if(type.print()=="none") no_values.insert(value->ireg().id);
       }
+      size_t position=0;
       for(const auto& op:function->code()) {
         auto exported=instruction(op.get(),statics,compiler.type_system());
         const auto rai=op->to_rai();
@@ -270,12 +306,19 @@ int main(int argc,char** argv) {
            no_values.count(rai.read[0].id) && no_values.count(rai.write[0].id)) {
           exported["kind"]="nop"; exported["reads"]=json::array(); exported["writes"]=json::array();
         }
+        // Desktop IR_Return assigns the shared result; it is not a machine
+        // return. Preserve every original index and make the outer null label
+        // the actual exit so early and normal paths share liveness/validation.
+        if(shared_exit && dynamic_cast<IR_Return*>(op.get())) exported["kind"]="move";
+        if(shared_exit && position==static_cast<size_t>(shared_block->end_label.idx)) {
+          exported["kind"]="return";
+          exported["reads"]=result_type==TypeSpec("none") ? json::array() :
+              json::array({shared_block->return_value->ireg().id});
+          exported["writes"]=json::array();
+          exported["text"]="shared function exit";
+        }
         fn["instructions"].push_back(std::move(exported));
-        if(auto* ret=dynamic_cast<IR_Return*>(op.get()))
-          if(ret->value()) {
-            fn["return_type"]=ret->value()->type().print();
-            fn["return_abi_type"]=native_value_type(ret->value()->type(),compiler.type_system());
-          }
+        ++position;
       }
       output["functions"].push_back(std::move(fn));
     }
