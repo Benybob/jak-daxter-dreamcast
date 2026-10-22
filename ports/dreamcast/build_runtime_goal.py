@@ -109,10 +109,15 @@ def main():
                       '--select-defuns','--header',str(port/'build/original_early.h')]
     for name in ('basic-type?','type-type?','find-parent-method'): command+=['--function',name]
     subprocess.run(command,check=True)
+    command=compiler+['--source',str(port/'sort_fixture.gc'),'--header',str(port/'build/sort_fixture.h')]
+    for name in ('integer','boolean'): command+=['--function','dc-sort-'+name]
+    subprocess.run(command,check=True)
+    subprocess.run(compiler+['--source',str(port.parents[1]/'goal_src/jak1/kernel/gcommon.gc'),
+                             '--select-defuns','--function','sort','--header',str(port/'build/original_sort.h')],check=True)
     subprocess.run([sys.executable,str(port/'build_dreamcast.py'),'--target','jak-dc-runtime-goal.elf'],check=True)
     if args.verify:
         subprocess.run([sys.executable,str(port/'verify_backend.py'),str(args.flycast),
                         str(port/'jak-dc-runtime-goal.elf'),'--nm',str(args.nm),'--output',str(args.output),
-                        '--tests','8088','--suite','runtime-goal'],check=True)
+                        '--tests','8193','--suite','runtime-goal'],check=True)
 
 if __name__=='__main__': main()

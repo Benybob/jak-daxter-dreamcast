@@ -107,6 +107,81 @@ class AssemblerOracleTest(unittest.TestCase):
         self.assertEqual(e.instruction_size(relax=True),len(e.code)+8)
         self.assertEqual(e.finish(relax=True),e.finish(relax=True))
 
+    def test_literal_island_matches_gnu_branch_over_aligned_data(self):
+        e=Emitter(); e.constant(0,0x12345678)
+        for _ in range(600): e.nop()
+        e.ret()
+        oracle=self.assemble('mov.l .Lvalue,r0\n.rept 496\nnop\n.endr\nbra .Lresume\nnop\n'
+                             '.align 2\n.Lvalue:\n.long 0x12345678\n.Lresume:\n.rept 104\nnop\n.endr\nrts\nnop')
+        code,relocs,stats=e.finish_with_stats(literal_islands=True)
+        self.assertEqual(code,oracle); self.assertEqual(relocs,[])
+        self.assertEqual(stats,dict(instruction_bytes=len(e.code)+4,expanded_conditional_branches=0,literal_islands=1))
+        self.assertEqual(e.finish(literal_islands=True),(code,relocs))
+
+    def test_literal_island_does_not_split_a_call_delay_slot(self):
+        e=Emitter(); e.constant(0,0x12345678)
+        for _ in range(495): e.nop()
+        e.word(0x410b); e.nop()
+        for _ in range(105): e.nop()
+        e.ret(); e.nop()  # match GNU text section's final four-byte alignment
+        oracle=self.assemble('mov.l .Lvalue,r0\n.rept 495\nnop\n.endr\njsr @r1\nnop\n'
+                             'bra .Lresume\nnop\n.align 2\n.Lvalue:\n.long 0x12345678\n'
+                             '.Lresume:\n.rept 105\nnop\n.endr\nrts\nnop')
+        self.assertEqual(e.finish(literal_islands=True)[0],oracle)
+
+    def test_literal_islands_and_conditional_relaxation_share_the_final_layout(self):
+        e=Emitter(); e.label('start'); e.branch('bt','end'); e.constant(0,0x12345678)
+        for _ in range(600): e.nop()
+        e.label('end'); e.branch('bf','start'); e.ret()
+        oracle=self.assemble('.Lstart:\nbf .Lskip1\nbra .Lend\nnop\n.Lskip1:\nmov.l .Lvalue,r0\n'
+                             '.rept 495\nnop\n.endr\nbra .Lresume\nnop\n.align 2\n.Lvalue:\n'
+                             '.long 0x12345678\n.Lresume:\n.rept 105\nnop\n.endr\n.Lend:\n'
+                             'bt .Lskip2\nbra .Lstart\nnop\n.Lskip2:\nrts\nnop')
+        code,relocs,stats=e.finish_with_stats(relax=True,literal_islands=True)
+        self.assertEqual(code,oracle); self.assertEqual(relocs,[])
+        self.assertEqual(stats['expanded_conditional_branches'],2)
+        self.assertEqual(stats['literal_islands'],1)
+        self.assertEqual(e.instruction_size(relax=True,literal_islands=True),len(e.code)+12)
+
+    def test_repeated_symbol_literals_have_distinct_relocations_in_separate_pools(self):
+        e=Emitter(); e.literal(0,('symbol','external'))
+        for _ in range(600): e.nop()
+        e.literal(1,('symbol','external')); e.ret()
+        oracle=self.assemble('mov.l .Lfirst,r0\n.rept 496\nnop\n.endr\nbra .Lresume\nnop\n'
+                             '.align 2\n.Lfirst:\n.long _external\n.Lresume:\n.rept 104\nnop\n.endr\n'
+                             'mov.l .Lsecond,r1\nrts\nnop\n.align 2\n.Lsecond:\n.long _external')
+        code,relocs=e.finish(literal_islands=True)
+        self.assertEqual(code,oracle)
+        self.assertEqual(relocs,[dict(offset=1000,symbol='external'),dict(offset=1220,symbol='external')])
+
+    def test_many_distinct_literals_split_into_bounded_pools(self):
+        e=Emitter()
+        for i in range(400): e.constant(0,0x10000000+i)
+        e.ret()
+        code,relocs,stats=e.finish_with_stats(literal_islands=True)
+        self.assertFalse(relocs); self.assertGreater(stats['literal_islands'],1)
+        # Independent disassembler verifies every decoded PC-relative operand.
+        with tempfile.TemporaryDirectory() as directory:
+            path=Path(directory)/'many.bin'; path.write_bytes(code)
+            objdump=BIN/('sh-elf-objdump'+EXE)
+            result=subprocess.run([str(objdump),'-D','-b','binary','-m','sh4','-EL',str(path)],
+                                  capture_output=True,text=True,check=True)
+            addresses=[]
+            for line in result.stdout.splitlines():
+                match=re.match(r'\s*[0-9a-f]+:.*\bmov\.l\s+0x([0-9a-f]+),r0\b',line)
+                if match: addresses.append(int(match[1],16))
+            self.assertEqual(len(addresses),400)
+            self.assertEqual([struct.unpack_from('<I',code,a)[0] for a in addresses],list(range(0x10000000,0x10000190)))
+
+    def test_islands_preserve_small_function_bytes_and_reject_literal_delay_slots(self):
+        e=Emitter(); e.call_symbol('helper'); e.ret()
+        self.assertEqual(e.finish(),e.finish(relax=True,literal_islands=True))
+        e=Emitter(); e.word(0x410b); e.literal(0,('integer',0x12345678))
+        for _ in range(600): e.nop()
+        e.ret()
+        with self.assertRaisesRegex(ValueError,'literal in a delay slot'):
+            e.finish(literal_islands=True)
+
     def test_relaxation_repeats_when_one_expansion_pushes_another_out_of_range(self):
         e=Emitter(); e.branch('bt','near'); e.branch('bf','far')
         for _ in range(126): e.nop()

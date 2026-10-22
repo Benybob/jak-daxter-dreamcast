@@ -104,10 +104,12 @@ class Emitter:
                    'bra' if offset in expanded else kind,name) for offset,kind,name in self.branches]
         return code,branches,{name:mapped(offset) for name,offset in self.labels.items()},[(mapped(offset),key) for offset,key in self.literals]
 
-    def instruction_size(self,relax=False): return len(self._layout(relax)[0])
+    def instruction_size(self,relax=False,literal_islands=False):
+        return self.finish_with_stats(relax,literal_islands)[2]['instruction_bytes']
 
-    def finish(self,relax=False):
+    def _finish_terminal(self,relax=False):
         code,branches,labels,literals=self._layout(relax)
+        instruction_bytes=len(code)
         relocations=[]
         for offset,kind,name in branches:
             delta=labels[name]-(offset+4)
@@ -130,7 +132,97 @@ class Emitter:
             if delta<0 or delta%4 or delta//4>255: raise ValueError('literal pool range exceeded')
             original=struct.unpack_from('<H',code,offset)[0]
             struct.pack_into('<H',code,offset,original|(delta//4))
-        return bytes(code),relocations
+        return bytes(code),relocations,dict(instruction_bytes=instruction_bytes,
+            expanded_conditional_branches=(instruction_bytes-len(self.code))//4,literal_islands=0)
+
+    @staticmethod
+    def _delayed(word):
+        return (word>>12 in (0xa,0xb) or word in (0x000b,0x002b) or
+                word&0xf0ff in (0x400b,0x402b,0x0003,0x0023) or word&0xff00 in (0x8d00,0x8f00))
+
+    def _finish_islands(self,relax):
+        """Lay out pool skips and branch expansions together; preserve all delay slots."""
+        literal_at=dict(self.literals)
+        if len(literal_at)!=len(self.literals): raise ValueError('duplicate literal instruction')
+        branch_at={offset:(kind,name) for offset,kind,name in self.branches}
+        words={offset:struct.unpack_from('<H',self.code,offset)[0] for offset in range(0,len(self.code),2)}
+        unsafe={offset+2 for offset,word in words.items() if self._delayed(word)}
+        if any(offset in unsafe for offset in literal_at):
+            raise ValueError('PC-relative literal in a delay slot is unsupported')
+        if len(self.code) in unsafe: raise ValueError('missing branch delay slot')
+        expanded=set()
+        while True:
+            code=bytearray(); mapped={}; pending=[]; keys={}; relocations=[]; islands=0
+            instruction_bytes=0
+            def pool(skip):
+                nonlocal islands,instruction_bytes
+                if not pending: return
+                if skip:
+                    start=len(code); code.extend(b'\0\xa0\x09\x00')
+                    islands+=1; instruction_bytes+=4
+                if len(code)%4: code.extend(b'\x09\x00')
+                locations={}
+                for key in keys:
+                    locations[key]=len(code)
+                    if key[0]=='symbol':
+                        relocations.append(dict(offset=len(code),symbol=key[1])); code.extend(b'\0'*4)
+                    else: code.extend(struct.pack('<I',key[1]))
+                for offset,key in pending:
+                    delta=locations[key]-((offset+4)&~3)
+                    if delta<0 or delta%4 or delta>1020: raise ValueError('literal island range exceeded')
+                    original=struct.unpack_from('<H',code,offset)[0]
+                    struct.pack_into('<H',code,offset,original|(delta//4))
+                if skip:
+                    displacement=(len(code)-(start+4))//2
+                    if not 0<=displacement<=2047: raise ValueError('literal island skip range exceeded')
+                    struct.pack_into('<H',code,start,0xa000|displacement)
+                pending.clear(); keys.clear()
+            for offset in range(0,len(self.code),2):
+                # Bound the entire next pool against the earliest load. Twenty
+                # bytes of margin cover the next expansion, load and delay slot.
+                if pending and offset not in unsafe:
+                    end=((len(code)+7)&~3)+4*len(keys)
+                    earliest=min((position+4)&~3 for position,_ in pending)
+                    if end-earliest>=1000: pool(True)
+                mapped[offset]=len(code)
+                if offset in expanded:
+                    inverse=0x8b00 if branch_at[offset][0]=='bt' else 0x8900
+                    code.extend(struct.pack('<3H',inverse|1,0xa000,0x0009)); instruction_bytes+=6
+                else:
+                    if offset in literal_at:
+                        key=literal_at[offset]; pending.append((len(code),key)); keys[key]=None
+                    code.extend(self.code[offset:offset+2]); instruction_bytes+=2
+            mapped[len(self.code)]=len(code)
+            pool(False)
+            added=set()
+            for offset,kind,name in self.branches:
+                if name not in self.labels: raise ValueError('undefined label')
+                position=mapped[offset]+(2 if offset in expanded else 0)
+                delta=mapped[self.labels[name]]-(position+4)
+                if delta%2: raise ValueError('unaligned branch')
+                if kind in ('bt','bf') and offset not in expanded:
+                    if not -256<=delta<=254:
+                        if relax: added.add(offset); continue
+                        raise ValueError('branch range exceeded')
+                    bits=8
+                else: bits=12
+                displacement=delta//2
+                if not -(1<<(bits-1))<=displacement<(1<<(bits-1)): raise ValueError('branch range exceeded')
+                original=struct.unpack_from('<H',code,position)[0]
+                struct.pack_into('<H',code,position,original|(displacement&((1<<bits)-1)))
+            if added:
+                expanded.update(added); continue
+            return bytes(code),relocations,dict(instruction_bytes=instruction_bytes,
+                expanded_conditional_branches=len(expanded),literal_islands=islands)
+
+    def finish_with_stats(self,relax=False,literal_islands=False):
+        try: return self._finish_terminal(relax)
+        except ValueError as error:
+            if not literal_islands or str(error)!='literal pool range exceeded': raise
+        return self._finish_islands(relax)
+
+    def finish(self,relax=False,literal_islands=False):
+        return self.finish_with_stats(relax,literal_islands)[:2]
 
 def probes():
     result={}

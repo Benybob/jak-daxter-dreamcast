@@ -1,0 +1,6 @@
+;; Numeric and canonical-boolean callbacks for unchanged original sort (AI-assisted).
+(defun dc-sort-integer ((left object) (right object))
+  (the-as object (- (the-as int left) (the-as int right))))
+(defun dc-sort-boolean ((left object) (right object))
+  (if (<= (the-as int left) (the-as int right)) #t #f))
+(none)

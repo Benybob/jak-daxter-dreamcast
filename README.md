@@ -27,8 +27,8 @@ Discuss scope on **this fork**, and keep changes small enough to review.
 
 | Area | Locally verified scope |
 | --- | --- |
-| Host | 113 tests pass with the complete local SDK/oracle setup |
-| Native runtime | 8,088 checks in Flycast, stock 16 MiB RAM |
+| Host | 119 tests pass with the complete local SDK/oracle setup |
+| Native runtime | 8,193 checks in Flycast, stock 16 MiB RAM |
 | Original data | 182 native checks; all 668 V4 data objects across 36 local archives validate |
 | Numeric regression | 39 native checks |
 | GOAL backend | Original typed frontend to native SH-4; scalar calls, classes/methods, void startup, private data, 64-bit shifts and 32-bit division |
@@ -52,20 +52,16 @@ the local checkpoint, not a GitHub Actions run.
 
 ## Latest completed contributor task
 
-Shared function exits now preserve early return results and the original CFG.
-Seven new frontend tests and 74 native checks cover signed/float/tagged results,
-nested exits, stack arguments and unchanged original basic-type?, type-type?
-and find-parent-method execution. Identity remains six bytes. See
-[SHARED_EXITS.md](ports/dreamcast/SHARED_EXITS.md). Full kernel boot remains open.
-Next compiler tasks include literal pool islands, stable symbol identifiers
-and vector/mixed ABI work; original module dependencies need target setup.
+Bounded literal pools now share layout with branch relaxation while protecting delay slots. Original sort runs with numeric/boolean callbacks, duplicates, empty/singleton and dotted lists; 105 new native checks pass. Original sort and mem-print now lower; standalone full-gcommon coverage is 56 of 66. Mem-print is compile-only. Next: remaining metadata, stable identifiers and explicit original kernel startup dependencies.
+
+See [LITERAL_POOLS.md](ports/dreamcast/LITERAL_POOLS.md). Full kernel/gameplay remains unfinished.
 
 ## Build and orientation
 
 Source is in `ports/dreamcast/`. Follow [BUILDING.md](ports/dreamcast/BUILDING.md).
 The verified baseline is OpenGOAL `6076aab5a95955443a9e1ed8f72a25bc0e2fcf9d`;
 the latest locally verified port checkpoint is
-`4415ea2908034266b9164fcd38003469d4c1f805`.
+`b046f07ff0030231da127c1387868d7571ddf077`.
 
 No ISO, BIOS, extracted textures/models, converted game scenes or ELF binaries
 embedding game assets are uploaded. Use assets extracted locally from your own

@@ -6,7 +6,6 @@ Most compiler/runtime work uses synthetic fixtures and needs no original assets.
 
 | Task | Useful experience | Concrete acceptance target |
 | --- | --- | --- |
-| Literal pool islands | SH-4 assembler/linkers | Original sort lowers beyond the terminal pool limit; GNU assembler and native control-flow/relocation checks pass |
 | Stable symbol mangling | Python, compiler tooling | 1/, +, - and other colliding names coexist in one generated module with deterministic distinct identifiers |
 | Kernel sequencing and heaps | GOAL, runtime systems | Explicit target configuration and original startup/module dependencies execute within measured stock RAM bounds |
 | PowerVR scene pipeline | KOS, PVR, graphics | Measured culling/material deduplication and bounded residency on synthetic fixtures before expanding game scenes |
@@ -55,3 +54,8 @@ startup under the assumption that passing scalar probes validates it.
 The first integrated gameplay target is a bounded Geyser Rock slice with movement,
 jumping, collision and camera. Complete gameplay, streaming, audio, saves,
 progression, disc packaging and hardware support remain much larger milestones.
+
+## Completed: SH-4 literal islands and original list sort
+
+Bounded literal pools now share layout with branch relaxation while protecting delay slots. Original sort runs with numeric/boolean callbacks, duplicates, empty/singleton and dotted lists; 105 new native checks pass. Original sort and mem-print now lower; standalone full-gcommon coverage is 56 of 66. Mem-print is compile-only. Next: remaining metadata, stable identifiers and explicit original kernel startup dependencies.
+See [LITERAL_POOLS.md](LITERAL_POOLS.md). (AI-assisted).
