@@ -78,3 +78,29 @@ class FrontendPrefixTest(unittest.TestCase):
               '--prefix-through-global','dc-prefix-stop','--function','dc-prefix-function']
         for extra in ([],['--initializer','dc-prefix-init','--select-defuns']):
             self.assertNotEqual(subprocess.run(base+extra,env=self.env,capture_output=True,text=True).returncode,0)
+
+    def test_inclusive_global_range_retains_middle_forms_and_records_both_boundaries(self):
+        self.source.write_text('(dc-unavailable-before)\n(define dc-range-start 10)\n'
+            '(set! dc-range-start (+ dc-range-start 1))\n(define dc-range-end dc-range-start)\n'
+            '(dc-unavailable-after)\n')
+        result=self.run_frontend(['--from-global','dc-range-start','--prefix-through-global','dc-range-end'])
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        doc=json.loads(self.output.read_text())
+        self.assertEqual(doc['source_selection'],{'kind':'range_through_global','from_global':'dc-range-start',
+                          'global':'dc-range-end','top_level_forms':3})
+        self.assertEqual([op['symbol'] for op in doc['functions'][0]['instructions'] if op['kind']=='set_symbol'],
+                         ['dc-range-start','dc-range-start','dc-range-end'])
+
+    def test_global_range_requires_unique_ordered_boundaries_and_no_other_selection(self):
+        self.source.write_text('(define dc-range-end 1)\n(define dc-range-start 2)\n')
+        self.assertNotEqual(self.run_frontend(['--from-global','dc-range-start','--prefix-through-global','dc-range-end']).returncode,0)
+        self.source.write_text('(define dc-range-start 1)\n(define dc-range-end 2)\n(define dc-range-start 3)\n')
+        self.assertNotEqual(self.run_frontend(['--from-global','dc-range-start','--prefix-through-global','dc-range-end']).returncode,0)
+        self.source.write_text('(define dc-range-start 1)\n(define dc-range-end 2)\n')
+        for extra in (['--from-global','dc-range-start'],['--from-global'],
+            ['--from-global','missing','--prefix-through-global','dc-range-end'],
+            ['--from-global','dc-range-start','--prefix-through-global','missing'],
+            ['--from-global','dc-range-start','--from-global','dc-range-start','--prefix-through-global','dc-range-end'],
+            ['--from-global','dc-range-start','--prefix-through-global','dc-range-end','some-defun'],
+            ['--preload',str(self.source),'--from-global','dc-range-start','--prefix-through-global','dc-range-end']):
+            with self.subTest(extra=extra): self.assertNotEqual(self.run_frontend(extra).returncode,0)

@@ -69,3 +69,7 @@ A bounded original system-global startup prefix now executes separately; see
 retains contiguous original forms through a unique top-level define, records
 its boundary/count, and requires explicit native initialization. This does not
 start the whole original kernel module. (AI-assisted).
+
+Original structured data and an inclusive named-global range now support the
+single original kernel-context definition; see [STRUCTURED_STATIC.md](STRUCTURED_STATIC.md).
+This does not start later stack/scratchpad forms or the complete kernel. (AI-assisted).

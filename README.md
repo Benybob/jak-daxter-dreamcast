@@ -27,8 +27,8 @@ Discuss scope on **this fork**, and keep changes small enough to review.
 
 | Area | Locally verified scope |
 | --- | --- |
-| Host | 165 tests pass with the complete local SDK/oracle setup |
-| Native runtime | 11,701 checks in Flycast, stock 16 MiB RAM |
+| Host | 171 tests pass with the complete local SDK/oracle setup |
+| Native runtime | 11,757 checks in Flycast, stock 16 MiB RAM |
 | Original data | 182 native checks; all 668 V4 data objects across 36 local archives validate |
 | Numeric regression | 39 native checks |
 | GOAL backend | Original typed frontend to native SH-4; scalar calls, classes/methods, void startup, private data, 64-bit shifts and 32-bit division |
@@ -52,16 +52,16 @@ the local checkpoint, not a GitHub Actions run.
 
 ## Latest completed contributor task
 
-Original process allocation now rounds/clears spans and advances original heap-cur with its strict end comparison, using explicit known process reservations. Global and process bridge paths remain distinct; missing/invalid targets reject without global fallback. 102 shared host/SH-4 C guards and 79 native GOAL integration checks pass, including original constructors/validator. Implicit pp/self, threads, GC and failure unwinding remain unfinished.
+Typed structured static images now preserve original bytes and type/symbol/data/function relocations with strict closed-graph validation. An explicit inclusive global range executes the single unchanged original kernel-context definition, preserving flags/PID/false references while excluding later stack/scratchpad setup. Six host tests and 56 native checks pass. Full kernel startup, implicit pp/self, threads, GC, failure unwinding and gameplay remain unfinished.
 
-See [PROCESS_HEAPS.md](ports/dreamcast/PROCESS_HEAPS.md). Full kernel/gameplay remains unfinished.
+See [STRUCTURED_STATIC.md](ports/dreamcast/STRUCTURED_STATIC.md). Full kernel/gameplay remains unfinished.
 
 ## Build and orientation
 
 Source is in `ports/dreamcast/`. Follow [BUILDING.md](ports/dreamcast/BUILDING.md).
 The verified baseline is OpenGOAL `6076aab5a95955443a9e1ed8f72a25bc0e2fcf9d`;
 the latest locally verified port checkpoint is
-`b168131f7266c8bc9d7b6082a5bcdac2f0e18bda`.
+`025fa01fdab0f3316291ae003e2daf1d5daea12c`.
 
 No ISO, BIOS, extracted textures/models, converted game scenes or ELF binaries
 embedding game assets are uploaded. Use assets extracted locally from your own

@@ -211,7 +211,7 @@ int main(int argc,char** argv) {
       throw std::runtime_error("project setup failed");
     Compiler compiler(GameVersion::Jak1,emitter::InstructionSet::X86);
     std::vector<std::string> preloads,selected_names;
-    std::string prefix_global;
+    std::string prefix_global,from_global;
     std::unordered_set<std::string> context_paths;
     const auto main_path=std::filesystem::weakly_canonical(argv[2]).string();
     for(int i=4;i<argc;++i) {
@@ -226,8 +226,14 @@ int main(int argc,char** argv) {
           throw std::runtime_error("--prefix-through-global requires one unique global name");
         prefix_global=argv[i];
         if(prefix_global.empty()) throw std::runtime_error("empty prefix boundary global");
+      } else if(std::string(argv[i])=="--from-global") {
+        if(++i>=argc || !from_global.empty()) throw std::runtime_error("--from-global requires one unique global name");
+        from_global=argv[i];
+        if(from_global.empty()) throw std::runtime_error("empty starting global");
       } else selected_names.push_back(argv[i]);
     }
+    if(!from_global.empty() && prefix_global.empty())
+      throw std::runtime_error("--from-global requires --prefix-through-global");
     if(!prefix_global.empty() && !selected_names.empty())
       throw std::runtime_error("prefix selection and selected defuns are mutually exclusive");
     const bool selected_source_preloaded=context_paths.count(main_path)!=0;
@@ -263,25 +269,35 @@ int main(int argc,char** argv) {
     json source_selection={{"kind",selected_names.empty()?"full_source":"selected_defuns"}};
     if(!prefix_global.empty()) {
       std::vector<goos::Object> prefix;
-      bool boundary_found=false;
+      bool boundary_found=false,start_found=from_global.empty();
+      size_t start_count=0;
       auto forms=source.as_pair()->cdr;
       while(forms.is_pair()) {
         const auto form=forms.as_pair()->car;
-        bool is_boundary=false;
+        bool is_boundary=false,is_start=false;
         if(form.is_pair() && form.as_pair()->car.is_symbol("define")) {
           const auto tail=form.as_pair()->cdr;
           is_boundary=tail.is_pair() && tail.as_pair()->car.is_symbol(prefix_global);
+          is_start=!from_global.empty() && tail.is_pair() && tail.as_pair()->car.is_symbol(from_global);
         }
         if(is_boundary && boundary_found) throw std::runtime_error("ambiguous prefix boundary global");
-        if(!boundary_found) prefix.push_back(form);
+        if(is_start) {
+          if(++start_count>1) throw std::runtime_error("ambiguous starting global");
+          start_found=true;
+        }
+        if(is_boundary && !start_found) throw std::runtime_error("global range ends before it starts");
+        if(!boundary_found && start_found) prefix.push_back(form);
         if(is_boundary) boundary_found=true;
         forms=forms.as_pair()->cdr;
       }
+      if(!from_global.empty() && !start_count) throw std::runtime_error("starting global not found: "+from_global);
       if(!boundary_found) throw std::runtime_error("prefix boundary global not found: "+prefix_global);
       auto body=goos::Object::make_empty_list();
       for(auto it=prefix.rbegin();it!=prefix.rend();++it) body=goos::PairObject::make_new(*it,body);
       source=goos::PairObject::make_new(goos::Object::make_symbol(&compiler.get_goos().reader.symbolTable,"top-level"),body);
-      source_selection={{"kind","prefix_through_global"},{"global",prefix_global},{"top_level_forms",prefix.size()}};
+      source_selection={{"kind",from_global.empty()?"prefix_through_global":"range_through_global"},
+                        {"global",prefix_global},{"top_level_forms",prefix.size()}};
+      if(!from_global.empty()) source_selection["from_global"]=from_global;
     }
     auto* file=compiler.compile_object_file("dreamcast-export",source,true);
     json output={{"format_version",1},{"frontend","OpenGOAL original typed frontend"},
@@ -305,6 +321,24 @@ int main(int argc,char** argv) {
       } else if(auto* pair=dynamic_cast<const StaticPair*>(object.get())) {
         entry["kind"]="pair";
         entry["car"]=static_atom(pair->car(),statics); entry["cdr"]=static_atom(pair->cdr(),statics);
+      } else if(auto* structure=dynamic_cast<const StaticStructure*>(object.get())) {
+        entry["kind"]="structure"; entry["data_bytes"]=structure->data;
+        entry["address_offset"]=structure->get_addr_offset();
+        entry["relocations"]=json::array();
+        for(const auto& type:structure->types)
+          entry["relocations"].push_back({{"offset",type.offset},{"symbol","type:"+type.name}});
+        for(const auto& symbol:structure->symbols)
+          entry["relocations"].push_back({{"offset",symbol.offset},{"symbol","pointer:"+symbol.name}});
+        for(const auto& function:structure->functions)
+          entry["relocations"].push_back({{"offset",function.offset_in_this},{"symbol","function:"+function.func->name()}});
+        for(const auto& pointer:structure->pointers) {
+          const auto target=statics.find(pointer.dest);
+          if(target==statics.end() || pointer.offset_in_dest!=pointer.dest->get_addr_offset()) {
+            entry["kind"]="unsupported"; entry["reason"]="interior or external static pointer is unsupported";
+            break;
+          }
+          entry["relocations"].push_back({{"offset",pointer.offset_in_this},{"symbol","data:"+target->second}});
+        }
       }
       output["statics"].push_back(std::move(entry));
     }

@@ -387,7 +387,7 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
             elif kind=='static_address':
                 if not runtime: raise ValueError('static object requires native runtime')
                 item=statics.get(op['static_id'])
-                if not item or item['kind'] not in ('string','float','pair'):
+                if not item or item['kind'] not in ('string','float','pair','structure'):
                     raise ValueError('unsupported/missing static object '+op['static_id'])
                 e.literal(0,('symbol','data:'+op['static_id'])); e.immediate(1,0); store64(writes[0])
             elif kind=='float_constant':
@@ -615,6 +615,27 @@ def compile_module(doc,names,runtime=False,optimize=True,initializer=None):
     if runtime: module_data(doc,outputs)
     return outputs
 
+def structured_static_data(item):
+    payload=item.get('data_bytes'); offset=item.get('address_offset'); relocations=item.get('relocations')
+    if not isinstance(payload,list) or not payload or len(payload)>1048576 or any(type(b) is not int or not 0<=b<=255 for b in payload):
+        raise ValueError('invalid structured static bytes')
+    if type(offset) is not int or offset not in (0,4) or offset>=len(payload):
+        raise ValueError('unsupported structured static address offset')
+    if not isinstance(relocations,list): raise ValueError('missing structured static relocations')
+    seen=set()
+    for relocation in relocations:
+        if not isinstance(relocation,dict): raise ValueError('invalid structured static relocation')
+        at=relocation.get('offset'); symbol=relocation.get('symbol')
+        if type(at) is not int or at<0 or at&3 or at+4>len(payload) or at in seen:
+            raise ValueError('invalid structured static relocation offset')
+        seen.add(at)
+        if not isinstance(symbol,str) or '\0' in symbol or ':' not in symbol:
+            raise ValueError('invalid structured static import')
+        kind,name=symbol.split(':',1)
+        if kind not in ('type','pointer','function','data') or not name:
+            raise ValueError('unsupported structured static import')
+    return bytes(payload),offset,relocations
+
 def module_data(doc,objects):
     referenced={r['symbol'][5:] for _,report in objects.values() for r in report['relocations']
                 if r['symbol'].startswith('data:')}
@@ -627,6 +648,13 @@ def module_data(doc,objects):
         visited.add(name)
         item=statics.get(name)
         if not item: raise ValueError('missing referenced static object '+name)
+        if item['kind']=='structure':
+            _,_,relocations=structured_static_data(item)
+            for relocation in relocations:
+                kind,target=relocation['symbol'].split(':',1)
+                if kind=='data': referenced.add(target); pending.append(target)
+                elif kind=='function' and target not in functions:
+                    raise ValueError('unresolved static function object '+target)
         if item['kind']=='pair':
             for atom in (item['car'],item['cdr']):
                 if atom['kind']=='data': referenced.add(atom['target']); pending.append(atom['target'])
@@ -641,6 +669,8 @@ def module_data(doc,objects):
             offset,relocations=4,[{'offset':0,'symbol':'type:string'}]
         elif item['kind']=='float':
             data=struct.pack('<I',item['value_bits']); offset,relocations=0,[]
+        elif item['kind']=='structure':
+            data,offset,relocations=structured_static_data(item)
         elif item['kind']=='pair':
             data=bytearray(8); offset,relocations=2,[]
             for at,atom in zip((0,4),(item['car'],item['cdr'])):

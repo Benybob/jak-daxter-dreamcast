@@ -8,7 +8,7 @@ Most compiler/runtime work uses synthetic fixtures and needs no original assets.
 | --- | --- | --- |
 | Remaining full-kernel target configuration | GOAL, platform runtime | Scalar validator now uses explicit stock-RAM/table limits; audit remaining profiler/PC branches, scratchpad and MMIO before original startup |
 | Remaining variadic and vector ABI | SH-4 GCC, GOAL | Fixed scalar mixed calls through eight arguments now pass, including integer stack spills; independently verify mixed variadic and vector boundaries |
-| Remaining process lifecycle and kernel startup | GOAL, runtime systems | Original globals/tree/constructors and explicitly bound process allocations execute; implement implicit pp/self, failure unwinding, GC and context/thread startup |
+| Remaining process lifecycle and kernel startup | GOAL, runtime systems | Original context/global definitions, tree/constructors and bounded process allocation execute; implement implicit pp/self, failure unwinding, GC and context/thread startup |
 | PowerVR scene pipeline | KOS, PVR, graphics | Measured culling/material deduplication and bounded residency on synthetic fixtures before expanding game scenes |
 | Hardware validation | Dreamcast development | Reproduce asset-free native diagnostics on hardware with toolchain, load method, RAM use and failures documented |
 
@@ -129,3 +129,8 @@ See [PROCESS_CONSTRUCTORS.md](PROCESS_CONSTRUCTORS.md). (AI-assisted).
 
 Original process allocation now rounds/clears spans and advances original heap-cur with its strict end comparison, using explicit known process reservations. Global and process bridge paths remain distinct; missing/invalid targets reject without global fallback. 102 shared host/SH-4 C guards and 79 native GOAL integration checks pass, including original constructors/validator. Implicit pp/self, threads, GC and failure unwinding remain unfinished.
 See [PROCESS_HEAPS.md](PROCESS_HEAPS.md). (AI-assisted).
+
+## Completed: Structured static data and original kernel context
+
+Typed structured static images now preserve original bytes and type/symbol/data/function relocations with strict closed-graph validation. An explicit inclusive global range executes the single unchanged original kernel-context definition, preserving flags/PID/false references while excluding later stack/scratchpad setup. Six host tests and 56 native checks pass. Full kernel startup, implicit pp/self, threads, GC, failure unwinding and gameplay remain unfinished.
+See [STRUCTURED_STATIC.md](STRUCTURED_STATIC.md). (AI-assisted).

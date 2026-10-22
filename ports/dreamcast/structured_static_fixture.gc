@@ -1,0 +1,21 @@
+;; Typed raw bytes and type/symbol/data/function relocation probes (AI-assisted).
+(define dc-structured-root
+  (new 'static 'dc-structured-record
+    :value #x12345678abcdef01 :flags #t :serial #x13579bdf
+    :handler (lambda :name dc-structured-callback-root ((value int)) (+ value 9))
+    :child (new 'static 'dc-structured-record
+      :value -7 :flags #f :serial 99 :child #f :handler (lambda :name dc-structured-callback-child ((value int)) (+ value 19)))))
+(define dc-structured-plain-root
+  (new 'static 'dc-structured-plain :count 42
+    :record (new 'static 'dc-structured-record
+      :value #x100000002 :flags #t :serial 7 :child #f :handler (lambda :name dc-structured-callback-plain ((value int)) (+ value 29)))))
+(defun dc-structured-get () dc-structured-root)
+(defun dc-structured-get-plain () dc-structured-plain-root)
+(defun dc-structured-value ((record dc-structured-record)) (-> record value))
+(defun dc-structured-flags ((record dc-structured-record)) (-> record flags))
+(defun dc-structured-child ((record dc-structured-record)) (-> record child))
+(defun dc-structured-serial ((record dc-structured-record)) (the uint (-> record serial)))
+(defun dc-structured-call ((record dc-structured-record) (value int)) ((-> record handler) value))
+(defun dc-structured-count ((record dc-structured-plain)) (the uint (-> record count)))
+(defun dc-structured-get-record ((record dc-structured-plain)) (-> record record))
+#f

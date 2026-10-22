@@ -1,0 +1,9 @@
+;; Synthetic typed structured-static context (AI-assisted), ISC.
+(declare-type dc-structured-record basic)
+(deftype dc-structured-record (basic)
+  ((value int64) (flags symbol) (child dc-structured-record)
+   (handler (function int int)) (serial uint32))
+  :size-assert 32 :no-inspect)
+(deftype dc-structured-plain (structure)
+  ((count uint32) (record dc-structured-record))
+  :size-assert 8 :no-inspect)

@@ -181,10 +181,20 @@ def main():
                                      '--header',str(port/'build/process_heap_fixture.h')]
     for name in ('create','read','tree'): command+=['--function','dc-process-heap-'+name]
     subprocess.run(command,check=True)
+    command=compiler+['--source',str(port/'structured_static_fixture.gc'),
+                      '--preload',str(port/'structured_static_context.gc'),
+                      '--initializer','dc-structured-init','--header',str(port/'build/structured_static_fixture.h')]
+    for name in ('get','get-plain','value','flags','child','serial','call','count','get-record',
+                 'callback-root','callback-child','callback-plain'):
+        command+=['--function','dc-structured-'+name]
+    subprocess.run(command,check=True)
+    subprocess.run(compiler+process_context+['--source',str(port.parents[1]/'goal_src/jak1/kernel/gkernel.gc'),
+        '--from-global','*kernel-context*','--prefix-through-global','*kernel-context*',
+        '--initializer','dc-original-context-init','--header',str(port/'build/original_kernel_context.h')],check=True)
     subprocess.run([sys.executable,str(port/'build_dreamcast.py'),'--target','jak-dc-runtime-goal.elf'],check=True)
     if args.verify:
         subprocess.run([sys.executable,str(port/'verify_backend.py'),str(args.flycast),
                         str(port/'jak-dc-runtime-goal.elf'),'--nm',str(args.nm),'--output',str(args.output),
-                        '--tests','11701','--suite','runtime-goal'],check=True)
+                        '--tests','11757','--suite','runtime-goal'],check=True)
 
 if __name__=='__main__': main()
