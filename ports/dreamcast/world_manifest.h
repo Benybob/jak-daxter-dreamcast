@@ -4,7 +4,8 @@
 #include "textured_scene.h"
 #include "world_collision.h"
 
-/* WLD2: exactly 84 little-endian bytes, never a native struct dump.
+/* WLD2: 84 little-endian bytes; WLD3:96 with three coverage half-extents.
+ * Never a native struct dump.
  * magic, version; origin[3], shift[3], scale, spawn[3] (float32);
  * DCT bytes/CRC32, DCC bytes/CRC32, vertex/index/batch/texture/collision counts.
  * local meters = normalized DCT position * scale + shift. DCC is already local.
@@ -15,6 +16,7 @@ typedef struct {
  dc_vec3 spawn;
  uint32_t dct_bytes,dct_crc,dcc_bytes,dcc_crc;
  uint32_t vertices,indices,batches,textures,triangles;
+ dc_vec3 extent; /* WLD3 adds 12B half-extent; WLD2 has no coverage proof (zeros). */
 } dc_world_manifest;
 
 /* Loading/validation failure leaves the output unchanged. */

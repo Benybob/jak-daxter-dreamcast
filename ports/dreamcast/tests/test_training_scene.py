@@ -110,3 +110,26 @@ class TrainingScene(unittest.TestCase):
             training.np=None;slow=training.convert_patch(self.doc,self.binary,(0,0,0),(.7,2,.5))
         finally:training.np=saved
         self.assertEqual(fast,slow)
+
+    def test_wld3_coverage_roundtrip_and_bad_extents(self):
+        dct,report=training.convert_patch(self.doc,self.binary,(0,0,0))
+        metadata=training.manifest(dct,self.dcc,report,(0,3,0),(18,12,18))
+        self.assertEqual(len(metadata),96)
+        self.assertEqual(self.native(dct,metadata).returncode,0)
+        for cut in range(84,96):self.assertNotEqual(self.native(dct,metadata[:cut]).returncode,0)
+        for extent in ((0,12,18),(18,float('nan'),18),(65,12,18)):
+            with self.assertRaises(ValueError):training.manifest(dct,self.dcc,report,(0,3,0),extent)
+
+    def test_coverage_provenance_is_bound_to_exact_collision_payload(self):
+        import hashlib
+        path=self.root/'collision.json';dcc_path=self.root/'source.dcc';dcc_path.write_bytes(self.dcc)
+        provenance=dict(payload_sha256=hashlib.sha256(self.dcc).hexdigest(),selected_triangles=1,payload_bytes=len(self.dcc),
+            whole_intersecting_triangles=True,origin_meters=[0,0,0],coverage_format_version=1,source_units_per_meter=4096,
+            selection_radius=18,coverage_half_extent_meters=[18,12,18])
+        path.write_text(json.dumps(provenance))
+        training.prepare(self.root/'terrain.glb',dcc_path,self.root/'covered',(0,3,0),collision_report=path)
+        self.assertEqual((self.root/'covered/world.xfm').read_bytes()[:8],b'WLD3\x03\0\0\0')
+        provenance['payload_sha256']='0'*64;path.write_text(json.dumps(provenance))
+        with self.assertRaisesRegex(ValueError,'provenance mismatch'):
+            training.prepare(self.root/'terrain.glb',dcc_path,self.root/'wrong',(0,3,0),collision_report=path)
+        self.assertFalse((self.root/'wrong').exists())

@@ -1,0 +1,33 @@
+{
+  "ai_assisted": true,
+  "result": "PASS",
+  "full_game_complete": false,
+  "physical_hardware_tested": false,
+  "host_tests": 218,
+  "native_camera_query_rig_checks": 1205,
+  "included_synthetic_checks": 500,
+  "native_manifest_checks": 454,
+  "native_training_checks": 20,
+  "native_orbit_checks": 11,
+  "orbit_samples": 241,
+  "camera_min_meters": 6.531449794769287,
+  "camera_max_meters": 10.399999618530273,
+  "collider_faces": 2032,
+  "coverage_half_extent_meters": [
+    18,
+    12,
+    18
+  ],
+  "source_triangles": 6566,
+  "heap_at_ready": 2559928,
+  "free_vram_at_ready": 5302696,
+  "memory_scope": "Heap excludes embedded asset data, static/executable storage, KOS and stacks",
+  "private_conversion_repeat_identical": true,
+  "visual_review": "Final orbit obstruction and airborne captures reviewed; recognizable Jak and original terrain",
+  "training_sha256": "cf4f6e5ca02384f6b5bac06bf0f4167e8f329e435328825388865afe486c14ed",
+  "grok_query_integrated": true,
+  "prose_sign_and_unit_corrections_applied": true,
+  "sector_proposal": "Running isolated; no integration or approval counted",
+  "runtime_checks_unchanged": 22649,
+  "numeric_checks_unchanged": 39
+}

@@ -53,6 +53,9 @@ def extract(path, reader, output, origin, radius, zstd=None):
                   payload_bytes=len(payload), source_units_per_meter=4096, whole_intersecting_triangles=True,
                   serializer=result.stdout.strip(), noentity_triangles=sum(bool(t[9]&1) for t in selected),
                   event_values=sorted(set((t[9]>>14)&63 for t in selected)))
+    report['payload_sha256']=hashlib.sha256(payload).hexdigest()
+    report['coverage_half_extent_meters']=[radius,12,radius]
+    report['coverage_format_version']=1
     output.with_suffix('.json').write_text(json.dumps(report, indent=2)+'\n'); return report
 
 

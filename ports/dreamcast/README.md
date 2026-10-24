@@ -3,8 +3,10 @@
 **2026-10-24 (AI-assisted):** [Original-terrain movement](TRAINING_SLICE.md) now
 has a separate reproducible native target: real Jak and original clips, walking,
 running and jumping on a bounded training-island render/collision patch. It
-passes 18 integrated checks in stock 16 MiB Flycast, plus 416 native bundle
-checks and 261 host GPU-layer checks. The full host suite passes 215 tests.
+passes 20 integrated checks in stock 16 MiB Flycast, plus 454 native bundle
+checks and 261 host GPU-layer checks. The full host suite passes 218 tests.
+[Camera obstruction](CAMERA_COLLISION.md) adds 1,205 native query/rig checks,
+WLD3 coverage, and an 11-check original-terrain camera orbit.
 [Near clipping](NEAR_CLIPPING.md) adds 4,967 native view/clip checks and a
 10-check synthetic raster oracle, retaining the visible part of crossing triangles.
 The separate GOAL runtime remains at its verified 22,649 checks and numeric

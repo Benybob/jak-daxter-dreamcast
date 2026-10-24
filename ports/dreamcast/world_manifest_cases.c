@@ -57,5 +57,17 @@ unsigned dc_world_manifest_cases(const char *path,unsigned *count){
  }
  tri.pat=(63u<<14)|1;CHECK(dc_collision_build(&w,&tri,1)==NULL);
  CHECK(dc_world_manifest_match(&m,&s,&w,origin)==NULL);dc_collision_free(&w);
+ {unsigned char modern[97]={0};dc_world_manifest saved_m=m;
+  memcpy(modern,good,84);memcpy(modern,"WLD3",4);put32(modern+4,3);
+  putf(modern+84,18);putf(modern+88,12);putf(modern+92,18);
+  for(i=84;i<96;++i){CHECK(load(modern,i,&m)!=NULL);CHECK(!memcmp(&m,&saved_m,sizeof m));}
+  CHECK(load(modern,97,&m)!=NULL);CHECK(!memcmp(&m,&saved_m,sizeof m));
+  for(i=0;i<5;++i){unsigned char invalid[96];const unsigned offsets[5]={84,88,92,84,88};
+   const uint32_t values[5]={0,0x7fc00001,0x7f800000,0xc1800000,0x42820000};
+   memcpy(invalid,modern,96);put32(invalid+offsets[i],values[i]);
+   CHECK(load(invalid,96,&m)!=NULL);CHECK(!memcmp(&m,&saved_m,sizeof m));
+  }
+  CHECK(load(modern,96,&m)==NULL);CHECK(m.extent.x==18&&m.extent.y==12&&m.extent.z==18);
+ }
  remove(path);*count=total;return failed;
 }

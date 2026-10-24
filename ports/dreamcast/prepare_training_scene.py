@@ -158,24 +158,39 @@ def convert_patch(doc, binary, origin, extent=(12, 12, 12), texture_size=64):
     return data, report
 
 
-def manifest(dct, dcc, report, spawn):
+def manifest(dct, dcc, report, spawn, extent=None):
     origin, count = collision_info(dcc)
     if len(spawn) != 3 or not all(math.isfinite(v) and abs(v) <= 256 for v in spawn):
         raise ValueError('invalid spawn')
-    return struct.pack('<4sI10f9I', b'WLD2', 2, *origin, *report['original_center'], report['original_radius'], *spawn,
+    if extent is not None and (len(extent)!=3 or not all(math.isfinite(v) and 0<v<=64 for v in extent)):
+        raise ValueError('invalid collision coverage')
+    data = struct.pack('<4sI10f9I', b'WLD3' if extent else b'WLD2', 3 if extent else 2, *origin, *report['original_center'], report['original_radius'], *spawn,
         len(dct), zlib.crc32(dct), len(dcc), zlib.crc32(dcc), report['vertices'], report['triangles']*3,
         report['batches'], report['textures'], count)
+    return data+(struct.pack('<3f',*extent) if extent else b'')
 
 
-def prepare(glb, collision, output, spawn, extent=(12, 12, 12), texture_size=64):
+def prepare(glb, collision, output, spawn, extent=(12, 12, 12), texture_size=64, collision_report=None):
     if output.exists(): raise ValueError('output must be a new private directory')
     dcc = collision.read_bytes(); origin, count = collision_info(dcc)
     doc, binary = read_glb(glb); dct, report = convert_patch(doc, binary, origin, extent, texture_size)
-    metadata = manifest(dct, dcc, report, spawn)
+    coverage=None
+    if collision_report:
+        provenance=json.loads(collision_report.read_text(encoding='utf-8'))
+        radius=provenance['selection_radius'];coverage=provenance['coverage_half_extent_meters']
+        if (provenance['payload_sha256']!=hashlib.sha256(dcc).hexdigest() or
+            provenance['selected_triangles']!=count or provenance['payload_bytes']!=len(dcc) or
+            not provenance['whole_intersecting_triangles'] or
+            struct.pack('<3f',*provenance['origin_meters'])!=struct.pack('<3f',*origin) or
+            provenance['coverage_format_version']!=1 or provenance['source_units_per_meter']!=4096 or
+            not math.isfinite(radius) or not 1<=radius<=64 or coverage!=[radius,12,radius]):
+            raise ValueError('collision coverage provenance mismatch')
+    metadata = manifest(dct, dcc, report, spawn, coverage)
     report.update(source_glb_sha256=hashlib.sha256(glb.read_bytes()).hexdigest(),
         collision_sha256=hashlib.sha256(dcc).hexdigest(), dct_sha256=hashlib.sha256(dct).hexdigest(),
         manifest_sha256=hashlib.sha256(metadata).hexdigest(), collision_triangles=count,
-        spawn_meters=list(spawn), metadata_format='WLD2', private_game_assets=True)
+        spawn_meters=list(spawn), metadata_format='WLD3' if coverage else 'WLD2',
+        collision_half_extent=coverage, private_game_assets=True)
     output.parent.mkdir(parents=True, exist_ok=True)
     # Commit the completed bundle as one new directory; never overwrite a working bundle.
     with tempfile.TemporaryDirectory(dir=output.parent) as tmp:
@@ -193,5 +208,6 @@ if __name__ == '__main__':
     p.add_argument('--spawn', type=float, nargs=3, required=True)
     p.add_argument('--extent', type=float, nargs=3, default=(12, 12, 12))
     p.add_argument('--texture-size', type=int, default=64)
+    p.add_argument('--collision-report', type=Path, help='Matching exporter report with payload hash and coverage; writes WLD3')
     a = p.parse_args()
-    print(json.dumps(prepare(a.glb, a.collision, a.output, a.spawn, a.extent, a.texture_size), indent=2))
+    print(json.dumps(prepare(a.glb, a.collision, a.output, a.spawn, a.extent, a.texture_size,a.collision_report), indent=2))

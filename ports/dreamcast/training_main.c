@@ -13,6 +13,7 @@
 #include "player_world_motion.h"
 #include "world_manifest.h"
 #include "training_layer.h"
+#include "camera_rig.h"
 
 KOS_INIT_FLAGS(INIT_DEFAULT);
 
@@ -76,6 +77,7 @@ static dc_textured_scene terrain;
 static dc_collision_world world;
 volatile uint32_t dc_world_respawns;
 volatile uint32_t dc_training_ticks;
+dc_camera_rig dc_camera_state;
 static float *terrain_camera;
 static float camera_floor;
 static dc_world_manifest meta;
@@ -94,6 +96,7 @@ static const char *load_terrain(void){
  if(!error)error=dc_collision_load(f,&world,&origin);
  fclose(f);if(error)return error;
  error=dc_world_manifest_match(&meta,&terrain,&world,origin);if(error)return error;
+ if(meta.extent.x<=0||meta.extent.y<=0||meta.extent.z<=0)return "camera requires WLD3 collision coverage";
  terrain_camera=malloc(terrain.vertex_count*3*sizeof(float));
  if(!terrain_camera)return "world camera allocation failed";
  return NULL;
@@ -141,21 +144,22 @@ int main(void){
   if(clip==DC_PLAYER_AIR){clip=3;if(clip_time>0.4f){clip=4;clip_time-=0.4f;}}
   else if(landing_time<0.18f){clip=5;clip_time=landing_time;}
   dc_play_clip=clip;dc_player_anim_sample(&animation,clip,clip_time,local_pose);
+  if(!dc_camera_rig_update(&dc_camera_state,&world,meta.extent,(dc_vec3){dc_player_state.x,dc_player_state.y,dc_player_state.z},camera_floor,yaw,dt)){record_error("camera collision query refused");break;}
   c=cosf(dc_player_state.yaw);s=sinf(dc_player_state.yaw);
   for(i=0;i<scene.vertex_count;++i){float x=local_pose[i*3],z=local_pose[i*3+2];
-   camera_vertices[i*3]=c*x+s*z;camera_vertices[i*3+1]=local_pose[i*3+1]+(dc_player_state.y-camera_floor)/4-0.1875f;camera_vertices[i*3+2]=-s*x+c*z;
+   camera_vertices[i*3]=c*x+s*z;camera_vertices[i*3+1]=local_pose[i*3+1]+(dc_player_state.y-dc_camera_state.target.y)/4;camera_vertices[i*3+2]=-s*x+c*z;
   }
   for(i=0;i<terrain.vertex_count;++i){
    terrain_camera[i*3]=(terrain.vertices[i].x*meta.scale+meta.shift.x-dc_player_state.x)/4;
-   terrain_camera[i*3+1]=(terrain.vertices[i].y*meta.scale+meta.shift.y-camera_floor-.75f)/4;
+   terrain_camera[i*3+1]=(terrain.vertices[i].y*meta.scale+meta.shift.y-dc_camera_state.target.y)/4;
    terrain_camera[i*3+2]=(terrain.vertices[i].z*meta.scale+meta.shift.z-dc_player_state.z)/4;
   }
   /* Preserve view coordinates for clipping; divide only front-side vertices. */
-  if(!dc_scene_prepare(camera_vertices,12,actor_layer.vertices,scene.vertex_count,yaw,-0.5f,2.6f) ||
-     !dc_scene_prepare(terrain_camera,12,terrain_layer.vertices,terrain.vertex_count,yaw,-0.5f,2.6f)){record_error("projection mode rejected");break;}
+  if(!dc_scene_prepare(camera_vertices,12,actor_layer.vertices,scene.vertex_count,yaw,DC_CAMERA_PITCH,dc_camera_state.distance/4) ||
+     !dc_scene_prepare(terrain_camera,12,terrain_layer.vertices,terrain.vertex_count,yaw,DC_CAMERA_PITCH,dc_camera_state.distance/4)){record_error("projection mode rejected");break;}
   pvr_wait_ready();pvr_scene_begin();pvr_list_begin(PVR_LIST_OP_POLY);dc_training_layer_draw(&terrain_layer,&terrain,PVR_LIST_OP_POLY);dc_training_layer_draw(&actor_layer,&scene,PVR_LIST_OP_POLY);draw_label();pvr_list_finish();
   pvr_list_begin(PVR_LIST_PT_POLY);dc_training_layer_draw(&terrain_layer,&terrain,PVR_LIST_PT_POLY);dc_training_layer_draw(&actor_layer,&scene,PVR_LIST_PT_POLY);pvr_list_finish();pvr_scene_finish();
-  dc_telemetry.frames=++frames;dc_telemetry.yaw=yaw;dc_telemetry.pitch=-0.5f;dc_telemetry.distance=2.6f;
+  dc_telemetry.frames=++frames;dc_telemetry.yaw=yaw;dc_telemetry.pitch=DC_CAMERA_PITCH;dc_telemetry.distance=dc_camera_state.distance/4;
  }
  pvr_wait_ready();
 shutdown:

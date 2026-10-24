@@ -10,6 +10,14 @@ camera, and START exits. Holding A through a landing does not jump again. This
 is a bounded patch: going beyond 6.8 meters from the patch origin on X/Z or
 falling below -4 meters returns to the known nonoverlapping spawn.
 
+## Current camera update
+
+[Camera obstruction](CAMERA_COLLISION.md) now uses an expanded2,032-face collider,
+WLD3 loaded-coverage metadata and a checked sphere boom. The current suite has
+218 host tests, 1,205 native camera checks, 454 manifest checks, 20 movement checks
+and an 11-check real camera orbit. Follow the camera document when rebuilding
+the current target; its WLD3 coverage report is required.
+
 ## Current renderer update
 
 [Near-plane clipping](NEAR_CLIPPING.md) replaces whole-triangle rejection, retains
@@ -102,7 +110,8 @@ Use a compatible local OpenGOAL extraction: static training background GLB,
 the already exported training DCC1 patch from [WORLD_COLLISION.md](WORLD_COLLISION.md),
 and the original character GLB described in [PLAYABLE_SLICE.md](PLAYABLE_SLICE.md).
 The DCC header supplies the rebase origin, so the converter does not require a
-second independently typed origin. The tested spawn is patch-local `-4 3 -4`;
+second independently typed origin. For the current camera, re-export radius18 with the matching hashed report
+using [CAMERA_COLLISION.md](CAMERA_COLLISION.md). The tested spawn is patch-local `-4 3 -4`;
 other patches need an appropriate clear spawn and matching selection extent.
 Pillow is required offline; NumPy accelerates selection and is required by the
 existing character baker. Neither is a Dreamcast dependency.
@@ -110,7 +119,7 @@ existing character baker. Neither is a Dreamcast dependency.
 From `ports/dreamcast`, with upstream SH4ZAM installed in the KOS SDK:
 
 ```sh
-python prepare_training_scene.py /private/training-background.glb /private/world.dcc /private/training-assets --spawn -4 3 -4
+python prepare_training_scene.py /private/training-background.glb /private/world.dcc /private/training-assets --spawn -4 3 -4 --collision-report /private/world.json
 python bake_player.py /private/eichar-lod0.glb /private/player-assets
 cp /private/player-assets/player.dct /private/player-assets/player.dca /private/training-assets/
 source /your/kos/environ.sh
@@ -130,11 +139,13 @@ private reports contain game-derived content and must not enter GitHub.
 
 ## Remaining work
 
+The current native camera now has the bounded obstruction handling described
+above; the following list otherwise preserves remaining integration limits.
 The original GOAL runtime is a separate unfinished path. This prototype has
 retuned native physics, bounded static collision and offline vertex-pose baking.
 It does not implement original surface reactions/friction, ledges or moving
 objects, combat, full-map streaming, animation blending, facial animation,
-camera obstruction, audio, enemies, UI, progression, saves or a complete game
+additional original camera modes, audio, enemies, UI, progression, saves or a complete game
 startup. Near-plane triangles now use the bounded clipper described above. Reduced textures
 and frozen facial/environment effects remain visible limitations. No disc image,
 physical hardware validation or measured console frame rate is claimed.

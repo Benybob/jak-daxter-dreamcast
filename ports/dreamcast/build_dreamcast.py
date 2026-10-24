@@ -10,6 +10,7 @@ parser.add_argument('--msys',type=Path,default=Path('C:/msys64'))
 parser.add_argument('--target',default='all')
 parser.add_argument('--jobs',type=int,default=1)
 parser.add_argument('--training-assets',type=Path)
+parser.add_argument('--camera-assets',type=Path)
 args=parser.parse_args()
 port=Path(__file__).resolve().parent
 work=args.workspace.resolve()
@@ -25,6 +26,7 @@ if not args.target.replace('-','').replace('.','').isalnum():
     parser.error('invalid make target')
 if not 1<=args.jobs<=4: parser.error('--jobs must be 1..4')
 assets=(' TRAINING_ASSET_DIR='+short_posix(args.training_assets.resolve())) if args.training_assets else ''
+if args.camera_assets: assets+=' CAMERA_ASSET_DIR='+short_posix(args.camera_assets.resolve())
 script=f'''#!/usr/bin/bash
 set -eo pipefail
 source {short_posix(work)}/kos-source/environ.sh

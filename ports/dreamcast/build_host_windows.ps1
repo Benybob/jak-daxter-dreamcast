@@ -72,5 +72,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Training bundle checker compilation failed' }
 if ($LASTEXITCODE -ne 0) { throw 'Training GPU layer checker compilation failed' }
 & $Compiler @flags (Join-Path $port 'host_scene_clip.c') (Join-Path $port 'scene_clip.c') (Join-Path $port 'scene_clip_cases.c') -o (Join-Path $build 'scene-clip-check.exe') -lm
 if ($LASTEXITCODE -ne 0) { throw 'Near clipping checker compilation failed' }
+& $Compiler @flags (Join-Path $port 'host_camera_boom.c') (Join-Path $port 'camera_boom.c') (Join-Path $port 'camera_rig.c') (Join-Path $port 'camera_boom_cases.c') (Join-Path $port 'world_collision.c') -o (Join-Path $build 'camera-boom-check.exe') -lm
+if ($LASTEXITCODE -ne 0) { throw 'Camera boom/rig checker compilation failed' }
 & $pythonCommand -m unittest discover -s (Join-Path $port 'tests') -v
 if ($LASTEXITCODE -ne 0) { throw 'Host tests failed' }

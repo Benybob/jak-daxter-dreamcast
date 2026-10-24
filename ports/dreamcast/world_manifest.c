@@ -15,11 +15,15 @@ static int bounded(dc_vec3 v,float limit){
         fabsf(v.x)<=limit&&fabsf(v.y)<=limit&&fabsf(v.z)<=limit;
 }
 const char *dc_world_manifest_load(FILE *f,dc_world_manifest *out){
- unsigned char raw[84];dc_world_manifest m;
+ unsigned char raw[96];dc_world_manifest m;int coverage;
  if(!f||!out||sizeof(float)!=4)return "invalid world manifest arguments";
- if(fread(raw,1,sizeof raw,f)!=sizeof raw || fgetc(f)!=EOF || ferror(f))
+ if(fread(raw,1,84,f)!=84)return "world manifest length or I/O error";
+ coverage=!memcmp(raw,"WLD3",4)&&u32(raw+4)==3;
+ if(!coverage&&(memcmp(raw,"WLD2",4)||u32(raw+4)!=2))return "world manifest version";
+ if((coverage&&fread(raw+84,1,12,f)!=12) || fgetc(f)!=EOF || ferror(f))
   return "world manifest length or I/O error";
- if(memcmp(raw,"WLD2",4)||u32(raw+4)!=2)return "world manifest version";
+ m.extent=coverage?vec(raw+84):(dc_vec3){0,0,0};
+ if(coverage&&(!bounded(m.extent,64)||m.extent.x<=0||m.extent.y<=0||m.extent.z<=0))return "world coverage bounds";
  m.origin=vec(raw+8);m.shift=vec(raw+20);m.scale=f32(raw+32);m.spawn=vec(raw+36);
  m.dct_bytes=u32(raw+48);m.dct_crc=u32(raw+52);m.dcc_bytes=u32(raw+56);m.dcc_crc=u32(raw+60);
  m.vertices=u32(raw+64);m.indices=u32(raw+68);m.batches=u32(raw+72);

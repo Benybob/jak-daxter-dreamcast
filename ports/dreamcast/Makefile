@@ -424,7 +424,7 @@ jak-dc-world-manifest.elf: world_manifest_main.o world_manifest_cases.o world_ma
 
 # Original training patch; all five assets are private local conversion outputs.
 TRAINING_ASSET_DIR ?= build/private-training-assets
-training_main.o: training_main.c training_layer.h world_manifest.h player_motion.h player_anim.h player_world_motion.h textured_scene.h scene_projection.h scene_telemetry.h
+training_main.o: training_main.c training_layer.h world_manifest.h camera_rig.h camera_boom.h player_motion.h player_anim.h player_world_motion.h textured_scene.h scene_projection.h scene_telemetry.h
 training_layer.o: training_layer.c training_layer.h textured_scene.h scene_projection.h scene_clip.h
 host: build/training-layer-check$(HOST_EXE)
 build/training-layer-check$(HOST_EXE): host_training_layer.c training_layer.c training_layer.h scene_clip.c scene_clip.h tests/training-stubs/kos.h
@@ -435,9 +435,27 @@ build/training-romdisk.o: $(TRAINING_ASSET_DIR)/player.dct $(TRAINING_ASSET_DIR)
 	$(KOS_BASE)/utils/bin2c/bin2c build/training-romdisk.img build/training-romdisk.c romdisk
 	$(KOS_CC) $(KOS_CFLAGS) -c build/training-romdisk.c -o build/training-romdisk-tmp.o
 	$(KOS_CC) -o $@ -r build/training-romdisk-tmp.o $(KOS_LIB_PATHS) -Wl,--whole-archive -lromdiskbase
-jak-dc-training.elf: training_main.o training_layer.o scene_clip.o world_manifest.o world_collision.o player_world_motion.o player_motion.o player_anim.o textured_scene.o scene_projection_sh4zam.o scene_projection_gate.o build/training-romdisk.o
+jak-dc-training.elf: training_main.o training_layer.o scene_clip.o world_manifest.o camera_boom.o camera_rig.o world_collision.o player_world_motion.o player_motion.o player_anim.o textured_scene.o scene_projection_sh4zam.o scene_projection_gate.o build/training-romdisk.o
 	kos-cc -o $@ $^ -lsh4zam -lm
 scene_clip.o scene_clip_cases.o: scene_clip.h scene_projection.h
+camera_boom.o camera_boom_cases.o: camera_boom.h camera_rig.h world_collision.h
+camera_rig.o: camera_rig.c camera_rig.h camera_boom.h world_collision.h
+jak-dc-camera.elf: camera_boom_main.o camera_boom.o camera_rig.o camera_boom_cases.o world_collision.o
+	kos-cc -o $@ $^ -lm
+camera_real_main.o: camera_boom_main.c
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -DDC_CAMERA_REAL_PATCH -c $< -o $@
+CAMERA_ASSET_DIR ?= build/private-camera-assets
+build/camera-world-romdisk.o: $(CAMERA_ASSET_DIR)/world.dcc
+	mkdir -p build
+	$(KOS_GENROMFS) -f build/camera-world-romdisk.img -d $(CAMERA_ASSET_DIR) -x report.json
+	$(KOS_BASE)/utils/bin2c/bin2c build/camera-world-romdisk.img build/camera-world-romdisk.c romdisk
+	$(KOS_CC) $(KOS_CFLAGS) -c build/camera-world-romdisk.c -o build/camera-world-romdisk-tmp.o
+	$(KOS_CC) -o $@ -r build/camera-world-romdisk-tmp.o $(KOS_LIB_PATHS) -Wl,--whole-archive -lromdiskbase
+jak-dc-camera-real.elf: camera_real_main.o camera_boom.o camera_rig.o camera_boom_cases.o world_collision.o build/camera-world-romdisk.o
+	kos-cc -o $@ $^ -lm
+host: build/camera-boom-check$(HOST_EXE)
+build/camera-boom-check$(HOST_EXE): host_camera_boom.c camera_boom.c camera_rig.c camera_boom_cases.c world_collision.c camera_boom.h camera_rig.h world_collision.h
+	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -pedantic host_camera_boom.c camera_boom.c camera_rig.c camera_boom_cases.c world_collision.c -o $@ -lm
 view_projection_main.o: view_projection_main.c scene_projection.h
 	$(KOS_CC) $(KOS_CFLAGS) -std=gnu17 -Wall -Wextra -Werror -c $< -o $@
 clip_scene_main.o: clip_scene_main.c training_layer.h scene_projection.h scene_telemetry.h
