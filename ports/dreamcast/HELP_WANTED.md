@@ -219,3 +219,8 @@ See [SH4ZAM.md](SH4ZAM.md). (AI-assisted).
 
 Pinned C receipts bind imported original main threads to their process PID, reject stale/copy restoration and permit guarded C-only completion release. 199 host tests,22649 runtime and39 numeric checks pass on stock16MiBFlycast. Original deactivation and full gameplay remain unfinished. Human-approved next priority is native walking/running/jumping with real Jak on a test map. (AI-assisted)
 See [MAIN_THREAD_COMPLETION.md](MAIN_THREAD_COMPLETION.md). (AI-assisted).
+
+## Completed: Playable native Jak walk run jump test map
+
+Jak walks, runs and jumps around a bounded native test map with original locally baked model/animations, follow camera, floor and platform collision. Both controller trajectories, visual captures and318 native movement checks pass on stock16MiBFlycast. Source only is public; assets and playable embedding ELF stay local. Native C prototype physics, not original GOAL gameplay; full game remains unfinished. (AI-assisted)
+See [PLAYABLE_SLICE.md](PLAYABLE_SLICE.md). (AI-assisted).

@@ -58,5 +58,9 @@ if ($LASTEXITCODE -ne 0) { throw 'Read-only main-thread resize checker compilati
 if ($LASTEXITCODE -ne 0) { throw 'Read-only main-thread state checker compilation failed' }
 & $Compiler @flags (Join-Path $port 'host_main_completion.c') (Join-Path $port 'goal_main_start.c') (Join-Path $port 'goal_main_thread.c') (Join-Path $port 'goal_fiber.c') (Join-Path $port 'goal_scalar_call.c') (Join-Path $port 'goal_thread_stack.c') (Join-Path $port 'goal_process_heap.c') (Join-Path $port 'goal_module.c') (Join-Path $port 'goal_kernel_types.c') (Join-Path $port 'goal_runtime.c') -o (Join-Path $build 'main-completion-check.exe')
 if ($LASTEXITCODE -ne 0) { throw 'Original main completion checker compilation failed' }
+& $Compiler @flags (Join-Path $port 'host_player_motion.c') (Join-Path $port 'player_motion.c') (Join-Path $port 'player_motion_cases.c') -o (Join-Path $build 'player-motion-check.exe') -lm
+if ($LASTEXITCODE -ne 0) { throw 'Native movement checker compilation failed' }
+& $Compiler @flags (Join-Path $port 'host_player_anim.c') (Join-Path $port 'player_anim.c') -o (Join-Path $build 'player-anim-check.exe') -lm
+if ($LASTEXITCODE -ne 0) { throw 'Baked animation checker compilation failed' }
 & $pythonCommand -m unittest discover -s (Join-Path $port 'tests') -v
 if ($LASTEXITCODE -ne 0) { throw 'Host tests failed' }

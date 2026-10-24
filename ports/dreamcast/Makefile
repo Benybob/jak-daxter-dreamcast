@@ -49,6 +49,22 @@ jak-dc-projection.elf: projection_main.o scene_projection_sh4zam.o scene_project
 textured_main.o: textured_scene.h scene_telemetry.h scene_projection.h
 textured_scene.o: textured_scene.h
 
+# Private generated assets are supplied explicitly; never add them to Git.
+PLAY_ASSET_DIR ?= build/private-player-assets
+play_main.o: play_main.c player_motion.h player_anim.h textured_scene.h scene_projection.h scene_telemetry.h
+player_motion.o player_motion_cases.o player_motion_main.o: player_motion.h
+player_anim.o: player_anim.h
+build/player-romdisk.o: $(PLAY_ASSET_DIR)/player.dct $(PLAY_ASSET_DIR)/player.dca
+	mkdir -p build
+	$(KOS_GENROMFS) -f build/player-romdisk.img -d $(PLAY_ASSET_DIR) -x report.json
+	$(KOS_BASE)/utils/bin2c/bin2c build/player-romdisk.img build/player-romdisk.c romdisk
+	$(KOS_CC) $(KOS_CFLAGS) -c build/player-romdisk.c -o build/player-romdisk-tmp.o
+	$(KOS_CC) -o $@ -r build/player-romdisk-tmp.o $(KOS_LIB_PATHS) -Wl,--whole-archive -lromdiskbase
+jak-dc-play.elf: play_main.o player_motion.o player_anim.o textured_scene.o scene_projection_sh4zam.o scene_projection_gate.o build/player-romdisk.o
+	kos-cc -o $@ $^ -lsh4zam -lm
+jak-dc-motion.elf: player_motion.o player_motion_cases.o player_motion_main.o
+	kos-cc -o $@ $^ -lm
+
 $(BACKEND_TARGET): backend_main.o
 	kos-cc -o $@ $^ -lm
 
@@ -368,3 +384,9 @@ build/main-thread-check$(HOST_EXE): host_main_thread.c main_thread_cases.c main_
 host: build/main-completion-check$(HOST_EXE)
 build/main-completion-check$(HOST_EXE): host_main_completion.c goal_main_start.c goal_main_thread.c goal_fiber.c goal_scalar_call.c goal_thread_stack.c goal_process_heap.c goal_module.c goal_kernel_types.c goal_runtime.c goal_fiber.h goal_main_start.h
 	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -pedantic host_main_completion.c goal_main_start.c goal_main_thread.c goal_fiber.c goal_scalar_call.c goal_thread_stack.c goal_process_heap.c goal_module.c goal_kernel_types.c goal_runtime.c -o $@
+
+host: build/player-motion-check$(HOST_EXE) build/player-anim-check$(HOST_EXE)
+build/player-motion-check$(HOST_EXE): host_player_motion.c player_motion.c player_motion_cases.c player_motion.h
+	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -pedantic host_player_motion.c player_motion.c player_motion_cases.c -o $@ -lm
+build/player-anim-check$(HOST_EXE): host_player_anim.c player_anim.c player_anim.h
+	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -pedantic host_player_anim.c player_anim.c -o $@ -lm

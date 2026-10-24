@@ -1,0 +1,115 @@
+{
+  "ai_assisted": true,
+  "result": "PASS",
+  "host_tests": 201,
+  "movement_native_checks": 318,
+  "synthetic_animation_checks": 208,
+  "offline_math_checks": 10,
+  "playable_elf_sha256": "edcb99e94001cbc2d52d60f7c112144e1d91f7f5d97b77e5b45f15ac94de8371",
+  "movement_elf_sha256": "81cf94916ae1223736bd4bfd0d0196a43fee8e5b6e164f5b7da91da3e3e41b6f",
+  "control_checks": {
+    "ram_16mib": true,
+    "idle": true,
+    "walk": true,
+    "run": true,
+    "airborne": true,
+    "landing": true,
+    "held_jump_no_repeat": true,
+    "second_press": true,
+    "second_landing": true,
+    "animation_states": true,
+    "follow_motion": true,
+    "camera": true,
+    "cleanup": true,
+    "framebuffer": true
+  },
+  "platform_checks": {
+    "ram_16mib": true,
+    "blocked_by_platform": true,
+    "airborne": true,
+    "platform_landing": true,
+    "held_jump_no_repeat": true,
+    "second_jump_from_platform": true,
+    "walked_off_platform": true,
+    "cleanup": true,
+    "framebuffer": true
+  },
+  "memory": {
+    "magic": 843269194,
+    "version": 1,
+    "state": 2,
+    "source": 2,
+    "triangles": 4453,
+    "geometry_bytes": 1938486,
+    "system_ram": 16777216,
+    "allocator_live": 2152256,
+    "allocator_arena": 2251400,
+    "vram_free": 5383464,
+    "frames": 60,
+    "yaw": 0.0,
+    "pitch": -0.5,
+    "distance": 2.5999999046325684,
+    "pvr_fps": 0.0,
+    "frame_us": 16690
+  },
+  "character_bake": {
+    "ai_assisted": true,
+    "vertices": 3328,
+    "triangles": 3593,
+    "frames": 92,
+    "pose_bytes": 1837172,
+    "scene_bytes": 134594,
+    "texture_bytes": 32768,
+    "textures": 13,
+    "clips": {
+      "stance-loop": [
+        0,
+        22,
+        1.349989652633667,
+        1
+      ],
+      "walk": [
+        22,
+        16,
+        0.9999961853027344,
+        1
+      ],
+      "run": [
+        38,
+        16,
+        0.9999961853027344,
+        1
+      ],
+      "jump": [
+        54,
+        12,
+        0.6666666865348816,
+        0
+      ],
+      "jump-loop": [
+        66,
+        8,
+        0.46666577458381653,
+        1
+      ],
+      "jump-land": [
+        74,
+        18,
+        1.1166577339172363,
+        0
+      ]
+    },
+    "bind_matrix_error": 7.503310155421161e-07,
+    "quantization_world_units": 0.0009765625,
+    "limitations": [
+      "15Hz baked skeletal poses",
+      "frozen facial morphs",
+      "no environment mapping",
+      "native movement tuning"
+    ]
+  },
+  "framebuffers_visually_reviewed": true,
+  "physical_hardware_tested": false,
+  "original_goal_gameplay": false,
+  "assets_uploaded": false
+}
