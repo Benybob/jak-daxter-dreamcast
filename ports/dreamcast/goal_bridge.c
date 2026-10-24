@@ -5,6 +5,7 @@
 #include "goal_bridge.h"
 #include "goal_fiber.h"
 #include "goal_thread_resize.h"
+#include "goal_main_start.h"
 #include "goal_process_heap.h"
 #ifndef __DREAMCAST__
 #error These boxed tail bridges require native SH-4 code execution.
@@ -133,6 +134,15 @@ static uint64_t integer_error(uint64_t kind) {
 static uint64_t missing_call(void) {
   if(active_runtime) active_runtime->error=DC_GOAL_BAD_FUNCTION;
   return 0;
+}
+/* The original arming body stores this address. Execution through the original
+ * architecture-specific bootstrap is unsupported and fails closed. (AI-assisted) */
+int dc_goal_install_main_start_guard(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_goal_module_result *result) {
+ unsigned char code[12]={1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0};
+ dc_goal_code_export function={"set-to-run-bootstrap",code,12,NULL,0};
+ uint32_t target=(uint32_t)(uintptr_t)missing_call;
+ if(!rt || active_runtime!=rt || dc_goal_fiber_current()) {if(rt)rt->error=DC_GOAL_BAD_ARGUMENT;return 0;}
+ memcpy(code+8,&target,4);return dc_goal_load_module(rt,&function,1,sync,NULL,result);
 }
 int dc_goal_install_core_bridges(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_goal_module_result *result) {
   /* MOV.L literal,R0; JMP @R0; NOP; alignment NOP; .long C entry.

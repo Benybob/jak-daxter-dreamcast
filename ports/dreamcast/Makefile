@@ -336,3 +336,21 @@ runtime_goal_cases.o: thread_resize_cases.h
 host: build/thread-resize-check$(HOST_EXE)
 build/thread-resize-check$(HOST_EXE): host_thread_resize.c thread_resize_cases.c thread_resize_cases.h goal_thread_resize.c goal_thread_resize.h goal_thread_stack.c goal_thread_stack.h goal_process_heap.c goal_kernel_types.c goal_runtime.c
 	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -pedantic host_thread_resize.c thread_resize_cases.c goal_thread_resize.c goal_thread_stack.c goal_process_heap.c goal_kernel_types.c goal_runtime.c -o $@
+
+# Original arming bytes and bounded native import (AI-assisted).
+jak-dc-runtime-goal.elf: goal_main_thread.o main_thread_cases.o goal_main_start.o runtime_main_start_cases.o
+jak-dc-runtime-goal.elf: goal_kos_stack.o
+jak-dc-runtime-goal.elf: runtime_kos_stack_cases.o
+runtime_kos_stack_cases.o: runtime_kos_stack_cases.c goal_bridge.h goal_fiber.h goal_stack_call.h fiber_test_support.h runtime_cases.h
+goal_kos_stack.o: goal_kos_stack.c goal_kos_stack.h
+goal_fiber.o goal_stack_call.o: goal_kos_stack.h
+goal_main_thread.o: goal_main_thread.c goal_main_thread.h goal_thread_stack.h goal_runtime.h
+main_thread_cases.o: main_thread_cases.c main_thread_cases.h goal_main_thread.h goal_kernel_types.h
+goal_main_start.o: goal_main_start.c goal_main_start.h goal_main_thread.h goal_fiber.h goal_bridge.h goal_scalar_call.h
+runtime_main_start_cases.o: runtime_main_start_cases.c goal_main_start.h goal_main_thread.h goal_bridge.h goal_fiber.h fiber_test_support.h runtime_cases.h build/original_set_to_run.h
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -I. -c $< -o $@
+goal_bridge.o: goal_main_start.h
+runtime_goal_cases.o: main_thread_cases.h
+host: build/main-thread-check$(HOST_EXE)
+build/main-thread-check$(HOST_EXE): host_main_thread.c main_thread_cases.c main_thread_cases.h goal_main_thread.c goal_main_thread.h goal_thread_stack.c goal_thread_stack.h goal_process_heap.c goal_kernel_types.c goal_runtime.c
+	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -pedantic host_main_thread.c main_thread_cases.c goal_main_thread.c goal_thread_stack.c goal_process_heap.c goal_kernel_types.c goal_runtime.c -o $@

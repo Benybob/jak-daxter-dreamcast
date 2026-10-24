@@ -54,5 +54,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Fiber lifecycle checker compilation failed' }
 if ($LASTEXITCODE -ne 0) { throw 'Scalar argument ABI checker compilation failed' }
 & $Compiler @flags (Join-Path $port 'host_thread_resize.c') (Join-Path $port 'thread_resize_cases.c') (Join-Path $port 'goal_thread_resize.c') (Join-Path $port 'goal_thread_stack.c') (Join-Path $port 'goal_process_heap.c') (Join-Path $port 'goal_kernel_types.c') (Join-Path $port 'goal_runtime.c') -o (Join-Path $build 'thread-resize-check.exe')
 if ($LASTEXITCODE -ne 0) { throw 'Read-only main-thread resize checker compilation failed' }
+& $Compiler @flags (Join-Path $port 'host_main_thread.c') (Join-Path $port 'main_thread_cases.c') (Join-Path $port 'goal_main_thread.c') (Join-Path $port 'goal_thread_stack.c') (Join-Path $port 'goal_process_heap.c') (Join-Path $port 'goal_kernel_types.c') (Join-Path $port 'goal_runtime.c') -o (Join-Path $build 'main-thread-check.exe')
+if ($LASTEXITCODE -ne 0) { throw 'Read-only main-thread state checker compilation failed' }
 & $pythonCommand -m unittest discover -s (Join-Path $port 'tests') -v
 if ($LASTEXITCODE -ne 0) { throw 'Host tests failed' }

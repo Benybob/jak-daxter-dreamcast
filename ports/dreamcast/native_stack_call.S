@@ -17,13 +17,14 @@
 ! Synchronous primitive; C validation and native acceptance are separate.
 ! Private raw entry: validated C wrapper in goal_stack_call.c is mandatory.
 !
-! uint64_t dc_goal_stack_call_raw(uint32_t entry, uint32_t stack_top);
+! uint64_t dc_goal_stack_call_raw(uint32_t entry, uint32_t stack_top, uint32_t sr);
 !   r4 = trusted entry, installed only as the JSR target
 !   r5 = trusted alternate stack pointer, installed verbatim as r15
 !   returns the target's uint64 bits in r0 (low) : r1 (high)
 !
 ! Incoming precondition, not checked here: FPU enabled and FPSCR.FR, FPSCR.SZ,
-! and FPSCR.PR already clear. No literal pool. No SR, GBR, or MAC changes.
+! and FPSCR.PR already clear. IRQs masked on entry/return, enabled only on the
+! installed target stack using R6. C restores the root KOS stack record and SR.
 
 	.text
 	.align 2
@@ -49,12 +50,19 @@ _dc_goal_stack_call_raw:
 	mov	r15,r8
 	mov	r4,r9
 	mov	r5,r15
+	ldc	r6,sr
 	jsr	@r9
 	nop
 
 	! r8 is the private old SP. Park r0:r1 before r0 is reused.
-	mov	r8,r15
 	mov	r0,r2
+	stc	sr,r0
+	or	#0xf0,r0
+	ldc	r0,sr
+	! Allow SR interrupt masking to settle before replacing the working SP.
+	nop
+	nop
+	mov	r8,r15
 	mov	r1,r3
 	mov	#0,r0
 	lds	r0,fpscr

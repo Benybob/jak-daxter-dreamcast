@@ -5,7 +5,8 @@
      FR12..FR15 at 44,48,52,56.
    Raw entry preconditions are enforced by the C caller. This file does
    not branch on them. SR, GBR, MACH, MACL, and the other FPR bank are
-   outside the image. */
+   outside the image. R6 supplies the validated incoming SR; C holds IRQs
+   masked during stack/OS-record transitions. (AI-assisted) */
 
 .text
 .align 2
@@ -64,6 +65,7 @@ _dc_goal_context_swap_raw:
 	lds	r0, pr
 	mov.l	@(32, r5), r2
 	mov	r2, r15
+	ldc	r6, sr
 	mov	#0, r0
 	rts
 	mov	#0, r1

@@ -181,7 +181,7 @@ uint32_t dc_runtime_fiber_cases(dc_goal_runtime *rt,dc_runtime_check check,void 
  CHECK(value,0x6677,"retry resumes the exact previous yield");CHECK(rt->error,DC_GOAL_OK,"successful retry clears call argument error");
  CHECK(dc_goal_fiber_current()==NULL,1,"retry returns to root");dc_goal_clear_process_context(rt);
  /* Pause afresh, corrupt one authorization field, and prove no restore/jump. */
- for(j=0;j<8;++j){
+ for(j=0;j<10;++j){
   uint32_t peak_before;
   CHECK(dc_goal_fiber_init(&fibers[0],rt,owners[0],12400,threads[0],base,16384,native_entry),1,"fresh context for one independent saved-state corruption");
   CHECK(dc_goal_bind_process_context(rt,owners[0],12400),1,"corruption probe explicit owner binding");
@@ -197,6 +197,8 @@ uint32_t dc_runtime_fiber_cases(dc_goal_runtime *rt,dc_runtime_check check,void 
   if(j==5){uint32_t v=8193;memcpy(dc_goal_resolve(rt,threads[0]+32,4),&v,4);}
   if(j==6)fibers[0].image.saved=0;
   if(j==7)++fibers[0].image.image_bytes;
+  if(j==8)fibers[0].platform_owner^=1;
+  if(j==9)fibers[0].native_irq_state|=0xf0u;
   value=0x1122334455667788ull;
   CHECK(dc_goal_fiber_step(&fibers[0],99,&value),DC_FIBER_FAIL,"malformed/stale paused authorization never resumes");
   CHECK(fibers[0].phase,DC_FIBER_FAULT,"saved-state failure invalidates context");

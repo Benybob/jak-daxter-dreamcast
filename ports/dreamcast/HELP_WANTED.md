@@ -204,3 +204,8 @@ See [THREAD_BACKUP_RESIZE.md](THREAD_BACKUP_RESIZE.md). (AI-assisted).
 
 Native fibers retain validated suspension image requirements, including backup OOM. Six-argument and nested eight-argument GOAL fixtures measure312B/432B on both8KiB and16KiB working stacks. Original activated CPUs with default256-byte backups fail without partial copy; fresh pure fixture calls with measured512-byte backups yield, survive poisoned stacks and complete. Grok independently reviewed design and final source. Original scheduler/arming/cleanup and gameplay remain unfinished. (AI-assisted)
 See [SUSPENSION_BUDGETS.md](SUSPENSION_BUDGETS.md). (AI-assisted).
+
+## Completed: Original main-thread arming and timer-safe KOS stacks
+
+Unchanged original set-to-run arms a guarded main CPU thread; an explicit C adapter imports its target and six scalar words into native fibers. Both alternate-stack paths now preserve KOS stack ownership across timer interrupts, with forced IRQ and cross-OS-thread rejection oracles. Grok assisted isolated gate design and review; Codex independently verified execution. Original scheduler/bootstrap execution, cleanup, GC and gameplay remain unfinished. (AI-assisted)
+See [ORIGINAL_THREAD_START.md](ORIGINAL_THREAD_START.md). (AI-assisted).

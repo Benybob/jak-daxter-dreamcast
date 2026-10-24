@@ -217,6 +217,8 @@ def main():
         '--header',str(port/'build/original_cpu_thread.h')],check=True)
     subprocess.run(compiler+process_context+['--source',str(port.parents[1]/'goal_src/jak1/kernel/gkernel.gc'),
         '--function','(method stack-size-set! thread)','--header',str(port/'build/original_thread_resize.h')],check=True)
+    subprocess.run(compiler+process_context+['--source',str(port.parents[1]/'goal_src/jak1/kernel/gkernel.gc'),
+        '--function','set-to-run','--header',str(port/'build/original_set_to_run.h')],check=True)
     subprocess.run(compiler+['--source',str(port/'fiber_fixture.gc'),'--function','dc-fiber-inner',
         '--function','dc-fiber-main','--header',str(port/'build/fiber_fixture.h')],check=True)
     subprocess.run(compiler+['--source',str(port/'fiber_words_fixture.gc'),'--function','dc-fiber-words-six',
@@ -229,6 +231,6 @@ def main():
     if args.verify:
         subprocess.run([sys.executable,str(port/'verify_backend.py'),str(args.flycast),
                         str(port/'jak-dc-runtime-goal.elf'),'--nm',str(args.nm),'--output',str(args.output),
-                        '--tests','22188','--suite','runtime-goal'],check=True)
+                        '--tests','22458','--suite','runtime-goal'],check=True)
 
 if __name__=='__main__': main()

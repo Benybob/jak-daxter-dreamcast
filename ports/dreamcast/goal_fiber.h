@@ -16,6 +16,8 @@ typedef struct {
  /* Largest validated [suspended SP, stack top) interval requested so far,
   * including a backup OOM. Reset by init/clear; not a stack high-water mark. */
  uint32_t peak_requested_image_bytes;
+ /* Opaque KOS owner and suspension SR; host never executes these images. */
+ uint32_t platform_owner,native_irq_state;
 } dc_goal_fiber;
 /* Metadata is stable caller-owned C storage OUTSIDE rt's arena/working stack;
  * keep it live until clear. Code/stack/metadata pinned and quiescent. Default init

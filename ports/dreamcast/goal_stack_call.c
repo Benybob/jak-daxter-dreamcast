@@ -2,7 +2,8 @@
 #include "goal_stack_call.h"
 #ifdef __DREAMCAST__
 #include "goal_register_snapshot.h"
-extern uint64_t dc_goal_stack_call_raw(uint32_t,uint32_t);
+#include "goal_kos_stack.h"
+extern uint64_t dc_goal_stack_call_raw(uint32_t,uint32_t,uint32_t);
 #endif
 static unsigned stack_call_active;
 static int bad(dc_goal_runtime *rt) {if(rt)rt->error=DC_GOAL_BAD_ARGUMENT;return 0;}
@@ -28,12 +29,15 @@ int dc_goal_call_on_stack(dc_goal_runtime *rt,uint32_t entry,uint32_t stack_base
 #ifdef __DREAMCAST__
  {
   struct dc_goal_native_regs caller;
+  dc_goal_kos_stack os_stack;
   uint64_t value;
   if((rt->base&0xe0000000u) || !dc_goal_native_regs_snapshot(&caller)) return bad(rt);
   if(overlap(caller.sp&0x1fffffffu,1,stack_base,stack_bytes)) return bad(rt);
   stack_call_active=1;rt->error=DC_GOAL_OK;
-  value=dc_goal_stack_call_raw(entry,stack_base+stack_bytes);
+  if(!dc_goal_kos_stack_enter(&os_stack,stack_base,stack_bytes)){stack_call_active=0;return bad(rt);}
+  value=dc_goal_stack_call_raw(entry,stack_base+stack_bytes,os_stack.root_sr);
   stack_call_active=0;
+  if(!dc_goal_kos_stack_leave(&os_stack))return bad(rt);
   if(rt->error!=DC_GOAL_OK) return 0;
   *out=value;return 1;
  }

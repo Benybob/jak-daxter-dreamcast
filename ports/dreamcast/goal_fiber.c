@@ -6,6 +6,8 @@
 #include "fiber_bounds.h"
 #ifdef __DREAMCAST__
 #include "goal_bridge.h"
+#include "goal_kos_stack.h"
+#include <arch/irq.h>
 #endif
 #include <stdlib.h>
 #include <string.h>
@@ -30,8 +32,8 @@ static int fault(dc_goal_fiber *f,enum dc_goal_error error) {
  f->runtime->error=error==DC_GOAL_OK?DC_GOAL_BAD_ARGUMENT:error;return DC_FIBER_FAIL;
 }
 #ifdef __DREAMCAST__
-extern void dc_goal_context_enter_raw(struct dc_goal_native_regs *,const struct dc_goal_native_regs *);
-extern void dc_goal_context_leave_raw(struct dc_goal_native_regs *,const struct dc_goal_native_regs *);
+extern void dc_goal_context_enter_raw(struct dc_goal_native_regs *,const struct dc_goal_native_regs *,uint32_t);
+extern void dc_goal_context_leave_raw(struct dc_goal_native_regs *,const struct dc_goal_native_regs *,uint32_t);
 extern const unsigned char dc_goal_context_boot_raw[],dc_goal_context_enter_return[],dc_goal_context_leave_return[];
 #define PC(label) ((uint32_t)(uintptr_t)(label))
 static int root_ok(const dc_goal_fiber *f) {
@@ -59,7 +61,8 @@ void dc_goal_fiber_bootstrap(void) {
  f->value=value;f->phase=f->runtime->error==DC_GOAL_OK?DC_FIBER_DONE:DC_FIBER_FAULT;
  if(!root_ok(f) || !dc_goal_native_regs_snapshot(&terminal) ||
     !dc_fiber_leave_push_ok(f->stack_base,f->stack_bytes,terminal.sp))abort();
- dc_goal_context_leave_raw(&f->native_thread,&f->root);
+ /* Return on root with IRQs masked until its KOS stack record is restored. */
+ dc_goal_context_leave_raw(&f->native_thread,&f->root,irq_disable()|0xf0u);
  /* DONE/FAULT must never be resumed. No unsafe return through bootstrap PR. */
  abort();
 }
@@ -81,6 +84,7 @@ int dc_goal_fiber_init_words(dc_goal_fiber *f,dc_goal_runtime *rt,uint32_t proce
  if(!rt || !rt->memory)return bad(rt);
 #ifdef __DREAMCAST__
  if(!dc_goal_core_bridges_active(rt))return bad(rt);
+ f->platform_owner=dc_goal_kos_stack_owner();if(!f->platform_owner)return bad(rt);
 #endif
  if(stack_bytes<4096 || (stack_base&15u) || (stack_bytes&15u) || stack_bytes>UINT32_MAX-stack_base)return bad(rt);
  if(!dc_goal_code_entry(rt,entry,&code))return 0;
@@ -126,8 +130,11 @@ int dc_goal_fiber_step(dc_goal_fiber *f,uint64_t resume_value,uint64_t *out) {
   dc_goal_code_entry_info code;
   struct dc_goal_native_regs caller;
   dc_goal_thread_stack fresh;
+  dc_goal_kos_stack os_stack;
   int is_new=f->phase==DC_FIBER_NEW;
   if(!dc_goal_core_bridges_active(rt))return fault(f,DC_GOAL_BAD_ARGUMENT);
+  if(!f->platform_owner || dc_goal_kos_stack_owner()!=f->platform_owner ||
+     (!is_new && !dc_goal_kos_stack_sr_ok(f->native_irq_state)))return fault(f,DC_GOAL_BAD_ARGUMENT);
   if(!view_ok(f) || !thread_ok(f,is_new))return fault(f,DC_GOAL_BAD_ARGUMENT);
   if(!dc_goal_code_entry(rt,f->entry,&code))return fault(f,rt->error);
   if(overlap(f->entry,code.bytes,f->stack_base,f->stack_bytes))return fault(f,DC_GOAL_BAD_ARGUMENT);
@@ -140,13 +147,18 @@ int dc_goal_fiber_step(dc_goal_fiber *f,uint64_t resume_value,uint64_t *out) {
       f->image.image_bytes!=f->stack_base+f->stack_bytes-f->native_thread.sp)return fault(f,DC_GOAL_BAD_ARGUMENT);
    if(!dc_goal_thread_stack_restore(&f->image))return fault(f,rt->error);
   }
-  /* Sample immediately before the two-register-argument enter call: preceding
+  /* Sample immediately before the three-register-argument enter call: preceding
    * validation may use outgoing argument stack space. No C calls intervene. */
-  if(!dc_goal_native_regs_snapshot(&caller) || !dc_fiber_root_push_ok(f->stack_base,f->stack_bytes,caller.sp&0x1fffffffu))return fault(f,DC_GOAL_BAD_ARGUMENT);
+  if(!dc_goal_kos_stack_enter(&os_stack,f->stack_base,f->stack_bytes))return fault(f,DC_GOAL_BAD_ARGUMENT);
+  if(!dc_goal_native_regs_snapshot(&caller) || !dc_fiber_root_push_ok(f->stack_base,f->stack_bytes,caller.sp&0x1fffffffu)){
+   dc_goal_kos_stack_leave(&os_stack);return fault(f,DC_GOAL_BAD_ARGUMENT);
+  }
+  if(is_new)f->native_irq_state=os_stack.root_sr;
   f->resume_value=resume_value;f->root_expected_sp=caller.sp-4u;f->root_live=1;
   f->phase=DC_FIBER_RUNNING;current=f;rt->error=DC_GOAL_OK;
-  dc_goal_context_enter_raw(&f->root,&f->native_thread);
+  dc_goal_context_enter_raw(&f->root,&f->native_thread,f->native_irq_state);
   current=NULL;f->root_live=0;
+  if(!dc_goal_kos_stack_leave(&os_stack))return fault(f,DC_GOAL_BAD_ARGUMENT);
   if(rt->error!=DC_GOAL_OK)return fault(f,rt->error);
   if(f->phase==DC_FIBER_SUSPENDED) {
    uint32_t needed;
@@ -172,7 +184,11 @@ uint64_t dc_goal_fiber_yield(dc_goal_runtime *rt,uint64_t value) {
   if(!dc_goal_core_bridges_active(rt) || !root_ok(f) || !dc_goal_native_regs_snapshot(&caller) ||
      !dc_fiber_leave_push_ok(f->stack_base,f->stack_bytes,caller.sp))return (uint64_t)bad(rt);
   f->value=value;f->phase=DC_FIBER_SUSPENDED;
-  dc_goal_context_leave_raw(&f->native_thread,&f->root);
+  f->native_irq_state=irq_disable();
+  if(!dc_goal_kos_stack_sr_ok(f->native_irq_state)){
+   irq_restore(f->native_irq_state);return (uint64_t)bad(rt);
+  }
+  dc_goal_context_leave_raw(&f->native_thread,&f->root,f->native_irq_state|0xf0u);
   if(current!=f || f->phase!=DC_FIBER_RUNNING || !root_ok(f))return (uint64_t)bad(rt);
   return f->resume_value;
  }

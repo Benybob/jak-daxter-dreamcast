@@ -27,8 +27,8 @@ Discuss scope on **this fork**, and keep changes small enough to review.
 
 | Area | Locally verified scope |
 | --- | --- |
-| Host | 196 tests pass with the complete local SDK/oracle setup |
-| Native runtime | 22,188 checks in Flycast, stock 16 MiB RAM |
+| Host | 198 tests pass with the complete local SDK/oracle setup |
+| Native runtime | 22,458 checks in Flycast, stock 16 MiB RAM |
 | Original data | 182 native checks; all 668 V4 data objects across 36 local archives validate |
 | Numeric regression | 39 native checks |
 | GOAL backend | Original typed frontend to native SH-4; scalar calls, classes/methods, void startup, private data, 64-bit shifts and 32-bit division |
@@ -52,16 +52,16 @@ the local checkpoint, not a GitHub Actions run.
 
 ## Latest completed contributor task
 
-Native fibers retain validated suspension image requirements, including backup OOM. Six-argument and nested eight-argument GOAL fixtures measure312B/432B on both8KiB and16KiB working stacks. Original activated CPUs with default256-byte backups fail without partial copy; fresh pure fixture calls with measured512-byte backups yield, survive poisoned stacks and complete. Grok independently reviewed design and final source. Original scheduler/arming/cleanup and gameplay remain unfinished. (AI-assisted)
+Unchanged original set-to-run arms a guarded main CPU thread; an explicit C adapter imports its target and six scalar words into native fibers. Both alternate-stack paths now preserve KOS stack ownership across timer interrupts, with forced IRQ and cross-OS-thread rejection oracles. Grok assisted isolated gate design and review; Codex independently verified execution. Original scheduler/bootstrap execution, cleanup, GC and gameplay remain unfinished. (AI-assisted)
 
-See [SUSPENSION_BUDGETS.md](ports/dreamcast/SUSPENSION_BUDGETS.md). Full kernel/gameplay remains unfinished.
+See [ORIGINAL_THREAD_START.md](ports/dreamcast/ORIGINAL_THREAD_START.md). Full kernel/gameplay remains unfinished.
 
 ## Build and orientation
 
 Source is in `ports/dreamcast/`. Follow [BUILDING.md](ports/dreamcast/BUILDING.md).
 The verified baseline is OpenGOAL `6076aab5a95955443a9e1ed8f72a25bc0e2fcf9d`;
 the latest locally verified port checkpoint is
-`c8854a80c31efaeec5fb06dc23f70210c0d4f5d2`.
+`e260ce7cc879cf9e6bb095fbbd215180edf68fdd`.
 
 No ISO, BIOS, extracted textures/models, converted game scenes or ELF binaries
 embedding game assets are uploaded. Use assets extracted locally from your own
