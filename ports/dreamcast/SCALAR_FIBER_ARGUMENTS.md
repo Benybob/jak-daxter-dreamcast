@@ -51,8 +51,10 @@ process status, fences, no allocation and no interning remain checked. The fixtu
 uses `imul64` for full-width products; ordinary GOAL `*` retains its original
 32-bit integer multiplication semantics.
 
-The installed SH-4 adapter occupies 400 bytes. Target C context size is 292 bytes,
-including eight copied words; its two register images remain 60 bytes each.
+The installed SH-4 adapter occupies 400 bytes. The original milestone's target C
+context size was 292 bytes, including eight copied words; its two register images
+remain 60 bytes each. The later [suspension budget measurement](SUSPENSION_BUDGETS.md)
+adds one four-byte observation at the end, bringing the current context to 296 bytes.
 Compiled GOAL fixtures occupy 1124 and 732 bytes with 72- and 88-byte frames.
 Diagnostic GOAL/boxed code totals 139,902 bytes; main arena use is
 568,080 / 1,048,576 bytes with 679 symbols. These exclude executable/KOS, C

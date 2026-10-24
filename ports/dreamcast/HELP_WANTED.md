@@ -199,3 +199,8 @@ See [SCALAR_FIBER_ARGUMENTS.md](SCALAR_FIBER_ARGUMENTS.md). (AI-assisted).
 
 The guarded unchanged original void stack-size-set! method now resizes a real activated main CPU thread's backup. Original activation, resizing, six scalar startup arguments, yield, poisoned-stack restoration and completion work together under an explicit C driver and process binding. Grok supplied the read-only checker; Codex corrected its false-symbol marker and independently verifies 256 new native checks, including stale handles, active mutation and canonical original-export identity. Original scheduler/arming/deactivation, GC, unwinding and gameplay remain unfinished. (AI-assisted)
 See [THREAD_BACKUP_RESIZE.md](THREAD_BACKUP_RESIZE.md). (AI-assisted).
+
+## Completed: Measured native suspension image budgets
+
+Native fibers retain validated suspension image requirements, including backup OOM. Six-argument and nested eight-argument GOAL fixtures measure312B/432B on both8KiB and16KiB working stacks. Original activated CPUs with default256-byte backups fail without partial copy; fresh pure fixture calls with measured512-byte backups yield, survive poisoned stacks and complete. Grok independently reviewed design and final source. Original scheduler/arming/cleanup and gameplay remain unfinished. (AI-assisted)
+See [SUSPENSION_BUDGETS.md](SUSPENSION_BUDGETS.md). (AI-assisted).

@@ -9,6 +9,7 @@ static uint32_t entry(dc_goal_runtime *rt,const char *name){return dc_goal_symbo
 static uint32_t word(dc_goal_runtime *rt,uint32_t p,unsigned o){uint32_t v;memcpy(&v,dc_goal_resolve(rt,p+o,4),4);return v;}
 static void put(dc_goal_runtime *rt,uint32_t p,unsigned o,uint32_t v){memcpy(dc_goal_resolve(rt,p+o,4),&v,4);}
 static int filled(const void *p,unsigned n,unsigned char v){const unsigned char *b=p;while(n--)if(*b++!=v)return 0;return 1;}
+uint32_t dc_runtime_fiber_word_images[2];
 uint32_t dc_runtime_fiber_words_cases(dc_goal_runtime *rt,dc_runtime_check check,void *context,unsigned *id,dc_goal_cache_sync sync){
  dc_goal_fiber f[2];dc_goal_module_result bridge,module;
  uint32_t owners[2],threads[2],frames[2][2],allocation,stack,proc=entry(rt,"process"),old_object,old_proc;
@@ -73,6 +74,10 @@ uint32_t dc_runtime_fiber_words_cases(dc_goal_runtime *rt,dc_runtime_check check
  CHECK(dc_runtime_fiber_checked_step(&f[1],send[2],&value,&intact),DC_FIBER_COMPLETED,"eight-word outer frame completes after second restore");
  CHECK(intact,1,"eight-word final return preserves root state");CHECK(value,sum[1]+send[1]+extra+send[2],"eight full64-bit words and both resume values survive nested yields");
  dc_goal_clear_process_context(rt);
+ for(i=0;i<2;++i){
+  dc_runtime_fiber_word_images[i]=f[i].peak_requested_image_bytes;
+  CHECK(dc_runtime_fiber_word_images[i]>0 && dc_runtime_fiber_word_images[i]<=8192,1,"completed word body retains largest validated suspension request");
+ }
  /* A malformed pending count must not restore the poisoned destination. */
  CHECK(dc_goal_fiber_init_words(&f[0],rt,owners[0],12400,threads[0],stack,16384,entries[0],6,copied[0]),1,"fresh word context for pending-count failure");
  CHECK(dc_goal_bind_process_context(rt,owners[0],12400),1,"pending-count owner bound");

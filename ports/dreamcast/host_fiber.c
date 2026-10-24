@@ -32,6 +32,7 @@ int main(void) {
  CHECK(raw!=0);put(&rt,raw,0,type);put(&rt,thread,4,process);put(&rt,thread,32,8192);put(&rt,process,44,thread);
  stack=dc_goal_alloc(&rt,16416)+16;put(&rt,thread,28,stack+16384);
  CHECK(dc_goal_fiber_init(&fiber,&rt,process,12400,thread,stack,16384,entry));CHECK(fiber.phase==DC_FIBER_NEW);
+ CHECK(fiber.peak_requested_image_bytes==0);fiber.peak_requested_image_bytes=400;
  CHECK(fiber.image.valid==1 && fiber.image.saved==0);CHECK(fiber.native_thread.sp==stack+16384);
  used=rt.used;memcpy(before,memory,used);
  CHECK(!dc_goal_fiber_step(&fiber,7,&value));CHECK(rt.error==DC_GOAL_BAD_ARGUMENT);CHECK(value==0x1122334455667788ull);
@@ -41,6 +42,7 @@ int main(void) {
  CHECK(!dc_goal_fiber_init(NULL,&rt,process,12400,thread,stack,16384,entry));
  CHECK(!dc_goal_fiber_init(&fiber,NULL,process,12400,thread,stack,16384,entry));
  CHECK(fiber.phase==DC_FIBER_EMPTY);CHECK(!fiber.image.valid);
+ CHECK(fiber.peak_requested_image_bytes==0);
  CHECK(!dc_goal_fiber_init(&fiber,&rt,process,12400,thread,stack+1,16384,entry));CHECK(fiber.phase==DC_FIBER_EMPTY);
  CHECK(!dc_goal_fiber_init(&fiber,&rt,process,12400,thread,stack,4080,entry));
  CHECK(!dc_goal_fiber_init(&fiber,&rt,process,12400,thread,stack,16384,entry+2));
@@ -53,14 +55,17 @@ int main(void) {
  CHECK(dc_goal_fiber_init(&fiber,&rt,process,12400,thread,stack,16384,entry));fiber.phase=DC_FIBER_DONE;
  CHECK(!dc_goal_fiber_step(&fiber,0,&value));CHECK(fiber.phase==DC_FIBER_DONE);
  CHECK(dc_goal_fiber_clear(&fiber));CHECK(fiber.phase==DC_FIBER_EMPTY && !fiber.image.valid);
+ CHECK(fiber.peak_requested_image_bytes==0);
  CHECK(!dc_goal_fiber_step(&fiber,0,&value));CHECK(!dc_goal_fiber_clear(NULL));CHECK(value==0x1122334455667788ull);
  {
   uint64_t words[8],expected[8],zero[8]={0};unsigned i;
   for(i=0;i<8;++i)words[i]=expected[i]=UINT64_C(0xabcdef1234567890)+UINT64_C(0x1234567887654321)*i;
   CHECK(dc_goal_fiber_init_words(&fiber,&rt,process,12400,thread,stack,16384,entry,8,words));
+  CHECK(fiber.peak_requested_image_bytes==0);fiber.peak_requested_image_bytes=500;
   CHECK(fiber.argument_count==8);CHECK(memcmp(fiber.arguments,expected,sizeof expected)==0);
   memset(words,0,sizeof words);CHECK(memcmp(fiber.arguments,expected,sizeof expected)==0);
   CHECK(dc_goal_fiber_init_words(&fiber,&rt,process,12400,thread,stack,16384,entry,6,fiber.arguments));
+  CHECK(fiber.peak_requested_image_bytes==0);
   CHECK(fiber.argument_count==6);CHECK(memcmp(fiber.arguments,expected,6*sizeof *expected)==0);
   CHECK(fiber.arguments[6]==0 && fiber.arguments[7]==0);
   CHECK(!dc_goal_fiber_step(&fiber,0,&value));CHECK(fiber.phase==DC_FIBER_NEW);

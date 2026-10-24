@@ -149,7 +149,11 @@ int dc_goal_fiber_step(dc_goal_fiber *f,uint64_t resume_value,uint64_t *out) {
   current=NULL;f->root_live=0;
   if(rt->error!=DC_GOAL_OK)return fault(f,rt->error);
   if(f->phase==DC_FIBER_SUSPENDED) {
-   if(!thread_ok(f,0) || !dc_goal_thread_stack_backup(&f->image,f->native_thread.sp))return fault(f,rt->error);
+   uint32_t needed;
+   if(!thread_ok(f,0))return fault(f,DC_GOAL_BAD_ARGUMENT);
+   needed=f->stack_base+f->stack_bytes-f->native_thread.sp;
+   if(needed>f->peak_requested_image_bytes)f->peak_requested_image_bytes=needed;
+   if(!dc_goal_thread_stack_backup(&f->image,f->native_thread.sp))return fault(f,rt->error);
    *out=f->value;return DC_FIBER_YIELDED;
   }
   if(f->phase==DC_FIBER_DONE) {*out=f->value;return DC_FIBER_COMPLETED;}

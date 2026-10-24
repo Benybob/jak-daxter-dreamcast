@@ -211,8 +211,12 @@ uint32_t dc_runtime_goal_cases(void *memory,uint32_t capacity,dc_runtime_check c
   code_bytes+=dc_runtime_thread_resize_cases(&rt,check,context,&id,sync_code);
   code_bytes+=dc_runtime_fiber_cases(&rt,check,context,&id,sync_code);
   dc_goal_clear_core_bridges(&rt);
-  snprintf(description,description_bytes,"GOAL=%lu init/lists=pass arena=%lu symbols=%lu",
-           (unsigned long)code_bytes,(unsigned long)rt.used,(unsigned long)rt.symbol_count);
+  {
+   extern uint32_t dc_runtime_profile_images[2];
+   snprintf(description,description_bytes,"GOAL=%lu init/lists=pass arena=%lu symbols=%lu img=%lu/%lu",
+            (unsigned long)code_bytes,(unsigned long)rt.used,(unsigned long)rt.symbol_count,
+            (unsigned long)dc_runtime_profile_images[0],(unsigned long)dc_runtime_profile_images[1]);
+  }
 #undef CHECK
   return code_bytes;
 }

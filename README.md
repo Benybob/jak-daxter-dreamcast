@@ -28,7 +28,7 @@ Discuss scope on **this fork**, and keep changes small enough to review.
 | Area | Locally verified scope |
 | --- | --- |
 | Host | 196 tests pass with the complete local SDK/oracle setup |
-| Native runtime | 22,105 checks in Flycast, stock 16 MiB RAM |
+| Native runtime | 22,188 checks in Flycast, stock 16 MiB RAM |
 | Original data | 182 native checks; all 668 V4 data objects across 36 local archives validate |
 | Numeric regression | 39 native checks |
 | GOAL backend | Original typed frontend to native SH-4; scalar calls, classes/methods, void startup, private data, 64-bit shifts and 32-bit division |
@@ -52,16 +52,16 @@ the local checkpoint, not a GitHub Actions run.
 
 ## Latest completed contributor task
 
-The guarded unchanged original void stack-size-set! method now resizes a real activated main CPU thread's backup. Original activation, resizing, six scalar startup arguments, yield, poisoned-stack restoration and completion work together under an explicit C driver and process binding. Grok supplied the read-only checker; Codex corrected its false-symbol marker and independently verifies 256 new native checks, including stale handles, active mutation and canonical original-export identity. Original scheduler/arming/deactivation, GC, unwinding and gameplay remain unfinished. (AI-assisted)
+Native fibers retain validated suspension image requirements, including backup OOM. Six-argument and nested eight-argument GOAL fixtures measure312B/432B on both8KiB and16KiB working stacks. Original activated CPUs with default256-byte backups fail without partial copy; fresh pure fixture calls with measured512-byte backups yield, survive poisoned stacks and complete. Grok independently reviewed design and final source. Original scheduler/arming/cleanup and gameplay remain unfinished. (AI-assisted)
 
-See [THREAD_BACKUP_RESIZE.md](ports/dreamcast/THREAD_BACKUP_RESIZE.md). Full kernel/gameplay remains unfinished.
+See [SUSPENSION_BUDGETS.md](ports/dreamcast/SUSPENSION_BUDGETS.md). Full kernel/gameplay remains unfinished.
 
 ## Build and orientation
 
 Source is in `ports/dreamcast/`. Follow [BUILDING.md](ports/dreamcast/BUILDING.md).
 The verified baseline is OpenGOAL `6076aab5a95955443a9e1ed8f72a25bc0e2fcf9d`;
 the latest locally verified port checkpoint is
-`540fe9660916cc1b0d1bd25defb4b8e0b118b131`.
+`c8854a80c31efaeec5fb06dc23f70210c0d4f5d2`.
 
 No ISO, BIOS, extracted textures/models, converted game scenes or ELF binaries
 embedding game assets are uploaded. Use assets extracted locally from your own

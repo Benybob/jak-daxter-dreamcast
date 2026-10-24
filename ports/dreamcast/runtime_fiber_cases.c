@@ -182,9 +182,11 @@ uint32_t dc_runtime_fiber_cases(dc_goal_runtime *rt,dc_runtime_check check,void 
  CHECK(dc_goal_fiber_current()==NULL,1,"retry returns to root");dc_goal_clear_process_context(rt);
  /* Pause afresh, corrupt one authorization field, and prove no restore/jump. */
  for(j=0;j<8;++j){
+  uint32_t peak_before;
   CHECK(dc_goal_fiber_init(&fibers[0],rt,owners[0],12400,threads[0],base,16384,native_entry),1,"fresh context for one independent saved-state corruption");
   CHECK(dc_goal_bind_process_context(rt,owners[0],12400),1,"corruption probe explicit owner binding");
   CHECK(dc_goal_fiber_step(&fibers[0],0,&value),DC_FIBER_YIELDED,"valid image exists before corruption");
+  peak_before=fibers[0].peak_requested_image_bytes;
   memcpy(backup_before,dc_goal_resolve(rt,threads[0]+124,32),32);memset(dc_goal_resolve(rt,base,16384),0xd3,16384);
   symbol=dc_goal_find(rt,"dc-fiber-native-body");old_value=dc_goal_symbol_value(rt,symbol);
   if(j==0)fibers[0].native_thread.pr=(uint32_t)(uintptr_t)dc_goal_context_boot_raw;
@@ -198,6 +200,7 @@ uint32_t dc_runtime_fiber_cases(dc_goal_runtime *rt,dc_runtime_check check,void 
   value=0x1122334455667788ull;
   CHECK(dc_goal_fiber_step(&fibers[0],99,&value),DC_FIBER_FAIL,"malformed/stale paused authorization never resumes");
   CHECK(fibers[0].phase,DC_FIBER_FAULT,"saved-state failure invalidates context");
+  CHECK(fibers[0].peak_requested_image_bytes,peak_before,"invalid saved authorization cannot change validated suspension observation");
   CHECK(value,0x1122334455667788ull,"failed continuation keeps caller output");
   CHECK(filled_v(dc_goal_resolve(rt,base,16384),16384,0xd3),1,"invalid continuation rejected before destination restoration");
   CHECK(memcmp(backup_before,dc_goal_resolve(rt,threads[0]+124,32),32),0,"invalid continuation leaves backup payload unchanged");
@@ -230,6 +233,7 @@ uint32_t dc_runtime_fiber_cases(dc_goal_runtime *rt,dc_runtime_check check,void 
  CHECK(guarded_step(&fibers[0],0,&value,&intact),0,"insufficient backup faults at first real suspension");
  CHECK(intact,1,"backup OOM restores root CPU state");CHECK(rt->error,DC_GOAL_OUT_OF_MEMORY,"backup capacity error remains visible");
  CHECK(fibers[0].phase,DC_FIBER_FAULT,"uncopyable continuation cannot resume");
+ CHECK(fibers[0].peak_requested_image_bytes>0 && fibers[0].peak_requested_image_bytes<=16384,1,"backup OOM retains validated suspension requirement");
  CHECK(value,0x1122334455667788ull,"backup failure preserves caller output");
  CHECK(memcmp(backup_before,dc_goal_resolve(rt,threads[0]+124,32),32),0,"zero budget performs no payload copy");
  {uint32_t v=8192;memcpy(dc_goal_resolve(rt,threads[0]+32,4),&v,4);}

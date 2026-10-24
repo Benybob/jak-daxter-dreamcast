@@ -13,6 +13,9 @@ typedef struct {
  unsigned argument_count;uint64_t arguments[8];
  struct dc_goal_native_regs root,native_thread;
  dc_goal_thread_stack image;
+ /* Largest validated [suspended SP, stack top) interval requested so far,
+  * including a backup OOM. Reset by init/clear; not a stack high-water mark. */
+ uint32_t peak_requested_image_bytes;
 } dc_goal_fiber;
 /* Metadata is stable caller-owned C storage OUTSIDE rt's arena/working stack;
  * keep it live until clear. Code/stack/metadata pinned and quiescent. Default init
