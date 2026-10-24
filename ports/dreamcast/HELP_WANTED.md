@@ -229,3 +229,8 @@ See [PLAYABLE_SLICE.md](PLAYABLE_SLICE.md). (AI-assisted).
 
 A native capsule controller now walks and jumps against a576-triangle original training collision patch with retained PAT modes/events. 203 host tests,789 synthetic native checks and2063 combined original-patch checks pass on stock16MiBFlycast. Existing visible test-map controls/platforms still pass. Original GOAL physics and full gameplay remain unfinished; real-terrain renderer remains a private integration prototype. (AI-assisted)
 See [WORLD_COLLISION.md](WORLD_COLLISION.md). (AI-assisted).
+
+## Completed: Native Jak movement on original training terrain
+
+A separate native training target now combines real Jak and six original clips with 2,973 original terrain triangles and a 576-face collision patch. 212 host tests, 416 native bundle checks, 261 host GPU-layer checks and 17 integrated stock16MiB Flycast checks pass; the 2,063-check original collision regression still passes. Captured idle and airborne frames were visually reviewed. Strict transform/file binding and reproducible private conversion are published; full original GOAL gameplay remains unfinished. (AI-assisted)
+See [TRAINING_SLICE.md](TRAINING_SLICE.md). (AI-assisted).

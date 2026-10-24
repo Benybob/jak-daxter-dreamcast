@@ -8,4 +8,5 @@
 /romdisk/*.dct
 /romdisk/*.dca
 /romdisk/*.dcc
+/romdisk/*.xfm
 __pycache__/

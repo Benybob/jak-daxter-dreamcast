@@ -66,6 +66,16 @@ const char *dc_collision_build(dc_collision_world *world,const dc_world_triangle
  world->triangles=out;world->count=count;world->candidate_count=world->distance_tests=0;return NULL;
 }
 void dc_collision_free(dc_collision_world *world){if(world){free(world->triangles);memset(world,0,sizeof(*world));}}
+int dc_collision_surface_events(const dc_collision_world *w,uint32_t out[2]){
+ uint32_t bits[2]={0,0},i,event;
+ if(!w||!w->triangles||!w->count||w->count>8192||!out)return 0;
+ for(i=0;i<w->count;++i){
+  uint32_t pat=w->triangles[i].t.pat;
+  if(pat&1)continue;
+  event=(pat>>14)&63;bits[event>>5]|=UINT32_C(1)<<(event&31);
+ }
+ out[0]=bits[0];out[1]=bits[1];return 1;
+}
 static uint32_t read32(const unsigned char *p){return (uint32_t)p[0]|(uint32_t)p[1]<<8|(uint32_t)p[2]<<16|(uint32_t)p[3]<<24;}
 static float read_float(const unsigned char *p){uint32_t bits=read32(p);float f;memcpy(&f,&bits,4);return f;}
 const char *dc_collision_load(FILE *file,dc_collision_world *world,dc_vec3 *origin){

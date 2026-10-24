@@ -1,9 +1,13 @@
 # Jak 1 on Dreamcast: experimental port workbench
 
-**2026-10-24 (AI-assisted):** [SH4ZAM](SH4ZAM.md) now drives the textured
-viewer camera transforms; install the upstream KOS library before building that
-target. [Original thread arming and KOS stack ownership](ORIGINAL_THREAD_START.md)
-pass 198 host, 22,469 runtime and 39 numeric checks. Gameplay is unfinished.
+**2026-10-24 (AI-assisted):** [Original-terrain movement](TRAINING_SLICE.md) now
+has a separate reproducible native target: real Jak and original clips, walking,
+running and jumping on a bounded training-island render/collision patch. It
+passes 17 integrated checks in stock 16 MiB Flycast, plus 416 native bundle
+checks and 261 host GPU-layer checks. The full host suite passes 212 tests.
+The separate GOAL runtime remains at its verified 22,649 checks and numeric
+regression at 39. The full game remains unfinished. [SH4ZAM](SH4ZAM.md) drives
+camera projection; install the upstream KOS library before building renderers.
 
 **Current continuation (2026-10-20, AI-assisted):** native Windows SH-4/KOS
 builds and an indexed, textured real Geyser Rock mesh run in Flycast with
@@ -15,8 +19,8 @@ Started 2026-10-20 against OpenGOAL commit
 `6076aab5a95955443a9e1ed8f72a25bc0e2fcf9d`. AI-assisted implementation.
 
 This workbench targets a native Dreamcast port of **Jak and Daxter: The
-Precursor Legacy**. It is **not a playable port**. The full GOAL compiler,
-runtime and gameplay are unfinished. Source distributions contain no original
+Precursor Legacy**. A small native movement prototype is playable in Flycast;
+the full GOAL compiler, runtime and gameplay are unfinished. Source contains no original
 game assets, ISO or BIOS; use assets from your own PS2 copy.
 
 ## What is implemented
@@ -32,7 +36,8 @@ game assets, ISO or BIOS; use assets from your own PS2 copy.
   controller exit, CD archive selection and a synthetic ROM-disk fallback.
 - Color and indexed/textured PowerVR viewers and static GLB converters. The
   textured path supports opaque/masked materials and twiddled ARGB1555 textures.
-  Skins, animation and blended materials remain unsupported.
+  Static viewers omit skins/animation; the separate playable targets use offline
+  baked character poses. Blended materials remain unsupported.
 - Shared host/target validators, negative asset tests, GNU assembler comparisons
   for emitted SH-4 code, and memory-based Flycast control/exit checks.
 - A native code emitter with integer/float ABI, relocations and code-cache

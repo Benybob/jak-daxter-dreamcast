@@ -66,5 +66,9 @@ if ($LASTEXITCODE -ne 0) { throw 'Baked animation checker compilation failed' }
 if ($LASTEXITCODE -ne 0) { throw 'Capsule world checker compilation failed' }
 & $Compiler @flags (Join-Path $port 'host_world_load.c') (Join-Path $port 'world_collision.c') -o (Join-Path $build 'world-load-check.exe') -lm
 if ($LASTEXITCODE -ne 0) { throw 'Collision loader checker compilation failed' }
+& $Compiler @flags (Join-Path $port 'host_world_manifest.c') (Join-Path $port 'world_manifest_cases.c') (Join-Path $port 'world_manifest.c') (Join-Path $port 'world_collision.c') (Join-Path $port 'textured_scene.c') -o (Join-Path $build 'world-manifest-check.exe') -lm
+if ($LASTEXITCODE -ne 0) { throw 'Training bundle checker compilation failed' }
+& $Compiler @flags ('-I' + (Join-Path $port 'tests/training-stubs')) (Join-Path $port 'host_training_layer.c') (Join-Path $port 'training_layer.c') -o (Join-Path $build 'training-layer-check.exe') -lm
+if ($LASTEXITCODE -ne 0) { throw 'Training GPU layer checker compilation failed' }
 & $pythonCommand -m unittest discover -s (Join-Path $port 'tests') -v
 if ($LASTEXITCODE -ne 0) { throw 'Host tests failed' }

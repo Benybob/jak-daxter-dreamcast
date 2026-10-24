@@ -413,3 +413,27 @@ build/world-collision-check$(HOST_EXE): host_world_collision.c world_collision.c
 	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -pedantic host_world_collision.c world_collision.c world_collision_cases.c world_player_cases.c world_patch_cases.c player_motion.c player_world_motion.c -o $@ -lm
 build/world-load-check$(HOST_EXE): host_world_load.c world_collision.c world_collision.h
 	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -pedantic host_world_load.c world_collision.c -o $@ -lm
+
+host: build/world-manifest-check$(HOST_EXE)
+build/world-manifest-check$(HOST_EXE): host_world_manifest.c world_manifest_cases.c world_manifest.c world_manifest.h world_collision.c world_collision.h textured_scene.c textured_scene.h
+	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -pedantic host_world_manifest.c world_manifest_cases.c world_manifest.c world_collision.c textured_scene.c -o $@ -lm
+world_manifest.o: world_manifest.c world_manifest.h world_collision.h textured_scene.h
+world_manifest_cases.o: world_manifest_cases.c world_manifest.h world_collision.h textured_scene.h
+jak-dc-world-manifest.elf: world_manifest_main.o world_manifest_cases.o world_manifest.o world_collision.o
+	kos-cc -o $@ $^ -lm
+
+# Original training patch; all five assets are private local conversion outputs.
+TRAINING_ASSET_DIR ?= build/private-training-assets
+training_main.o: training_main.c training_layer.h world_manifest.h player_motion.h player_anim.h player_world_motion.h textured_scene.h scene_projection.h scene_telemetry.h
+training_layer.o: training_layer.c training_layer.h textured_scene.h scene_projection.h
+host: build/training-layer-check$(HOST_EXE)
+build/training-layer-check$(HOST_EXE): host_training_layer.c training_layer.c training_layer.h tests/training-stubs/kos.h
+	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -pedantic -Itests/training-stubs host_training_layer.c training_layer.c -o $@ -lm
+build/training-romdisk.o: $(TRAINING_ASSET_DIR)/player.dct $(TRAINING_ASSET_DIR)/player.dca $(TRAINING_ASSET_DIR)/world.dct $(TRAINING_ASSET_DIR)/world.dcc $(TRAINING_ASSET_DIR)/world.xfm
+	mkdir -p build
+	$(KOS_GENROMFS) -f build/training-romdisk.img -d $(TRAINING_ASSET_DIR) -x report.json
+	$(KOS_BASE)/utils/bin2c/bin2c build/training-romdisk.img build/training-romdisk.c romdisk
+	$(KOS_CC) $(KOS_CFLAGS) -c build/training-romdisk.c -o build/training-romdisk-tmp.o
+	$(KOS_CC) -o $@ -r build/training-romdisk-tmp.o $(KOS_LIB_PATHS) -Wl,--whole-archive -lromdiskbase
+jak-dc-training.elf: training_main.o training_layer.o world_manifest.o world_collision.o player_world_motion.o player_motion.o player_anim.o textured_scene.o scene_projection_sh4zam.o scene_projection_gate.o build/training-romdisk.o
+	kos-cc -o $@ $^ -lsh4zam -lm

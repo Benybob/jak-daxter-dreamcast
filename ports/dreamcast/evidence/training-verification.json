@@ -1,0 +1,25 @@
+{
+  "ai_assisted": true,
+  "result": "PASS",
+  "full_game_complete": false,
+  "physical_hardware_tested": false,
+  "platform": "Flycast, stock16MiB",
+  "host_tests": 212,
+  "native_manifest_checks": 416,
+  "host_layer_checks": 261,
+  "integrated_training_checks": 17,
+  "original_collision_checks": 2063,
+  "runtime_checks_unchanged": 22649,
+  "numeric_checks_unchanged": 39,
+  "triangles": 6566,
+  "heap_at_ready": 2370560,
+  "free_vram_at_ready": 5302696,
+  "memory_scope": "Heap excludes embedded assets, static data, KOS and stacks",
+  "elf_sha256": "89c92af0e3459d4e5ecf138d583b3cb0fccc6a5626dd55fb65150ba06a8fdcb6",
+  "visual_review": {
+    "idle": true,
+    "airborne": true,
+    "observed": "Recognizable Jak on original grass among rocks and foliage"
+  },
+  "grok_proposal": "Pending isolated comparison; not integrated or counted as approval"
+}

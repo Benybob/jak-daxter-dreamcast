@@ -8,6 +8,8 @@ parser=argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--workspace',type=Path,default=Path(__file__).resolve().parents[3])
 parser.add_argument('--msys',type=Path,default=Path('C:/msys64'))
 parser.add_argument('--target',default='all')
+parser.add_argument('--jobs',type=int,default=1)
+parser.add_argument('--training-assets',type=Path)
 args=parser.parse_args()
 port=Path(__file__).resolve().parent
 work=args.workspace.resolve()
@@ -21,12 +23,14 @@ def short_posix(path):
     return text
 if not args.target.replace('-','').replace('.','').isalnum():
     parser.error('invalid make target')
+if not 1<=args.jobs<=4: parser.error('--jobs must be 1..4')
+assets=(' TRAINING_ASSET_DIR='+short_posix(args.training_assets.resolve())) if args.training_assets else ''
 script=f'''#!/usr/bin/bash
 set -eo pipefail
 source {short_posix(work)}/kos-source/environ.sh
 cd {short_posix(port)}
 make PYTHON=python fixture
-make -j4 CFLAGS='-std=c99 -Wall -Wextra -Werror' {args.target}
+make -j{args.jobs} CFLAGS='-std=c99 -Wall -Wextra -Werror'{assets} {args.target}
 '''
 script_path=work/'build-port-current.sh'
 script_path.write_text(script,newline='\n')

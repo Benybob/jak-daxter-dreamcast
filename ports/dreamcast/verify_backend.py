@@ -16,7 +16,7 @@ parser.add_argument('elf',type=Path)
 parser.add_argument('--nm',type=Path,required=True)
 parser.add_argument('--output',type=Path,required=True)
 parser.add_argument('--tests',type=int,default=17)
-parser.add_argument('--suite',choices=('codegen','runtime','runtime-goal','objects','projection','movement','collision'),default='codegen')
+parser.add_argument('--suite',choices=('codegen','runtime','runtime-goal','objects','projection','movement','collision','world-manifest'),default='codegen')
 args=parser.parse_args()
 if args.tests<1: parser.error('--tests must be positive')
 symbols=subprocess.check_output([str(args.nm),str(args.elf)],text=True)
@@ -81,6 +81,7 @@ if args.suite=='runtime': result['scope']='Native C runtime layout, symbols, typ
 if args.suite=='projection': result['scope']='SH4ZAM viewer projection accuracy/state oracle; Flycast timing only, not physical hardware performance'
 if args.suite=='movement': result['scope']='Native C test-map movement/collision oracle; not original GOAL gameplay or physical hardware validation'
 if args.suite=='collision': result['scope']='Native capsule/controller/PAT oracle, optionally original bounded collision patch; not original GOAL physics or hardware validation'
+if args.suite=='world-manifest': result['scope']='Native WLD2 byte decoding, transactional refusal, CRC, count/origin and surface-event guards; not original GOAL gameplay or hardware validation'
 if args.suite=='runtime-goal': result['scope']='Native compiled GOAL scalar runtime, original list routines, typed memory, startup and static strings/floats; incomplete kernel/game'
 if args.suite=='objects': result['scope']='Native original V2/V4 data-only relocation validation; retail code never executed'
 passed=result['state']==2 and result['total']==args.tests and result['passed']==args.tests and result['system_ram']==16777216
