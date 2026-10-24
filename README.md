@@ -28,7 +28,7 @@ Discuss scope on **this fork**, and keep changes small enough to review.
 | Area | Locally verified scope |
 | --- | --- |
 | Host | 198 tests pass with the complete local SDK/oracle setup |
-| Native runtime | 22,458 checks in Flycast, stock 16 MiB RAM |
+| Native runtime | 22,469 checks in Flycast, stock 16 MiB RAM |
 | Original data | 182 native checks; all 668 V4 data objects across 36 local archives validate |
 | Numeric regression | 39 native checks |
 | GOAL backend | Original typed frontend to native SH-4; scalar calls, classes/methods, void startup, private data, 64-bit shifts and 32-bit division |
@@ -52,16 +52,16 @@ the local checkpoint, not a GitHub Actions run.
 
 ## Latest completed contributor task
 
-Unchanged original set-to-run arms a guarded main CPU thread; an explicit C adapter imports its target and six scalar words into native fibers. Both alternate-stack paths now preserve KOS stack ownership across timer interrupts, with forced IRQ and cross-OS-thread rejection oracles. Grok assisted isolated gate design and review; Codex independently verified execution. Original scheduler/bootstrap execution, cleanup, GC and gameplay remain unfinished. (AI-assisted)
+The textured viewer now uses the external upstream SH4ZAM library for FTRV batch projection with exact XMTRX preservation and integer-only FPU mode rejection. 2382 projection checks and the 7784-triangle viewer pass on stock16MiBFlycast. Grok review also led to fail-closed masked-yield and full-current-stack overlap regressions, with 22469 runtime checks passing. Physical hardware performance and full gameplay remain unverified. (AI-assisted)
 
-See [ORIGINAL_THREAD_START.md](ports/dreamcast/ORIGINAL_THREAD_START.md). Full kernel/gameplay remains unfinished.
+See [SH4ZAM.md](ports/dreamcast/SH4ZAM.md). Full kernel/gameplay remains unfinished.
 
 ## Build and orientation
 
 Source is in `ports/dreamcast/`. Follow [BUILDING.md](ports/dreamcast/BUILDING.md).
 The verified baseline is OpenGOAL `6076aab5a95955443a9e1ed8f72a25bc0e2fcf9d`;
 the latest locally verified port checkpoint is
-`e260ce7cc879cf9e6bb095fbbd215180edf68fdd`.
+`525c5afd9ec64e7d963c3d40ccd0a18ebecc28d7`.
 
 No ISO, BIOS, extracted textures/models, converted game scenes or ELF binaries
 embedding game assets are uploaded. Use assets extracted locally from your own

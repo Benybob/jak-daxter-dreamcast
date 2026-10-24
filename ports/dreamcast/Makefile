@@ -9,7 +9,7 @@ OBJS := main.o dgo_stream.o romdisk.o
 SCENE_TARGET := jak-dc-scene.elf
 SCENE_OBJS := scene_main.o scene_io.o romdisk.o
 TEXTURED_TARGET := jak-dc-textured.elf
-TEXTURED_OBJS := textured_main.o textured_scene.o romdisk.o
+TEXTURED_OBJS := textured_main.o textured_scene.o scene_projection_sh4zam.o scene_projection_gate.o romdisk.o
 BACKEND_TARGET := jak-dc-backend.elf
 RUNTIME_TARGET := jak-dc-runtime.elf
 KOS_ROMDISK_DIR := romdisk
@@ -35,9 +35,18 @@ $(SCENE_TARGET): $(SCENE_OBJS)
 	kos-cc -o $@ $(SCENE_OBJS) -lm
 
 $(TEXTURED_TARGET): $(TEXTURED_OBJS)
-	kos-cc -o $@ $(TEXTURED_OBJS) -lm
+	kos-cc -o $@ $(TEXTURED_OBJS) -lsh4zam -lm
 
-textured_main.o: textured_scene.h scene_telemetry.h
+# Install the upstream KOS port first; the project contains no vendored library.
+scene_projection_sh4zam.o: scene_projection_sh4zam.c scene_projection.h
+	$(KOS_CC) $(KOS_CFLAGS) -std=gnu17 -Wall -Wextra -Werror -c $< -o $@
+scene_projection_reference.o: scene_projection_reference.c scene_projection.h
+projection_main.o: projection_main.c scene_projection.h
+	$(KOS_CC) $(KOS_CFLAGS) -std=gnu17 -Wall -Wextra -Werror -c $< -o $@
+jak-dc-projection.elf: projection_main.o scene_projection_sh4zam.o scene_projection_reference.o scene_projection_gate.o projection_mode_probe.o
+	kos-cc -o $@ $^ -lsh4zam -lm
+
+textured_main.o: textured_scene.h scene_telemetry.h scene_projection.h
 textured_scene.o: textured_scene.h
 
 $(BACKEND_TARGET): backend_main.o

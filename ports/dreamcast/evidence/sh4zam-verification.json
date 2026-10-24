@@ -1,0 +1,50 @@
+{
+  "ai_assisted": true,
+  "library": "SH4ZAM",
+  "upstream": "https://github.com/gyrovorbis/sh4zam",
+  "revision": "11aad5f9c7da0d8d5038633d418477d682d915f5",
+  "license": "MIT",
+  "vendored": false,
+  "projection_checks": 2382,
+  "projection_elf_sha256": "f0d3ec88b147de112b03a7d7bdfc07290c2a481b10c9dbde3765ffc6c2db80b5",
+  "viewer_elf_sha256": "40ca2457dde81baecd2b0d772e9739eec57e6fccd978db02b38f0798bc93e21e",
+  "system_ram_bytes": 16777216,
+  "viewer_triangles": 7784,
+  "viewer_vertices": 6934,
+  "viewer_checks": {
+    "protocol": true,
+    "real_scene": true,
+    "ram_16_mib": true,
+    "trigger_zoom": true,
+    "stick_orbit": true,
+    "main_cleanup_completed": true,
+    "framebuffer": true
+  },
+  "xf_bit_patterns_preserved": true,
+  "unsupported_modes_rejected": [
+    "SR.FD",
+    "FPSCR.PR",
+    "FPSCR.SZ",
+    "FPSCR.FR"
+  ],
+  "function_bytes": {
+    "sh4zam_body": 404,
+    "mode_gate": 40,
+    "scalar_reference": 256
+  },
+  "benchmark": {
+    "scope": "Flycast emulated median of three rounds, warmed and alternating order; not physical hardware",
+    "vertices_per_path_per_round": 131072,
+    "scalar_us": 24522,
+    "sh4zam_us": 19315,
+    "pass_condition": false
+  },
+  "full_gameplay": false,
+  "physical_hardware_validated": false,
+  "runtime_checks": 22469,
+  "runtime_elf_sha256": "b6f74da04d98c7619605a7b31d77aa63435b8d51eff2e67f87e310d3d8bd0b7c",
+  "grok_review_fixes": [
+    "masked-yield rejection commits no suspension metadata",
+    "synchronous target disjoint from complete current KOS stack reservation"
+  ]
+}

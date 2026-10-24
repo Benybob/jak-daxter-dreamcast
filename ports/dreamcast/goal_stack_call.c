@@ -30,9 +30,15 @@ int dc_goal_call_on_stack(dc_goal_runtime *rt,uint32_t entry,uint32_t stack_base
  {
   struct dc_goal_native_regs caller;
   dc_goal_kos_stack os_stack;
+  kthread_t *owner;
+  uintptr_t owner_base;
   uint64_t value;
   if((rt->base&0xe0000000u) || !dc_goal_native_regs_snapshot(&caller)) return bad(rt);
-  if(overlap(caller.sp&0x1fffffffu,1,stack_base,stack_bytes)) return bad(rt);
+  owner=(kthread_t *)(uintptr_t)dc_goal_kos_stack_owner();
+  if(!owner)return bad(rt);
+  owner_base=(uintptr_t)owner->stack&0x1fffffffu;
+  if(owner->stack_size>0x20000000u-owner_base ||
+     overlap(owner_base,owner->stack_size,stack_address,stack_bytes))return bad(rt);
   stack_call_active=1;rt->error=DC_GOAL_OK;
   if(!dc_goal_kos_stack_enter(&os_stack,stack_base,stack_bytes)){stack_call_active=0;return bad(rt);}
   value=dc_goal_stack_call_raw(entry,stack_base+stack_bytes,os_stack.root_sr);

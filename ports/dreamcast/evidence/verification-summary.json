@@ -3,9 +3,9 @@
   "ai_tool": "OpenAI Codex",
   "scope": "Local checkpoint evidence; not a CI result or full game boot",
   "upstream_base_commit": "6076aab5a95955443a9e1ed8f72a25bc0e2fcf9d",
-  "local_port_checkpoint_commit": "e260ce7cc879cf9e6bb095fbbd215180edf68fdd",
+  "local_port_checkpoint_commit": "525c5afd9ec64e7d963c3d40ccd0a18ebecc28d7",
   "host_tests_passed": 198,
-  "runtime_native_checks_passed": 22458,
+  "runtime_native_checks_passed": 22469,
   "numeric_native_checks_passed": 39,
   "retail_object_native_checks_passed": 182,
   "retail_v4_objects_passed": 668,
@@ -30,7 +30,7 @@
   "native_results": {
     "runtime": {
       "result": "PASS",
-      "elf_sha256": "d801d8e0a108b4f77baabb127581dde03f8bebfe3e3c5572efb85315c53cd5a6"
+      "elf_sha256": "b6f74da04d98c7619605a7b31d77aa63435b8d51eff2e67f87e310d3d8bd0b7c"
     },
     "objects": {
       "result": "PASS",

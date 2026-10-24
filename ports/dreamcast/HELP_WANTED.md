@@ -209,3 +209,8 @@ See [SUSPENSION_BUDGETS.md](SUSPENSION_BUDGETS.md). (AI-assisted).
 
 Unchanged original set-to-run arms a guarded main CPU thread; an explicit C adapter imports its target and six scalar words into native fibers. Both alternate-stack paths now preserve KOS stack ownership across timer interrupts, with forced IRQ and cross-OS-thread rejection oracles. Grok assisted isolated gate design and review; Codex independently verified execution. Original scheduler/bootstrap execution, cleanup, GC and gameplay remain unfinished. (AI-assisted)
 See [ORIGINAL_THREAD_START.md](ORIGINAL_THREAD_START.md). (AI-assisted).
+
+## Completed: SH4ZAM batched textured viewer projection
+
+The textured viewer now uses the external upstream SH4ZAM library for FTRV batch projection with exact XMTRX preservation and integer-only FPU mode rejection. 2382 projection checks and the 7784-triangle viewer pass on stock16MiBFlycast. Grok review also led to fail-closed masked-yield and full-current-stack overlap regressions, with 22469 runtime checks passing. Physical hardware performance and full gameplay remain unverified. (AI-assisted)
+See [SH4ZAM.md](SH4ZAM.md). (AI-assisted).

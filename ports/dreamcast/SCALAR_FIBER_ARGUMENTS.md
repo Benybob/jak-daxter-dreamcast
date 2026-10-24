@@ -4,7 +4,9 @@
 eight explicit `uint64` scalar words. The original zero-argument initializer
 remains available. This supplies a calling primitive needed by original process
 startup's six arguments; original set-to-run, scheduler/status transitions and
-deactivation are still unfinished.
+deactivation were unfinished at that checkpoint. Later
+[original arming and explicit startup](ORIGINAL_THREAD_START.md) cover the stored
+six-word protocol; original assembly bootstrap/scheduler cleanup remain unfinished.
 
 `dc_goal_fiber_init_words` copies the caller's input vector into owned C metadata
 before clearing the old inactive context. The caller can then change or discard
@@ -54,7 +56,8 @@ uses `imul64` for full-width products; ordinary GOAL `*` retains its original
 The installed SH-4 adapter occupies 400 bytes. The original milestone's target C
 context size was 292 bytes, including eight copied words; its two register images
 remain 60 bytes each. The later [suspension budget measurement](SUSPENSION_BUDGETS.md)
-adds one four-byte observation at the end, bringing the current context to 296 bytes.
+adds one four-byte observation at the end, bringing that checkpoint's context to 296 bytes. Later [KOS ownership guards](ORIGINAL_THREAD_START.md)
+bring the current context to 304 bytes.
 Compiled GOAL fixtures occupy 1124 and 732 bytes with 72- and 88-byte frames.
 Diagnostic GOAL/boxed code totals 139,902 bytes; main arena use is
 568,080 / 1,048,576 bytes with 679 symbols. These exclude executable/KOS, C

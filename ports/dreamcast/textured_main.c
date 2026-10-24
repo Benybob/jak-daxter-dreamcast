@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include "textured_scene.h"
 #include "scene_telemetry.h"
+#include "scene_projection.h"
 
 KOS_INIT_FLAGS(INIT_DEFAULT);
 
@@ -24,8 +25,7 @@ static pvr_ptr_t label_texture;
 static pvr_poly_hdr_t *batch_headers;
 static pvr_ptr_t *gpu_textures;
 static unsigned gpu_texture_count;
-typedef struct { float x,y,z; } projected_vertex;
-static projected_vertex *projected;
+static dc_projected_vertex *projected;
 
 static void release_geometry(void) {
   unsigned i;
@@ -96,22 +96,6 @@ static void draw_label(void) {
     v.u = (i & 1) ? 1.0f : 0.0f; v.v = i >= 2 ? 1.0f : 0.0f;
     v.argb = 0xffffffffu;
     pvr_prim(&v, sizeof(v));
-  }
-}
-
-static void project_scene(const dc_textured_scene *scene, float yaw, float pitch, float distance) {
-  uint32_t i;
-  float cy = cosf(yaw), sy = sinf(yaw), cp = cosf(pitch), sp = sinf(pitch);
-  for (i = 0; i < scene->vertex_count; ++i) {
-    const dc_textured_vertex *v = &scene->vertices[i];
-    float x = cy*v->x + sy*v->z, z = -sy*v->x + cy*v->z;
-    float y = cp*v->y - sp*z;
-    z = sp*v->y + cp*z + distance;
-    /* Unit-sphere input and distance >= 1.5 guarantee z > 0.49.
-     * This orbit viewer therefore never crosses the near plane. */
-    projected[i].x = 320.0f + 390.0f*x/z;
-    projected[i].y = 260.0f - 390.0f*y/z;
-    projected[i].z = 1.0f/z;
   }
 }
 
@@ -193,7 +177,10 @@ int main(void) {
     if (pitch < -1.3f) pitch = -1.3f;
     if (distance < 1.5f) distance = 1.5f;
     if (distance > 6.0f) distance = 6.0f;
-    project_scene(&scene,yaw,pitch,distance);
+    if (!dc_scene_project(scene.vertices,sizeof(*scene.vertices),projected,
+                          scene.vertex_count,yaw,pitch,distance)) {
+      record_error("unsupported projection FPU mode"); break;
+    }
     pvr_wait_ready();
     pvr_scene_begin();
     pvr_list_begin(PVR_LIST_OP_POLY);

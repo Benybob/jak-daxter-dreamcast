@@ -13,6 +13,7 @@ static irq_cb_t old_timer;
 static kthread_t *probe_owner;
 static uint32_t probe_base,probe_bytes;
 static volatile unsigned fiber_ticks,sync_ticks,bad_ticks,sync_active;
+static unsigned mask_flags,overlap_flags,sync_calls;static uint32_t sync_entry;
 static uint32_t entry(dc_goal_runtime *rt,const char *name){return dc_goal_symbol_value(rt,dc_goal_find(rt,name));}
 static int filled(const void *p,unsigned n,unsigned char v){const unsigned char *b=p;while(n--)if(*b++!=v)return 0;return 1;}
 static void timer_probe(irq_t code,irq_context_t *ctx,void *data){
@@ -30,11 +31,23 @@ static void wait_ticks(void){
 }
 static uint64_t fiber_body(void){
  dc_goal_fiber *f=dc_goal_fiber_current();uint64_t value;
+ {uint64_t old_value=f->value,out=UINT64_C(0x1122334455667788),rejected;
+  unsigned phase=f->phase,calls=sync_calls;uint32_t old_irq=f->native_irq_state;irq_mask_t sr=irq_disable();
+  rejected=dc_goal_fiber_yield(f->runtime,UINT64_C(0xf0e0d0c0b0a09080));
+  mask_flags=(rejected==0u)|((f->runtime->error==DC_GOAL_BAD_ARGUMENT)<<1)|((f->phase==phase)<<2)|
+   ((f->value==old_value)<<3)|((f->native_irq_state==old_irq)<<4)|(((irq_get_sr()&0xf0u)==0xf0u)<<5);
+  irq_restore(sr);f->runtime->error=DC_GOAL_OK;
+  {int result=dc_goal_call_on_stack(f->runtime,sync_entry,probe_base,4096,&out);
+   overlap_flags=(result==0)|((f->runtime->error==DC_GOAL_BAD_ARGUMENT)<<1)|
+    ((out==UINT64_C(0x1122334455667788))<<2)|((sync_calls==calls)<<3)|
+    ((filled(dc_goal_resolve(f->runtime,probe_base,4096),4096,0xa5))<<4);}
+  f->runtime->error=DC_GOAL_OK;
+ }
  wait_ticks();value=dc_goal_fiber_yield(f->runtime,UINT64_C(0xabcdef0123456789));
  wait_ticks();return value^UINT64_C(0x123456789abcdef0);
 }
 static uint64_t sync_body(void){
- sync_active=1;wait_ticks();sync_active=0;return UINT64_C(0xfedcba9876543210);
+ ++sync_calls;sync_active=1;wait_ticks();sync_active=0;return UINT64_C(0xfedcba9876543210);
 }
 typedef struct {dc_goal_fiber *fiber;uint64_t value;int result;} foreign_attempt;
 static void *foreign_body(void *data){
@@ -60,10 +73,22 @@ uint32_t dc_runtime_kos_stack_cases(dc_goal_runtime *rt,dc_runtime_check check,v
  CHECK(thread!=0,1,"timer oracle owns original CPU backup");if(!thread)goto restore;
  memset(dc_goal_resolve(rt,allocation,16416),0xa5,16416);memcpy(header,dc_goal_resolve(rt,thread-4,128),128);
  used=rt->used;symbols=rt->symbol_count;probe_base=stack;probe_bytes=16384;fiber_ticks=sync_ticks=bad_ticks=sync_active=0;
+ sync_entry=entry(rt,"dc-kos-sync-probe");mask_flags=overlap_flags=sync_calls=0;
  old_timer=irq_get_handler(EXC_TMU0_TUNI0);CHECK(old_timer.hdl!=NULL,1,"real KOS scheduling timer handler is present");if(!old_timer.hdl)goto restore;
  CHECK(irq_set_handler(EXC_TMU0_TUNI0,timer_probe,NULL),0,"timer observation chains existing KOS handler");
  CHECK(dc_goal_fiber_init(&fiber,rt,owner,12400,thread,stack,16384,entry(rt,"dc-kos-fiber-probe")),1,"timer-preemptible native context initialized");
  CHECK(dc_runtime_fiber_checked_step(&fiber,0,&value,&intact),DC_FIBER_YIELDED,"fiber survives actual scheduling interrupts before first yield");
+ CHECK(mask_flags&1u,1,"masked yield returns refusal");
+ CHECK((mask_flags>>1)&1u,1,"masked yield reports argument error");
+ CHECK((mask_flags>>2)&1u,1,"masked yield keeps running phase");
+ CHECK((mask_flags>>3)&1u,1,"masked yield leaves yielded value untouched");
+ CHECK((mask_flags>>4)&1u,1,"masked yield preserves saved resume SR");
+ CHECK((mask_flags>>5)&1u,1,"masked yield preserves caller mask before recovery");
+ CHECK(overlap_flags&1u,1,"sync call rejects lower part of its entire current OS stack");
+ CHECK((overlap_flags>>1)&1u,1,"current-stack overlap reports argument error");
+ CHECK((overlap_flags>>2)&1u,1,"current-stack overlap preserves result");
+ CHECK((overlap_flags>>3)&1u,1,"current-stack overlap never executes target");
+ CHECK((overlap_flags>>4)&1u,1,"current-stack overlap preserves unused working payload");
  CHECK(intact,1,"timer-preempted yield preserves root GPR/FPR/control");CHECK(value,UINT64_C(0xabcdef0123456789),"timer-preempted fiber yields exact64-bit value");
  CHECK(fiber_ticks>0,1,"real TMU0 interrupt observed while native fiber owns CPU stack");
  CHECK(probe_owner->stack==root_stack && probe_owner->stack_size==root_bytes,1,"root KOS stack record restored after yield");

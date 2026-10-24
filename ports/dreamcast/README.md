@@ -1,8 +1,9 @@
-> Current public fork guide: [project README](../../README.md),
-> [build instructions](BUILDING.md), and [contributor tasks](HELP_WANTED.md).
-> (AI-assisted). The dated notes below describe earlier checkpoints.
-
 # Jak 1 on Dreamcast: experimental port workbench
+
+**2026-10-24 (AI-assisted):** [SH4ZAM](SH4ZAM.md) now drives the textured
+viewer camera transforms; install the upstream KOS library before building that
+target. [Original thread arming and KOS stack ownership](ORIGINAL_THREAD_START.md)
+pass 198 host, 22,469 runtime and 39 numeric checks. Gameplay is unfinished.
 
 **Current continuation (2026-10-20, AI-assisted):** native Windows SH-4/KOS
 builds and an indexed, textured real Geyser Rock mesh run in Flycast with

@@ -181,13 +181,14 @@ uint64_t dc_goal_fiber_yield(dc_goal_runtime *rt,uint64_t value) {
 #ifdef __DREAMCAST__
  {
   struct dc_goal_native_regs caller;
+  uint32_t yield_sr;
   if(!dc_goal_core_bridges_active(rt) || !root_ok(f) || !dc_goal_native_regs_snapshot(&caller) ||
      !dc_fiber_leave_push_ok(f->stack_base,f->stack_bytes,caller.sp))return (uint64_t)bad(rt);
-  f->value=value;f->phase=DC_FIBER_SUSPENDED;
-  f->native_irq_state=irq_disable();
-  if(!dc_goal_kos_stack_sr_ok(f->native_irq_state)){
-   irq_restore(f->native_irq_state);return (uint64_t)bad(rt);
+  yield_sr=irq_disable();
+  if(!dc_goal_kos_stack_sr_ok(yield_sr)){
+   irq_restore(yield_sr);return (uint64_t)bad(rt);
   }
+  f->value=value;f->phase=DC_FIBER_SUSPENDED;f->native_irq_state=yield_sr;
   dc_goal_context_leave_raw(&f->native_thread,&f->root,f->native_irq_state|0xf0u);
   if(current!=f || f->phase!=DC_FIBER_RUNNING || !root_ok(f))return (uint64_t)bad(rt);
   return f->resume_value;

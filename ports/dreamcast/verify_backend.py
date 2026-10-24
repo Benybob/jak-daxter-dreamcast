@@ -16,7 +16,7 @@ parser.add_argument('elf',type=Path)
 parser.add_argument('--nm',type=Path,required=True)
 parser.add_argument('--output',type=Path,required=True)
 parser.add_argument('--tests',type=int,default=17)
-parser.add_argument('--suite',choices=('codegen','runtime','runtime-goal','objects'),default='codegen')
+parser.add_argument('--suite',choices=('codegen','runtime','runtime-goal','objects','projection'),default='codegen')
 args=parser.parse_args()
 if args.tests<1: parser.error('--tests must be positive')
 symbols=subprocess.check_output([str(args.nm),str(args.elf)],text=True)
@@ -78,6 +78,7 @@ result['elf_sha256']=hashlib.sha256(args.elf.read_bytes()).hexdigest()
 result['scope']=('Native typed GOAL subset and codegen/ABI bootstrap; not a complete compiler or game runtime'
                  if args.tests!=17 else 'Native codegen/ABI bootstrap; not an integrated GOAL compiler or game runtime')
 if args.suite=='runtime': result['scope']='Native C runtime layout, symbols, types and bounded allocation foundation; not a complete GOAL kernel or game'
+if args.suite=='projection': result['scope']='SH4ZAM viewer projection accuracy/state oracle; Flycast timing only, not physical hardware performance'
 if args.suite=='runtime-goal': result['scope']='Native compiled GOAL scalar runtime, original list routines, typed memory, startup and static strings/floats; incomplete kernel/game'
 if args.suite=='objects': result['scope']='Native original V2/V4 data-only relocation validation; retail code never executed'
 passed=result['state']==2 and result['total']==args.tests and result['passed']==args.tests and result['system_ram']==16777216
