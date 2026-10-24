@@ -1,0 +1,33 @@
+{
+  "ai_assisted": true,
+  "result": "PASS",
+  "host_tests": 203,
+  "synthetic_checks": 789,
+  "loader_host_checks": 147,
+  "original_combined_checks": 2063,
+  "source_triangles": 61576,
+  "selected_triangles": 576,
+  "patch_bytes": 23064,
+  "native_ram_bytes": 16777216,
+  "maximum_measured_distance_evaluations": 40,
+  "original_goal_physics": false,
+  "physical_hardware_tested": false,
+  "assets_uploaded": false,
+  "algorithm_review_complete": false,
+  "synthetic": {
+    "result": "PASS",
+    "elf_sha256": "d7bc295913cd08a4b7880601f7e5f18e09f434f20262ef3b995780a19ec8d6e2"
+  },
+  "original": {
+    "result": "PASS",
+    "elf_sha256": "cd98623c165cbf986ebc70db682d8ba574f33b444166c4ce1e27fd5ae877b22e"
+  },
+  "playable_regression": {
+    "result": "PASS",
+    "elf_sha256": "60cf54a6383d420a6e487ca3b2979d6df8fa68d3b29831721c22e29bd92f8a2e"
+  },
+  "platform_regression": {
+    "result": "PASS",
+    "elf_sha256": "60cf54a6383d420a6e487ca3b2979d6df8fa68d3b29831721c22e29bd92f8a2e"
+  }
+}

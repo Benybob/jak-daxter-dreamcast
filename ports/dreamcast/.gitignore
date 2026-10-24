@@ -6,4 +6,6 @@
 /romdisk/probe.dgo
 /romdisk/*.dcm
 /romdisk/*.dct
+/romdisk/*.dca
+/romdisk/*.dcc
 __pycache__/

@@ -1,5 +1,6 @@
 /* Portable fixed-step native movement prototype (AI-assisted), ISC. */
 #include "player_motion.h"
+#include "player_motion_internal.h"
 #include <math.h>
 #include <string.h>
 const dc_test_platform dc_test_platforms[2]={{2,4,-2,2,0.55f},{-5,-3,-1,1,1.0f}};
@@ -17,10 +18,9 @@ static float support(float x,float z,float feet){
  return h;
 }
 void dc_player_init(dc_player *p){if(p){memset(p,0,sizeof(*p));p->grounded=1;}}
-int dc_player_tick(dc_player *p,float ix,float iz,int jump){
- const float dt=1.0f/60.0f,r=0.28f;float mag,speed=0,ax=0,az=0,old_y,nx,nz,h;
- unsigned i,mode;
- if(!p || !isfinite(ix) || !isfinite(iz))return 0;
+int dc_player_drive(dc_player *p,float ix,float iz,int jump,float *desired){
+ const float dt=1.0f/60.0f;float mag,speed=0,ax=0,az=0;
+ if(!p || !desired || !isfinite(ix) || !isfinite(iz))return 0;
  /* Clamp components before squaring, including very large finite input. */
  ix=fmaxf(-1,fminf(1,ix));iz=fmaxf(-1,fminf(1,iz));mag=sqrtf(ix*ix+iz*iz);
  if(mag>0.18f){
@@ -28,12 +28,23 @@ int dc_player_tick(dc_player *p,float ix,float iz,int jump){
   speed=amount<=0.55f?amount*(2.2f/0.55f):2.2f+(amount-0.55f)*(3.3f/0.45f);
   ax=ix/mag*speed;az=iz/mag*speed;
  }
- h=support(p->x,p->z,p->y);
- if(p->grounded && p->y>h+0.002f)p->grounded=0;
  if(jump && !p->jump_held && p->grounded){p->vy=7;p->grounded=0;++p->jumps;}
  p->jump_held=jump!=0;
  p->vx=approach(p->vx,ax,(p->grounded?22.0f:8.0f)*dt);
  p->vz=approach(p->vz,az,(p->grounded?22.0f:8.0f)*dt);
+ if(speed>0.05f)p->yaw=atan2f(ix,iz);
+ *desired=speed;return 1;
+}
+void dc_player_finish_tick(dc_player *p,float speed){
+ unsigned mode=!p->grounded?DC_PLAYER_AIR:(speed>2.3f?DC_PLAYER_RUN:(speed>0.05f?DC_PLAYER_WALK:DC_PLAYER_IDLE));
+ p->anim_time=mode==p->mode?p->anim_time+1.0f/60.0f:0;p->mode=mode;++p->ticks;
+}
+int dc_player_tick(dc_player *p,float ix,float iz,int jump){
+ const float dt=1.0f/60.0f,r=0.28f;float speed,old_y,nx,nz,h;unsigned i;
+ if(!p || !isfinite(ix) || !isfinite(iz))return 0;
+ h=support(p->x,p->z,p->y);
+ if(p->grounded && p->y>h+0.002f)p->grounded=0;
+ if(!dc_player_drive(p,ix,iz,jump,&speed))return 0;
  old_y=p->y;
  if(!p->grounded)p->vy-=18*dt;
  p->y+=p->vy*dt;
@@ -59,7 +70,5 @@ int dc_player_tick(dc_player *p,float ix,float iz,int jump){
   if(!p->grounded)++p->landings;
   p->y=h;p->vy=0;p->grounded=1;
  }else if(p->grounded && p->y>support(nx,nz,p->y)+0.002f)p->grounded=0;
- if(speed>0.05f)p->yaw=atan2f(ix,iz);
- mode=!p->grounded?DC_PLAYER_AIR:(speed>2.3f?DC_PLAYER_RUN:(speed>0.05f?DC_PLAYER_WALK:DC_PLAYER_IDLE));
- p->anim_time=mode==p->mode?p->anim_time+dt:0;p->mode=mode;++p->ticks;return 1;
+ dc_player_finish_tick(p,speed);return 1;
 }

@@ -62,5 +62,9 @@ if ($LASTEXITCODE -ne 0) { throw 'Original main completion checker compilation f
 if ($LASTEXITCODE -ne 0) { throw 'Native movement checker compilation failed' }
 & $Compiler @flags (Join-Path $port 'host_player_anim.c') (Join-Path $port 'player_anim.c') -o (Join-Path $build 'player-anim-check.exe') -lm
 if ($LASTEXITCODE -ne 0) { throw 'Baked animation checker compilation failed' }
+& $Compiler @flags (Join-Path $port 'host_world_collision.c') (Join-Path $port 'world_collision.c') (Join-Path $port 'world_collision_cases.c') (Join-Path $port 'world_player_cases.c') (Join-Path $port 'world_patch_cases.c') (Join-Path $port 'player_motion.c') (Join-Path $port 'player_world_motion.c') -o (Join-Path $build 'world-collision-check.exe') -lm
+if ($LASTEXITCODE -ne 0) { throw 'Capsule world checker compilation failed' }
+& $Compiler @flags (Join-Path $port 'host_world_load.c') (Join-Path $port 'world_collision.c') -o (Join-Path $build 'world-load-check.exe') -lm
+if ($LASTEXITCODE -ne 0) { throw 'Collision loader checker compilation failed' }
 & $pythonCommand -m unittest discover -s (Join-Path $port 'tests') -v
 if ($LASTEXITCODE -ne 0) { throw 'Host tests failed' }

@@ -27,7 +27,7 @@ Discuss scope on **this fork**, and keep changes small enough to review.
 
 | Area | Locally verified scope |
 | --- | --- |
-| Host | 201 tests pass with the complete local SDK/oracle setup |
+| Host | 203 tests pass with the complete local SDK/oracle setup |
 | Native runtime | 22,649 checks in Flycast, stock 16 MiB RAM |
 | Original data | 182 native checks; all 668 V4 data objects across 36 local archives validate |
 | Numeric regression | 39 native checks |
@@ -52,16 +52,16 @@ the local checkpoint, not a GitHub Actions run.
 
 ## Latest completed contributor task
 
-Jak walks, runs and jumps around a bounded native test map with original locally baked model/animations, follow camera, floor and platform collision. Both controller trajectories, visual captures and318 native movement checks pass on stock16MiBFlycast. Source only is public; assets and playable embedding ELF stay local. Native C prototype physics, not original GOAL gameplay; full game remains unfinished. (AI-assisted)
+A native capsule controller now walks and jumps against a576-triangle original training collision patch with retained PAT modes/events. 203 host tests,789 synthetic native checks and2063 combined original-patch checks pass on stock16MiBFlycast. Existing visible test-map controls/platforms still pass. Original GOAL physics and full gameplay remain unfinished; real-terrain renderer remains a private integration prototype. (AI-assisted)
 
-See [PLAYABLE_SLICE.md](ports/dreamcast/PLAYABLE_SLICE.md). Full kernel/gameplay remains unfinished.
+See [WORLD_COLLISION.md](ports/dreamcast/WORLD_COLLISION.md). Full kernel/gameplay remains unfinished.
 
 ## Build and orientation
 
 Source is in `ports/dreamcast/`. Follow [BUILDING.md](ports/dreamcast/BUILDING.md).
 The verified baseline is OpenGOAL `6076aab5a95955443a9e1ed8f72a25bc0e2fcf9d`;
 the latest locally verified port checkpoint is
-`f1841b222f5c95211ad614b41f3f6cf723fa7615`.
+`96784a0793557104d699c6c5aa6ce76710d0ca82`.
 
 No ISO, BIOS, extracted textures/models, converted game scenes or ELF binaries
 embedding game assets are uploaded. Use assets extracted locally from your own

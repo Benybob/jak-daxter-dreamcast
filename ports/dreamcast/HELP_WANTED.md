@@ -224,3 +224,8 @@ See [MAIN_THREAD_COMPLETION.md](MAIN_THREAD_COMPLETION.md). (AI-assisted).
 
 Jak walks, runs and jumps around a bounded native test map with original locally baked model/animations, follow camera, floor and platform collision. Both controller trajectories, visual captures and318 native movement checks pass on stock16MiBFlycast. Source only is public; assets and playable embedding ELF stay local. Native C prototype physics, not original GOAL gameplay; full game remains unfinished. (AI-assisted)
 See [PLAYABLE_SLICE.md](PLAYABLE_SLICE.md). (AI-assisted).
+
+## Completed: Native capsule movement on original training collision
+
+A native capsule controller now walks and jumps against a576-triangle original training collision patch with retained PAT modes/events. 203 host tests,789 synthetic native checks and2063 combined original-patch checks pass on stock16MiBFlycast. Existing visible test-map controls/platforms still pass. Original GOAL physics and full gameplay remain unfinished; real-terrain renderer remains a private integration prototype. (AI-assisted)
+See [WORLD_COLLISION.md](WORLD_COLLISION.md). (AI-assisted).

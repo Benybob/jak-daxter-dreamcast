@@ -65,6 +65,24 @@ jak-dc-play.elf: play_main.o player_motion.o player_anim.o textured_scene.o scen
 jak-dc-motion.elf: player_motion.o player_motion_cases.o player_motion_main.o
 	kos-cc -o $@ $^ -lm
 
+WORLD_OBJS := world_collision.o world_collision_cases.o world_player_cases.o world_patch_cases.o player_world_motion.o player_motion.o
+world_collision.o world_collision_cases.o: world_collision.h
+world_player_cases.o world_patch_cases.o player_world_motion.o: player_world_motion.h player_motion_internal.h world_collision.h
+player_motion.o: player_motion_internal.h
+jak-dc-world.elf: world_collision_main.o $(WORLD_OBJS)
+	kos-cc -o $@ $^ -lm
+WORLD_ASSET_DIR ?= build/private-world-assets
+build/world-romdisk.o: $(WORLD_ASSET_DIR)/world.dcc
+	mkdir -p build
+	$(KOS_GENROMFS) -f build/world-romdisk.img -d $(WORLD_ASSET_DIR) -x report.json
+	$(KOS_BASE)/utils/bin2c/bin2c build/world-romdisk.img build/world-romdisk.c romdisk
+	$(KOS_CC) $(KOS_CFLAGS) -c build/world-romdisk.c -o build/world-romdisk-tmp.o
+	$(KOS_CC) -o $@ -r build/world-romdisk-tmp.o $(KOS_LIB_PATHS) -Wl,--whole-archive -lromdiskbase
+world_real_main.o: world_collision_main.c
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -DDC_WORLD_REAL_PATCH -c $< -o $@
+jak-dc-world-real.elf: world_real_main.o $(WORLD_OBJS) build/world-romdisk.o
+	kos-cc -o $@ $^ -lm
+
 $(BACKEND_TARGET): backend_main.o
 	kos-cc -o $@ $^ -lm
 
@@ -390,3 +408,8 @@ build/player-motion-check$(HOST_EXE): host_player_motion.c player_motion.c playe
 	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -pedantic host_player_motion.c player_motion.c player_motion_cases.c -o $@ -lm
 build/player-anim-check$(HOST_EXE): host_player_anim.c player_anim.c player_anim.h
 	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -pedantic host_player_anim.c player_anim.c -o $@ -lm
+host: build/world-collision-check$(HOST_EXE) build/world-load-check$(HOST_EXE)
+build/world-collision-check$(HOST_EXE): host_world_collision.c world_collision.c world_collision_cases.c world_player_cases.c world_patch_cases.c player_motion.c player_world_motion.c world_collision.h player_world_motion.h player_motion_internal.h
+	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -pedantic host_world_collision.c world_collision.c world_collision_cases.c world_player_cases.c world_patch_cases.c player_motion.c player_world_motion.c -o $@ -lm
+build/world-load-check$(HOST_EXE): host_world_load.c world_collision.c world_collision.h
+	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -pedantic host_world_load.c world_collision.c -o $@ -lm
