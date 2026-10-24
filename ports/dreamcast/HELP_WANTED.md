@@ -244,3 +244,8 @@ See [NEAR_CLIPPING.md](NEAR_CLIPPING.md). (AI-assisted).
 
 The native training camera now stops against original terrain, shortens immediately and eases extension below each fresh collision limit. A complete 2,032-face collider and WLD3 coverage metadata prevent queries into missing geometry. 218 host tests, 1,205 native camera checks, 454 manifest checks, 20 movement checks and 11 orbit checks pass in stock 16 MiB Flycast. Captured orbit and airborne frames were visually reviewed. The query began as a Grok proposal and was independently verified before integration. Full gameplay remains unfinished. (AI-assisted)
 See [CAMERA_COLLISION.md](CAMERA_COLLISION.md). (AI-assisted).
+
+## Completed: Full training collision partition and committed-air foundation
+
+The offline converter preserves all 61,576 original training collision faces across 572 sectors. Independent sampled coverage and repeatability audits pass. Native collision distinguishes known air from missing data; 249 host tests, 81 native air checks and rebuilt camera, collision and movement regressions pass. The transactional native loader is still under development with Grok; render streaming and full gameplay remain unfinished. (AI-assisted)
+See [COLLISION_SECTORS.md](COLLISION_SECTORS.md). (AI-assisted).

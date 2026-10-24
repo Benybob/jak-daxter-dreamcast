@@ -83,7 +83,7 @@ int dc_camera_boom_query(dc_collision_world *world, dc_vec3 target_center,
     float remaining, covered;
     int segments;
 
-    if (!clear_meters || !world || !world->triangles) return 0;
+    if (!clear_meters || !world || !world->ready) return 0;
     if (!in_domain(target_center)) return 0;
     if (!direction_unit(direction, &dir)) return 0;
     if (!(isfinite(desired_meters)

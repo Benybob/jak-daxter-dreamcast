@@ -63,12 +63,19 @@ const char *dc_collision_build(dc_collision_world *world,const dc_world_triangle
   out[i].lo=(dc_vec3){fminf(input[i].a.x,fminf(input[i].b.x,input[i].c.x)),fminf(input[i].a.y,fminf(input[i].b.y,input[i].c.y)),fminf(input[i].a.z,fminf(input[i].b.z,input[i].c.z))};
   out[i].hi=(dc_vec3){fmaxf(input[i].a.x,fmaxf(input[i].b.x,input[i].c.x)),fmaxf(input[i].a.y,fmaxf(input[i].b.y,input[i].c.y)),fmaxf(input[i].a.z,fmaxf(input[i].b.z,input[i].c.z))};
  }
- world->triangles=out;world->count=count;world->candidate_count=world->distance_tests=0;return NULL;
+ world->triangles=out;world->count=count;world->candidate_count=world->distance_tests=0;world->ready=1;return NULL;
+}
+const char *dc_collision_empty(dc_collision_world *w){
+ if(!w||w->triangles||w->ready||w->count)return "invalid empty collision world";
+ memset(w,0,sizeof(*w));w->ready=1;return NULL;
+}
+static int ready(const dc_collision_world *w){
+ return w&&w->ready==1&&(w->triangles?(w->count>0&&w->count<=8192):w->count==0);
 }
 void dc_collision_free(dc_collision_world *world){if(world){free(world->triangles);memset(world,0,sizeof(*world));}}
 int dc_collision_surface_events(const dc_collision_world *w,uint32_t out[2]){
  uint32_t bits[2]={0,0},i,event;
- if(!w||!w->triangles||!w->count||w->count>8192||!out)return 0;
+ if(!ready(w)||!out)return 0;
  for(i=0;i<w->count;++i){
   uint32_t pat=w->triangles[i].t.pat;
   if(pat&1)continue;
@@ -128,7 +135,7 @@ static int sweep_one(dc_collision_world *w,dc_vec3 start,dc_vec3 delta,float rad
 }
 int dc_collision_clear(dc_collision_world *w,dc_vec3 p,float radius,float height){
  dc_vec3 q,n;uint32_t i;
- if(!w||!w->triangles||!valid(p)||!isfinite(radius)||!isfinite(height)||radius<.05f||radius>2||height<2*radius||height>8)return 0;
+ if(!ready(w)||!valid(p)||!isfinite(radius)||!isfinite(height)||radius<.05f||radius>2||height<2*radius||height>8)return 0;
  if(!candidates(w,p,(dc_vec3){0},radius,height))return 0;
  p.y+=radius;q=p;q.y+=height-2*radius;
  for(i=0;i<w->candidate_count;++i)if(axis_distance(p,q,&w->triangles[w->candidates[i]],&n)<radius-.0001f)return 0;
@@ -159,7 +166,7 @@ static dc_vec3 constrain(dc_vec3 desired,const dc_vec3 *planes,unsigned count){
 }
 static int collide(dc_collision_world *w,dc_vec3 start,dc_vec3 displacement,float radius,float height,dc_collision_result *out,int sliding){
  dc_collision_result result={0};dc_vec3 p=start,remaining=displacement,planes[8];unsigned slide,plane_count=0;
- if(!w||!out||!w->triangles||!valid(start)||!valid(displacement)||!isfinite(radius)||!isfinite(height)||
+ if(!ready(w)||!out||!valid(start)||!valid(displacement)||!isfinite(radius)||!isfinite(height)||
     radius<0.05f||radius>2||height<2*radius||height>8||dot(displacement,displacement)>64)return 0;
  w->distance_tests=0;w->failure=0;w->failed_triangle=UINT32_MAX;
  for(slide=0;slide<8;++slide){

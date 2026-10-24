@@ -424,7 +424,7 @@ jak-dc-world-manifest.elf: world_manifest_main.o world_manifest_cases.o world_ma
 
 # Original training patch; all five assets are private local conversion outputs.
 TRAINING_ASSET_DIR ?= build/private-training-assets
-training_main.o: training_main.c training_layer.h world_manifest.h camera_rig.h camera_boom.h player_motion.h player_anim.h player_world_motion.h textured_scene.h scene_projection.h scene_telemetry.h
+training_main.o: training_main.c training_layer.h world_manifest.h world_collision.h camera_rig.h camera_boom.h player_motion.h player_anim.h player_world_motion.h textured_scene.h scene_projection.h scene_telemetry.h
 training_layer.o: training_layer.c training_layer.h textured_scene.h scene_projection.h scene_clip.h
 host: build/training-layer-check$(HOST_EXE)
 build/training-layer-check$(HOST_EXE): host_training_layer.c training_layer.c training_layer.h scene_clip.c scene_clip.h tests/training-stubs/kos.h
@@ -440,6 +440,12 @@ jak-dc-training.elf: training_main.o training_layer.o scene_clip.o world_manifes
 scene_clip.o scene_clip_cases.o: scene_clip.h scene_projection.h
 camera_boom.o camera_boom_cases.o: camera_boom.h camera_rig.h world_collision.h
 camera_rig.o: camera_rig.c camera_rig.h camera_boom.h world_collision.h
+sector_air_cases.o: sector_air_cases.c world_collision.h camera_boom.h player_world_motion.h
+jak-dc-sector-air.elf: sector_air_main.o sector_air_cases.o world_collision.o camera_boom.o player_motion.o player_world_motion.o
+	kos-cc -o $@ $^ -lm
+host: build/sector-air-check$(HOST_EXE)
+build/sector-air-check$(HOST_EXE): host_sector_air.c sector_air_cases.c world_collision.c camera_boom.c player_motion.c player_world_motion.c world_collision.h camera_boom.h player_world_motion.h
+	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -pedantic host_sector_air.c sector_air_cases.c world_collision.c camera_boom.c player_motion.c player_world_motion.c -o $@ -lm
 jak-dc-camera.elf: camera_boom_main.o camera_boom.o camera_rig.o camera_boom_cases.o world_collision.o
 	kos-cc -o $@ $^ -lm
 camera_real_main.o: camera_boom_main.c

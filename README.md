@@ -19,6 +19,7 @@ cover the supported subset; expert human review is still needed.
 | Native test-map prototype | Source published: real Jak model and six original animation clips, analog walk/run, jump, solid platforms, follow/orbit camera and clean exit |
 | Original training-island collision | Source published: bounded capsule movement against a 576-triangle patch with retained surface metadata |
 | Original training-island rendering + movement | Source published: separate native target, private asset conversion, transform/file binding; 20 integrated checks pass, including boundary respawn |
+| Collision sector foundation | Source published: complete offline training collision partition; native committed-air support; transactional native loading pending |
 | Full original game | Unfinished: no complete kernel boot, general gameplay, progression or release build |
 
 The playable prototypes use a **native C controller**, as a temporary milestone.
@@ -44,12 +45,13 @@ and checkpoints, not a percentage of game completion or a single full-game run.
 
 | Area | Locally verified scope |
 | --- | --- |
-| Host | 218 tests pass with the complete local SDK/oracle setup |
+| Host | 249 tests pass with the complete local SDK/oracle setup |
 | GOAL runtime | 22,649 native checks at its latest verified checkpoint |
 | Numeric regression | 39 native checks |
 | Prototype movement | 318 native checks; visible test-map controller and platform paths pass |
 | Original collision | 789 synthetic native checks; 2,063 combined checks including the original 576-triangle patch |
 | Collision file loader | 147 host checks |
+| Sector foundation | 61,576 faces preserved in 572 offline sectors; 572 sampled coverage windows; 81 native committed-air checks |
 | Near-plane rendering | 4,967 native view/clip checks (including 285 analytic clip cases), plus 10 synthetic raster checks |
 | Collision camera | 1,205 native query/rig checks; 454 WLD2/3 manifest checks; 11 original-terrain orbit checks |
 | Original-terrain prototype | 20 integrated checks: movement, jump edges, landing, camera, boundary respawn, memory and exit; captured idle/air frames visually reviewed |
@@ -74,16 +76,16 @@ not executed by these native tests; runtime and renderer are separate programs.
 
 ## Latest completed contributor task
 
-The native training camera now stops against original terrain, shortens immediately and eases extension below each fresh collision limit. A complete 2,032-face collider and WLD3 coverage metadata prevent queries into missing geometry. 218 host tests, 1,205 native camera checks, 454 manifest checks, 20 movement checks and 11 orbit checks pass in stock 16 MiB Flycast. Captured orbit and airborne frames were visually reviewed. The query began as a Grok proposal and was independently verified before integration. Full gameplay remains unfinished. (AI-assisted)
+The offline converter preserves all 61,576 original training collision faces across 572 sectors. Independent sampled coverage and repeatability audits pass. Native collision distinguishes known air from missing data; 249 host tests, 81 native air checks and rebuilt camera, collision and movement regressions pass. The transactional native loader is still under development with Grok; render streaming and full gameplay remain unfinished. (AI-assisted)
 
-See [CAMERA_COLLISION.md](ports/dreamcast/CAMERA_COLLISION.md). Full kernel/gameplay remains unfinished.
+See [COLLISION_SECTORS.md](ports/dreamcast/COLLISION_SECTORS.md). Full kernel/gameplay remains unfinished.
 
 ## Build and orientation
 
 Source is in `ports/dreamcast/`. Follow [BUILDING.md](ports/dreamcast/BUILDING.md).
 The verified baseline is OpenGOAL `6076aab5a95955443a9e1ed8f72a25bc0e2fcf9d`;
 the latest locally verified port source checkpoint is
-`68d835cde115e2d9f8d0711a25c3668d32ca496e`.
+`2a80d5f7a938d434e737848da3d5e7bf504eb976`.
 
 No ISO, BIOS, extracted textures/models, converted game scenes or ELF binaries
 embedding game assets are uploaded. Prepare assets locally from your own game
@@ -98,7 +100,7 @@ Animation blending and additional rendering fidelity remain open.
 
 The full port still needs complete kernel startup, broader ABI coverage,
 process scheduling, heaps/GC and failure unwinding; original movement and
-collision fidelity; animation transitions, camera obstruction, world streaming,
+collision fidelity; animation transitions, broader camera behavior, world streaming,
 enemies, UI, audio, save/load and progression. Packaging and physical hardware
 validation come later. Allocation currently uses bounded prototype mechanisms,
 not the complete original heap or garbage collector.

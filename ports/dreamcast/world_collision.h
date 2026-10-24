@@ -11,6 +11,7 @@ typedef struct {
  uint32_t count;
  uint16_t candidates[1024];
  uint32_t candidate_count,distance_tests,failure,failed_triangle;
+ uint32_t ready; /* Distinguishes an explicitly committed empty region from no data. */
 } dc_collision_world;
 typedef struct {
  dc_vec3 position,normal,ground_normal;
@@ -19,11 +20,13 @@ typedef struct {
 /* Build into an empty/zeroed world. Failure leaves it unchanged. Inputs remain
  * caller-owned; the world caches validated triangle geometry, including PAT. */
 const char *dc_collision_build(dc_collision_world *,const dc_world_triangle *,uint32_t);
+const char *dc_collision_empty(dc_collision_world *);
 const char *dc_collision_load(FILE *,dc_collision_world *,dc_vec3 *);
 void dc_collision_free(dc_collision_world *);
 /* All entity-collidable surface events; noentity triangles are excluded, as in
  * movement. Caller can reject unsupported reactions before entering the map.
- * Returns zero for invalid/empty world or output, without writing output. */
+ * Returns zero for an uninitialized world or invalid output, without writing
+ * output. An explicitly committed empty world succeeds with zero event bits. */
 int dc_collision_surface_events(const dc_collision_world *,uint32_t out[2]);
 /* Capsule feet at start, Y-up, height includes both spherical ends. At most
  * 8 units/displacement. Bounded candidate/solver failure leaves result intact.
