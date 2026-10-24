@@ -10,6 +10,13 @@ camera, and START exits. Holding A through a landing does not jump again. This
 is a bounded patch: going beyond 6.8 meters from the patch origin on X/Z or
 falling below -4 meters returns to the known nonoverlapping spawn.
 
+## Current renderer update
+
+[Near-plane clipping](NEAR_CLIPPING.md) replaces whole-triangle rejection, retains
+SH4ZAM view coordinates and adds a projected cache. The current full suite has
+215 host tests, 4,967 new native view/clip checks and 18 integrated training checks.
+The table below preserves the original terrain-integration checkpoint.
+
 ## Integration and verification
 
 The tested local bundle has 3,593 character triangles and 2,973 terrain triangles,
@@ -40,9 +47,10 @@ owned resources; CPU texture pixels are nulled after upload, so scene cleanup
 releases unconsumed pixels exactly once. Host instrumentation covers our layer
 ownership and call contract, not KOS internals or GPU correctness.
 
-Grok Build has an isolated source-only layer proposal in progress during this
-checkpoint. The integrated layer was independently implemented from our prior
-verified renderer and tested by Codex; a pending proposal is not an approval.
+Grok Build completed an isolated source-only alternate layer after the initial
+checkpoint. It passed 261 host checks and compiled for SH-4 in isolation. The
+integrated layer was independently implemented from our prior verified renderer
+and tested in Flycast by Codex; the alternate was not integrated or native-executed.
 No raw model streams, game assets or private logs are published.
 
 ## Render/collision contract
@@ -127,6 +135,6 @@ retuned native physics, bounded static collision and offline vertex-pose baking.
 It does not implement original surface reactions/friction, ledges or moving
 objects, combat, full-map streaming, animation blending, facial animation,
 camera obstruction, audio, enemies, UI, progression, saves or a complete game
-startup. Near-plane triangles are dropped rather than clipped. Reduced textures
+startup. Near-plane triangles now use the bounded clipper described above. Reduced textures
 and frozen facial/environment effects remain visible limitations. No disc image,
 physical hardware validation or measured console frame rate is claimed.

@@ -7,7 +7,7 @@
 typedef struct {
  pvr_poly_hdr_t *headers;
  pvr_ptr_t *textures;
- dc_projected_vertex *projected;
+ dc_render_vertex *vertices;
  uint32_t texture_count;
 } dc_training_layer;
 /* PVR initialized, validated scene, empty zeroed layer. Success consumes CPU
@@ -16,7 +16,7 @@ typedef struct {
 int dc_training_layer_make(dc_training_layer *,dc_textured_scene *);
 /* Caller waits for PVR first and shuts it down afterward. Idempotent. */
 void dc_training_layer_free(dc_training_layer *);
-/* Caller projects into layer.projected first. Serial/non-reentrant, 3KiB scratch.
- * Whole triangles crossing near depth are omitted, not polygon-clipped. */
+/* Caller prepares view/projected vertices first. Serial/non-reentrant, 3KiB
+ * scratch. Mixed near-plane triangles are clipped before division, then fanned. */
 void dc_training_layer_draw(const dc_training_layer *,const dc_textured_scene *,int);
 #endif

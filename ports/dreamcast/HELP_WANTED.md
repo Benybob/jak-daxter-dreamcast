@@ -234,3 +234,8 @@ See [WORLD_COLLISION.md](WORLD_COLLISION.md). (AI-assisted).
 
 A separate native training target now combines real Jak and six original clips with 2,973 original terrain triangles and a 576-face collision patch. 212 host tests, 416 native bundle checks, 261 host GPU-layer checks and 17 integrated stock16MiB Flycast checks pass; the 2,063-check original collision regression still passes. Captured idle and airborne frames were visually reviewed. Strict transform/file binding and reproducible private conversion are published; full original GOAL gameplay remains unfinished. (AI-assisted)
 See [TRAINING_SLICE.md](TRAINING_SLICE.md). (AI-assisted).
+
+## Completed: Guarded SH4ZAM view cache and near-plane clipping
+
+The native training renderer retains visible polygons across the near plane with view-space UV/color interpolation, a guarded SH4ZAM view/projected cache and bounded aligned submission. 215 host tests,4,967 native view/clip checks (including285 analytic cases),10 original-free raster checks and18 integrated original-terrain checks pass in stock16MiBFlycast; 2,382 legacy projection checks still pass. Per-vertex clearing and out-of-line libm clipping calls were removed; no hardware speed claim. Full game and camera obstruction remain unfinished. (AI-assisted)
+See [NEAR_CLIPPING.md](NEAR_CLIPPING.md). (AI-assisted).

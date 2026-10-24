@@ -18,7 +18,7 @@ cover the supported subset; expert human review is still needed.
 | --- | --- |
 | Native test-map prototype | Source published: real Jak model and six original animation clips, analog walk/run, jump, solid platforms, follow/orbit camera and clean exit |
 | Original training-island collision | Source published: bounded capsule movement against a 576-triangle patch with retained surface metadata |
-| Original training-island rendering + movement | Source published: separate native target, private asset conversion, transform/file binding; 17 integrated checks pass, including boundary respawn |
+| Original training-island rendering + movement | Source published: separate native target, private asset conversion, transform/file binding; 18 integrated checks pass, including boundary respawn |
 | Full original game | Unfinished: no complete kernel boot, general gameplay, progression or release build |
 
 The playable prototypes use a **native C controller**, as a temporary milestone.
@@ -31,6 +31,9 @@ test-map source, controls, local asset preparation and limitations, and
 [WORLD_COLLISION.md](ports/dreamcast/WORLD_COLLISION.md) for original collision.
 Analog stick moves, A jumps, L/R orbit the camera, and START exits.
 
+See [NEAR_CLIPPING.md](ports/dreamcast/NEAR_CLIPPING.md) for the new guarded
+SH4ZAM view cache, clipped terrain and original-free raster evidence.
+
 ## Current verification
 
 All native results below are local **Flycast tests with stock 16 MiB RAM**.
@@ -39,16 +42,17 @@ and checkpoints, not a percentage of game completion or a single full-game run.
 
 | Area | Locally verified scope |
 | --- | --- |
-| Host | 212 tests pass with the complete local SDK/oracle setup |
+| Host | 215 tests pass with the complete local SDK/oracle setup |
 | GOAL runtime | 22,649 native checks at its latest verified checkpoint |
 | Numeric regression | 39 native checks |
 | Prototype movement | 318 native checks; visible test-map controller and platform paths pass |
 | Original collision | 789 synthetic native checks; 2,063 combined checks including the original 576-triangle patch |
 | Collision file loader | 147 host checks |
-| Original-terrain prototype | 17 integrated checks: movement, jump edges, landing, camera, boundary respawn, memory and exit; captured idle/air frames visually reviewed |
+| Near-plane rendering | 4,967 native view/clip checks (including 285 analytic clip cases), plus 10 synthetic raster checks |
+| Original-terrain prototype | 18 integrated checks: movement, jump edges, landing, camera, boundary respawn, memory and exit; captured idle/air frames visually reviewed |
 
 The locally built real-terrain prototype renders 3,593 character triangles and 2,973
-terrain triangles. Its measured live heap at readiness is 2,370,560 bytes;
+terrain triangles. Its measured live heap at readiness is 2,449,272 bytes;
 this excludes embedded asset data, static storage, KOS and stacks. It reports
 5,302,696 bytes of free VRAM. These are emulator measurements, not hardware
 speed or full-game memory claims.
@@ -67,16 +71,16 @@ not executed by these native tests; runtime and renderer are separate programs.
 
 ## Latest completed contributor task
 
-A separate native training target now combines real Jak and six original clips with 2,973 original terrain triangles and a 576-face collision patch. 212 host tests, 416 native bundle checks, 261 host GPU-layer checks and 17 integrated stock16MiB Flycast checks pass; the 2,063-check original collision regression still passes. Captured idle and airborne frames were visually reviewed. Strict transform/file binding and reproducible private conversion are published; full original GOAL gameplay remains unfinished. (AI-assisted)
+The native training renderer retains visible polygons across the near plane with view-space UV/color interpolation, a guarded SH4ZAM view/projected cache and bounded aligned submission. 215 host tests,4,967 native view/clip checks (including285 analytic cases),10 original-free raster checks and18 integrated original-terrain checks pass in stock16MiBFlycast; 2,382 legacy projection checks still pass. Per-vertex clearing and out-of-line libm clipping calls were removed; no hardware speed claim. Full game and camera obstruction remain unfinished. (AI-assisted)
 
-See [TRAINING_SLICE.md](ports/dreamcast/TRAINING_SLICE.md). Full kernel/gameplay remains unfinished.
+See [NEAR_CLIPPING.md](ports/dreamcast/NEAR_CLIPPING.md). Full kernel/gameplay remains unfinished.
 
 ## Build and orientation
 
 Source is in `ports/dreamcast/`. Follow [BUILDING.md](ports/dreamcast/BUILDING.md).
 The verified baseline is OpenGOAL `6076aab5a95955443a9e1ed8f72a25bc0e2fcf9d`;
 the latest locally verified port source checkpoint is
-`ce8eebef9b9e121168c9967701353de77d38bb1e`.
+`d7066f9ab41f665bf3a74936f594e30eb5c3d1b9`.
 
 No ISO, BIOS, extracted textures/models, converted game scenes or ELF binaries
 embedding game assets are uploaded. Prepare assets locally from your own game
@@ -85,9 +89,9 @@ assets to commits, discussions or bug reports.
 
 ## Next work and contributing
 
-The immediate next gates are camera obstruction and near-plane handling,
-smoother animation transitions, broader original-world traversal and measured
-streaming/memory budgets. The current original-terrain movement slice is bounded.
+The immediate next gates are collision-camera integration, broader world traversal,
+streaming and continued original-kernel/gameplay startup work. Animation blending
+and additional rendering fidelity remain open; the current movement slice is bounded.
 
 The full port still needs complete kernel startup, broader ABI coverage,
 process scheduling, heaps/GC and failure unwinding; original movement and

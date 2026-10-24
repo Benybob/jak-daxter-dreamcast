@@ -3,8 +3,10 @@
 **2026-10-24 (AI-assisted):** [Original-terrain movement](TRAINING_SLICE.md) now
 has a separate reproducible native target: real Jak and original clips, walking,
 running and jumping on a bounded training-island render/collision patch. It
-passes 17 integrated checks in stock 16 MiB Flycast, plus 416 native bundle
-checks and 261 host GPU-layer checks. The full host suite passes 212 tests.
+passes 18 integrated checks in stock 16 MiB Flycast, plus 416 native bundle
+checks and 261 host GPU-layer checks. The full host suite passes 215 tests.
+[Near clipping](NEAR_CLIPPING.md) adds 4,967 native view/clip checks and a
+10-check synthetic raster oracle, retaining the visible part of crossing triangles.
 The separate GOAL runtime remains at its verified 22,649 checks and numeric
 regression at 39. The full game remains unfinished. [SH4ZAM](SH4ZAM.md) drives
 camera projection; install the upstream KOS library before building renderers.

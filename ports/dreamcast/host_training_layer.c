@@ -44,7 +44,7 @@ int pvr_prim(const void *data,size_t bytes){
  if(batch_calls<8)batch_sizes[batch_calls++]=(unsigned)(bytes/sizeof(pvr_vertex_t));
  for(i=0;i<bytes/sizeof(pvr_vertex_t);++i){const pvr_vertex_t *v=(const pvr_vertex_t *)data+i;
   CHECK(v->flags==(i%3==2?PVR_CMD_VERTEX_EOL:PVR_CMD_VERTEX));
-  CHECK(isfinite(v->x)&&isfinite(v->y)&&v->z==.25f&&v->argb==0xff123456u);++vertices;
+  CHECK(isfinite(v->x)&&isfinite(v->y)&&v->z==.25f&&v->argb==0xff123456u&&v->oargb==0);++vertices;
  }
  return 0;
 }
@@ -72,13 +72,13 @@ int main(void){
  scene_init(&scene,texture,vertex,indices,batch);CHECK(dc_training_layer_make(&layer,&scene));
  CHECK(uploads==2&&!texture[0].pixels&&!texture[1].pixels);
  CHECK(!dc_training_layer_make(&layer,&scene));CHECK(live==5);
- for(i=0;i<3;++i)layer.projected[i]=(dc_projected_vertex){10+i,20+i,.25f};
+ for(i=0;i<3;++i)layer.vertices[i]=(dc_render_vertex){{0,0,4},{10+i,20+i,.25f}};
  dc_training_layer_draw(&layer,&scene,PVR_LIST_OP_POLY);CHECK(headers==1&&vertices==3);
  dc_training_layer_draw(&layer,&scene,PVR_LIST_PT_POLY);CHECK(headers==2&&vertices==6);
- layer.projected[0].x=NAN;dc_training_layer_draw(&layer,&scene,PVR_LIST_OP_POLY);CHECK(vertices==6);
- layer.projected[0].x=10;layer.projected[0].z=INFINITY;
+ layer.vertices[0].view.x=NAN;dc_training_layer_draw(&layer,&scene,PVR_LIST_OP_POLY);CHECK(vertices==6);
+ layer.vertices[0].view.x=0;layer.vertices[0].view.z=INFINITY;
  dc_training_layer_draw(&layer,&scene,PVR_LIST_OP_POLY);CHECK(vertices==6);
- layer.projected[0].z=.25f;scene.batch_count=1;scene.index_count=batch[0].count=99;
+ layer.vertices[0].view.z=4;scene.batch_count=1;scene.index_count=batch[0].count=99;
  batch_calls=vertices=0;dc_training_layer_draw(&layer,&scene,PVR_LIST_OP_POLY);
  CHECK(vertices==99&&batch_calls==2&&batch_sizes[0]==96&&batch_sizes[1]==3);
  dc_training_layer_free(&layer);dc_training_layer_free(&layer);CHECK(live==0&&!memcmp(&layer,&zero,sizeof layer));

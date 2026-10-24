@@ -425,15 +425,26 @@ jak-dc-world-manifest.elf: world_manifest_main.o world_manifest_cases.o world_ma
 # Original training patch; all five assets are private local conversion outputs.
 TRAINING_ASSET_DIR ?= build/private-training-assets
 training_main.o: training_main.c training_layer.h world_manifest.h player_motion.h player_anim.h player_world_motion.h textured_scene.h scene_projection.h scene_telemetry.h
-training_layer.o: training_layer.c training_layer.h textured_scene.h scene_projection.h
+training_layer.o: training_layer.c training_layer.h textured_scene.h scene_projection.h scene_clip.h
 host: build/training-layer-check$(HOST_EXE)
-build/training-layer-check$(HOST_EXE): host_training_layer.c training_layer.c training_layer.h tests/training-stubs/kos.h
-	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -pedantic -Itests/training-stubs host_training_layer.c training_layer.c -o $@ -lm
+build/training-layer-check$(HOST_EXE): host_training_layer.c training_layer.c training_layer.h scene_clip.c scene_clip.h tests/training-stubs/kos.h
+	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -pedantic -Itests/training-stubs host_training_layer.c training_layer.c scene_clip.c -o $@ -lm
 build/training-romdisk.o: $(TRAINING_ASSET_DIR)/player.dct $(TRAINING_ASSET_DIR)/player.dca $(TRAINING_ASSET_DIR)/world.dct $(TRAINING_ASSET_DIR)/world.dcc $(TRAINING_ASSET_DIR)/world.xfm
 	mkdir -p build
 	$(KOS_GENROMFS) -f build/training-romdisk.img -d $(TRAINING_ASSET_DIR) -x report.json
 	$(KOS_BASE)/utils/bin2c/bin2c build/training-romdisk.img build/training-romdisk.c romdisk
 	$(KOS_CC) $(KOS_CFLAGS) -c build/training-romdisk.c -o build/training-romdisk-tmp.o
 	$(KOS_CC) -o $@ -r build/training-romdisk-tmp.o $(KOS_LIB_PATHS) -Wl,--whole-archive -lromdiskbase
-jak-dc-training.elf: training_main.o training_layer.o world_manifest.o world_collision.o player_world_motion.o player_motion.o player_anim.o textured_scene.o scene_projection_sh4zam.o scene_projection_gate.o build/training-romdisk.o
+jak-dc-training.elf: training_main.o training_layer.o scene_clip.o world_manifest.o world_collision.o player_world_motion.o player_motion.o player_anim.o textured_scene.o scene_projection_sh4zam.o scene_projection_gate.o build/training-romdisk.o
 	kos-cc -o $@ $^ -lsh4zam -lm
+scene_clip.o scene_clip_cases.o: scene_clip.h scene_projection.h
+view_projection_main.o: view_projection_main.c scene_projection.h
+	$(KOS_CC) $(KOS_CFLAGS) -std=gnu17 -Wall -Wextra -Werror -c $< -o $@
+clip_scene_main.o: clip_scene_main.c training_layer.h scene_projection.h scene_telemetry.h
+jak-dc-view-clip.elf: view_projection_main.o view_projection_mode_probe.o scene_projection_sh4zam.o scene_projection_gate.o scene_clip.o scene_clip_cases.o
+	kos-cc -o $@ $^ -lsh4zam -lm
+jak-dc-clip-scene.elf: clip_scene_main.o training_layer.o scene_clip.o scene_projection_sh4zam.o scene_projection_gate.o
+	kos-cc -o $@ $^ -lsh4zam -lm
+host: build/scene-clip-check$(HOST_EXE)
+build/scene-clip-check$(HOST_EXE): host_scene_clip.c scene_clip.c scene_clip_cases.c scene_clip.h scene_projection.h
+	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -pedantic host_scene_clip.c scene_clip.c scene_clip_cases.c -o $@ -lm

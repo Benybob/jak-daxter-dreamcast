@@ -75,6 +75,7 @@ static float *local_pose,*camera_vertices;
 static dc_textured_scene terrain;
 static dc_collision_world world;
 volatile uint32_t dc_world_respawns;
+volatile uint32_t dc_training_ticks;
 static float *terrain_camera;
 static float camera_floor;
 static dc_world_manifest meta;
@@ -132,7 +133,7 @@ int main(void){
  if(dc_player_state.y<-4 || fabsf(dc_player_state.x)>6.8f || fabsf(dc_player_state.z)>6.8f){
   if(!dc_player_world_place(&dc_player_state,&world,meta.spawn)){record_error("world respawn failed");break;}
   ++dc_world_respawns;camera_floor=dc_player_state.y;
- }accumulator-=1.0f/60.0f;}
+ }++dc_training_ticks;accumulator-=1.0f/60.0f;}
   if(dc_telemetry.state==DC_ERROR)break;
   if(dc_player_state.grounded)camera_floor+=(dc_player_state.y-camera_floor)*fminf(1,dt*8);
   if(dc_player_state.landings!=last_landings){landing_time=0;last_landings=dc_player_state.landings;}else landing_time+=dt;
@@ -149,10 +150,9 @@ int main(void){
    terrain_camera[i*3+1]=(terrain.vertices[i].y*meta.scale+meta.shift.y-camera_floor-.75f)/4;
    terrain_camera[i*3+2]=(terrain.vertices[i].z*meta.scale+meta.shift.z-dc_player_state.z)/4;
   }
-  /* Unit-sphere character; map caller guarantees finite points. Triangles with
-   * nonpositive camera depth are omitted in this deliberately bounded map. */
-  if(!dc_scene_project(camera_vertices,12,actor_layer.projected,scene.vertex_count,yaw,-0.5f,2.6f) ||
-     !dc_scene_project(terrain_camera,12,terrain_layer.projected,terrain.vertex_count,yaw,-0.5f,2.6f)){record_error("projection mode rejected");break;}
+  /* Preserve view coordinates for clipping; divide only front-side vertices. */
+  if(!dc_scene_prepare(camera_vertices,12,actor_layer.vertices,scene.vertex_count,yaw,-0.5f,2.6f) ||
+     !dc_scene_prepare(terrain_camera,12,terrain_layer.vertices,terrain.vertex_count,yaw,-0.5f,2.6f)){record_error("projection mode rejected");break;}
   pvr_wait_ready();pvr_scene_begin();pvr_list_begin(PVR_LIST_OP_POLY);dc_training_layer_draw(&terrain_layer,&terrain,PVR_LIST_OP_POLY);dc_training_layer_draw(&actor_layer,&scene,PVR_LIST_OP_POLY);draw_label();pvr_list_finish();
   pvr_list_begin(PVR_LIST_PT_POLY);dc_training_layer_draw(&terrain_layer,&terrain,PVR_LIST_PT_POLY);dc_training_layer_draw(&actor_layer,&scene,PVR_LIST_PT_POLY);pvr_list_finish();pvr_scene_finish();
   dc_telemetry.frames=++frames;dc_telemetry.yaw=yaw;dc_telemetry.pitch=-0.5f;dc_telemetry.distance=2.6f;

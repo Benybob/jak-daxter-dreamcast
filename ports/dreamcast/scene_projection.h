@@ -4,6 +4,14 @@
 #include <stddef.h>
 #include <stdint.h>
 typedef struct {float x,y,z;} dc_projected_vertex;
+typedef struct {float x,y,z;} dc_view_vertex;
+typedef struct {dc_view_vertex view;dc_projected_vertex projected;} dc_render_vertex;
+#define DC_SCENE_NEAR 0.05f
+/* Same input/control-mode contract. Keeps view coordinates before division,
+ * plus a projected cache for z>=DC_SCENE_NEAR. Behind/too-near projected fields
+ * are zeroed without division; their view fields remain available for clipping.
+ * Output uses 24 bytes/vertex. A zero/negative view depth never divides by zero. */
+int dc_scene_prepare(const void *,size_t,dc_render_vertex *,uint32_t,float,float,float);
 /* Trusted nonoverlapping arrays: each input record begins with three floats,
  * stride >=12, input and stride aligned to4, spans sized for count. A unit
  * sphere and distance>=1.5 guarantee positive depth. Other callers must reject
