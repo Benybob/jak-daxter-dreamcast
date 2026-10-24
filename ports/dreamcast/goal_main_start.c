@@ -68,5 +68,27 @@ int dc_goal_fiber_init_main(dc_goal_fiber *f,dc_goal_runtime *rt,uint32_t proces
  if(target>UINT32_MAX)return invalidate(f,rt,DC_GOAL_BAD_FUNCTION);
  if(!dc_goal_code_entry(rt,(uint32_t)target,&code[1]))return invalidate(f,rt,rt->error);
  if(!spans(rt,process,reservation,stack,bytes,code,2))return invalidate(f,rt,rt->error);
- return dc_goal_fiber_init_words(f,rt,process,reservation,thread,stack,bytes,(uint32_t)target,6,arguments);
+ if(!dc_goal_fiber_init_words(f,rt,process,reservation,thread,stack,bytes,(uint32_t)target,6,arguments))return 0;
+ p=dc_goal_resolve(rt,process+36,4);if(!p)return invalidate(f,rt,rt->error);
+ memcpy(&f->main_import_pid,p,4);
+ if(!f->main_import_pid)return invalidate(f,rt,DC_GOAL_BAD_ARGUMENT);
+ f->main_import_self=(uintptr_t)f;return 1;
+}
+int dc_goal_main_completion_check(dc_goal_fiber *f,dc_goal_runtime *rt){
+ dc_goal_code_entry_info code[2];uint64_t words[7];uint32_t backup;const void *p;
+ if(!dc_goal_fiber_main_completed(f,rt))return 0;
+ if(!dc_goal_core_bridges_active(rt))return bad(rt);
+ if(!canonical(rt,"set-to-run-bootstrap",&code[0]) ||
+    !dc_goal_main_thread_check(rt,f->process,f->reservation,f->thread,f->stack_base,f->stack_bytes,1,code[0].entry))return 0;
+ p=dc_goal_resolve(rt,f->thread+32,4);if(!p)return 0;memcpy(&backup,p,4);
+ if(backup!=f->image.backup_bytes || f->arguments[6] || f->arguments[7])return bad(rt);
+ p=dc_goal_resolve(rt,f->thread+36,56);if(!p)return 0;memcpy(words,p,sizeof words);
+ if(words[0]!=(uint64_t)f->entry || memcmp(words+1,f->arguments,48))return bad(rt);
+ if(!dc_goal_code_entry(rt,f->entry,&code[1]))return 0;
+ if(!spans(rt,f->process,f->reservation,f->stack_base,f->stack_bytes,code,2))return 0;
+ rt->error=DC_GOAL_OK;return 1;
+}
+int dc_goal_main_completion_release(dc_goal_fiber *f,dc_goal_runtime *rt){
+ if(!dc_goal_main_completion_check(f,rt))return 0;
+ return dc_goal_fiber_clear(f);
 }

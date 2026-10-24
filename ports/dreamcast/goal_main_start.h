@@ -20,4 +20,13 @@ int dc_goal_arm_main_thread(dc_goal_runtime *,uint32_t process,uint32_t reservat
  * resume, scheduler, return-from-thread-dead, cleanup, GC or unwinding. */
 int dc_goal_fiber_init_main(dc_goal_fiber *,dc_goal_runtime *,uint32_t process,
                             uint32_t reservation,uint32_t thread,uint32_t stack_base,uint32_t stack_bytes);
+/* Quiescent original-main completion: exact import object/PID, DONE, canonical
+ * armed header/target and all six unchanged words. Check reads only; release
+ * zeros C metadata after the check. An existing runtime error is preserved.
+ * Copy f->value first if needed. Failure preserves the complete C witness.
+ * Neither API disarms the GOAL header, runs exit hooks, returns a process to a
+ * pool or makes it dead. Re-import/replay remains forbidden by driver contract
+ * until original deactivation exists. Same unmoved storage/PID and OS owner. */
+int dc_goal_main_completion_check(dc_goal_fiber *,dc_goal_runtime *);
+int dc_goal_main_completion_release(dc_goal_fiber *,dc_goal_runtime *);
 #endif

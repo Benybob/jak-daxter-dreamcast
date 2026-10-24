@@ -18,6 +18,9 @@ typedef struct {
  uint32_t peak_requested_image_bytes;
  /* Opaque KOS owner and suspension SR; host never executes these images. */
  uint32_t platform_owner,native_irq_state;
+ /* Original-main import receipt: exact C object address and original PID.
+  * Generic init leaves both zero. Not a process disarm or a native security token. */
+ uintptr_t main_import_self;uint32_t main_import_pid;
 } dc_goal_fiber;
 /* Metadata is stable caller-owned C storage OUTSIDE rt's arena/working stack;
  * keep it live until clear. Code/stack/metadata pinned and quiescent. Default init
@@ -46,5 +49,9 @@ int dc_goal_fiber_init_words(dc_goal_fiber *,dc_goal_runtime *,uint32_t process,
 int dc_goal_fiber_step(dc_goal_fiber *,uint64_t resume_value,uint64_t *out);
 uint64_t dc_goal_fiber_yield(dc_goal_runtime *,uint64_t value);
 int dc_goal_fiber_clear(dc_goal_fiber *);
+/* Internal main-completion C witness: no GOAL writes. Requires an original-main
+ * import, DONE, a live matching PID, quiescent storage and the native OS owner.
+ * goal_main_start adds the canonical original header/argument checks. */
+int dc_goal_fiber_main_completed(dc_goal_fiber *,dc_goal_runtime *);
 dc_goal_fiber *dc_goal_fiber_current(void);
 #endif

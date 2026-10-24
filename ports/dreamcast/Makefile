@@ -363,3 +363,8 @@ runtime_goal_cases.o: main_thread_cases.h
 host: build/main-thread-check$(HOST_EXE)
 build/main-thread-check$(HOST_EXE): host_main_thread.c main_thread_cases.c main_thread_cases.h goal_main_thread.c goal_main_thread.h goal_thread_stack.c goal_thread_stack.h goal_process_heap.c goal_kernel_types.c goal_runtime.c
 	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -pedantic host_main_thread.c main_thread_cases.c goal_main_thread.c goal_thread_stack.c goal_process_heap.c goal_kernel_types.c goal_runtime.c -o $@
+
+# Original-main completion receipt oracle; bridge liveness modeled on host only.
+host: build/main-completion-check$(HOST_EXE)
+build/main-completion-check$(HOST_EXE): host_main_completion.c goal_main_start.c goal_main_thread.c goal_fiber.c goal_scalar_call.c goal_thread_stack.c goal_process_heap.c goal_module.c goal_kernel_types.c goal_runtime.c goal_fiber.h goal_main_start.h
+	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -pedantic host_main_completion.c goal_main_start.c goal_main_thread.c goal_fiber.c goal_scalar_call.c goal_thread_stack.c goal_process_heap.c goal_module.c goal_kernel_types.c goal_runtime.c -o $@

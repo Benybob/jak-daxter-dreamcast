@@ -214,3 +214,8 @@ See [ORIGINAL_THREAD_START.md](ORIGINAL_THREAD_START.md). (AI-assisted).
 
 The textured viewer now uses the external upstream SH4ZAM library for FTRV batch projection with exact XMTRX preservation and integer-only FPU mode rejection. 2382 projection checks and the 7784-triangle viewer pass on stock16MiBFlycast. Grok review also led to fail-closed masked-yield and full-current-stack overlap regressions, with 22469 runtime checks passing. Physical hardware performance and full gameplay remain unverified. (AI-assisted)
 See [SH4ZAM.md](SH4ZAM.md). (AI-assisted).
+
+## Completed: Imported original main-thread completion receipts
+
+Pinned C receipts bind imported original main threads to their process PID, reject stale/copy restoration and permit guarded C-only completion release. 199 host tests,22649 runtime and39 numeric checks pass on stock16MiBFlycast. Original deactivation and full gameplay remain unfinished. Human-approved next priority is native walking/running/jumping with real Jak on a test map. (AI-assisted)
+See [MAIN_THREAD_COMPLETION.md](MAIN_THREAD_COMPLETION.md). (AI-assisted).
