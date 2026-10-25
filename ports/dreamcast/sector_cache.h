@@ -40,8 +40,13 @@ const char *dc_sector_index_load(FILE *file, dc_sector_index *out);
 /* Frees entries and zeroes *index. NULL and repeated calls are safe. */
 void dc_sector_index_free(dc_sector_index *index);
 /* Nonzero when cache is a committed ready world (including known air) and
- * query is a finite ordered box inside that coverage. */
+ * query is a finite ordered GEOMETRY box inside that coverage. Include the
+ * complete swept capsule (radius and solver skin), not just its center path. */
 int dc_sector_covers(const dc_sector_cache *cache, dc_sector_bounds query);
+/* Conservative XZ geometry bounds for world start/end capsule feet, including
+ * radius, the solver's .002m skin and one outward float ULP. No output on error.
+ * Union these bounds with other intended queries (e.g. camera) before retarget. */
+int dc_sector_swept_bounds(dc_vec3 start,dc_vec3 end,float radius,dc_sector_bounds *out);
 /* NULL on success. Rejects bad arguments before reuse. Reuse keeps the
  * committed origin. The cache must be zeroed before its first retarget. */
 const char *dc_sector_retarget(const dc_sector_index *index, const char *root,

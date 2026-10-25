@@ -1,0 +1,23 @@
+{
+  "ai_assisted": true,
+  "result": "PASS",
+  "host_tests": 272,
+  "cache_host_tests": 23,
+  "native_checks": 5164,
+  "native_windows": 572,
+  "source_faces_verified": 61576,
+  "max_sampled_faces": 3286,
+  "peak_tracked_geometry_bytes": 889764,
+  "elf_sha256": "0dec65a6617e7d316fb85c2012bb3d3351f529c81cc672a05b90f4c5d7913b53",
+  "native_ram_bytes": 16777216,
+  "normal_production_object_compiles": true,
+  "independent_oracle_preparation_reproduced_files": 574,
+  "game_target_uses_sector_cache": false,
+  "render_streaming": false,
+  "physical_hardware_tested": false,
+  "scope": "Native bounded sector IO/cache, exact rebased geometry payload and rollback oracle; not render streaming, original GOAL gameplay or hardware validation",
+  "filtered_first_replicas_checked": true,
+  "geometry_sweep_bounds_native_checked": true,
+  "single_only_double_abi_rejected": true,
+  "absolute_width_tolerance_meters": 0.001
+}

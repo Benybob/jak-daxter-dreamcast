@@ -47,13 +47,13 @@ and checkpoints, not a percentage of game completion or a single full-game run.
 
 | Area | Locally verified scope |
 | --- | --- |
-| Host | 269 tests pass with the complete local SDK/oracle setup |
+| Host | 272 tests pass with the complete local SDK/oracle setup |
 | GOAL runtime | 22,649 native checks at its latest verified checkpoint |
 | Numeric regression | 39 native checks |
 | Prototype movement | 318 native checks; visible test-map controller and platform paths pass |
 | Original collision | 789 synthetic native checks; 2,063 combined checks including the original 576-triangle patch |
 | Collision file loader | 147 host checks |
-| Sector loading | 4,020 native cache/IO/rollback checks across 572 windows; all 61,576 original faces exercised |
+| Sector loading | 5,164 native cache/IO/rollback checks across 572 windows; all 61,576 original faces exercised |
 | Near-plane rendering | 4,967 native view/clip checks (including 285 analytic clip cases), plus 10 synthetic raster checks |
 | Collision camera | 1,205 native query/rig checks; 454 WLD2/3 manifest checks; 11 original-terrain orbit checks |
 | Original-terrain prototype | 20 integrated checks: movement, jump edges, landing, camera, boundary respawn, memory and exit; captured idle/air frames visually reviewed |
@@ -78,7 +78,7 @@ not executed by these native tests; runtime and renderer are separate programs.
 
 ## Latest completed contributor task
 
-A transactional native C loader now streams bounded regions from the complete training collision package. Stock 16 MiB Flycast passes 4,020 checks across 572 windows, exercising all 61,576 source faces with matching rebased payload CRCs. 269 host tests pass; forced allocation/read/close failures preserve the prior cache. The largest sampled cache holds 3,286 faces with 889,764 bytes of tracked geometry allocations at peak. The game target still uses its fixed patch; render streaming and gameplay integration remain unfinished. (AI-assisted)
+The collision loader now validates filtered-first replicas in a second bounded pass, rejects coordinate-scaled width slack and pins binary64 cell arithmetic. A helper includes capsule radius and solver skin in coverage bounds. Independent Grok findings were adjudicated and tested: 272 host tests and 5,164 stock 16 MiB Flycast checks pass across 572 original training windows. Peak tracked geometry remains 889,764 bytes. Render streaming and full gameplay remain unfinished. (AI-assisted)
 
 See [SECTOR_CACHE.md](ports/dreamcast/SECTOR_CACHE.md). Full kernel/gameplay remains unfinished.
 
@@ -87,7 +87,7 @@ See [SECTOR_CACHE.md](ports/dreamcast/SECTOR_CACHE.md). Full kernel/gameplay rem
 Source is in `ports/dreamcast/`. Follow [BUILDING.md](ports/dreamcast/BUILDING.md).
 The verified baseline is OpenGOAL `6076aab5a95955443a9e1ed8f72a25bc0e2fcf9d`;
 the latest locally verified port source checkpoint is
-`c7efd49fbad9e16b3a30c2d31d68c7c87f3685f5`.
+`10e469074a37fc0e9bdc18c29466e0fa41f0c4f5`.
 
 No ISO, BIOS, extracted textures/models, converted game scenes or ELF binaries
 embedding game assets are uploaded. Prepare assets locally from your own game

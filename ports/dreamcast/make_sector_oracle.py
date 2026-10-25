@@ -52,7 +52,7 @@ def prepare(source,package,output,origin_y=0):
         (stage/'oracle.bin').write_bytes(body);(stage/'manifest.dcs').write_bytes(manifest)
         assert stage.resolve().is_relative_to(output.parent) and output.parent==output.resolve().parent
         stage.rename(output)
-    return dict(ai_assisted=True,windows=len(ids),native_checks=7*len(ids)+16,max_faces=maximum,private_game_assets=True)
+    return dict(ai_assisted=True,windows=len(ids),native_checks=9*len(ids)+16,max_faces=maximum,private_game_assets=True)
 if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('source',type=Path);p.add_argument('package',type=Path);p.add_argument('output',type=Path);p.add_argument('--origin-y',type=float,default=0);a=p.parse_args()
     print(json.dumps(prepare(a.source,a.package,a.output,a.origin_y),indent=2))

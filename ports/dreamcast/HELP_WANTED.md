@@ -254,3 +254,8 @@ See [COLLISION_SECTORS.md](COLLISION_SECTORS.md). (AI-assisted).
 
 A transactional native C loader now streams bounded regions from the complete training collision package. Stock 16 MiB Flycast passes 4,020 checks across 572 windows, exercising all 61,576 source faces with matching rebased payload CRCs. 269 host tests pass; forced allocation/read/close failures preserve the prior cache. The largest sampled cache holds 3,286 faces with 889,764 bytes of tracked geometry allocations at peak. The game target still uses its fixed patch; render streaming and gameplay integration remain unfinished. (AI-assisted)
 See [SECTOR_CACHE.md](SECTOR_CACHE.md). (AI-assisted).
+
+## Completed: Replica validation and swept geometry bounds
+
+The collision loader now validates filtered-first replicas in a second bounded pass, rejects coordinate-scaled width slack and pins binary64 cell arithmetic. A helper includes capsule radius and solver skin in coverage bounds. Independent Grok findings were adjudicated and tested: 272 host tests and 5,164 stock 16 MiB Flycast checks pass across 572 original training windows. Peak tracked geometry remains 889,764 bytes. Render streaming and full gameplay remain unfinished. (AI-assisted)
+See [SECTOR_CACHE.md](SECTOR_CACHE.md). (AI-assisted).

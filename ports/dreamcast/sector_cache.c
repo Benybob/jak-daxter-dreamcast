@@ -4,9 +4,14 @@
 #include "sector_cache.h"
 
 #include <math.h>
+#include <float.h>
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
+
+/* The producer and closed cell arithmetic use IEEE binary64. KOS -m4-single
+ * preserves that ABI; -m4-single-only is intentionally unsupported here. */
+typedef char dc_sector_requires_binary64[(sizeof(double)==8 && DBL_MANT_DIG==53)?1:-1];
 
 enum {
   DC_MANIFEST_BYTES = 108,
@@ -35,6 +40,7 @@ struct dc_sector_stage {
   uint32_t count;
   uint32_t source_count;
   dc_sector_bounds coverage;
+  int validate_only;
 };
 
 struct dc_manifest_info {
@@ -112,17 +118,11 @@ static int box_finite_ordered(dc_sector_bounds box) {
       && box.min_x <= box.max_x && box.min_z <= box.max_z;
 }
 
-/* Exact binary64 difference of the float32 endpoints, plus a few ulps of
- * the larger endpoint. limit is 32.8 for a query and 36.8 for coverage. */
+/* Absolute millimeter tolerance admits ordinary world-float quantization,
+ * without admitting a coordinate-scaled fraction of a meter. */
 static int width_within(float lo, float hi, double limit) {
   double width = (double)hi - (double)lo;
-  double mag = fabs((double)lo);
-  double other = fabs((double)hi);
-  double ulp;
-  if (other > mag) mag = other;
-  if (mag < 1.0) mag = 1.0;
-  ulp = mag / 8388608.0;
-  return width <= limit + ulp * 4.0 + 1e-6;
+  return width <= limit + 0.001;
 }
 
 static int box_width_ok(dc_sector_bounds box, double limit) {
@@ -359,6 +359,22 @@ int dc_sector_covers(const dc_sector_cache *cache, dc_sector_bounds query) {
   return 1;
 }
 
+int dc_sector_swept_bounds(dc_vec3 start, dc_vec3 end, float radius,
+                           dc_sector_bounds *out) {
+  dc_sector_bounds box;
+  if (!out) return 0;
+  if (!bounded_finite(start.x,1000000.f) || !bounded_finite(start.y,1000000.f)
+      || !bounded_finite(start.z,1000000.f) || !bounded_finite(end.x,1000000.f)
+      || !bounded_finite(end.y,1000000.f) || !bounded_finite(end.z,1000000.f)
+      || !finite_f(radius) || radius<=0.f || radius>2.f) return 0;
+  box.min_x=nextafterf(fminf(start.x,end.x)-radius-.002f,-INFINITY);
+  box.max_x=nextafterf(fmaxf(start.x,end.x)+radius+.002f,INFINITY);
+  box.min_z=nextafterf(fminf(start.z,end.z)-radius-.002f,-INFINITY);
+  box.max_z=nextafterf(fmaxf(start.z,end.z)+radius+.002f,INFINITY);
+  if (!box_finite_ordered(box) || !box_width_ok(box,32.8)) return 0;
+  *out=box;return 1;
+}
+
 static const char *root_ok(const char *root) {
   size_t length;
   if (!root || root[0] == '\0') return "invalid sector root";
@@ -490,7 +506,7 @@ static const char *read_sector(FILE *fp, const dc_sector_entry *entry, struct dc
     if (!tri_world_ok(&tri) || !pat_mode_ok(tri.pat)) return "invalid sector record";
     previous = id;
     seen = 1;
-    include = xz_hit(&tri, stage->coverage);
+    include = !stage->validate_only && xz_hit(&tri, stage->coverage);
     error = dedup_consider(stage, id, &tri, include);
     if (error) return error;
   }
@@ -601,6 +617,9 @@ const char *dc_sector_retarget(const dc_sector_index *index, const char *root,
   error = root_ok(root);
   if (error) return error;
   if (!box_finite_ordered(query) || !box_width_ok(query, 32.8)) return "invalid sector query";
+  if (!bounded_finite(query.min_x,1000000.f) || !bounded_finite(query.max_x,1000000.f)
+      || !bounded_finite(query.min_z,1000000.f) || !bounded_finite(query.max_z,1000000.f))
+    return "invalid sector query";
   if (!bounded_finite(origin.x, 1000000.f) || !bounded_finite(origin.y, 1000000.f)
       || !bounded_finite(origin.z, 1000000.f))
     return "invalid sector origin";
@@ -672,15 +691,19 @@ const char *dc_sector_retarget(const dc_sector_index *index, const char *root,
     stage.count = 0;
     stage.source_count = index->source_count;
     stage.coverage = coverage;
-    for (s = 0; s < chosen_count; ++s) {
-      error = sector_path(path, sizeof path, root, chosen[s]->ix, chosen[s]->iz);
+    /* Pass two compares every selected replica with the complete included set.
+     * A filtered-first conflicting copy must not escape the payload check. */
+    for (s = 0; s < chosen_count * 2u; ++s) {
+      const dc_sector_entry *entry=chosen[s % chosen_count];
+      stage.validate_only=s>=chosen_count;
+      error = sector_path(path, sizeof path, root, entry->ix, entry->iz);
       if (error) goto fail;
       fp = fopen(path, "rb");
       if (!fp) {
         error = "missing sector file";
         goto fail;
       }
-      error = read_sector(fp, chosen[s], &stage);
+      error = read_sector(fp, entry, &stage);
       if (fclose(fp) != 0 && !error) error = "sector close failed";
       fp = NULL;
       if (error) goto fail;

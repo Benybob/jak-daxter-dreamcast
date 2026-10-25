@@ -10,17 +10,20 @@ streaming and controller integration are the next gates.
 
 The initial C proposal came from authorized Grok Build collaboration. Independent
 review and tests corrected ignored close failures and non-finite committed
-coverage checks. No original game assets are present in this source.
+coverage checks. A subsequent Grok audit identified a filtered-first replica
+validation gap; a second streaming pass now compares every selected copy of each
+included ID against its original payload before rebasing. No original game assets
+are present in this source.
 
 ## Verification
 
-- 269 host tests pass, including 20 cache tests with literal fixtures, re-signed
+- 272 host tests pass, including 23 cache tests with literal fixtures, re-signed
   malformed records, every byte truncation of small files, duplicate payloads,
   boundary inclusion, negative cells and rebase limits.
 - Forced failures at all four retarget allocations, interrupted reads and close
   failures leave the active cache unchanged, with no tracked allocation/file leaks.
 - A full 8,192-face cache succeeds; an 8,193rd unique face refuses the replacement.
-- Stock 16 MiB Flycast passes 4,020 native checks across 572 original training
+- Stock 16 MiB Flycast passes 5,164 native checks across 572 original training
   windows, including reuse and failure injection. Rebased geometry payload CRCs
   match independent expectations. Together the windows exercise all 61,576 source
   faces. The largest sampled cache holds 3,286 faces.
@@ -30,6 +33,9 @@ coverage checks. No original game assets are present in this source.
 - The normal production object also compiles with installed SH-4 GCC. Native
   failure tests use a separate object from the same source with allocator/stdio
   calls redirected to test wrappers. Production objects contain no test wrappers.
+- Cell arithmetic requires IEEE binary64 `double`, as provided by the installed
+  KOS `-m4-single` build. An explicit compile guard rejects `-m4-single-only`;
+  that rejection was independently checked with the installed compiler.
 
 CRCs detect damage and compare payloads; they are not authentication. These
 results establish collision loading, not gameplay, rendering performance or
@@ -46,11 +52,21 @@ new world, origin and coverage together, then frees the old world. Failure leave
 all active fields unchanged. Serialize queries and retargets; retain no pointers
 into replaced worlds. This is collision storage, not a GOAL execution context.
 
-Call `dc_sector_covers` before using a query region. Bounds are world meters,
+Call `dc_sector_covers` before using a query region. The box must contain all
+geometry touched by the query: the complete swept capsule including its radius
+and the solver's 0.002-meter skin, not just the path of its center. Use
+`dc_sector_swept_bounds(start, end, radius, &bounds)` for conservative XZ bounds,
+then union bounds for every intended player/camera query. The helper includes one
+outward float ULP. Reuse anywhere inside the loaded geometry box remains safe
+under this contract; the two-meter load guard is additional coverage.
+
+Bounds are world meters,
 at most 32.8 meters per axis, expanded by two meters per side. Closed cell ranges
 handle negative coordinates and boundaries. An absent entry inside the manifest
 halo is known air. Missing listed files, invalid files or regions beyond the halo
-fail. Known air commits explicitly through `dc_collision_empty`.
+fail. Endpoints are limited to ±1,000,000 meters. Width validation uses an absolute
+one-millimeter tolerance, rather than a coordinate-scaled allowance. Known air
+commits explicitly through `dc_collision_empty`.
 
 Reuse requires matching package CRC and a query inside committed coverage. It
 does no IO/allocation and **keeps the committed origin**, even if a different one
@@ -61,8 +77,12 @@ The cache holds at most 8,192 unique faces; each file has at most 2,048 records.
 Gathering filters face bounds against coverage before enforcing the unique cap.
 Maximum old/new caches, staging rows, IDs, hash table and index total 1,720,320
 bytes (about 1.64 MiB) of geometry payload, plus stack/stdio/allocator overhead.
-Retarget uses synchronous IO and allocation at controlled loading points, never
-inside a collision query.
+Retarget reads selected sectors twice to verify filtered-first replicas without
+an additional source-sized payload table. This preserves the memory bound and
+adds IO work; caching and loading performance still need measurement in the game
+target. Retarget allocates at controlled loading points, never inside a collision
+query. An out-of-range rebased face or degenerate triangle still rejects the
+whole replacement. Silently clipping or dropping invalid collision is not allowed.
 
 ## Reproduce
 
@@ -72,7 +92,7 @@ original-free fixture and run the shared C oracle. For native synthetic testing:
 ```text
 python ports/dreamcast/make_sector_fixture.py PRIVATE_FIXTURE
 python ports/dreamcast/build_dreamcast.py --msys LOCAL_MSYS --target jak-dc-sector-cache.elf --sector-assets PRIVATE_FIXTURE
-python ports/dreamcast/verify_backend.py FLYCAST ports/dreamcast/jak-dc-sector-cache.elf --nm SH_ELF_NM --suite sectors --tests 44 --output LOCAL_RESULTS
+python ports/dreamcast/verify_backend.py FLYCAST ports/dreamcast/jak-dc-sector-cache.elf --nm SH_ELF_NM --suite sectors --tests 52 --output LOCAL_RESULTS
 ```
 
 For original local data, produce DCR1 with the collision exporter, then:
@@ -84,7 +104,7 @@ python ports/dreamcast/build_dreamcast.py --msys LOCAL_MSYS --target jak-dc-sect
 ```
 
 The preparer validates every sector record against the source and prints the
-expected check count (`7 * windows + 16`). Pass it to `verify_backend.py --suite
+expected check count (`9 * windows + 16`). Pass it to `verify_backend.py --suite
 sectors --timeout 180`. This is a payload-membership/rebase oracle. Independent
 offline spatial-coverage checks are described in
 [COLLISION_SECTORS.md](COLLISION_SECTORS.md).

@@ -1,0 +1,7 @@
+{
+  "ai_assisted": true,
+  "result": "PASS",
+  "scope": "Compile-time rejection of unsupported single-only double ABI",
+  "single_only_rejected": true,
+  "installed_m4_single_native_pass": true
+}

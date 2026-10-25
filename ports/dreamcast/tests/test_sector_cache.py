@@ -22,6 +22,7 @@ for name,args,ret in (
  ('dc_sector_cache_free',[c.POINTER(Cache)],None),
  ('dc_sector_retarget',[c.POINTER(Index),c.c_char_p,Bounds,Vec,c.POINTER(Cache)],c.c_char_p),
  ('dc_sector_covers',[c.POINTER(Cache),Bounds],c.c_int),
+ ('dc_sector_swept_bounds',[Vec,Vec,c.c_float,c.POINTER(Bounds)],c.c_int),
  ('dc_test_reset',[c.c_uint],None),('dc_test_io_reset',[c.c_uint,c.c_uint],None),
  ('dc_test_calls',[],c.c_uint),('dc_test_live',[],c.c_uint),('dc_test_open_files',[],c.c_uint),
  ('dc_test_bytes',[],c.c_size_t),('dc_test_peak',[],c.c_size_t),
@@ -145,7 +146,7 @@ class CacheContracts(unittest.TestCase):
         lib.dc_test_reset(1);self.assertEqual(self.install(),b'sector manifest allocation failed');self.assertEqual(bytes(self.index),bytes(Index()))
     def test_read_failures_keep_existing_world_and_close_files(self):
         self.assertIsNone(self.install());self.assertIsNone(self.target())
-        for n in range(1,4):
+        for n in range(1,7):
             self.cache.package_crc=self.index.package_crc^1;lib.dc_test_io_reset(n,0);self.expect_rollback(lambda:self.target())
     def test_close_failure_is_atomic(self):
         self.assertIsNone(self.install());self.assertIsNone(self.target());self.cache.package_crc=self.index.package_crc^1;lib.dc_test_io_reset(0,1);self.expect_rollback(lambda:self.target())
@@ -166,12 +167,24 @@ class CacheContracts(unittest.TestCase):
     def test_corrupt_committed_bounds_cannot_claim_coverage(self):
         self.assertIsNone(self.install());self.assertIsNone(self.target());self.cache.coverage.min_x=float('nan')
         self.assertEqual(lib.dc_sector_covers(c.byref(self.cache),Bounds(0,4,0,4)),0)
+    def test_filtered_first_conflicting_replica_is_atomic(self):
+        self.assertIsNone(self.install(package({(-1,0):[(0,row(10))],(0,0):[(0,row())]})))
+        self.assertEqual(self.expect_rollback(lambda:self.target()),b'sector replica payload mismatch')
+    def test_swept_bounds_include_radius_skin_and_outward_rounding(self):
+        box=Bounds();self.assertTrue(lib.dc_sector_swept_bounds(Vec(30,0,1),Vec(32,0,1),2,c.byref(box)))
+        self.assertLess(box.min_x,27.998);self.assertGreater(box.max_x,34.002)
+        self.assertIsNone(self.install());self.assertIsNone(self.target(Bounds(0,30,0,2)))
+        self.assertEqual(lib.dc_sector_covers(c.byref(self.cache),box),0)
+        before=bytes(box);self.assertFalse(lib.dc_sector_swept_bounds(Vec(),Vec(),float('nan'),c.byref(box)));self.assertEqual(bytes(box),before)
+    def test_large_coordinate_does_not_expand_width_contract(self):
+        self.assertIsNone(self.install())
+        self.assertEqual(self.expect_rollback(lambda:self.target(Bounds(999966.75,1000000,0,1))),b'invalid sector query')
     def test_shared_native_oracle_with_synthetic_geometry(self):
         from make_sector_fixture import prepare
         root=self.root/'fixture';self.assertEqual(prepare(root),4)
         exe=PORT/'build'/('sector-cache-check.exe' if sys.platform=='win32' else 'sector-cache-check')
         run=subprocess.run([str(exe),str(root)],capture_output=True,text=True,check=True)
-        self.assertIn('44/44 checks windows=4',run.stdout)
+        self.assertIn('52/52 checks windows=4',run.stdout)
     def test_public_oracle_preparation_binds_source_and_runs_shared_c(self):
         from make_sector_oracle import prepare
         data=struct.pack('<4sIII',b'DCR1',1,43,2)+row(-8,-8)+row(17,0)
