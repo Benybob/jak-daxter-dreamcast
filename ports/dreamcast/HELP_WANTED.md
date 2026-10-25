@@ -249,3 +249,8 @@ See [CAMERA_COLLISION.md](CAMERA_COLLISION.md). (AI-assisted).
 
 The offline converter preserves all 61,576 original training collision faces across 572 sectors. Independent sampled coverage and repeatability audits pass. Native collision distinguishes known air from missing data; 249 host tests, 81 native air checks and rebuilt camera, collision and movement regressions pass. The transactional native loader is still under development with Grok; render streaming and full gameplay remain unfinished. (AI-assisted)
 See [COLLISION_SECTORS.md](COLLISION_SECTORS.md). (AI-assisted).
+
+## Completed: Verified native collision sector loading
+
+A transactional native C loader now streams bounded regions from the complete training collision package. Stock 16 MiB Flycast passes 4,020 checks across 572 windows, exercising all 61,576 source faces with matching rebased payload CRCs. 269 host tests pass; forced allocation/read/close failures preserve the prior cache. The largest sampled cache holds 3,286 faces with 889,764 bytes of tracked geometry allocations at peak. The game target still uses its fixed patch; render streaming and gameplay integration remain unfinished. (AI-assisted)
+See [SECTOR_CACHE.md](SECTOR_CACHE.md). (AI-assisted).

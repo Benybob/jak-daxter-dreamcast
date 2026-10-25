@@ -76,5 +76,12 @@ if ($LASTEXITCODE -ne 0) { throw 'Near clipping checker compilation failed' }
 if ($LASTEXITCODE -ne 0) { throw 'Camera boom/rig checker compilation failed' }
 & $Compiler @flags (Join-Path $port 'host_sector_air.c') (Join-Path $port 'sector_air_cases.c') (Join-Path $port 'world_collision.c') (Join-Path $port 'camera_boom.c') (Join-Path $port 'player_motion.c') (Join-Path $port 'player_world_motion.c') -o (Join-Path $build 'sector-air-check.exe') -lm
 if ($LASTEXITCODE -ne 0) { throw 'Committed air checker compilation failed' }
+$sectorDefs = @('-Dmalloc=dc_test_malloc','-Dfree=dc_test_free','-Dfopen=dc_test_fopen','-Dfclose=dc_test_fclose','-Dfread=dc_test_fread','-Dfgetc=dc_test_fgetc','-Dferror=dc_test_ferror')
+& $Compiler @flags @sectorDefs -c (Join-Path $port 'sector_cache.c') -o (Join-Path $build 'sector-cache-host.o')
+if ($LASTEXITCODE -ne 0) { throw 'Sector cache instrumented compilation failed' }
+& $Compiler @flags -shared (Join-Path $port 'tests/sector_cache_bridge.c') (Join-Path $build 'sector-cache-host.o') -o (Join-Path $build 'sector-cache-check.dll') -lm
+if ($LASTEXITCODE -ne 0) { throw 'Sector cache ctypes bridge compilation failed' }
+& $Compiler @flags (Join-Path $port 'host_sector_cache.c') (Join-Path $port 'sector_cache_cases.c') (Join-Path $port 'tests/sector_cache_bridge.c') (Join-Path $build 'sector-cache-host.o') -o (Join-Path $build 'sector-cache-check.exe') -lm
+if ($LASTEXITCODE -ne 0) { throw 'Sector cache oracle compilation failed' }
 & $pythonCommand -m unittest discover -s (Join-Path $port 'tests') -v
 if ($LASTEXITCODE -ne 0) { throw 'Host tests failed' }

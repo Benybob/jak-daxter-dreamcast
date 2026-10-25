@@ -3,7 +3,9 @@ HOST_CC ?= cc
 PYTHON ?= python3
 ifeq ($(OS),Windows_NT)
 HOST_EXE := .exe
+HOST_SHARED := .dll
 endif
+HOST_SHARED ?= .so
 TARGET := jak-dc-probe.elf
 OBJS := main.o dgo_stream.o romdisk.o
 SCENE_TARGET := jak-dc-scene.elf
@@ -446,6 +448,32 @@ jak-dc-sector-air.elf: sector_air_main.o sector_air_cases.o world_collision.o ca
 host: build/sector-air-check$(HOST_EXE)
 build/sector-air-check$(HOST_EXE): host_sector_air.c sector_air_cases.c world_collision.c camera_boom.c player_motion.c player_world_motion.c world_collision.h camera_boom.h player_world_motion.h
 	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -pedantic host_sector_air.c sector_air_cases.c world_collision.c camera_boom.c player_motion.c player_world_motion.c -o $@ -lm
+
+# Instrumented test objects stay separate from the production cache/world objects.
+SECTOR_TEST_DEFS := -Dmalloc=dc_test_malloc -Dfree=dc_test_free -Dfopen=dc_test_fopen -Dfclose=dc_test_fclose -Dfread=dc_test_fread -Dfgetc=dc_test_fgetc -Dferror=dc_test_ferror
+sector_cache.o: sector_cache.c sector_cache.h world_collision.h
+sector_cache_test.o: sector_cache.c sector_cache.h world_collision.h
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) $(SECTOR_TEST_DEFS) -c $< -o $@
+sector_cache_bridge.o: tests/sector_cache_bridge.c tests/sector_cache_bridge.h world_collision.c world_collision.h sector_cache.h
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -c $< -o $@
+sector_cache_cases.o: sector_cache_cases.c sector_cache_cases.h tests/sector_cache_bridge.h sector_cache.h
+sector_cache_main.o: sector_cache_main.c sector_cache_cases.h
+SECTOR_ASSET_DIR ?= build/private-sector-assets
+build/sector-romdisk.o: $(SECTOR_ASSET_DIR)/manifest.dcs $(SECTOR_ASSET_DIR)/oracle.bin $(wildcard $(SECTOR_ASSET_DIR)/sectors/*.dcs)
+	mkdir -p build
+	$(KOS_GENROMFS) -f build/sector-romdisk.img -d $(SECTOR_ASSET_DIR)
+	$(KOS_BASE)/utils/bin2c/bin2c build/sector-romdisk.img build/sector-romdisk.c romdisk
+	$(KOS_CC) $(KOS_CFLAGS) -c build/sector-romdisk.c -o build/sector-romdisk-tmp.o
+	$(KOS_CC) -o $@ -r build/sector-romdisk-tmp.o $(KOS_LIB_PATHS) -Wl,--whole-archive -lromdiskbase
+jak-dc-sector-cache.elf: sector_cache_main.o sector_cache_cases.o sector_cache_bridge.o sector_cache_test.o build/sector-romdisk.o | sector_cache.o
+	kos-cc -o $@ $^ -lm
+host: build/sector-cache-check$(HOST_SHARED) build/sector-cache-check$(HOST_EXE)
+build/sector-cache-host.o: sector_cache.c sector_cache.h world_collision.h
+	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -pedantic -fPIC $(SECTOR_TEST_DEFS) -c $< -o $@
+build/sector-cache-check$(HOST_SHARED): tests/sector_cache_bridge.c world_collision.c world_collision.h sector_cache.h build/sector-cache-host.o
+	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -pedantic -fPIC -shared tests/sector_cache_bridge.c build/sector-cache-host.o -o $@ -lm
+build/sector-cache-check$(HOST_EXE): host_sector_cache.c sector_cache_cases.c sector_cache_cases.h tests/sector_cache_bridge.c world_collision.c world_collision.h sector_cache.h build/sector-cache-host.o
+	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -pedantic host_sector_cache.c sector_cache_cases.c tests/sector_cache_bridge.c build/sector-cache-host.o -o $@ -lm
 jak-dc-camera.elf: camera_boom_main.o camera_boom.o camera_rig.o camera_boom_cases.o world_collision.o
 	kos-cc -o $@ $^ -lm
 camera_real_main.o: camera_boom_main.c

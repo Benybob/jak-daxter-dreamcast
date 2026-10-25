@@ -16,9 +16,11 @@ parser.add_argument('elf',type=Path)
 parser.add_argument('--nm',type=Path,required=True)
 parser.add_argument('--output',type=Path,required=True)
 parser.add_argument('--tests',type=int,default=17)
-parser.add_argument('--suite',choices=('codegen','runtime','runtime-goal','objects','projection','movement','collision','world-manifest','view-clip','camera'),default='codegen')
+parser.add_argument('--suite',choices=('codegen','runtime','runtime-goal','objects','projection','movement','collision','world-manifest','view-clip','camera','sectors'),default='codegen')
+parser.add_argument('--timeout',type=float,default=30,help='Native completion deadline in seconds, 1..300')
 args=parser.parse_args()
 if args.tests<1: parser.error('--tests must be positive')
+if not 1<=args.timeout<=300: parser.error('--timeout must be 1..300 seconds')
 symbols=subprocess.check_output([str(args.nm),str(args.elf)],text=True)
 match=re.search(r'^([0-9a-fA-F]+)\s+\w\s+_?dc_backend$',symbols,re.MULTILINE)
 if not match: parser.error('dc_backend symbol missing')
@@ -55,7 +57,7 @@ command=[str(exe),'-config','config:UseReios=yes','-config','config:Dreamcast.Ra
 with (out/'frontend.log').open('w') as log:
     process=subprocess.Popen(command,cwd=out,env=env,stdout=log,stderr=subprocess.STDOUT,startupinfo=startup)
     try:
-        deadline=time.monotonic()+30
+        deadline=time.monotonic()+args.timeout
         while process.poll() is None and time.monotonic()<deadline:
             if result_path.is_file() and result_path.stat().st_size==128: break
             time.sleep(0.1)
@@ -83,6 +85,7 @@ if args.suite=='movement': result['scope']='Native C test-map movement/collision
 if args.suite=='collision': result['scope']='Native capsule/controller/PAT oracle, optionally original bounded collision patch; not original GOAL physics or hardware validation'
 if args.suite=='world-manifest': result['scope']='Native WLD2/3 byte decoding, transactional refusal, CRC, count/origin/coverage and surface-event guards; not original GOAL gameplay or hardware validation'
 if args.suite=='camera': result['scope']='Native sphere-boom and camera-rig synthetic/original-patch oracle; not original GOAL camera or hardware validation'
+if args.suite=='sectors': result['scope']='Native bounded sector IO/cache, exact rebased geometry payload and rollback oracle; not render streaming, original GOAL gameplay or hardware validation'
 if args.suite=='view-clip': result['scope']='Native SH4ZAM view/cache accuracy, matrix/control preservation, mode refusal and analytic near-plane clipping; not hardware performance or full gameplay'
 if args.suite=='runtime-goal': result['scope']='Native compiled GOAL scalar runtime, original list routines, typed memory, startup and static strings/floats; incomplete kernel/game'
 if args.suite=='objects': result['scope']='Native original V2/V4 data-only relocation validation; retail code never executed'

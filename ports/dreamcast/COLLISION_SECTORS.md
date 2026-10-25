@@ -4,8 +4,9 @@
 
 The offline converter partitions the complete original training collision into
 bounded files. Native collision now distinguishes a committed empty region from
-missing data. The transactional native sector loader remains under development;
-this checkpoint does not enable full-level traversal or render streaming.
+missing data. The transactional native sector loader is now verified separately
+in [SECTOR_CACHE.md](SECTOR_CACHE.md). This foundation checkpoint does not enable
+full-level traversal or render streaming.
 
 ## Verified scope
 
@@ -53,7 +54,7 @@ remain unready and reject access. Ready air permits falling and clear camera
 queries; it cannot provide ground placement. `dc_collision_build` still rejects
 an empty input. Every consumer must rebuild after the world-context layout change.
 
-Next: review Grok's isolated transactional C loader, test malformed files and
-allocation/IO failures for unchanged active state, then independently execute
-bounded original-data cache queries in Flycast. Rendering needs its own sector
-pipeline. Full kernel startup and original gameplay remain unfinished.
+The next loader gate is now verified in SECTOR_CACHE.md, including allocation/IO
+rollback and bounded original-data queries in Flycast. Rendering needs its own
+sector pipeline and game integration. Full kernel startup and original gameplay
+remain unfinished.

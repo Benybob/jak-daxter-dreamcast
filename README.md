@@ -12,14 +12,14 @@ using OpenAI Codex and human-authorized Grok Build collaboration. Proposals are
 reviewed and independently tested before integration. Local automated checks
 cover the supported subset; expert human review is still needed.
 
-## Progress — 2026-10-24
+## Progress — 2026-10-25
 
 | Milestone | Status |
 | --- | --- |
 | Native test-map prototype | Source published: real Jak model and six original animation clips, analog walk/run, jump, solid platforms, follow/orbit camera and clean exit |
 | Original training-island collision | Source published: bounded capsule movement against a 576-triangle patch with retained surface metadata |
 | Original training-island rendering + movement | Source published: separate native target, private asset conversion, transform/file binding; 20 integrated checks pass, including boundary respawn |
-| Collision sector foundation | Source published: complete offline training collision partition; native committed-air support; transactional native loading pending |
+| Collision sector loading | Source published: 572 native original-training window loads verified; game/render streaming integration pending |
 | Full original game | Unfinished: no complete kernel boot, general gameplay, progression or release build |
 
 The playable prototypes use a **native C controller**, as a temporary milestone.
@@ -36,6 +36,8 @@ See [NEAR_CLIPPING.md](ports/dreamcast/NEAR_CLIPPING.md) for the new guarded
 SH4ZAM view cache, clipped terrain and original-free raster evidence.
 [CAMERA_COLLISION.md](ports/dreamcast/CAMERA_COLLISION.md) covers the new checked
 camera boom, expanded 2,032-face collider and loaded-coverage requirements.
+[SECTOR_CACHE.md](ports/dreamcast/SECTOR_CACHE.md) covers verified native collision
+sector loading, bounded memory, private oracle preparation and pending game integration.
 
 ## Current verification
 
@@ -45,13 +47,13 @@ and checkpoints, not a percentage of game completion or a single full-game run.
 
 | Area | Locally verified scope |
 | --- | --- |
-| Host | 249 tests pass with the complete local SDK/oracle setup |
+| Host | 269 tests pass with the complete local SDK/oracle setup |
 | GOAL runtime | 22,649 native checks at its latest verified checkpoint |
 | Numeric regression | 39 native checks |
 | Prototype movement | 318 native checks; visible test-map controller and platform paths pass |
 | Original collision | 789 synthetic native checks; 2,063 combined checks including the original 576-triangle patch |
 | Collision file loader | 147 host checks |
-| Sector foundation | 61,576 faces preserved in 572 offline sectors; 572 sampled coverage windows; 81 native committed-air checks |
+| Sector loading | 4,020 native cache/IO/rollback checks across 572 windows; all 61,576 original faces exercised |
 | Near-plane rendering | 4,967 native view/clip checks (including 285 analytic clip cases), plus 10 synthetic raster checks |
 | Collision camera | 1,205 native query/rig checks; 454 WLD2/3 manifest checks; 11 original-terrain orbit checks |
 | Original-terrain prototype | 20 integrated checks: movement, jump edges, landing, camera, boundary respawn, memory and exit; captured idle/air frames visually reviewed |
@@ -76,16 +78,16 @@ not executed by these native tests; runtime and renderer are separate programs.
 
 ## Latest completed contributor task
 
-The offline converter preserves all 61,576 original training collision faces across 572 sectors. Independent sampled coverage and repeatability audits pass. Native collision distinguishes known air from missing data; 249 host tests, 81 native air checks and rebuilt camera, collision and movement regressions pass. The transactional native loader is still under development with Grok; render streaming and full gameplay remain unfinished. (AI-assisted)
+A transactional native C loader now streams bounded regions from the complete training collision package. Stock 16 MiB Flycast passes 4,020 checks across 572 windows, exercising all 61,576 source faces with matching rebased payload CRCs. 269 host tests pass; forced allocation/read/close failures preserve the prior cache. The largest sampled cache holds 3,286 faces with 889,764 bytes of tracked geometry allocations at peak. The game target still uses its fixed patch; render streaming and gameplay integration remain unfinished. (AI-assisted)
 
-See [COLLISION_SECTORS.md](ports/dreamcast/COLLISION_SECTORS.md). Full kernel/gameplay remains unfinished.
+See [SECTOR_CACHE.md](ports/dreamcast/SECTOR_CACHE.md). Full kernel/gameplay remains unfinished.
 
 ## Build and orientation
 
 Source is in `ports/dreamcast/`. Follow [BUILDING.md](ports/dreamcast/BUILDING.md).
 The verified baseline is OpenGOAL `6076aab5a95955443a9e1ed8f72a25bc0e2fcf9d`;
 the latest locally verified port source checkpoint is
-`2a80d5f7a938d434e737848da3d5e7bf504eb976`.
+`c7efd49fbad9e16b3a30c2d31d68c7c87f3685f5`.
 
 No ISO, BIOS, extracted textures/models, converted game scenes or ELF binaries
 embedding game assets are uploaded. Prepare assets locally from your own game
@@ -94,8 +96,8 @@ assets to commits, discussions or bug reports.
 
 ## Next work and contributing
 
-The immediate next gates are broader original-world traversal, transactional
-collision/render streaming and continued original-kernel/gameplay startup work.
+The immediate next gates are render-sector loading and broader original-world
+traversal, followed by continued original-kernel/gameplay startup work.
 Animation blending and additional rendering fidelity remain open.
 
 The full port still needs complete kernel startup, broader ABI coverage,
