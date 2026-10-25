@@ -264,3 +264,8 @@ See [SECTOR_CACHE.md](SECTOR_CACHE.md). (AI-assisted).
 
 A staged zlib decoder now enforces exact input/output lengths, checksums, disjoint buffers and a 64 KiB workspace cap. 273 host tests and 138 native Flycast checks pass, including maximum 512 KiB output, framing/canaries and allocation failures. Measured native decode workspace peaks at 7,132 bytes for the synthetic fixtures. Build documentation now records the zlib dependency. Render-sector and full-game integration remain unfinished. (AI-assisted)
 See [SECTOR_INFLATE.md](SECTOR_INFLATE.md). (AI-assisted).
+
+## Completed: Original background LODs in the native training prototype
+
+A standalone host helper now selects original tfrag/tie LODs and calls the unchanged OpenGOAL exporter. Highest-detail re-export matches the original GLB byte for byte. The lower-LOD training patch uses 1,305 terrain triangles instead of 2,973; 20 native movement checks and 11 camera-orbit checks pass in stock 16 MiB Flycast, with reviewed captures. 274 host tests pass. Full render streaming and original GOAL gameplay remain unfinished. (AI-assisted)
+See [ORIGINAL_LODS.md](ORIGINAL_LODS.md). (AI-assisted).

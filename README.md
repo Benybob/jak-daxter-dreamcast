@@ -20,6 +20,7 @@ cover the supported subset; expert human review is still needed.
 | Original training-island collision | Source published: bounded capsule movement against a 576-triangle patch with retained surface metadata |
 | Original training-island rendering + movement | Source published: separate native target, private asset conversion, transform/file binding; 20 integrated checks pass, including boundary respawn |
 | Collision sector loading | Source published: 572 native original-training window loads verified; game/render streaming integration pending |
+| Original background LODs | Source published: original LOD selection; reduced training patch passes movement and camera checks |
 | Full original game | Unfinished: no complete kernel boot, general gameplay, progression or release build |
 
 The playable prototypes use a **native C controller**, as a temporary milestone.
@@ -38,6 +39,8 @@ SH4ZAM view cache, clipped terrain and original-free raster evidence.
 camera boom, expanded 2,032-face collider and loaded-coverage requirements.
 [SECTOR_CACHE.md](ports/dreamcast/SECTOR_CACHE.md) covers verified native collision
 sector loading, bounded memory, private oracle preparation and pending game integration.
+[ORIGINAL_LODS.md](ports/dreamcast/ORIGINAL_LODS.md) covers original LOD export and
+the verified reduced training scene; distance-based LOD and streaming remain open.
 
 ## Current verification
 
@@ -47,7 +50,7 @@ and checkpoints, not a percentage of game completion or a single full-game run.
 
 | Area | Locally verified scope |
 | --- | --- |
-| Host | 273 tests pass with the complete local SDK/oracle setup |
+| Host | 274 tests pass with the complete local SDK/oracle setup |
 | GOAL runtime | 22,649 native checks at its latest verified checkpoint |
 | Numeric regression | 39 native checks |
 | Prototype movement | 318 native checks; visible test-map controller and platform paths pass |
@@ -59,8 +62,8 @@ and checkpoints, not a percentage of game completion or a single full-game run.
 | Collision camera | 1,205 native query/rig checks; 454 WLD2/3 manifest checks; 11 original-terrain orbit checks |
 | Original-terrain prototype | 20 integrated checks: movement, jump edges, landing, camera, boundary respawn, memory and exit; captured idle/air frames visually reviewed |
 
-The locally built real-terrain prototype renders 3,593 character triangles and 2,973
-terrain triangles. Its measured live heap at readiness is 2,559,928 bytes;
+The latest original-LOD training prototype renders 3,593 character triangles and
+1,305 terrain triangles. Its measured live heap at readiness is 2,470,144 bytes;
 this excludes embedded asset data, static storage, KOS and stacks. It reports
 5,302,696 bytes of free VRAM. These are emulator measurements, not hardware
 speed or full-game memory claims.
@@ -79,16 +82,16 @@ not executed by these native tests; runtime and renderer are separate programs.
 
 ## Latest completed contributor task
 
-A staged zlib decoder now enforces exact input/output lengths, checksums, disjoint buffers and a 64 KiB workspace cap. 273 host tests and 138 native Flycast checks pass, including maximum 512 KiB output, framing/canaries and allocation failures. Measured native decode workspace peaks at 7,132 bytes for the synthetic fixtures. Build documentation now records the zlib dependency. Render-sector and full-game integration remain unfinished. (AI-assisted)
+A standalone host helper now selects original tfrag/tie LODs and calls the unchanged OpenGOAL exporter. Highest-detail re-export matches the original GLB byte for byte. The lower-LOD training patch uses 1,305 terrain triangles instead of 2,973; 20 native movement checks and 11 camera-orbit checks pass in stock 16 MiB Flycast, with reviewed captures. 274 host tests pass. Full render streaming and original GOAL gameplay remain unfinished. (AI-assisted)
 
-See [SECTOR_INFLATE.md](ports/dreamcast/SECTOR_INFLATE.md). Full kernel/gameplay remains unfinished.
+See [ORIGINAL_LODS.md](ports/dreamcast/ORIGINAL_LODS.md). Full kernel/gameplay remains unfinished.
 
 ## Build and orientation
 
 Source is in `ports/dreamcast/`. Follow [BUILDING.md](ports/dreamcast/BUILDING.md).
 The verified baseline is OpenGOAL `6076aab5a95955443a9e1ed8f72a25bc0e2fcf9d`;
 the latest locally verified port source checkpoint is
-`69d190244180192ebf3681895846318c353ed730`.
+`5b8a76bb99529c9cf5cb97872c5933b13dcdb703`.
 
 No ISO, BIOS, extracted textures/models, converted game scenes or ELF binaries
 embedding game assets are uploaded. Prepare assets locally from your own game

@@ -16,7 +16,8 @@ def render_lua(template,values):
  return re.sub(r'\b(?:'+'|'.join(map(re.escape,values))+r')\b',lambda m:values[m.group(0)],template)
 
 def main():
- ap=argparse.ArgumentParser(description=__doc__);ap.add_argument('flycast',type=Path);ap.add_argument('elf',type=Path);ap.add_argument('--nm',type=Path,required=True);ap.add_argument('--output',type=Path,required=True);a=ap.parse_args();a.platform=False
+ ap=argparse.ArgumentParser(description=__doc__);ap.add_argument('flycast',type=Path);ap.add_argument('elf',type=Path);ap.add_argument('--nm',type=Path,required=True);ap.add_argument('--output',type=Path,required=True);ap.add_argument('--expected-triangles',type=int,default=6566,help='Expected combined actor + terrain source triangles');a=ap.parse_args();a.platform=False
+ if not 1<=a.expected_triangles<=16384:ap.error('--expected-triangles must be 1..16384')
  symbols=subprocess.check_output([str(a.nm),str(a.elf)],text=True)
  def address(name):return int(re.search(r'^([0-9a-fA-F]+)\s+\w\s+_?'+name+r'$',symbols,re.M)[1],16)
  out=a.output.resolve();out.mkdir(parents=True,exist_ok=True)
@@ -65,7 +66,7 @@ def main():
  checks['camera_fresh_bounds']=all(x['camera']['initialized']==1 and 0<=x['camera']['distance']<=x['camera']['limit']<=10.40001 for x in snapshots.values())
  checks['camera_eye_ray']=all(abs(x['camera']['eye_'+axis]-(x['camera']['target_'+axis]+x['camera']['dir_'+axis]*x['camera']['distance']))<.0001 for x in snapshots.values() for axis in ('x','y','z'))
  checks['near_clipping_active']=struct.unpack('<I',(out/'clipped.bin').read_bytes())[0]>0
- checks['training_triangles']=s['idle']['triangles']==6566
+ checks['training_triangles']=s['idle']['triangles']==a.expected_triangles
  checks['heap_below_4mib']=s['idle']['allocator_live']<4*1024*1024
  result=dict(ai_assisted=True,result='PASS' if all(checks.values()) else 'FAIL',elf_sha256=hashlib.sha256(a.elf.read_bytes()).hexdigest(),checks=checks,snapshots=snapshots,timebase='monotonic fixed60Hz simulation ticks',scope='Native C original-training patch prototype; captured images require visual review; not original GOAL gameplay or hardware validation')
  (out/'result.json').write_text(json.dumps(result,indent=2)+'\n');print(json.dumps(dict(result=result['result'],checks=checks),indent=2))
