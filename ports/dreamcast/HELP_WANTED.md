@@ -274,3 +274,8 @@ See [ORIGINAL_LODS.md](ORIGINAL_LODS.md). (AI-assisted).
 
 The bounded decoder now validates zero-output zlib streams through a separate entry point, supporting empty global buckets without exposing an active output buffer. 274 host tests and 158 native Flycast checks pass, including stored/compressed empty streams, truncation, trailing data and allocation failure. The source and README are updated. Material-preserving render-sector conversion and full gameplay remain unfinished. (AI-assisted)
 See [SECTOR_INFLATE.md](SECTOR_INFLATE.md). (AI-assisted).
+
+## Completed: Original material-preserving render sectors and native CPU reader
+
+The full original lower-LOD training background now converts into bounded render files while retaining all 140,166 triangles, reflection maps, strength bytes, normals and sampler/material state. The SH-4 CPU reader passes 9,578 stock 16 MiB Flycast checks over every sector; 88 synthetic-only native checks and 344 host tests also pass. Independent Grok audit findings were reproduced and corrected. Native render-window caching, GPU uploads and full gameplay remain unfinished. (AI-assisted)
+See [RENDER_SECTORS.md](RENDER_SECTORS.md). (AI-assisted).

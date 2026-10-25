@@ -74,3 +74,10 @@ make -C ports/dreamcast test
 The Linux SDK helper is setup_toolchain.sh. Its layout differs from the verified
 Windows setup; Linux host/SDK integration beyond the documented helper needs
 contributor validation. No CI success or broad platform support is claimed.
+
+The experimental original-background sector writer and bounded native reader
+are documented in [RENDER_SECTORS.md](RENDER_SECTORS.md). The default
+`jak-dc-render-io.elf` fixture is synthetic; private full-background tests require
+explicit local conversion. It is a CPU reader diagnostic, not a playable
+streaming renderer. Preserve generated real-data packages and embedding ELFs
+outside Git. KOS zlib is required for this target too. (AI-assisted)

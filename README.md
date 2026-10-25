@@ -20,6 +20,7 @@ cover the supported subset; expert human review is still needed.
 | Original training-island collision | Source published: bounded capsule movement against a 576-triangle patch with retained surface metadata |
 | Original training-island rendering + movement | Source published: separate native target, private asset conversion, transform/file binding; 20 integrated checks pass, including boundary respawn |
 | Collision sector loading | Source published: 572 native original-training window loads verified; game/render streaming integration pending |
+| Original render package | Source published: all 140,166 original lower-LOD triangles/material inputs retained; native CPU reader verified; GPU/cache integration pending |
 | Original background LODs | Source published: original LOD selection; reduced training patch passes movement and camera checks |
 | Full original game | Unfinished: no complete kernel boot, general gameplay, progression or release build |
 
@@ -41,6 +42,8 @@ camera boom, expanded 2,032-face collider and loaded-coverage requirements.
 sector loading, bounded memory, private oracle preparation and pending game integration.
 [ORIGINAL_LODS.md](ports/dreamcast/ORIGINAL_LODS.md) covers original LOD export and
 the verified reduced training scene; distance-based LOD and streaming remain open.
+[RENDER_SECTORS.md](ports/dreamcast/RENDER_SECTORS.md) covers full original lower-LOD
+material preservation, bounded CPU decoding and verified storage/window measurements.
 
 ## Current verification
 
@@ -50,14 +53,15 @@ and checkpoints, not a percentage of game completion or a single full-game run.
 
 | Area | Locally verified scope |
 | --- | --- |
-| Host | 274 tests pass with the complete local SDK/oracle setup |
+| Host | 344 tests pass with the complete local SDK/oracle setup |
 | GOAL runtime | 22,649 native checks at its latest verified checkpoint |
 | Numeric regression | 39 native checks |
 | Prototype movement | 318 native checks; visible test-map controller and platform paths pass |
 | Original collision | 789 synthetic native checks; 2,063 combined checks including the original 576-triangle patch |
 | Collision file loader | 147 host checks |
 | Sector loading | 5,164 native cache/IO/rollback checks across 572 windows; all 61,576 original faces exercised |
-| Compressed blocks | 158 native exact-framing, workspace and canary checks; render integration pending |
+| Compressed blocks | 158 native exact-framing, workspace and canary checks; used by the new CPU render reader |
+| Render package IO | 9,578 native checks across 3,158 original local files plus global geometry; 88 synthetic native checks; GPU/cache integration pending |
 | Near-plane rendering | 4,967 native view/clip checks (including 285 analytic clip cases), plus 10 synthetic raster checks |
 | Collision camera | 1,205 native query/rig checks; 454 WLD2/3 manifest checks; 11 original-terrain orbit checks |
 | Original-terrain prototype | 20 integrated checks: movement, jump edges, landing, camera, boundary respawn, memory and exit; captured idle/air frames visually reviewed |
@@ -82,16 +86,16 @@ not executed by these native tests; runtime and renderer are separate programs.
 
 ## Latest completed contributor task
 
-The bounded decoder now validates zero-output zlib streams through a separate entry point, supporting empty global buckets without exposing an active output buffer. 274 host tests and 158 native Flycast checks pass, including stored/compressed empty streams, truncation, trailing data and allocation failure. The source and README are updated. Material-preserving render-sector conversion and full gameplay remain unfinished. (AI-assisted)
+The full original lower-LOD training background now converts into bounded render files while retaining all 140,166 triangles, reflection maps, strength bytes, normals and sampler/material state. The SH-4 CPU reader passes 9,578 stock 16 MiB Flycast checks over every sector; 88 synthetic-only native checks and 344 host tests also pass. Independent Grok audit findings were reproduced and corrected. Native render-window caching, GPU uploads and full gameplay remain unfinished. (AI-assisted)
 
-See [SECTOR_INFLATE.md](ports/dreamcast/SECTOR_INFLATE.md). Full kernel/gameplay remains unfinished.
+See [RENDER_SECTORS.md](ports/dreamcast/RENDER_SECTORS.md). Full kernel/gameplay remains unfinished.
 
 ## Build and orientation
 
 Source is in `ports/dreamcast/`. Follow [BUILDING.md](ports/dreamcast/BUILDING.md).
 The verified baseline is OpenGOAL `6076aab5a95955443a9e1ed8f72a25bc0e2fcf9d`;
 the latest locally verified port source checkpoint is
-`c1e03b1e967417403bcce58f8dd7f7c915052546`.
+`8a8a22f4e144a01e51098482af3b21fb2ff4b44c`.
 
 No ISO, BIOS, extracted textures/models, converted game scenes or ELF binaries
 embedding game assets are uploaded. Prepare assets locally from your own game
@@ -100,8 +104,8 @@ assets to commits, discussions or bug reports.
 
 ## Next work and contributing
 
-The immediate next gates are render-sector loading and broader original-world
-traversal, followed by continued original-kernel/gameplay startup work.
+The immediate next gates are transactional render-window caching and GPU loading
+for broader original-world traversal, followed by original-kernel/gameplay startup.
 Animation blending and additional rendering fidelity remain open.
 
 The full port still needs complete kernel startup, broader ABI coverage,

@@ -89,5 +89,10 @@ if ($LASTEXITCODE -ne 0) { throw 'Sector cache oracle compilation failed' }
 if ($LASTEXITCODE -ne 0) { throw 'Compressed fixture generation failed' }
 & $Compiler @flags (Join-Path $port 'host_sector_inflate.c') (Join-Path $port 'sector_inflate_cases.c') (Join-Path $port 'tests/sector_inflate_bridge.c') $hostZlib -o (Join-Path $build 'sector-inflate-check.exe')
 if ($LASTEXITCODE -ne 0) { throw 'Exact sector decompression checker compilation failed' }
+$renderDefs = @('-Dmalloc=dc_render_test_malloc','-Dfree=dc_render_test_free','-DDC_RENDER_TEST_IO')
+& $Compiler @flags @renderDefs -c (Join-Path $port 'render_package.c') -o (Join-Path $build 'render-package-host.o')
+if ($LASTEXITCODE -ne 0) { throw 'Render package reader compilation failed' }
+& $Compiler @flags -shared (Join-Path $port 'tests/render_package_bridge.c') (Join-Path $build 'render-package-host.o') (Join-Path $port 'sector_inflate.c') $hostZlib -o (Join-Path $build 'render-package-check.dll') -lm
+if ($LASTEXITCODE -ne 0) { throw 'Render package ctypes bridge compilation failed' }
 & $pythonCommand -m unittest discover -s (Join-Path $port 'tests') -v
 if ($LASTEXITCODE -ne 0) { throw 'Host tests failed' }

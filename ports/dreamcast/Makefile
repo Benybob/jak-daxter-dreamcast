@@ -486,6 +486,33 @@ jak-dc-inflate.elf: sector_inflate_main.o sector_inflate_cases.o sector_inflate_
 host: build/sector-inflate-check$(HOST_EXE)
 build/sector-inflate-check$(HOST_EXE): host_sector_inflate.c sector_inflate_cases.c tests/sector_inflate_bridge.c sector_inflate_cases.h sector_inflate.c sector_inflate.h build/inflate_fixture.h
 	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -pedantic host_sector_inflate.c sector_inflate_cases.c tests/sector_inflate_bridge.c -o $@ -lz
+
+# DRM2 CPU reader: global texture/material catalog, one bounded sector at a time.
+RENDER_ASSET_DIR ?= build/private-render-assets
+RENDER_TEST_DEFS := -Dmalloc=dc_render_test_malloc -Dfree=dc_render_test_free -DDC_RENDER_TEST_IO
+render_package.o: render_package.c render_package.h sector_inflate.h
+render_package_test.o: render_package.c render_package.h sector_inflate.h
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) $(RENDER_TEST_DEFS) -c $< -o $@
+render_package_bridge.o: tests/render_package_bridge.c render_package.h
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -I. -c $< -o $@
+build/render_fixture.h:
+	$(PYTHON) make_render_fixture.py build/private-render-assets $@
+render_package_main.o: render_package_main.c render_package.h build/render_fixture.h
+$(RENDER_ASSET_DIR)/synthetic/case000/m: build/render_fixture.h
+	@test -f $@
+build/render-romdisk.o: $(RENDER_ASSET_DIR)/synthetic/case000/m $(wildcard $(RENDER_ASSET_DIR)/real/sectors/*.drs)
+	mkdir -p build
+	$(KOS_GENROMFS) -f build/render-romdisk.img -d $(RENDER_ASSET_DIR) -x report.json
+	$(KOS_BASE)/utils/bin2c/bin2c build/render-romdisk.img build/render-romdisk.c romdisk
+	$(KOS_CC) $(KOS_CFLAGS) -c build/render-romdisk.c -o build/render-romdisk-tmp.o
+	$(KOS_CC) -o $@ -r build/render-romdisk-tmp.o $(KOS_LIB_PATHS) -Wl,--whole-archive -lromdiskbase
+jak-dc-render-io.elf: render_package_main.o render_package_bridge.o render_package_test.o sector_inflate.o build/render-romdisk.o | render_package.o
+	kos-cc -o $@ $^ -lz -lm
+host: build/render-package-check$(HOST_SHARED)
+build/render-package-host.o: render_package.c render_package.h sector_inflate.h
+	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -pedantic -fPIC $(RENDER_TEST_DEFS) -c $< -o $@
+build/render-package-check$(HOST_SHARED): tests/render_package_bridge.c render_package.h sector_inflate.c sector_inflate.h build/render-package-host.o
+	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -pedantic -fPIC -shared tests/render_package_bridge.c build/render-package-host.o sector_inflate.c -o $@ -lz -lm
 jak-dc-camera.elf: camera_boom_main.o camera_boom.o camera_rig.o camera_boom_cases.o world_collision.o
 	kos-cc -o $@ $^ -lm
 camera_real_main.o: camera_boom_main.c
