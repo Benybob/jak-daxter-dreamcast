@@ -28,18 +28,19 @@ static void pool_free(voidpf opaque,voidpf allocation){
  pool->live-=b->h.bytes;free(b);
 }
 static void pool_release(dc_inflate_pool *pool){while(pool->head)pool_free(pool,pool->head+1);}
-const char *dc_sector_inflate(const void *input,uint32_t input_bytes,
-                             void *output,uint32_t output_bytes,uint32_t output_crc){
+static const char *inflate_exact(const void *input,uint32_t input_bytes,
+                                void *output,uint32_t output_bytes,uint32_t capacity,uint32_t output_crc){
  z_stream stream;dc_inflate_pool pool={0};uintptr_t a=(uintptr_t)input,b=(uintptr_t)output;
  const char *error=NULL;int result,ended;
- if(!input || !output || !input_bytes || !output_bytes || input_bytes>DC_INFLATE_INPUT_MAX || output_bytes>DC_INFLATE_RAW_MAX)
+ if(!input || !output || !input_bytes || !capacity || input_bytes>DC_INFLATE_INPUT_MAX
+    || output_bytes>DC_INFLATE_RAW_MAX || capacity>DC_INFLATE_RAW_MAX || capacity<output_bytes)
   return "invalid compressed block bounds";
- if((a<=b && b-a<input_bytes) || (b<a && a-b<output_bytes))return "compressed block buffers overlap";
+ if((a<=b && b-a<input_bytes) || (b<a && a-b<capacity))return "compressed block buffers overlap";
  memset(&stream,0,sizeof(stream));stream.zalloc=pool_alloc;stream.zfree=pool_free;stream.opaque=&pool;
  result=inflateInit(&stream);
  if(result!=Z_OK){pool_release(&pool);return "compressed block initialization failed";}
  stream.next_in=(Bytef *)input;stream.avail_in=(uInt)input_bytes;
- stream.next_out=output;stream.avail_out=(uInt)output_bytes;
+ stream.next_out=output;stream.avail_out=(uInt)capacity;
  result=inflate(&stream,Z_FINISH);
  if(result!=Z_STREAM_END)error="compressed block decode failed";
  else if(stream.total_in!=input_bytes || stream.total_out!=output_bytes)error="compressed block length mismatch";
@@ -47,4 +48,12 @@ const char *dc_sector_inflate(const void *input,uint32_t input_bytes,
  if(!error && ended!=Z_OK)error="compressed block cleanup failed";
  if(!error && (uint32_t)crc32(0,output,(uInt)output_bytes)!=output_crc)error="compressed block checksum mismatch";
  return error;
+}
+const char *dc_sector_inflate(const void *input,uint32_t input_bytes,
+                             void *output,uint32_t output_bytes,uint32_t output_crc){
+ if(!output_bytes)return "invalid compressed block bounds";
+ return inflate_exact(input,input_bytes,output,output_bytes,output_bytes,output_crc);
+}
+const char *dc_sector_inflate_empty(const void *input,uint32_t input_bytes){
+ unsigned char scratch=0;return inflate_exact(input,input_bytes,&scratch,0,1,0);
 }

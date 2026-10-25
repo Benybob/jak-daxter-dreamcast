@@ -1,0 +1,20 @@
+{
+  "ai_assisted": true,
+  "result": "PASS",
+  "host_tests": 274,
+  "host_codec_checks": 158,
+  "native_codec_checks": 158,
+  "native_ram_bytes": 16777216,
+  "native_peak_decode_workspace": 7132,
+  "workspace_hard_limit": 65536,
+  "raw_block_limit": 524288,
+  "input_block_limit": 525312,
+  "elf_sha256": "e6ae5dca54524f0f515f4bbb0e26ffd37bd34105a7197b6191eeab5061f61392",
+  "native_zlib": "1.3.2",
+  "host_zlib": "1.3.1",
+  "encoder_zlib": "1.3.1",
+  "integrated_render_streaming": false,
+  "physical_hardware_tested": false,
+  "scope": "Native exact bounded zlib block decoding, framing, workspace and canary oracle; not integrated sector/render streaming or hardware validation",
+  "exact_empty_streams": true
+}

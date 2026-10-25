@@ -9,8 +9,12 @@ output size/CRC, gzip/raw-deflate framing and streams requiring a dictionary.
 This is a codec utility; container validation and committing a world or GPU layer
 remain the caller's responsibility.
 
-Input is limited to 513 KiB and output to 512 KiB. Empty and overlapping buffers
-are refused. The private allocator caps zlib workspace, including its own block
+Input is limited to 513 KiB and output to 512 KiB. The general decoder refuses
+empty or overlapping buffers. `dc_sector_inflate_empty` separately validates one
+complete zero-output stream without touching caller output memory. This supports
+an empty global render bucket while local sectors still contain geometry.
+Both entry points use the same framing checks and allocator. The private
+allocator caps zlib workspace, including its own block
 headers, at 64 KiB; multiplication is checked before allocating. Every per-call
 allocation is released on initialization, decoding and cleanup failures. There is
 no persistent decoder state. Output may be partly written on error, so it must
@@ -18,11 +22,13 @@ never point at an active world, layer or other committed data.
 
 ## Verification
 
-273 host tests pass. The shared C oracle passes 138 checks on the host and in
+274 host tests pass. The shared C oracle passes 158 checks on the host and in
 stock 16 MiB Flycast. Synthetic fixtures exercise stored, fixed and dynamic
 Huffman streams, incompressible 512 KiB output, highly compressed output,
 truncated streams, allocation failures, framing/checksum errors, canaries,
-overlap and size refusal. Allocator tests exercise the exact workspace cap and
+overlap and size refusal. Empty streams cover stored/compressed framing,
+truncation, trailing/concatenated data, nonempty input refusal and allocation
+failure. Allocator tests exercise the exact workspace cap and
 overflowing allocation requests. No game data is used.
 
 Native decoding used at most 7,132 bytes of tracked workspace for the fixtures;
@@ -48,7 +54,7 @@ bootstrap does not install it automatically.
 
 ```text
 python ports/dreamcast/build_dreamcast.py --msys LOCAL_MSYS --target jak-dc-inflate.elf
-python ports/dreamcast/verify_backend.py FLYCAST ports/dreamcast/jak-dc-inflate.elf --nm SH_ELF_NM --suite compression --tests 138 --output LOCAL_RESULTS
+python ports/dreamcast/verify_backend.py FLYCAST ports/dreamcast/jak-dc-inflate.elf --nm SH_ELF_NM --suite compression --tests 158 --output LOCAL_RESULTS
 ```
 
 The fixture generator is `make_inflate_fixture.py`; its generated header stays in

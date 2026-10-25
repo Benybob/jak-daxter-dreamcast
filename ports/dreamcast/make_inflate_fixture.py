@@ -24,6 +24,8 @@ def prepare(path):
     for name,wbits,kwargs in (('inflate_gzip',31,{}),('inflate_raw',-15,{}),('inflate_dictionary',15,dict(zdict=b'123456789'))):
         obj=zlib.compressobj(9,zlib.DEFLATED,wbits,**kwargs);array(name,obj.compress(pattern(63,0))+obj.flush())
     array('inflate_bomb',zlib.compress(bytes(524289),9))
+    array('inflate_empty',zlib.compress(b'',9))
+    array('inflate_empty_stored',zlib.compress(b'',0))
     path.parent.mkdir(parents=True,exist_ok=True);path.write_text('\n'.join(lines)+'\n',encoding='utf-8',newline='\n')
 if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('header',type=Path);a=p.parse_args();prepare(a.header)

@@ -60,6 +60,18 @@ void dc_sector_inflate_cases(dc_inflate_report *r){
  CHECK(dc_sector_inflate(small->data,small->bytes,(void *)small->data,small->output,small->crc)!=NULL);
  memcpy(buffer+16,small->data,small->bytes);
  CHECK(dc_sector_inflate(buffer+16,small->bytes,buffer+17,small->output,small->crc)!=NULL);
+ CHECK(!dc_inflate_test_live());dc_inflate_test_reset(0);
+ CHECK(dc_sector_inflate_empty(inflate_empty,sizeof(inflate_empty))==NULL);CHECK(!dc_inflate_test_live());
+ allocations=dc_inflate_test_calls();
+ for(n=1;n<=allocations;++n){dc_inflate_test_reset(n);CHECK(dc_sector_inflate_empty(inflate_empty,sizeof(inflate_empty))!=NULL);CHECK(!dc_inflate_test_live());}
+ dc_inflate_test_reset(0);CHECK(dc_sector_inflate_empty(inflate_empty_stored,sizeof(inflate_empty_stored))==NULL);
+ for(i=0;i<sizeof(inflate_empty);++i)CHECK(dc_sector_inflate_empty(inflate_empty,i)!=NULL);
+ CHECK(dc_sector_inflate_empty(small->data,small->bytes)!=NULL);
+ CHECK(dc_sector_inflate_empty(NULL,1)!=NULL);CHECK(dc_sector_inflate_empty(inflate_empty,DC_INFLATE_INPUT_MAX+1)!=NULL);
+ memcpy(altered,inflate_empty,sizeof(inflate_empty));altered[sizeof(inflate_empty)]=99;
+ CHECK(dc_sector_inflate_empty(altered,sizeof(inflate_empty)+1)!=NULL);
+ memcpy(altered+sizeof(inflate_empty),inflate_empty,sizeof(inflate_empty));CHECK(dc_sector_inflate_empty(altered,2*sizeof(inflate_empty))!=NULL);
+ altered[sizeof(inflate_empty)-1]^=1;CHECK(dc_sector_inflate_empty(altered,sizeof(inflate_empty))!=NULL);
  CHECK(!dc_inflate_test_live());dc_inflate_test_reset(0);CHECK(dc_inflate_test_pool_limits());CHECK(!dc_inflate_test_live());
  CHECK(dc_inflate_test_peak()==DC_INFLATE_WORKSPACE_MAX);dc_inflate_test_reset(0);
 }

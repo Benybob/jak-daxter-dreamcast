@@ -12,4 +12,7 @@ enum { DC_INFLATE_RAW_MAX=512*1024, DC_INFLATE_INPUT_MAX=512*1024+1024,
  * operations. Callers commit a world/layer only after this and format validation. */
 const char *dc_sector_inflate(const void *input,uint32_t input_bytes,
                              void *output,uint32_t output_bytes,uint32_t output_crc);
+/* Validate exactly one zero-output zlib stream for an empty global bucket.
+ * No caller output buffer is touched. Same framing and workspace limits. */
+const char *dc_sector_inflate_empty(const void *input,uint32_t input_bytes);
 #endif

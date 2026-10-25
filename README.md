@@ -57,7 +57,7 @@ and checkpoints, not a percentage of game completion or a single full-game run.
 | Original collision | 789 synthetic native checks; 2,063 combined checks including the original 576-triangle patch |
 | Collision file loader | 147 host checks |
 | Sector loading | 5,164 native cache/IO/rollback checks across 572 windows; all 61,576 original faces exercised |
-| Compressed blocks | 138 native exact-framing, workspace and canary checks; render integration pending |
+| Compressed blocks | 158 native exact-framing, workspace and canary checks; render integration pending |
 | Near-plane rendering | 4,967 native view/clip checks (including 285 analytic clip cases), plus 10 synthetic raster checks |
 | Collision camera | 1,205 native query/rig checks; 454 WLD2/3 manifest checks; 11 original-terrain orbit checks |
 | Original-terrain prototype | 20 integrated checks: movement, jump edges, landing, camera, boundary respawn, memory and exit; captured idle/air frames visually reviewed |
@@ -82,16 +82,16 @@ not executed by these native tests; runtime and renderer are separate programs.
 
 ## Latest completed contributor task
 
-A standalone host helper now selects original tfrag/tie LODs and calls the unchanged OpenGOAL exporter. Highest-detail re-export matches the original GLB byte for byte. The lower-LOD training patch uses 1,305 terrain triangles instead of 2,973; 20 native movement checks and 11 camera-orbit checks pass in stock 16 MiB Flycast, with reviewed captures. 274 host tests pass. Full render streaming and original GOAL gameplay remain unfinished. (AI-assisted)
+The bounded decoder now validates zero-output zlib streams through a separate entry point, supporting empty global buckets without exposing an active output buffer. 274 host tests and 158 native Flycast checks pass, including stored/compressed empty streams, truncation, trailing data and allocation failure. The source and README are updated. Material-preserving render-sector conversion and full gameplay remain unfinished. (AI-assisted)
 
-See [ORIGINAL_LODS.md](ports/dreamcast/ORIGINAL_LODS.md). Full kernel/gameplay remains unfinished.
+See [SECTOR_INFLATE.md](ports/dreamcast/SECTOR_INFLATE.md). Full kernel/gameplay remains unfinished.
 
 ## Build and orientation
 
 Source is in `ports/dreamcast/`. Follow [BUILDING.md](ports/dreamcast/BUILDING.md).
 The verified baseline is OpenGOAL `6076aab5a95955443a9e1ed8f72a25bc0e2fcf9d`;
 the latest locally verified port source checkpoint is
-`5b8a76bb99529c9cf5cb97872c5933b13dcdb703`.
+`c1e03b1e967417403bcce58f8dd7f7c915052546`.
 
 No ISO, BIOS, extracted textures/models, converted game scenes or ELF binaries
 embedding game assets are uploaded. Prepare assets locally from your own game

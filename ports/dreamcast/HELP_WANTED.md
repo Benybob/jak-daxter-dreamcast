@@ -269,3 +269,8 @@ See [SECTOR_INFLATE.md](SECTOR_INFLATE.md). (AI-assisted).
 
 A standalone host helper now selects original tfrag/tie LODs and calls the unchanged OpenGOAL exporter. Highest-detail re-export matches the original GLB byte for byte. The lower-LOD training patch uses 1,305 terrain triangles instead of 2,973; 20 native movement checks and 11 camera-orbit checks pass in stock 16 MiB Flycast, with reviewed captures. 274 host tests pass. Full render streaming and original GOAL gameplay remain unfinished. (AI-assisted)
 See [ORIGINAL_LODS.md](ORIGINAL_LODS.md). (AI-assisted).
+
+## Completed: Exact empty compressed render buckets
+
+The bounded decoder now validates zero-output zlib streams through a separate entry point, supporting empty global buckets without exposing an active output buffer. 274 host tests and 158 native Flycast checks pass, including stored/compressed empty streams, truncation, trailing data and allocation failure. The source and README are updated. Material-preserving render-sector conversion and full gameplay remain unfinished. (AI-assisted)
+See [SECTOR_INFLATE.md](SECTOR_INFLATE.md). (AI-assisted).
