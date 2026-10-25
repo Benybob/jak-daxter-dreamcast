@@ -17,6 +17,12 @@ RUNTIME_TARGET := jak-dc-runtime.elf
 KOS_ROMDISK_DIR := romdisk
 
 .PHONY: all host test fixture clean
+# An explicit asset-directory change can point at OLDER files. Timestamps of
+# the previous directory must never leave an ELF embedding the wrong packet.
+# Also refresh on removed files, which Make's wildcard alone cannot detect.
+.PHONY: private-romdisk-refresh
+private-romdisk-refresh:
+build/player-romdisk.o build/world-romdisk.o build/training-romdisk.o build/camera-world-romdisk.o build/sector-romdisk.o build/render-romdisk.o build/gpu-catalog-romdisk.o: private-romdisk-refresh
 all: $(TARGET) $(SCENE_TARGET) $(TEXTURED_TARGET) $(BACKEND_TARGET) $(RUNTIME_TARGET)
 
 # Host-only commands need no KallistiOS installation.
@@ -513,6 +519,26 @@ build/render-package-host.o: render_package.c render_package.h sector_inflate.h
 	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -pedantic -fPIC $(RENDER_TEST_DEFS) -c $< -o $@
 build/render-package-check$(HOST_SHARED): tests/render_package_bridge.c render_package.h sector_inflate.c sector_inflate.h build/render-package-host.o
 	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -pedantic -fPIC -shared tests/render_package_bridge.c build/render-package-host.o sector_inflate.c -o $@ -lz -lm
+
+GPU_CATALOG_ASSET_DIR ?= build/private-gpu-catalog-assets
+render_gpu.o: render_gpu.c render_gpu.h render_package.h
+render_gpu_test.o: render_gpu.c render_gpu.h render_package.h
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -DDC_RENDER_GPU_TEST_ALLOC -c $< -o $@
+render_gpu_cases.o: render_gpu_cases.c render_gpu_cases.h render_gpu.h
+render_gpu_main.o: render_gpu_main.c render_gpu_cases.h
+build/private-gpu-catalog-assets/manifest.drm:
+	$(PYTHON) make_render_gpu_fixture.py build/private-gpu-catalog-assets
+build/gpu-catalog-romdisk.o: $(GPU_CATALOG_ASSET_DIR)/manifest.drm
+	mkdir -p build
+	$(KOS_GENROMFS) -f build/gpu-catalog-romdisk.img -d $(GPU_CATALOG_ASSET_DIR) -x report.json
+	$(KOS_BASE)/utils/bin2c/bin2c build/gpu-catalog-romdisk.img build/gpu-catalog-romdisk.c romdisk
+	$(KOS_CC) $(KOS_CFLAGS) -c build/gpu-catalog-romdisk.c -o build/gpu-catalog-romdisk-tmp.o
+	$(KOS_CC) -o $@ -r build/gpu-catalog-romdisk-tmp.o $(KOS_LIB_PATHS) -Wl,--whole-archive -lromdiskbase
+jak-dc-render-gpu.elf: render_gpu_main.o render_gpu_cases.o render_gpu_test.o render_package.o sector_inflate.o build/gpu-catalog-romdisk.o | render_gpu.o
+	kos-cc -o $@ $^ -lz -lm
+host: build/render-gpu-check$(HOST_EXE)
+build/render-gpu-check$(HOST_EXE): host_render_gpu.c render_gpu.c render_gpu_cases.c render_gpu_cases.h render_gpu.h render_package.c render_package.h sector_inflate.c sector_inflate.h
+	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -pedantic -DDC_RENDER_GPU_TEST_ALLOC -Itests/render-gpu-stubs host_render_gpu.c render_gpu.c render_gpu_cases.c render_package.c sector_inflate.c -o $@ -lz -lm
 jak-dc-camera.elf: camera_boom_main.o camera_boom.o camera_rig.o camera_boom_cases.o world_collision.o
 	kos-cc -o $@ $^ -lm
 camera_real_main.o: camera_boom_main.c

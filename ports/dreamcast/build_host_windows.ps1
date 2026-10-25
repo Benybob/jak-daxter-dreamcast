@@ -94,5 +94,7 @@ $renderDefs = @('-Dmalloc=dc_render_test_malloc','-Dfree=dc_render_test_free','-
 if ($LASTEXITCODE -ne 0) { throw 'Render package reader compilation failed' }
 & $Compiler @flags -shared (Join-Path $port 'tests/render_package_bridge.c') (Join-Path $build 'render-package-host.o') (Join-Path $port 'sector_inflate.c') $hostZlib -o (Join-Path $build 'render-package-check.dll') -lm
 if ($LASTEXITCODE -ne 0) { throw 'Render package ctypes bridge compilation failed' }
+& $Compiler @flags '-DDC_RENDER_GPU_TEST_ALLOC' ('-I' + (Join-Path $port 'tests/render-gpu-stubs')) (Join-Path $port 'host_render_gpu.c') (Join-Path $port 'render_gpu.c') (Join-Path $port 'render_gpu_cases.c') (Join-Path $port 'render_package.c') (Join-Path $port 'sector_inflate.c') $hostZlib -o (Join-Path $build 'render-gpu-check.exe') -lm
+if ($LASTEXITCODE -ne 0) { throw 'Resident texture owner host compilation failed' }
 & $pythonCommand -m unittest discover -s (Join-Path $port 'tests') -v
 if ($LASTEXITCODE -ne 0) { throw 'Host tests failed' }

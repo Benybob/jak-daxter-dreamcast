@@ -279,3 +279,8 @@ See [SECTOR_INFLATE.md](SECTOR_INFLATE.md). (AI-assisted).
 
 The full original lower-LOD training background now converts into bounded render files while retaining all 140,166 triangles, reflection maps, strength bytes, normals and sampler/material state. The SH-4 CPU reader passes 9,578 stock 16 MiB Flycast checks over every sector; 88 synthetic-only native checks and 344 host tests also pass. Independent Grok audit findings were reproduced and corrected. Native render-window caching, GPU uploads and full gameplay remain unfinished. (AI-assisted)
 See [RENDER_SECTORS.md](RENDER_SECTORS.md). (AI-assisted).
+
+## Completed: Resident original background colors with staged VRAM ownership
+
+All 70 original lower-LOD background color maps now upload and read back exactly in PowerVR VRAM, with texture ownership independent of future geometry-window swaps. 370 original-catalog and 30 synthetic native Flycast checks pass; every staged allocation failure preserves the active owner. Peak requested VRAM for old plus replacement colors is 784,384 bytes. 346 host tests pass. Make also refreshes private ROM disks when switching to older asset directories. Geometry-cache, reflection shader and full gameplay integration remain unfinished. (AI-assisted)
+See [RESIDENT_TEXTURES.md](RESIDENT_TEXTURES.md). (AI-assisted).

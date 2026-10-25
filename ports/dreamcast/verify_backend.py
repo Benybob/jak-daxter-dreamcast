@@ -16,7 +16,7 @@ parser.add_argument('elf',type=Path)
 parser.add_argument('--nm',type=Path,required=True)
 parser.add_argument('--output',type=Path,required=True)
 parser.add_argument('--tests',type=int,default=17)
-parser.add_argument('--suite',choices=('codegen','runtime','runtime-goal','objects','projection','movement','collision','world-manifest','view-clip','camera','sectors','compression','render-io'),default='codegen')
+parser.add_argument('--suite',choices=('codegen','runtime','runtime-goal','objects','projection','movement','collision','world-manifest','view-clip','camera','sectors','compression','render-io','gpu-catalog'),default='codegen')
 parser.add_argument('--timeout',type=float,default=30,help='Native completion deadline in seconds, 1..300')
 args=parser.parse_args()
 if args.tests<1: parser.error('--tests must be positive')
@@ -88,6 +88,7 @@ if args.suite=='camera': result['scope']='Native sphere-boom and camera-rig synt
 if args.suite=='sectors': result['scope']='Native bounded sector IO/cache, exact rebased geometry payload and rollback oracle; not render streaming, original GOAL gameplay or hardware validation'
 if args.suite=='compression': result['scope']='Native exact bounded zlib block decoding, framing, workspace and canary oracle; not integrated sector/render streaming or hardware validation'
 if args.suite=='render-io': result['scope']='Native DRM2/DRS2 catalog and compressed geometry reader, source ledger and failure cleanup; no GPU/cache integration or hardware validation'
+if args.suite=='gpu-catalog': result['scope']='Native resident PVR base/specular color catalog, exact VRAM readback and staged allocation failure ownership; strength retained on CPU, no geometry/cache/reflection shader integration or hardware validation'
 if args.suite=='view-clip': result['scope']='Native SH4ZAM view/cache accuracy, matrix/control preservation, mode refusal and analytic near-plane clipping; not hardware performance or full gameplay'
 if args.suite=='runtime-goal': result['scope']='Native compiled GOAL scalar runtime, original list routines, typed memory, startup and static strings/floats; incomplete kernel/game'
 if args.suite=='objects': result['scope']='Native original V2/V4 data-only relocation validation; retail code never executed'

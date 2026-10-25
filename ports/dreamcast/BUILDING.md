@@ -81,3 +81,9 @@ are documented in [RENDER_SECTORS.md](RENDER_SECTORS.md). The default
 explicit local conversion. It is a CPU reader diagnostic, not a playable
 streaming renderer. Preserve generated real-data packages and embedding ELFs
 outside Git. KOS zlib is required for this target too. (AI-assisted)
+
+The separate `jak-dc-render-gpu.elf` oracle validates resident color textures
+and staged GPU ownership, with original-free default input. See
+[RESIDENT_TEXTURES.md](RESIDENT_TEXTURES.md). Private ROM-disk objects refresh
+on each target build so changing to an older asset directory cannot keep stale
+embedded data. These are diagnostics, not a complete streaming game. (AI-assisted)
