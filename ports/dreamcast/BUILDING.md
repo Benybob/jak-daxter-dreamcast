@@ -1,7 +1,8 @@
 # Building the Dreamcast workbench
 
 2026-10-21. (AI-assisted). Windows is the fully exercised development setup.
-Use Git, Python 3.12 with Pillow, MSYS2 MinGW64 GCC/CMake/Ninja and 7-Zip.
+Use Git, Python 3.12 with Pillow, MSYS2 MinGW64 GCC/CMake/Ninja, zlib development
+headers/static library and 7-Zip.
 The SDK setup downloads substantial compiler/KOS archives into the workspace.
 
 Keep the repository under a workspace containing sibling tool directories:
@@ -57,7 +58,13 @@ OBJECTS.md and TEXTURES.md; keep all resulting game bytes outside Git. The
 textured viewer needs a locally converted scene, or a synthetic development
 fixture. No real-scene ELF is included in this repository.
 
-For host development on Linux, use Python/Pillow, a C99 compiler and Make:
+Compressed block tests require host zlib headers/library; native compression tests
+require KOS ports zlib in the configured SDK prefix. Install that dependency using
+the standard KOS ports workflow before building jak-dc-inflate.elf. SDK bootstrap
+does not install zlib automatically. See [SECTOR_INFLATE.md](SECTOR_INFLATE.md).
+
+For host development on Linux, use Python/Pillow, a C99 compiler, Make and zlib
+development headers/library:
 
 ```sh
 make -C ports/dreamcast host

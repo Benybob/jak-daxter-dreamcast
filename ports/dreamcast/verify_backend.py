@@ -16,7 +16,7 @@ parser.add_argument('elf',type=Path)
 parser.add_argument('--nm',type=Path,required=True)
 parser.add_argument('--output',type=Path,required=True)
 parser.add_argument('--tests',type=int,default=17)
-parser.add_argument('--suite',choices=('codegen','runtime','runtime-goal','objects','projection','movement','collision','world-manifest','view-clip','camera','sectors'),default='codegen')
+parser.add_argument('--suite',choices=('codegen','runtime','runtime-goal','objects','projection','movement','collision','world-manifest','view-clip','camera','sectors','compression'),default='codegen')
 parser.add_argument('--timeout',type=float,default=30,help='Native completion deadline in seconds, 1..300')
 args=parser.parse_args()
 if args.tests<1: parser.error('--tests must be positive')
@@ -86,6 +86,7 @@ if args.suite=='collision': result['scope']='Native capsule/controller/PAT oracl
 if args.suite=='world-manifest': result['scope']='Native WLD2/3 byte decoding, transactional refusal, CRC, count/origin/coverage and surface-event guards; not original GOAL gameplay or hardware validation'
 if args.suite=='camera': result['scope']='Native sphere-boom and camera-rig synthetic/original-patch oracle; not original GOAL camera or hardware validation'
 if args.suite=='sectors': result['scope']='Native bounded sector IO/cache, exact rebased geometry payload and rollback oracle; not render streaming, original GOAL gameplay or hardware validation'
+if args.suite=='compression': result['scope']='Native exact bounded zlib block decoding, framing, workspace and canary oracle; not integrated sector/render streaming or hardware validation'
 if args.suite=='view-clip': result['scope']='Native SH4ZAM view/cache accuracy, matrix/control preservation, mode refusal and analytic near-plane clipping; not hardware performance or full gameplay'
 if args.suite=='runtime-goal': result['scope']='Native compiled GOAL scalar runtime, original list routines, typed memory, startup and static strings/floats; incomplete kernel/game'
 if args.suite=='objects': result['scope']='Native original V2/V4 data-only relocation validation; retail code never executed'

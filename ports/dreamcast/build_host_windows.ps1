@@ -6,6 +6,8 @@ param(
 $ErrorActionPreference = 'Stop'
 $port = $PSScriptRoot
 $build = Join-Path $port 'build'
+$hostZlib = Join-Path (Split-Path (Split-Path $Compiler)) 'lib/libz.a'
+if (!(Test-Path -LiteralPath $hostZlib)) { throw 'Host zlib development archive lib/libz.a is required in the selected MinGW compiler prefix; see SECTOR_INFLATE.md' }
 $pythonCommand = (Get-Command $Python).Source
 $env:PATH = (Split-Path -Parent $Compiler) + ';' + $env:PATH
 New-Item -ItemType Directory -Force $build | Out-Null
@@ -83,5 +85,9 @@ if ($LASTEXITCODE -ne 0) { throw 'Sector cache instrumented compilation failed' 
 if ($LASTEXITCODE -ne 0) { throw 'Sector cache ctypes bridge compilation failed' }
 & $Compiler @flags (Join-Path $port 'host_sector_cache.c') (Join-Path $port 'sector_cache_cases.c') (Join-Path $port 'tests/sector_cache_bridge.c') (Join-Path $build 'sector-cache-host.o') -o (Join-Path $build 'sector-cache-check.exe') -lm
 if ($LASTEXITCODE -ne 0) { throw 'Sector cache oracle compilation failed' }
+& $pythonCommand (Join-Path $port 'make_inflate_fixture.py') (Join-Path $build 'inflate_fixture.h')
+if ($LASTEXITCODE -ne 0) { throw 'Compressed fixture generation failed' }
+& $Compiler @flags (Join-Path $port 'host_sector_inflate.c') (Join-Path $port 'sector_inflate_cases.c') (Join-Path $port 'tests/sector_inflate_bridge.c') $hostZlib -o (Join-Path $build 'sector-inflate-check.exe')
+if ($LASTEXITCODE -ne 0) { throw 'Exact sector decompression checker compilation failed' }
 & $pythonCommand -m unittest discover -s (Join-Path $port 'tests') -v
 if ($LASTEXITCODE -ne 0) { throw 'Host tests failed' }

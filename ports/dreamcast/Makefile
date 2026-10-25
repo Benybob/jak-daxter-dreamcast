@@ -474,6 +474,18 @@ build/sector-cache-check$(HOST_SHARED): tests/sector_cache_bridge.c world_collis
 	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -pedantic -fPIC -shared tests/sector_cache_bridge.c build/sector-cache-host.o -o $@ -lm
 build/sector-cache-check$(HOST_EXE): host_sector_cache.c sector_cache_cases.c sector_cache_cases.h tests/sector_cache_bridge.c world_collision.c world_collision.h sector_cache.h build/sector-cache-host.o
 	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -pedantic host_sector_cache.c sector_cache_cases.c tests/sector_cache_bridge.c build/sector-cache-host.o -o $@ -lm
+build/inflate_fixture.h: make_inflate_fixture.py
+	$(PYTHON) make_inflate_fixture.py $@
+sector_inflate.o: sector_inflate.c sector_inflate.h
+sector_inflate_bridge.o: tests/sector_inflate_bridge.c sector_inflate.c sector_inflate.h
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -c $< -o $@
+sector_inflate_cases.o: sector_inflate_cases.c sector_inflate_cases.h sector_inflate.h build/inflate_fixture.h
+sector_inflate_main.o: sector_inflate_main.c sector_inflate_cases.h
+jak-dc-inflate.elf: sector_inflate_main.o sector_inflate_cases.o sector_inflate_bridge.o | sector_inflate.o
+	kos-cc -o $@ $^ -lz
+host: build/sector-inflate-check$(HOST_EXE)
+build/sector-inflate-check$(HOST_EXE): host_sector_inflate.c sector_inflate_cases.c tests/sector_inflate_bridge.c sector_inflate_cases.h sector_inflate.c sector_inflate.h build/inflate_fixture.h
+	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -pedantic host_sector_inflate.c sector_inflate_cases.c tests/sector_inflate_bridge.c -o $@ -lz
 jak-dc-camera.elf: camera_boom_main.o camera_boom.o camera_rig.o camera_boom_cases.o world_collision.o
 	kos-cc -o $@ $^ -lm
 camera_real_main.o: camera_boom_main.c

@@ -259,3 +259,8 @@ See [SECTOR_CACHE.md](SECTOR_CACHE.md). (AI-assisted).
 
 The collision loader now validates filtered-first replicas in a second bounded pass, rejects coordinate-scaled width slack and pins binary64 cell arithmetic. A helper includes capsule radius and solver skin in coverage bounds. Independent Grok findings were adjudicated and tested: 272 host tests and 5,164 stock 16 MiB Flycast checks pass across 572 original training windows. Peak tracked geometry remains 889,764 bytes. Render streaming and full gameplay remain unfinished. (AI-assisted)
 See [SECTOR_CACHE.md](SECTOR_CACHE.md). (AI-assisted).
+
+## Completed: Bounded exact native compressed blocks
+
+A staged zlib decoder now enforces exact input/output lengths, checksums, disjoint buffers and a 64 KiB workspace cap. 273 host tests and 138 native Flycast checks pass, including maximum 512 KiB output, framing/canaries and allocation failures. Measured native decode workspace peaks at 7,132 bytes for the synthetic fixtures. Build documentation now records the zlib dependency. Render-sector and full-game integration remain unfinished. (AI-assisted)
+See [SECTOR_INFLATE.md](SECTOR_INFLATE.md). (AI-assisted).
