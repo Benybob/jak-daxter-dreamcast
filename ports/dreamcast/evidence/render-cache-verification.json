@@ -1,0 +1,54 @@
+{
+  "ai_assisted": true,
+  "result": "PASS",
+  "host_tests": 354,
+  "native_checks": 2813,
+  "original_windows": 572,
+  "unique_window_ranges_exact": true,
+  "max_window_faces": 7447,
+  "peak_tracked_native_bytes": 3935850,
+  "stock_ram_bytes": 16777216,
+  "chunks": [
+    {
+      "first_window": 0,
+      "windows": 128,
+      "checks": 617,
+      "elf_sha256": "514b3bfd29fe09c8d815982128218324bc31a1726f3949186c3e25f27200d411",
+      "peak_tracked_bytes": 3727398
+    },
+    {
+      "first_window": 128,
+      "windows": 128,
+      "checks": 617,
+      "elf_sha256": "77707574dff22207b17b12ae15335e3ce4cff0be970291d2cff0f3a0fad985ad",
+      "peak_tracked_bytes": 3935850
+    },
+    {
+      "first_window": 256,
+      "windows": 128,
+      "checks": 617,
+      "elf_sha256": "fa3ac4db903f55706bc1b4171032e9d5caefbba0729b198d6281af90fc953854",
+      "peak_tracked_bytes": 3795374
+    },
+    {
+      "first_window": 384,
+      "windows": 128,
+      "checks": 617,
+      "elf_sha256": "5c5b1e6544fef3d5df7cc953fbcc1f43297793a31bfb6e79254d957909ea079b",
+      "peak_tracked_bytes": 3581122
+    },
+    {
+      "first_window": 512,
+      "windows": 60,
+      "checks": 345,
+      "elf_sha256": "299e4c25c5ce98fc13ff61f6c5b13cf35e68bc6d2550547ca71589905f8d1b6e",
+      "peak_tracked_bytes": 2496671
+    }
+  ],
+  "synthetic_checks_repeated_per_boot": 103,
+  "oracle": "Independent host packet assembly counts and full 116-byte source-ID-sorted payload CRCs",
+  "scope": "Transactional CPU render cache only; no GPU drawing or playable streaming integration",
+  "excludes": "zlib private pool, allocator overhead, bridge context/static data, executable, KOS/stacks and GPU",
+  "full_game_complete": false,
+  "physical_hardware_tested": false
+}

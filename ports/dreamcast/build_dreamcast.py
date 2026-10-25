@@ -14,6 +14,7 @@ parser.add_argument('--camera-assets',type=Path)
 parser.add_argument('--sector-assets',type=Path)
 parser.add_argument('--render-assets',type=Path)
 parser.add_argument('--gpu-catalog-assets',type=Path)
+parser.add_argument('--render-cache-assets',type=Path)
 args=parser.parse_args()
 port=Path(__file__).resolve().parent
 work=args.workspace.resolve()
@@ -33,6 +34,7 @@ if args.camera_assets: assets+=' CAMERA_ASSET_DIR='+short_posix(args.camera_asse
 if args.sector_assets: assets+=' SECTOR_ASSET_DIR='+short_posix(args.sector_assets.resolve())
 if args.render_assets: assets+=' RENDER_ASSET_DIR='+short_posix(args.render_assets.resolve())
 if args.gpu_catalog_assets: assets+=' GPU_CATALOG_ASSET_DIR='+short_posix(args.gpu_catalog_assets.resolve())
+if args.render_cache_assets: assets+=' RENDER_CACHE_ASSET_DIR='+short_posix(args.render_cache_assets.resolve())
 script=f'''#!/usr/bin/bash
 set -eo pipefail
 source {short_posix(work)}/kos-source/environ.sh

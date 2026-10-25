@@ -22,7 +22,7 @@ KOS_ROMDISK_DIR := romdisk
 # Also refresh on removed files, which Make's wildcard alone cannot detect.
 .PHONY: private-romdisk-refresh
 private-romdisk-refresh:
-build/player-romdisk.o build/world-romdisk.o build/training-romdisk.o build/camera-world-romdisk.o build/sector-romdisk.o build/render-romdisk.o build/gpu-catalog-romdisk.o: private-romdisk-refresh
+build/player-romdisk.o build/world-romdisk.o build/training-romdisk.o build/camera-world-romdisk.o build/sector-romdisk.o build/render-romdisk.o build/gpu-catalog-romdisk.o build/render-cache-romdisk.o: private-romdisk-refresh
 all: $(TARGET) $(SCENE_TARGET) $(TEXTURED_TARGET) $(BACKEND_TARGET) $(RUNTIME_TARGET)
 
 # Host-only commands need no KallistiOS installation.
@@ -539,6 +539,32 @@ jak-dc-render-gpu.elf: render_gpu_main.o render_gpu_cases.o render_gpu_test.o re
 host: build/render-gpu-check$(HOST_EXE)
 build/render-gpu-check$(HOST_EXE): host_render_gpu.c render_gpu.c render_gpu_cases.c render_gpu_cases.h render_gpu.h render_package.c render_package.h sector_inflate.c sector_inflate.h
 	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -pedantic -DDC_RENDER_GPU_TEST_ALLOC -Itests/render-gpu-stubs host_render_gpu.c render_gpu.c render_gpu_cases.c render_package.c sector_inflate.c -o $@ -lz -lm
+
+RENDER_CACHE_ASSET_DIR ?= build/private-render-cache-assets
+render_cache.o: render_cache.c render_cache.h render_package.h
+render_cache_test.o: render_cache.c render_cache.h render_package.h
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -DDC_RENDER_CACHE_TEST_IO -c $< -o $@
+render_cache_bridge.o: tests/render_cache_bridge.c render_cache.h
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -I. -c $< -o $@
+build/render_cache_fixture.h:
+	$(PYTHON) make_render_cache_fixture.py build/private-render-cache-assets --header $@
+$(RENDER_CACHE_ASSET_DIR)/CASES.json: build/render_cache_fixture.h
+	@test -f $@
+render_cache_cases.o: render_cache_cases.c render_cache_cases.h build/render_cache_fixture.h
+render_cache_main.o: render_cache_main.c render_cache_cases.h
+build/render-cache-romdisk.o: $(RENDER_CACHE_ASSET_DIR)/CASES.json
+	mkdir -p build
+	$(KOS_GENROMFS) -f build/render-cache-romdisk.img -d $(RENDER_CACHE_ASSET_DIR) -x '*.json'
+	$(KOS_BASE)/utils/bin2c/bin2c build/render-cache-romdisk.img build/render-cache-romdisk.c romdisk
+	$(KOS_CC) $(KOS_CFLAGS) -c build/render-cache-romdisk.c -o build/render-cache-romdisk-tmp.o
+	$(KOS_CC) -o $@ -r build/render-cache-romdisk-tmp.o $(KOS_LIB_PATHS) -Wl,--whole-archive -lromdiskbase
+jak-dc-render-cache.elf: render_cache_main.o render_cache_cases.o render_cache_bridge.o render_cache_test.o render_package_test.o sector_inflate.o build/render-cache-romdisk.o | render_cache.o
+	kos-cc -o $@ $^ -lz -lm
+host: build/render-cache-check$(HOST_SHARED)
+build/render-cache-host.o: render_cache.c render_cache.h render_package.h
+	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -pedantic -fPIC -DDC_RENDER_CACHE_TEST_IO -c $< -o $@
+build/render-cache-check$(HOST_SHARED): tests/render_cache_bridge.c render_cache.h build/render-cache-host.o build/render-package-host.o sector_inflate.c
+	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -pedantic -fPIC -shared tests/render_cache_bridge.c build/render-cache-host.o build/render-package-host.o sector_inflate.c -o $@ -lz -lm
 jak-dc-camera.elf: camera_boom_main.o camera_boom.o camera_rig.o camera_boom_cases.o world_collision.o
 	kos-cc -o $@ $^ -lm
 camera_real_main.o: camera_boom_main.c

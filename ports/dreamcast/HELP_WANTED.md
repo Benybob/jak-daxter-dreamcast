@@ -284,3 +284,8 @@ See [RENDER_SECTORS.md](RENDER_SECTORS.md). (AI-assisted).
 
 All 70 original lower-LOD background color maps now upload and read back exactly in PowerVR VRAM, with texture ownership independent of future geometry-window swaps. 370 original-catalog and 30 synthetic native Flycast checks pass; every staged allocation failure preserves the active owner. Peak requested VRAM for old plus replacement colors is 784,384 bytes. 346 host tests pass. Make also refreshes private ROM disks when switching to older asset directories. Geometry-cache, reflection shader and full gameplay integration remain unfinished. (AI-assisted)
 See [RESIDENT_TEXTURES.md](RESIDENT_TEXTURES.md). (AI-assisted).
+
+## Completed: Bounded transactional original background geometry windows
+
+The transactional CPU render cache now passes 2,813 native checks across all 572 original training geometry windows in stock 16 MiB Flycast. Exact face payloads and staged failure rollback are verified, including overfetch and both-filtered replica mismatches. 354 host tests pass. Geometry drawing, streamed playable integration and the full game remain unfinished. (AI-assisted)
+See [RENDER_CACHE.md](RENDER_CACHE.md). (AI-assisted).

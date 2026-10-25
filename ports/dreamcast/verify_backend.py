@@ -16,7 +16,7 @@ parser.add_argument('elf',type=Path)
 parser.add_argument('--nm',type=Path,required=True)
 parser.add_argument('--output',type=Path,required=True)
 parser.add_argument('--tests',type=int,default=17)
-parser.add_argument('--suite',choices=('codegen','runtime','runtime-goal','objects','projection','movement','collision','world-manifest','view-clip','camera','sectors','compression','render-io','gpu-catalog'),default='codegen')
+parser.add_argument('--suite',choices=('codegen','runtime','runtime-goal','objects','projection','movement','collision','world-manifest','view-clip','camera','sectors','compression','render-io','gpu-catalog','render-cache'),default='codegen')
 parser.add_argument('--timeout',type=float,default=30,help='Native completion deadline in seconds, 1..300')
 args=parser.parse_args()
 if args.tests<1: parser.error('--tests must be positive')
@@ -25,9 +25,12 @@ symbols=subprocess.check_output([str(args.nm),str(args.elf)],text=True)
 match=re.search(r'^([0-9a-fA-F]+)\s+\w\s+_?dc_backend$',symbols,re.MULTILINE)
 if not match: parser.error('dc_backend symbol missing')
 address=int(match[1],16)
+cache_match=re.search(r'^([0-9a-fA-F]+)\s+\w\s+_?dc_cache_report$',symbols,re.MULTILINE)
+cache_address=int(cache_match[1],16) if args.suite=='render-cache' and cache_match else 0
 out=args.output.resolve(); out.mkdir(parents=True,exist_ok=True)
 result_path=out/'target.bin'; result_path.unlink(missing_ok=True)
 progress_path=out/'progress.bin'; progress_path.unlink(missing_ok=True)
+(out/'cache-progress.bin').unlink(missing_ok=True)
 exe=args.flycast.resolve()
 startup=None
 env=os.environ.copy()
@@ -40,16 +43,24 @@ else:
     env.update(SDL_VIDEODRIVER='offscreen',LIBGL_ALWAYS_SOFTWARE='1',XDG_CONFIG_HOME=str(out/'config'),XDG_DATA_HOME=str(out/'data'))
 lua=r'''
 local done=false
+local samples=0
 local function vblank()
   if done or flycast.memory.read32(ADDRESS)~=0x34485347 then return end
   local state=flycast.memory.read32(ADDRESS+8)
   local terminal=state==2 or state==3
+  samples=samples+1
+  if not terminal and samples%60~=1 then return end
   local f=assert(io.open(terminal and OUTPUT or PROGRESS,'wb'))
   for i=0,127 do f:write(string.char(flycast.memory.read8(ADDRESS+i))) end
   f:close(); done=terminal
+  if CACHE~=0 then
+    local c=assert(io.open(CACHE_OUTPUT,'wb'))
+    for i=0,23 do c:write(string.char(flycast.memory.read8(CACHE+i))) end
+    c:close()
+  end
 end
 flycast_callbacks={vblank=vblank}
-'''.replace('ADDRESS',str(address)).replace('OUTPUT',json.dumps(result_path.as_posix())).replace('PROGRESS',json.dumps(progress_path.as_posix()))
+'''.replace('CACHE_OUTPUT',json.dumps((out/'cache-progress.bin').as_posix())).replace('CACHE',str(cache_address)).replace('ADDRESS',str(address)).replace('OUTPUT',json.dumps(result_path.as_posix())).replace('PROGRESS',json.dumps(progress_path.as_posix()))
 lua_path.write_text(lua)
 command=[str(exe),'-config','config:UseReios=yes','-config','config:Dreamcast.RamMod32MB=no',
          '-config','config:Debug.SerialConsoleEnabled=no','-config','config:LuaFileName=verify.lua',
@@ -67,6 +78,9 @@ with (out/'frontend.log').open('w') as log:
             try: process.wait(timeout=5)
             except subprocess.TimeoutExpired: process.kill(); process.wait()
 if not result_path.is_file() or result_path.stat().st_size!=128:
+    cache_progress=out/'cache-progress.bin'
+    if cache_progress.is_file() and cache_progress.stat().st_size==24:
+        print('Cache report total=%d passed=%d failed_line=%d windows=%d maxfaces=%d peakbytes=%d'%struct.unpack('<6I',cache_progress.read_bytes()))
     if progress_path.is_file() and progress_path.stat().st_size==128:
         progress=struct.unpack_from('<12I',progress_path.read_bytes())
         print('Last native progress: state=%d total=%d passed=%d failed_case=%d'%progress[2:6])
@@ -89,6 +103,7 @@ if args.suite=='sectors': result['scope']='Native bounded sector IO/cache, exact
 if args.suite=='compression': result['scope']='Native exact bounded zlib block decoding, framing, workspace and canary oracle; not integrated sector/render streaming or hardware validation'
 if args.suite=='render-io': result['scope']='Native DRM2/DRS2 catalog and compressed geometry reader, source ledger and failure cleanup; no GPU/cache integration or hardware validation'
 if args.suite=='gpu-catalog': result['scope']='Native resident PVR base/specular color catalog, exact VRAM readback and staged allocation failure ownership; strength retained on CPU, no geometry/cache/reflection shader integration or hardware validation'
+if args.suite=='render-cache': result['scope']='Native bounded transactional CPU render-window cache, exact original payload CRC and fault rollback; no GPU drawing/game integration or hardware validation'
 if args.suite=='view-clip': result['scope']='Native SH4ZAM view/cache accuracy, matrix/control preservation, mode refusal and analytic near-plane clipping; not hardware performance or full gameplay'
 if args.suite=='runtime-goal': result['scope']='Native compiled GOAL scalar runtime, original list routines, typed memory, startup and static strings/floats; incomplete kernel/game'
 if args.suite=='objects': result['scope']='Native original V2/V4 data-only relocation validation; retail code never executed'

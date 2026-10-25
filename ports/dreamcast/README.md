@@ -1,5 +1,12 @@
 # Jak 1 on Dreamcast: experimental port workbench
 
+**2026-10-25 (AI-assisted):** [Render windows](RENDER_CACHE.md) adds a bounded
+transactional CPU cache with complete replica checks and old-window rollback.
+All 572 original training geometry windows match independent payload oracles;
+2,813 native checks pass across five bounded stock 16 MiB Flycast runs, and
+354 host tests pass. [Resident colors](RESIDENT_TEXTURES.md) separately verifies
+70 original maps in VRAM. Streamed drawing and full-game integration remain open.
+
 **2026-10-24 (AI-assisted):** [Original-terrain movement](TRAINING_SLICE.md) now
 has a separate reproducible native target: real Jak and original clips, walking,
 running and jumping on a bounded training-island render/collision patch. It
