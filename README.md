@@ -8,7 +8,8 @@ working toward a native Dreamcast adaptation of **Jak and Daxter: The Precursor 
 It is not an official OpenGOAL, Sony or Naughty Dog project.
 
 The Dreamcast implementation and documentation are extensively **AI-assisted**,
-using OpenAI Codex and human-authorized Grok Build collaboration. Proposals are
+using OpenAI Codex, human-authorized Grok Build collaboration and, for the
+2026-10-26 kernel process-system milestones, Claude Code (Anthropic). Proposals are
 reviewed and independently tested before integration. Local automated checks
 cover the supported subset; expert human review is still needed.
 
@@ -26,7 +27,9 @@ cover the supported subset; expert human review is still needed.
 | CPU render windows | Source published: all 572 original windows verified, transactional rollback; bounded playable base-pass integration verified |
 | Resident color textures | Source published: 70 original color maps verified in VRAM; staged failure preserves old owner; base-pass geometry integrated in bounded native movement |
 | Original background LODs | Source published: original LOD selection; reduced training patch passes movement and camera checks |
-| Full original game | Unfinished: no complete kernel boot, general gameplay, progression or release build |
+| Original kernel process system | Source published: unchanged original `send-event-function`, `deactivate`, `(suspend)`, `enter-state` and `kernel-dispatcher` (including trans/post hooks) run on native SH-4 fibers |
+| Original kernel compilation | 166 of 184 original kernel functions lower to SH-4 (gcommon 57/65, gkernel 65/75, gstate 6/6, gstring 38/38); reproducible survey |
+| Full original game | Unfinished: no process initialization (catch/throw), complete kernel boot, general gameplay, progression or release build |
 
 The playable prototypes use a **native C controller**, as a temporary milestone.
 They do not execute original GOAL movement. The real-terrain target and local
@@ -62,6 +65,15 @@ immutable-file cache, 170 owner/budget/root checks, revised live-heap gate and a
 kernel's PC/profiler/VM/instruction-set branches, scratchpad literals and 8 inline-asm
 functions that need Dreamcast decisions before original startup (host-only source audit).
 
+The original kernel process system is documented milestone by milestone in
+[LEXICAL_PP_BRACKETS.md](ports/dreamcast/LEXICAL_PP_BRACKETS.md) (events),
+[ORIGINAL_DEACTIVATE.md](ports/dreamcast/ORIGINAL_DEACTIVATE.md) (process death),
+[ORIGINAL_SUSPEND.md](ports/dreamcast/ORIGINAL_SUSPEND.md) (per-frame suspension),
+[ORIGINAL_ENTER_STATE.md](ports/dreamcast/ORIGINAL_ENTER_STATE.md) (state transitions) and
+[ORIGINAL_DISPATCHER.md](ports/dreamcast/ORIGINAL_DISPATCHER.md) (the per-frame scheduler,
+trans/post hooks and the first explicit Dreamcast target context).
+`survey_kernel_lowering.py` reports per-function kernel compilation coverage.
+
 ## Current verification
 
 All native results below are local **Flycast tests with stock 16 MiB RAM**.
@@ -73,6 +85,8 @@ and checkpoints, not a percentage of game completion or a single full-game run.
 | Host | 430 tests pass with the complete local SDK/oracle setup (1 optional skip) |
 | GOAL runtime | 23,521 native checks at its latest verified checkpoint |
 | Numeric regression | 39 native checks |
+| Original kernel processes | Events, deactivation (including self-deactivation on a fiber), suspension across destroyed stacks, state transitions and four-frame scheduling with trans/post hooks, inside the 23,521 runtime checks |
+| Kernel compilation coverage | 166/184 original kernel functions lower; remaining refusals named in `evidence/kernel-lowering-survey.json` |
 | Prototype movement | 318 native checks; visible test-map controller and platform paths pass |
 | Original collision | 789 synthetic native checks; 2,063 combined checks including the original 576-triangle patch |
 | Collision file loader | 147 host checks |
@@ -139,8 +153,15 @@ See [PROCESS_OWNERSHIP.md](ports/dreamcast/PROCESS_OWNERSHIP.md). Full kernel/ga
 
 Source is in `ports/dreamcast/`. Follow [BUILDING.md](ports/dreamcast/BUILDING.md).
 The verified baseline is OpenGOAL `6076aab5a95955443a9e1ed8f72a25bc0e2fcf9d`;
-the latest locally verified port source checkpoint is
-`c2feb00722a479e52a77973c5caeff28218067a5`.
+the earlier verified port source checkpoint is
+`c2feb00722a479e52a77973c5caeff28218067a5`. The kernel process-system milestones
+are verified at the tip of the `dreamcast` branch; each milestone's
+`ports/dreamcast/evidence/*-verification.json` records its ELF hash and counts.
+
+On Windows, keep the workspace in a short path (for example `C:\dcw`, with
+`jak-project`, `dc-sdk`, `kos-source`, `og-host` and `flycast` side by side).
+Under a deep profile path, CMake object paths and IR outputs exceed the
+260-character limit. The SH-4 build also invokes `python3`.
 
 No ISO, BIOS, extracted textures/models, converted game scenes or ELF binaries
 embedding game assets are uploaded. Prepare assets locally from your own game
@@ -149,12 +170,19 @@ assets to commits, discussions or bug reports.
 
 ## Next work and contributing
 
-The immediate next gates are transactional render-window caching and GPU loading
-for broader original-world traversal, followed by original-kernel/gameplay startup.
-Animation blending and additional rendering fidelity remain open.
+The immediate kernel gates are process initialization and a native frame loop:
+1. stack-allocated objects (`new 'stack`) in the exporter and lowerer;
+2. a native `catch-frame` constructor and `throw`, so original
+   `run-function-in-process` can initialize processes;
+3. a deliberate Dreamcast `PROCESS_STACK_SIZE`;
+4. driving the original dispatcher each frame from the native main loop.
+
+The measured blockers are on the
+[task board](ports/dreamcast/HELP_WANTED.md). On the rendering side, broader
+original-world traversal, animation blending and rendering fidelity remain open.
 
 The full port still needs complete kernel startup, broader ABI coverage,
-process scheduling, heaps/GC and failure unwinding; original movement and
+heaps/GC and failure unwinding; original movement and
 collision fidelity; animation transitions, broader camera behavior, world streaming,
 enemies, UI, audio, save/load and progression. Packaging and physical hardware
 validation come later. Allocation currently uses bounded prototype mechanisms,
