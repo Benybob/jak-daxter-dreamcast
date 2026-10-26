@@ -64,6 +64,9 @@ int dc_goal_leave_known_scope(dc_goal_runtime *,uint32_t previous_process);
 /* Installs dc-c-enter-process-scope/dc-c-leave-process-scope for compiled
  * original lexical pp brackets; requires registered spans and pp scopes. */
 int dc_goal_install_scope_bridge(dc_goal_runtime *,dc_goal_cache_sync,dc_goal_module_result *);
+/* Installs dc-c-return-from-thread; it records DC_GOAL_UNSUPPORTED_TRANSFER
+ * until a verified native abandon continuation exists. */
+int dc_goal_install_transfer_bridge(dc_goal_runtime *,dc_goal_cache_sync,dc_goal_module_result *);
 /* Data-only first CPU-thread construction through the unchanged original
  * native constructor. Caller owns the unmoved process reservation and a
  * disjoint aligned execution-stack span in rt's arena. Main/top thread must

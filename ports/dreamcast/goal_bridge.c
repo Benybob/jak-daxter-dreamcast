@@ -383,6 +383,24 @@ int dc_goal_install_scope_bridge(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_
   return dc_goal_load_module(rt,functions,2,sync,NULL,result);
 }
 
+/* Original (deactivate self) abandons the running thread to return-from-thread.
+ * No verified native abandon continuation exists yet, so the transfer refuses
+ * explicitly (an earlier error wins) and the compiled body exits. */
+static uint64_t return_from_thread(void) {
+  dc_goal_runtime *rt=active_runtime;
+  if(rt && rt->error==DC_GOAL_OK)rt->error=DC_GOAL_UNSUPPORTED_TRANSFER;
+  return 0;
+}
+int dc_goal_install_transfer_bridge(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_goal_module_result *result) {
+  unsigned char code[12]={1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0};
+  uint32_t target=(uint32_t)(uintptr_t)return_from_thread;
+  dc_goal_code_export function={"dc-c-return-from-thread",code,12,NULL,0};
+  if(!rt || !result) return 0;
+  if(active_runtime!=rt) { rt->error=DC_GOAL_BAD_ARGUMENT; return 0; }
+  memcpy(code+8,&target,4);
+  return dc_goal_load_module(rt,&function,1,sync,NULL,result);
+}
+
 int dc_goal_install_process_bridge(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_goal_module_result *result) {
   unsigned char code[12]={1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0};
   uint32_t target=(uint32_t)(uintptr_t)current_process;

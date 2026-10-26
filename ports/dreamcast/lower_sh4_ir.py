@@ -187,6 +187,49 @@ def allocate_slots(function):
 
 LEXICAL_SCOPE_KINDS=('process_scope_enter','process_scope_leave')
 
+def return_from_thread_idiom(function):
+    """Recognize original x86 (+! temp off) (.push temp) (.ret) to return-from-thread.
+
+    The desktop branch jumps to the kernel's return-from-thread through the
+    r15 memory offset. It becomes one explicit native transfer operation and the
+    offset binding is dropped; any other use of r15 or of the jump still refuses.
+    (AI-assisted)
+    """
+    ops=function['instructions']
+    offsets=[b for b in function.get('fixed_registers',[])
+             if b.get('frontend_register')=='r15' and b.get('role')=='unsupported']
+    pushes=[p for p,op in enumerate(ops) if op['kind']=='unsupported' and op.get('text','').startswith('.push ')]
+    if len(offsets)!=1 or not pushes: return function
+    offset=offsets[0]['register']
+    rewritten=[dict(op) for op in ops]
+    targets={op['target'] for op in ops if op['kind'] in ('branch','goto')}
+    for push in pushes:
+        following=[p for p in range(push+1,len(ops)) if ops[p]['kind']!='nop']
+        if not following or ops[following[0]]['kind']!='unsupported' or ops[following[0]].get('text','').strip()!='.ret':
+            return function
+        if len(ops[push]['reads'])!=1: return function
+        # Straight-line backward scan: moves, one offset add, then the address.
+        value,add,base=ops[push]['reads'][0],None,None
+        for position in range(push-1,-1,-1):
+            op=ops[position]
+            if op['kind'] in ('branch','goto','call','return'): return function
+            if value not in op['writes']: continue
+            if op['writes']!=[value]: return function
+            if op['kind']=='move': value=op['reads'][0]
+            elif op['kind']=='add64' and add is None and op['reads']==[value,offset]: add=position
+            elif op['kind'] in ('symbol_value','function_address') and add is not None and \
+                 op.get('symbol',op.get('function'))=='return-from-thread':
+                base=position; break
+            else: return function
+        if base is None or any(base<t<=push for t in targets): return function
+        rewritten[add]=dict(kind='nop',reads=[],writes=[],text='native return-from-thread offset')
+        rewritten[push]=dict(kind='return_from_thread',reads=[],writes=[],text=ops[push].get('text',''))
+        rewritten[following[0]]=dict(kind='nop',reads=[],writes=[],text='.ret')
+    if any(offset in op['reads'] or offset in op['writes'] for op in rewritten):
+        return function
+    return dict(function,instructions=rewritten,
+                fixed_registers=[b for b in function['fixed_registers'] if b['register']!=offset])
+
 def lexical_process_bracket(function,index,binding):
     """Prove one original (old=pp; pp=X; ...; pp=old) bracket (AI-assisted).
 
@@ -242,6 +285,8 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
             registers=[dict(r,type=r.get('abi_type',r['type'])) for r in function['registers']],
             parameters=[dict(p,type=p.get('abi_type',p['type'])) for p in function['parameters']])
     if function.get('asm'): raise ValueError('inline/assembly functions unsupported')
+    if runtime: function=return_from_thread_idiom(function)
+    transfers=any(op['kind']=='return_from_thread' for op in function['instructions'])
     implicit=function.get('implicit_parameters',[])
     if implicit and (not runtime or len(implicit)!=1 or function['parameters'] or
                      implicit[0].get('kind')!='fixed_entry' or implicit[0].get('name')!='self' or
@@ -331,6 +376,16 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
         translated=[dict(op,target=op['target']+1) if op['kind'] in ('branch','goto') else op
                     for op in translated]
         translated.insert(0,dict(kind='current_process',reads=[],writes=context_reads))
+    # (when x (void-call)) copies the void call's phantom none result into an
+    # unread expression value. No native value exists, and nothing reads the
+    # destination, so the copy is dead. Any read keeps definite-assignment strict.
+    read_values={value for op in translated for value in op['reads'] if op['kind']!='move'}
+    read_values|={op['reads'][0] for op in translated if op['kind']=='move'}
+    written={value for op in translated for value in op['writes']}
+    translated=[dict(kind='nop',reads=[],writes=[],text=op.get('text',''))
+                if op['kind']=='move' and semantic_types.get(op['reads'][0])=='none' and
+                   op['reads'][0] not in written and op['writes'][0] not in read_values else op
+                for op in translated]
     function=dict(function,instructions=translated)
     if implicit and (not translated or translated[0]['kind']!='current_process'):
         raise ValueError('implicit self requires an explicit entry reset')
@@ -497,6 +552,13 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
                 e.rr(0x2008,0,0)  # TST R0,R0: missing context must exit before body memory access.
                 e.branch('bt','process_entry_failure')
                 store64(writes[0]); continue
+            if kind=='return_from_thread':
+                # The original abandons the running thread to the kernel. The
+                # native bridge owns that transfer; until a verified continuation
+                # exists it records UNSUPPORTED_TRANSFER and this body exits.
+                e.literal(0,('symbol','function:dc-c-return-from-thread'))
+                e.word(0x400b); e.nop()
+                e.branch('bra','process_entry_failure'); continue
             if kind in LEXICAL_SCOPE_KINDS:
                 entering=kind=='process_scope_enter'
                 load64(reads[0],4,5)
@@ -710,7 +772,7 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
         except (ValueError,KeyError,IndexError) as error:
             raise ValueError(f'{function["name"]} IR {position} ({op.get("text",kind)}): {error}') from error
     e.label('ir_'+str(len(instructions)))
-    if implicit or context_reads or guarded_calls:
+    if implicit or context_reads or guarded_calls or transfers:
         e.branch('bra','epilogue')
     if guarded_calls:
         e.label('call_failure')
@@ -728,7 +790,7 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
         # explicitly define FR0; void callers promise no result register.
         if function['return_type']=='float': e.word(0xf08d)  # FLDI0 FR0
         e.branch('bra','epilogue')
-    if implicit or context_reads:
+    if implicit or context_reads or transfers:
         e.label('process_entry_failure'); e.immediate(0,0); e.immediate(1,0)
         if function['return_type']=='float': e.word(0xf08d)  # defined zero on refusal
     e.label('epilogue'); e.mov(15,14); adjust_stack(frame)

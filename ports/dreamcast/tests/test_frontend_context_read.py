@@ -88,13 +88,21 @@ class ContextReadTest(unittest.TestCase):
             _,report=compile_function(fn,runtime=True,optimize=optimized)
             self.assertIn('function:dc-c-current-process',{r['symbol'] for r in report['relocations']})
 
-    def test_original_deactivate_stays_unsupported_and_mutable(self):
+    def test_original_deactivate_lowers_with_explicit_transfer(self):
         output=Path(self.tmp.name)/'deactivate.json'
         run=subprocess.run([str(FRONTEND),str(PORT.parents[1]),str(self.source),str(output)]+self.dependencies,
                            env=self.env,capture_output=True,text=True)
         self.assertEqual(run.returncode,0,run.stdout+run.stderr)
         fn=next(f for f in json.loads(output.read_text())['functions'] if f['name']=='(method deactivate process)')
-        # Its pp bracket is now recognized; the r15 inline-asm return jump still refuses.
+        # The exporter keeps the x86 r15 offset explicit; only the lowerer's exact
+        # return-from-thread idiom consumes it.
         self.assertEqual({b['frontend_register']:b['role'] for b in fn['fixed_registers']},
                          {'r13':'process_lexical','r15':'unsupported'})
-        with self.assertRaisesRegex(ValueError,'role not implemented'):compile_function(fn,runtime=True)
+        _,report=compile_function(fn,runtime=True)
+        symbols={r['symbol'] for r in report['relocations']}
+        self.assertLessEqual({'function:dc-c-return-from-thread','function:dc-c-enter-process-scope',
+                              'function:dc-c-leave-process-scope','cell:throw'},symbols)
+        # Any other r15 use keeps refusing.
+        bad=copy.deepcopy(fn);offset=[b['register'] for b in bad['fixed_registers'] if b['frontend_register']=='r15'][0]
+        bad['instructions'].insert(1,dict(kind='nop',reads=[offset],writes=[]))
+        with self.assertRaisesRegex(ValueError,'role not implemented'):compile_function(bad,runtime=True)
