@@ -1,0 +1,83 @@
+"""Compile a prefix of the original GAME.CGO to DCSH and pack it (AI-assisted).
+
+Each original engine file compiles as a whole module (--all-functions, with its
+top-level startup as an initializer) after the complete kernel and every
+earlier GAME.CGO file, under the same Dreamcast target contexts as the kernel
+boot. The modules are packed, in original order, into build/kernel-dgo/GAME.CGO
+next to KERNEL.CGO. Stops at the first file that does not compile and reports it.
+"""
+import argparse
+import json
+import re
+from pathlib import Path
+import subprocess
+import sys
+from pack_native_dgo import write_dgo
+
+
+def game_order(root):
+    """Object names of GAME.CGO in original order, from dgos/game.gd."""
+    text = (root / 'goal_src/jak1/dgos/game.gd').read_text()
+    return [m.group(1) for m in re.finditer(r'"([^"]+)\.o"', text)]
+
+
+def source_paths(root):
+    """Map each object name to its goal_src file (unique basename)."""
+    paths = {}
+    for p in (root / 'goal_src/jak1').rglob('*.gc'):
+        paths.setdefault(p.stem, []).append(p)
+    return paths
+
+
+def main():
+    port = Path(__file__).resolve().parent
+    root = port.parents[1]
+    work = port.parents[2]
+    kernel = root / 'goal_src/jak1/kernel'
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--frontend', type=Path, default=work / 'og-host/bin/goalc-dreamcast-ir.exe')
+    parser.add_argument('--msys', type=Path, default=Path('C:/msys64'))
+    parser.add_argument('--count', type=int, required=True, help='compile the first COUNT GAME.CGO files')
+    args = parser.parse_args()
+    contexts = [kernel / 'gcommon.gc', port / 'scalar_validation_context.gc', port / 'dreamcast_profiler_context.gc',
+                port / 'dreamcast_memory_context.gc']
+    kernel_sources = [kernel / f'{n}.gc' for n in ('gstring-h', 'gkernel-h', 'gkernel', 'pskernel', 'gstring',
+                                                    'dgo-h', 'gstate')]
+    preload = contexts + kernel_sources[:2] + [port / 'dreamcast_thread_context.gc'] + kernel_sources[2:]
+    paths = source_paths(root)
+    dcsh = port / 'build/game-dcsh'
+    done = []
+    report = {'compiled': [], 'failed': None}
+    for name in game_order(root)[:args.count]:
+        found = paths.get(name, [])
+        if len(found) != 1:
+            report['failed'] = {'object': name, 'reason': f'{len(found)} source files match'}
+            break
+        source = found[0]
+        stem = name.replace('-', '_')
+        command = [sys.executable, str(port / 'compile_goal_subset.py'), '--frontend', str(args.frontend),
+                   '--runtime', '--msys', str(args.msys), '--all-functions',
+                   '--source', str(source), '--initializer', f'dc-game-{name}',
+                   '--header', str(port / f'build/game_{stem}.h'),
+                   '--native-module', str(dcsh / f'{name}.dcsh')]
+        for p in preload + done:
+            command += ['--preload', str(p)]
+        result = subprocess.run(command, capture_output=True, text=True)
+        if result.returncode:
+            lines = (result.stdout + result.stderr).splitlines()
+            reason = [l for l in lines if 'error' in l.lower() or 'requires' in l or 'unsupported' in l.lower()]
+            report['failed'] = {'object': name, 'source': str(source.relative_to(root)),
+                                'reason': (reason or lines)[-6:]}
+            break
+        done.append(source)
+        report['compiled'].append(name)
+        print(f'compiled {len(done)}: {name}', flush=True)
+    if report['compiled']:
+        write_dgo(port / 'build/kernel-dgo/GAME.CGO', 'GAME.CGO',
+                  [(n, dcsh / f'{n}.dcsh') for n in report['compiled']])
+    (port / 'build/game-cgo-report.json').write_text(json.dumps(report, indent=2) + '\n')
+    print(json.dumps(report, indent=2))
+
+
+if __name__ == '__main__':
+    main()

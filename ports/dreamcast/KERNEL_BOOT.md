@@ -105,7 +105,24 @@ and symbol count match the compiled-in boot exactly.
   The symbol count and arena are unchanged afterwards.
 
 DCSH objects are native SH-4 code from this port's compiler. Retail PS2 objects
-are not loaded. Engine and level DGOs (GAME.CGO and the rest) are next.
+are not loaded. GAME.CGO's first engine files follow (next section).
+## GAME.CGO: first engine files
+
+`build_game_cgo.py --count N` compiles the first N files of the original
+GAME.CGO (order from `dgos/game.gd`). Each is a whole module with its
+top-level startup, compiled after the complete kernel and every earlier engine
+file. They are packed in order into `build/kernel-dgo/GAME.CGO`.
+
+The DGO boot loads it right after KERNEL.CGO, as the original loads GAME.CGO
+after the kernel. types-h, vu1-macros and math link and run their original
+startups. The process spawn and dispatcher checks still pass afterwards.
+**98 of 98 checks pass.**
+
+The 4th file, vector-h, stops the sequence. Its functions use VU0 128-bit vector
+registers (`vf`), and the SH-4 lowerer refuses them ("128-bit/vector register
+lowering not implemented"). The rest of the engine uses the same registers
+heavily, so VU0 vector lowering is the next piece of work. The SH-4 has 4-wide
+float operations (`fipr`, `ftrv`), and sh4zam is a likely reference.
 ## Fixes this needed
 
 - `export_ir.cpp` now gives scalar bitfield types (for example `handle`) the
@@ -118,5 +135,6 @@ are not loaded. Engine and level DGOs (GAME.CGO and the rest) are next.
 - The fiber import and span notes are still explicit trusted-C steps; no original
   GOAL caller performs them yet. Trans/post hooks and state `go` are verified only in the
   runtime suite ([ORIGINAL_DISPATCHER.md](ORIGINAL_DISPATCHER.md)), not in this image.
-- GC, engine/level DGOs (GAME.CGO onward), the engine and gameplay are unfinished.
+- VU0 vector lowering (blocks GAME.CGO at vector-h), GC, the rest of the engine,
+  level DGOs and gameplay are unfinished.
 - No hardware claims.

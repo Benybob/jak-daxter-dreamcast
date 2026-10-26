@@ -729,7 +729,7 @@ jak-dc-kernel-boot.elf: kernel_boot_main.o kernel_boot_cases.o kernel_boot_valid
 goal_dgo.o: goal_dgo.c goal_dgo.h goal_native_file.h goal_module.h
 kernel_dgo_cases.o: kernel_boot_cases.c goal_dgo.h goal_bridge.h goal_fiber.h goal_main_start.h runtime_cases.h
 	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -DDC_KERNEL_DGO -I. -c kernel_boot_cases.c -o $@
-build/kernel-dgo-romdisk.o: build/kernel-dgo/KERNEL.CGO
+build/kernel-dgo-romdisk.o: build/kernel-dgo/KERNEL.CGO build/kernel-dgo/GAME.CGO
 	$(KOS_GENROMFS) -f build/kernel-dgo-romdisk.img -d build/kernel-dgo
 	$(KOS_BASE)/utils/bin2c/bin2c build/kernel-dgo-romdisk.img build/kernel-dgo-romdisk.c romdisk
 	$(KOS_CC) $(KOS_CFLAGS) -c build/kernel-dgo-romdisk.c -o build/kernel-dgo-romdisk-tmp.o

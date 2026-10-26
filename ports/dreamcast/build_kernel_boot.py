@@ -11,6 +11,7 @@ and, with --verify, runs both.
 import argparse
 from pathlib import Path
 import subprocess
+import json
 import sys
 from pack_native_dgo import write_dgo
 
@@ -25,7 +26,8 @@ BINDINGS = {
     'set-to-run-bootstrap': 'set-to-run-bootstrap',
 }
 EXPECTED_CHECKS = 87  # verified in Flycast; never weakened afterwards
-EXPECTED_DGO_CHECKS = 90  # verified KERNEL.CGO boot in Flycast
+EXPECTED_DGO_CHECKS = 98  # verified KERNEL.CGO + GAME.CGO prefix boot in Flycast
+GAME_PREFIX = 3  # original GAME.CGO files that compile so far
 
 
 def main():
@@ -82,6 +84,12 @@ def main():
     # override as an extra object straight after gcommon.
     order = ['gcommon', 'dc-scalar-valid'] + [name for name, _ in modules[1:]]
     write_dgo(port / 'build/kernel-dgo/KERNEL.CGO', 'KERNEL.CGO', [(n, dcsh / f'{n}.dcsh') for n in order])
+    # The compiled prefix of the original GAME.CGO (vector-h, the next file, needs
+    # VU0 vector register lowering).
+    subprocess.run([sys.executable, str(port / 'build_game_cgo.py'), '--frontend', str(args.frontend),
+                    '--msys', str(args.msys), '--count', str(GAME_PREFIX)], check=True)
+    compiled = json.loads((port / 'build/game-cgo-report.json').read_text())['compiled']
+    if len(compiled) != GAME_PREFIX: sys.exit(f'GAME.CGO prefix compiled only {compiled}')
     elves = (('jak-dc-kernel-boot.elf', args.tests, args.output),
              ('jak-dc-kernel-dgo.elf', args.dgo_tests, args.dgo_output))
     for elf, _, _ in elves:

@@ -116,7 +116,24 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
   length=dc_goal_format_capture(&text);
   CHECK(length>0 && strstr(text,"] vec4s")!=NULL,1,"original startup (inspect *test-vec4s*) prints its type symbol through native _format");
   CHECK(strstr(text,"x: 0.0000")!=NULL,1,"vec4s float field formatted from its variadic bit pattern");
-  /* A process started the original way (process-spawn-function: get-process,
+#ifdef DC_KERNEL_DGO
+  /* The compiled prefix of the original GAME.CGO loads on top of the kernel. */
+  {
+    static dc_goal_dgo_result game;
+    static const char *const order[]={"types-h","vu1-macros","math"};
+    FILE *file=fopen("/rd/GAME.CGO","rb");int loaded;unsigned i;
+    CHECK(file!=NULL,1,"GAME.CGO prefix opens from the romdisk");
+    if(file){
+      loaded=dc_goal_load_dgo(&rt,file,sync_code,NULL,&game);fclose(file);
+      CHECK(loaded?1:100+rt.error,1,"GAME.CGO prefix links and runs each original startup in order");
+      CHECK(game.objects,3,"GAME.CGO prefix holds the first three original engine files");
+      CHECK(game.initializers,3,"each engine file runs its top-level startup");
+      for(i=0;i<3;++i)CHECK(strcmp(game.object_names[i],order[i]),0,"engine objects in original GAME.CGO order");
+      CHECK(entry(&rt,"rand-vu-init")!=0 && entry(&rt,"truncate")!=0,1,"original math functions are installed");
+      code_bytes+=game.code_bytes;rt.error=DC_GOAL_OK;
+    }
+  }
+#endif  /* A process started the original way (process-spawn-function: get-process,
    * activate, run-next-time-in-process) runs under the original kernel-dispatcher. */
   {
     typedef uint64_t (*zero_fn)(void);typedef uint64_t (*one_fn)(uint64_t);
