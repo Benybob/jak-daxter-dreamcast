@@ -10,6 +10,8 @@
 #include "goal_bridge.h"
 #include "goal_kernel_types.h"
 #include "goal_main_start.h"
+#include "process_spans.h"
+#include "pp_scope.h"
 #include "runtime_cases.h"
 #include "build/boot_gcommon.h"
 #include "build/boot_gstring_h.h"
@@ -88,6 +90,67 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
   length=dc_goal_format_capture(&text);
   CHECK(length>0 && strstr(text,"] vec4s")!=NULL,1,"original startup (inspect *test-vec4s*) prints its type symbol through native _format");
   CHECK(strstr(text,"x: 0.0000")!=NULL,1,"vec4s float field formatted from its variadic bit pattern");
+  /* A process started the original way (process-spawn-function: get-process,
+   * activate, run-next-time-in-process) runs under the original kernel-dispatcher. */
+  {
+    typedef uint64_t (*zero_fn)(void);typedef uint64_t (*one_fn)(uint64_t);
+    typedef uint64_t (*three_fn)(uint64_t,uint64_t,uint64_t);typedef uint64_t (*four_fn)(uint64_t,uint64_t,uint64_t,uint64_t);
+    typedef uint64_t (*eight_fn)(uint64_t,uint64_t,uint64_t,uint64_t,uint64_t,uint64_t,uint64_t,uint64_t);
+    enum {STATUS=32,PID=36,MAIN=40,TOP=44,HEAP_TOP=80,RESUME_HOOK=16,NEXT_PID=12,SELF=24,CHILD=16,GET_PROCESS=14,ACTIVATE=9,DEACTIVATE=10,
+          STACK_BYTES=16384,FRAMES=3};
+    static dc_goal_process_spans table;static dc_goal_process_span rows[8];static dc_goal_pp_scope_stack scopes;
+    static dc_goal_fiber fiber;
+    uint32_t pool=entry(&rt,"*8k-dead-pool*"),parent=entry(&rt,"*default-pool*"),process_type=entry(&rt,"process");
+    uint32_t name=dc_goal_intern(&rt,"dc-boot-spawn"),suspended=dc_goal_intern(&rt,"suspended");
+    uint32_t proc,thread,stack,bytes,pid,i;
+    zero_fn dispatch=(zero_fn)(uintptr_t)entry(&rt,"kernel-dispatcher");
+    CHECK(dispatch!=NULL && entry(&rt,"looping-code")!=0,1,"original kernel-dispatcher and looping-code booted");
+    CHECK(dc_goal_register_process_spans(&rt,&table,rows,8),1,"ownership ledger registered after boot");
+    CHECK(dc_goal_register_pp_scope(&rt,&scopes),1,"lexical scope metadata registered after boot");
+    proc=(uint32_t)((three_fn)(uintptr_t)dc_goal_get_method(&rt,dc_goal_type_of(&rt,pool),GET_PROCESS))(pool,process_type,1024);
+    CHECK(proc!=0 && proc!=rt.s7 && dc_goal_type_of(&rt,proc)==process_type,1,"original get-process takes a member of the 8k pool");
+    if(!proc || proc==rt.s7)goto spawn_done;
+    bytes=word(&rt,proc,HEAP_TOP)-(proc-4u);  /* raw allocation start to heap-top */
+    CHECK(dc_goal_note_process_span(&rt,proc,bytes,NULL),1,"trusted C notes the original pool member's exact extent");
+    stack=dc_goal_alloc(&rt,STACK_BYTES);CHECK(stack!=0 && !(stack&15u),1,"owned aligned execution stack");if(!stack)goto spawn_done;
+    pid=word(&rt,entry(&rt,"*kernel-context*"),NEXT_PID);
+    ((four_fn)(uintptr_t)dc_goal_get_method(&rt,process_type,ACTIVATE))(proc,parent,name,stack+STACK_BYTES);
+    CHECK(rt.error,DC_GOAL_OK,"original activate completes");
+    thread=word(&rt,proc,MAIN);
+    CHECK(thread!=0 && thread!=rt.s7 && thread>proc && thread<proc+bytes,1,"original activate builds the main thread in the process heap");
+    CHECK(word(&rt,proc,PID),pid,"original activate assigns the next kernel PID");
+    CHECK(word(&rt,proc,8)!=rt.s7,1,"original change-parent moves the process under *default-pool*");
+    ((eight_fn)(uintptr_t)entry(&rt,"set-to-run"))(thread,entry(&rt,"looping-code"),0,0,0,0,0,0);
+    CHECK(word(&rt,proc,STATUS),dc_goal_find(&rt,"waiting-to-run"),"original run-next-time-in-process arms the main thread");
+    {int imported=dc_goal_fiber_init_main(&fiber,&rt,proc,bytes,thread,stack,STACK_BYTES);
+     CHECK(imported?1:100+rt.error,1,"armed original image imports into a native fiber");
+     if(!imported){rt.error=DC_GOAL_OK;goto spawn_done;}}
+    CHECK(word(&rt,thread,RESUME_HOOK),entry(&rt,"dc-c-thread-resume"),"original constructor installed the native thread-resume hook");
+    CHECK(word(&rt,thread,32),512,"original activate reserves the Dreamcast main-thread backup");
+    CHECK(dc_goal_register_thread_fiber(&rt,&fiber),1,"fiber registered for the original resume-hook");
+    for(i=0;i<FRAMES;++i){
+      dispatch();
+      CHECK(rt.error,DC_GOAL_OK,"original kernel-dispatcher frame completes without error");
+      CHECK(word(&rt,proc,STATUS),suspended,"the spawned process runs and suspends each frame");
+      CHECK(fiber.phase,DC_FIBER_SUSPENDED,"its native fiber is suspended between frames");
+      CHECK(word(&rt,entry(&rt,"*kernel-context*"),20),rt.s7,"dispatcher clears current-process after the frame");
+    }
+    CHECK(dc_goal_unregister_thread_fiber(&rt,&fiber),1,"fiber unregistered");
+    {uint32_t listener=entry(&rt,"*listener-process*"),lbytes=word(&rt,listener,HEAP_TOP)-(listener-4u);
+     CHECK(dc_goal_note_process_span(&rt,listener,lbytes,NULL),1,"trusted C notes the original listener's exact extent");
+     CHECK(dc_goal_bind_process_context(&rt,listener,lbytes),1,"original listener bound as the caller that kills it");}
+    ((one_fn)(uintptr_t)dc_goal_get_method(&rt,process_type,DEACTIVATE))(proc);
+    CHECK(rt.error,DC_GOAL_OK,"original deactivate completes");dc_goal_clear_process_context(&rt);
+    CHECK(word(&rt,proc,STATUS),dc_goal_find(&rt,"dead"),"original deactivate kills the spawned process");
+    CHECK(word(&rt,pool,CHILD),proc+SELF,"original deactivate returns the process to the 8k pool");
+    dispatch();
+    CHECK(rt.error,DC_GOAL_OK,"dispatcher frame after the process died succeeds");
+    CHECK(dc_goal_fiber_clear(&fiber),1,"dead process's fiber clears");
+    CHECK(dc_goal_pp_scope_detach(&scopes,&rt),1,"quiescent scope metadata detaches");
+spawn_done:
+    rt.error=DC_GOAL_OK;dc_goal_clear_process_context(&rt);
+    CHECK(dc_goal_process_spans_detach(&rt),1,"ownership ledger detaches");
+  }
   snprintf(description,description_bytes,"BOOT GOAL=%lu arena=%lu/%lu startup=%lu symbols=%lu",
            (unsigned long)code_bytes,(unsigned long)rt.used,(unsigned long)capacity,
            (unsigned long)(rt.used-before),(unsigned long)rt.symbol_count);

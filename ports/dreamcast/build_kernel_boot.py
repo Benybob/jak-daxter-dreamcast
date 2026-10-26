@@ -21,7 +21,7 @@ BINDINGS = {
     'throw-dispatch': 'throw-dispatch',
     'set-to-run-bootstrap': 'set-to-run-bootstrap',
 }
-EXPECTED_CHECKS = 50  # verified in Flycast; never weakened afterwards
+EXPECTED_CHECKS = 87  # verified in Flycast; never weakened afterwards
 
 
 def main():
@@ -43,7 +43,8 @@ def main():
         return [arg for source in sources for arg in ('--preload', str(source))]
     contexts = (kernel / 'gcommon.gc', port / 'scalar_validation_context.gc', port / 'dreamcast_profiler_context.gc',
                 port / 'dreamcast_memory_context.gc')
-    target = preloads(*contexts, kernel / 'gkernel-h.gc', kernel / 'gstring-h.gc')
+    target = preloads(*contexts, kernel / 'gkernel-h.gc', kernel / 'gstring-h.gc',
+                      port / 'dreamcast_thread_context.gc')
     # The original KERNEL.CGO load order.
     modules = [
         ('gcommon', []),

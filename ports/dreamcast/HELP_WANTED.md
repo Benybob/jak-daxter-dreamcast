@@ -402,3 +402,5 @@ Each whole-file startup now lowers (gcommon, gstring, gkernel with the 8 native 
 (AI-assisted, Claude Code)
 
 All eight original KERNEL.CGO startups now run natively, unchanged and in original order: 50 of 50 boot checks pass in stock 16 MiB Flycast. Scalar bitfields such as handle now use the integer ABI, and _format prints symbols by name. Help wanted next: spawn a process through the original pools inside the boot image and run it under the original kernel-dispatcher. See KERNEL_BOOT.md. (AI-assisted)
+
+A process started the original way (get-process from *8k-dead-pool*, activate, set-to-run with looping-code) now runs three frames under the original kernel-dispatcher inside the boot image, then dies through original deactivate and returns to its pool: 87 of 87 boot checks pass. dreamcast_thread_context.gc raises PROCESS_STACK_SAVE_SIZE to 512, because a suspended native main thread needs 348 bytes. Help wanted next: an original GOAL caller for the fiber import, then DGO loading. (AI-assisted)

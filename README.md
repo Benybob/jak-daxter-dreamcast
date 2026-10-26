@@ -49,9 +49,9 @@ the original dispatcher inside the boot image, and gameplay, remain unfinished.
 | Original background LODs | Source published: original LOD selection; reduced training patch passes movement and camera checks |
 | Original kernel process system | Source published: unchanged original `send-event-function`, `deactivate`, `(suspend)`, `enter-state` and `kernel-dispatcher` (including trans/post hooks) run on native SH-4 fibers |
 | Original kernel compilation | Complete: 176 of 184 original kernel functions compile to SH-4, and the other 8 (x86/ARM64 assembly thread primitives) bind to named native counterparts; whole-file startups lower; see [KERNEL_COMPILATION.md](ports/dreamcast/KERNEL_COMPILATION.md) |
-| Original kernel boot | Verified: all 8 KERNEL.CGO startups run natively in original order (50/50 checks); see [KERNEL_BOOT.md](ports/dreamcast/KERNEL_BOOT.md) |
+| Original kernel boot | Verified: all 8 KERNEL.CGO startups run natively in original order, and an originally spawned process runs under the original dispatcher (87/87 checks); see [KERNEL_BOOT.md](ports/dreamcast/KERNEL_BOOT.md) |
 | Original process initialization | Root C-stack path verified: unchanged initializer, throw, protect exits, native catches and original deactivate/pool return; initialization to a scheduled running state verified end to end; fiber catches pending |
-| Full original game | Unfinished: fiber catch lifetime, cross-stack unwinding, dispatching spawned processes in the boot image, general gameplay, progression or release build |
+| Full original game | Unfinished: fiber catch lifetime, cross-stack unwinding, GC, DGO loading, general gameplay, progression or release build |
 
 The playable prototypes use a **native C controller**, as a temporary milestone.
 They do not execute original GOAL movement. The real-terrain target and local

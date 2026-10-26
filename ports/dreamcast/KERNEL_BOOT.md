@@ -2,7 +2,8 @@
 
 `jak-dc-kernel-boot.elf` runs the top-level startup of every file in the
 original `KERNEL.CGO`, unchanged and in its original load order, as native SH-4
-code. It runs in stock 16 MiB Flycast. **50 of 50 checks pass.**
+code. It runs in stock 16 MiB Flycast. A process then starts the original way and runs under the
+original `kernel-dispatcher`. **87 of 87 checks pass.**
 
 Build and verify:
 
@@ -28,7 +29,10 @@ match `goal_src/jak1/game.gp`. The Dreamcast target contexts are explicit:
 
 - scalar memory bounds;
 - no desktop profiler (`PC_PROFILER_ENABLE #f`);
-- original console memory sizes (`BIG_MEMORY #f`, from `dreamcast_memory_context.gc`).
+- original console memory sizes (`BIG_MEMORY #f`, from `dreamcast_memory_context.gc`);
+- a 512-byte main-thread stack backup (`PROCESS_STACK_SAVE_SIZE`, from
+  `dreamcast_thread_context.gc`). The original 256 bytes fit PS2 frames; a suspended
+  native main thread needs 348.
 
 Before the original files load, C installs the native counterpart of the desktop
 C++ kernel's setup:
@@ -54,6 +58,25 @@ type symbol and float fields.
 
 Startup allocates about 3.6 MiB. The ELF uses a 4 MiB arena.
 
+## A process started the original way
+
+After boot, the checks follow the original `process-spawn-function` sequence:
+
+1. Original `get-process` takes a member of `*8k-dead-pool*`.
+2. Original `activate` assigns the next PID, builds the main thread in the
+   process heap (with its 512-byte backup), and moves the process under
+   `*default-pool*`. The execution stack is an owned 16 KiB stack, in place of
+   the scratchpad default.
+3. Original `set-to-run` (what `run-next-time-in-process` expands to) arms the
+   main thread with original `looping-code`. The status becomes `waiting-to-run`.
+4. Trusted C notes the member's exact extent, imports the armed image into a
+   native fiber, and registers it for the original resume-hook.
+5. Three frames of the original `kernel-dispatcher` each resume the process.
+   The process then suspends, and current-process is cleared.
+6. Original `deactivate`, called with the booted listener as the current
+   process, kills it and returns it to the 8k pool. A further dispatcher frame
+   skips it.
+
 ## Fixes this needed
 
 - `export_ir.cpp` now gives scalar bitfield types (for example `handle`) the
@@ -63,8 +86,8 @@ Startup allocates about 3.6 MiB. The ELF uses a 4 MiB arena.
 
 ## Not done yet
 
-- A process spawned through the original pools has not yet run under the
-  original `kernel-dispatcher` inside this boot image. The dispatcher is verified
-  separately ([ORIGINAL_DISPATCHER.md](ORIGINAL_DISPATCHER.md)).
+- The fiber import and span notes are still explicit trusted-C steps; no original
+  GOAL caller performs them yet. Trans/post hooks and state `go` are verified only in the
+  runtime suite ([ORIGINAL_DISPATCHER.md](ORIGINAL_DISPATCHER.md)), not in this image.
 - GC, DGO loading, the engine and gameplay are unfinished.
 - No hardware claims.

@@ -1,0 +1,8 @@
+;;-*-Lisp-*-
+;; Dreamcast target configuration: main-thread stack backup size (AI-assisted).
+;; gkernel-h sets PROCESS_STACK_SAVE_SIZE to 256, sized for PS2 GOAL frames. A
+;; suspended native SH-4 main thread running original looping-code needs 348
+;; bytes (measured in kernel_boot_cases.c), so 256 refuses with OUT_OF_MEMORY.
+;; This explicit context, preloaded after gkernel-h, raises the backup to 512.
+;; original activate then reserves it in the process heap. No original body is changed.
+(defconstant PROCESS_STACK_SAVE_SIZE 512)
