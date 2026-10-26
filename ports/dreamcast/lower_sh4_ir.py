@@ -225,6 +225,9 @@ def normalize_register_asm(function):
         text=op.get('text','').strip()
         if op['kind']=='unsupported' and text.startswith('.mov ') and len(op['reads'])==1 and len(op['writes'])==1:
             op=dict(op,kind='move')
+        elif op['kind']=='unsupported' and text.split(' ')[0] in ('.pcpyld','.pcpyud') and \
+             len(op['reads'])==2 and len(op['writes'])==1:
+            op=dict(op,kind=text.split(' ')[0][1:])  # class checks happen at emission
         elif op['kind']=='unsupported' and text.startswith('.add ') and len(op['reads'])==2 and \
              len(op['writes'])==1 and op['reads'][0]==op['writes'][0]:
             op=dict(op,kind='add64')
@@ -530,7 +533,11 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
         raise ValueError('implicit process/self entry ABI not implemented for this signature')
     value_types=INTEGER_VALUE_TYPES|(TAGGED_VALUE_TYPES if runtime else frozenset())
     void_return=runtime and function.get('return_type')=='none'
-    if not void_return and scalar_kind(function.get('return_type'),runtime) not in value_types|{'float'}:
+    classes={r['id']:r['class'] for r in function['registers']}
+    # 128-bit returns travel in r0:r1 (low) and r2:r3 (high) between compiled code.
+    wide_return=runtime and any(op['kind']=='return' and op['reads'] and classes.get(op['reads'][0])=='int128'
+                                for op in function['instructions'])
+    if not void_return and not wide_return and scalar_kind(function.get('return_type'),runtime) not in value_types|{'float'}:
         raise ValueError('bootstrap ABI requires a numeric return type')
     if not void_return and not any(op['kind']=='return' for op in function['instructions']):
         raise ValueError('numeric function has no return')
@@ -644,13 +651,18 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
             return source['function']
         if source['kind']=='move': return function_origin(source['reads'][0],seen)
         raise ValueError('call requires an immutable linked function symbol')
-    if any(r['class'] not in ('gpr64','float') for r in registers.values()):
+    if any(r['class'] not in ('gpr64','float','int128') for r in registers.values()):
         raise ValueError('128-bit/vector register lowering not implemented')
+    wide={index for index,r in registers.items() if r['class']=='int128'}
+    if wide and not runtime: raise ValueError('128-bit values require the native runtime profile')
     parameter_types=[scalar_kind(p['type'],runtime) for p in function['parameters']]
     if len(parameter_types)>8: raise ValueError('more than eight arguments unsupported')
     if len({p['register'] for p in function['parameters']})!=len(function['parameters']):
         raise ValueError('duplicate incoming argument register')
-    for kind in parameter_types:
+    if sum(2 if p['register'] in wide else 1 for p in function['parameters'] if p['type']!='float')>8:
+        raise ValueError('more than eight integer argument positions unsupported')
+    for parameter,kind in zip(function['parameters'],parameter_types):
+        if parameter['register'] in wide: continue  # two integer positions: low, high
         if kind not in value_types|{'float'}:
             raise ValueError('bootstrap ABI currently accepts numeric parameters only' if not runtime else 'unsupported tagged/scalar parameter')
     if not stack_objects and void_return and all(op['kind']=='nop' for op in function['instructions']):
@@ -665,6 +677,9 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
         if leaf is not None: return leaf
     slots=allocate_slots(function) if optimize else {index:i*8 for i,index in enumerate(sorted(registers))}
     frame=max(slots.values(),default=-8)+8
+    # Each 128-bit value owns a dedicated 16-byte slot outside slot reuse.
+    for index in sorted(wide):
+        slots[index]=frame; frame+=16
     # A dedicated slot, outside liveness reuse, records an entered lexical
     # scope so the call-fault exit can restore the saved process first.
     scope_flag=None
@@ -711,6 +726,19 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
             if slot*8<=127: e.add_immediate(8,slot*8)
             else: e.constant(9,slot*8); e.add(8,9)
         e.mov(0,8); e.immediate(1,0); store64(dest)
+    def load128(index,regs=(4,5,6,7)):
+        """Four little-endian words of a 128-bit slot: lo64=(regs[0],regs[1])."""
+        if registers[index]['class']!='int128': raise ValueError('expected 128-bit virtual value')
+        address(index)
+        for n,reg in enumerate(regs):
+            if n: e.add_immediate(8,4)
+            e.load(reg,8)
+    def store128(index,regs=(4,5,6,7)):
+        if registers[index]['class']!='int128': raise ValueError('expected 128-bit virtual value')
+        address(index)
+        for n,reg in enumerate(regs):
+            if n: e.add_immediate(8,4)
+            e.store(8,reg)
     def load_float(index,reg=0):
         address(index); e.word(0xf008|(reg<<8)|(8<<4))
     def store_float(index,reg=0):
@@ -782,6 +810,18 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
                 e.word(0xf01d|(native<<8)); e.word(0x005a)
                 sign_extend(); store64(index)
             float_args+=1
+        elif index in wide:
+            # A 128-bit argument occupies two integer positions, low then high.
+            for half,(a,b) in enumerate(((0,1),(2,3))):
+                position=gpr_args+half
+                if position<2: e.mov(a,4+position*2); e.mov(b,5+position*2)
+                else:
+                    e.mov(8,14)
+                    offset=frame+16+(position-2)*8
+                    if offset<=127: e.add_immediate(8,offset)
+                    else: constant(9,offset); e.add(8,9)
+                    e.load(a,8); e.add_immediate(8,4); e.load(b,8)
+            store128(index,(0,1,2,3)); gpr_args+=2
         else:
             if scalar_kind(parameter['type'],runtime) not in value_types:
                 raise ValueError('bootstrap ABI currently accepts numeric parameters only')
@@ -857,6 +897,10 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
                 if not runtime: raise ValueError('live GOAL symbol requires native symbol runtime')
                 e.literal(0,('symbol','pointer:'+op['symbol'])); e.immediate(1,0); store64(writes[0])
                 continue
+            if kind=='native_function':
+                # Import of a loaded native counterpart (resolved and type-checked by the loader).
+                e.literal(0,('symbol','function:'+op['symbol'])); e.immediate(1,0); store64(writes[0])
+                continue
             if kind=='function_address':
                 if not runtime: raise ValueError('function object requires native runtime')
                 if op['function'] not in module: raise ValueError('unresolved function object '+op['function'])
@@ -897,6 +941,24 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
             elif kind in ('load_memory','store_memory'):
                 if not runtime: raise ValueError('object memory access requires native runtime profile')
                 size,offset=op['size'],op['offset']
+                if size==16 and isinstance(offset,int) and -(1<<31)<offset<(1<<31) and \
+                   registers[(writes if kind=='load_memory' else reads)[0]]['class']=='int128':
+                    # Quadword access: four aligned words (no native 128-bit load).
+                    loading=kind=='load_memory'
+                    value=writes[0] if loading else reads[0]
+                    base=reads[0] if loading else reads[1]
+                    if loading and op.get('memory_class')!='int128':
+                        raise ValueError('memory/register class mismatch')
+                    if not loading: load128(value)
+                    load64(base,2,3)
+                    if -128<=offset<=127: e.add_immediate(2,offset)
+                    else: constant(3,offset); e.add(2,3)
+                    for n,reg in enumerate((4,5,6,7)):
+                        if n: e.add_immediate(2,4)
+                        if loading: e.load(reg,2)
+                        else: e.store(2,reg)
+                    if loading: store128(value)
+                    continue
                 if size not in (1,2,4,8) or not isinstance(offset,int) or not -(1<<31)<=offset<(1<<31):
                     raise ValueError('unsupported memory width/offset')
                 loading=kind=='load_memory'
@@ -942,16 +1004,35 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
                     raise ValueError('call result layout does not match return type')
                 if len(args)!=len(parameters): raise ValueError('linked function argument count mismatch')
                 if len(args)>8: raise ValueError('more than eight call arguments unsupported')
-                kinds={p['type']=='float' for p in parameters}
-                integer_count=sum(p['type']!='float' for p in parameters)
-                if len(kinds)>1:
-                    if '_varargs_' in op.get('function_type',''):
-                        raise ValueError('mixed variadic call ABI not verified')
+                # Desktop GOAL passes every variadic argument in an integer slot,
+                # floats as their bit pattern; native format reads them the same way.
+                variadic=runtime and '_varargs_' in op.get('function_type','')
+                if variadic:
+                    parameters=[{'type':'variadic'} for _ in parameters]
+                    if any(argument in wide for argument in args):
+                        raise ValueError('128-bit variadic argument unsupported')
+                integer_count=sum(2 if argument in wide else 1 for argument,p in zip(args,parameters) if p['type']!='float')
+                if integer_count>8: raise ValueError('more than eight integer argument positions unsupported')
+                def place(position,a,b):
+                    if position<2: e.mov(4+position*2,a); e.mov(5+position*2,b)
+                    else:
+                        e.mov(8,15); e.add_immediate(8,(position-2)*8)
+                        e.store(8,a); e.add_immediate(8,4); e.store(8,b)
                 outgoing=max(0,integer_count-2)*8
                 adjust_stack(-outgoing)
                 integer_index=float_index=0
                 for argument,parameter in zip(args,parameters):
-                    if parameter['type']=='float':
+                    if parameter['type']=='variadic':
+                        if registers[argument]['class']=='float':
+                            load_float(argument,0); e.word(0xf01d); e.word(0x005a)  # FLDS FR0,FPUL; STS FPUL,R0
+                            e.immediate(1,0)
+                        else: load64(argument)
+                        place(integer_index,0,1); integer_index+=1
+                    elif argument in wide:
+                        if registers[argument]['class']!='int128': raise ValueError('128-bit argument container mismatch')
+                        load128(argument,(0,1,2,3)); place(integer_index,0,1); place(integer_index+1,2,3)
+                        integer_index+=2
+                    elif parameter['type']=='float':
                         if float_index>=8 or registers[argument]['type']!='float': raise ValueError('unsupported float call argument')
                         native=FLOAT_ARGUMENT_REGISTERS[float_index]; float_index+=1
                         if registers[argument]['class']=='float': load_float(argument,native)
@@ -972,6 +1053,7 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
                 e.word(0x400b); e.nop()  # jsr @r0, PR saved in prologue
                 adjust_stack(outgoing)
                 if void_call: pass  # no value exists in R0:R1 or FR0 to save
+                elif writes and writes[0] in wide: store128(writes[0],(0,1,2,3))
                 elif target['return_type']=='float':
                     if registers[writes[0]]['type']!='float': raise ValueError('float call result type mismatch')
                     if registers[writes[0]]['class']=='float': store_float(writes[0])
@@ -981,6 +1063,26 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
                 else: raise ValueError('unsupported linked function return type')
             elif kind=='constant':
                 value=op['value']; constant(0,value); constant(1,value>>32); store64(writes[0])
+            elif kind=='move' and (registers[reads[0]]['class']=='int128' or registers[writes[0]]['class']=='int128'):
+                src,dst=reads[0],writes[0]
+                if registers[src]['class']==registers[dst]['class']=='int128':
+                    load128(src); store128(dst)
+                elif registers[dst]['class']=='int128' and registers[src]['class']=='gpr64':
+                    # Frontend 64->128 register move zero-extends.
+                    load64(src,4,5); e.immediate(6,0); e.immediate(7,0); store128(dst)
+                elif registers[src]['class']=='int128' and registers[dst]['class']=='gpr64':
+                    load128(src); e.mov(0,4); e.mov(1,5); store64(dst)  # low 64 bits
+                else: raise ValueError('unsupported 128-bit/float move')
+            elif kind=='pcpyld':
+                # MIPS PCPYLD rd,rs,rt: rd.hi = rs.lo, rd.lo = rt.lo (aliases safe).
+                load128(reads[1]); e.mov(0,4); e.mov(1,5)
+                load128(reads[0]); e.mov(2,4); e.mov(3,5)
+                e.mov(4,0); e.mov(5,1); e.mov(6,2); e.mov(7,3); store128(writes[0])
+            elif kind=='pcpyud':
+                # MIPS PCPYUD rd,rs,rt: rd.lo = rs.hi, rd.hi = rt.hi (aliases safe).
+                load128(reads[0]); e.mov(0,6); e.mov(1,7)
+                load128(reads[1]); e.mov(2,6); e.mov(3,7)
+                e.mov(4,0); e.mov(5,1); e.mov(6,2); e.mov(7,3); store128(writes[0])
             elif kind=='move':
                 src,dst=reads[0],writes[0]
                 if optimize and slots[src]==slots[dst] and registers[src]['class']==registers[dst]['class']:
@@ -1045,6 +1147,7 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
                 if len(reads)!=(0 if void_return else 1):
                     raise ValueError('return value does not match function return type')
                 if void_return: pass
+                elif reads[0] in wide: load128(reads[0],(0,1,2,3))
                 elif function.get('return_type')=='float':
                     if registers[reads[0]]['class']=='float': load_float(reads[0])
                     else: load64(reads[0]); e.word(0x405a); e.word(0xf00d)
@@ -1094,7 +1197,32 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
                 'literal_pool_and_alignment_bytes':len(data)-instruction_bytes,
                 'minimum_32_byte_cache_lines':(len(data)+31)//32}
 
-def compile_module(doc,names,runtime=False,optimize=True,initializer=None):
+def bind_native_functions(doc,names,bindings):
+    """Replace original function objects with named native counterparts (AI-assisted).
+
+    Only for original functions that cannot be compiled (the kernel's x86/ARM64
+    assembly primitives). Every use of the original function object becomes an
+    import of the native counterpart, so the original (define name ...) and
+    method-set! forms bind it under the original name. A bound original must not
+    also be compiled, and must exist in the module.
+    """
+    if not bindings: return doc
+    present={f['name'] for f in doc['functions']}
+    for original,native in bindings.items():
+        if original in names: raise ValueError('natively bound function is also compiled: '+original)
+        if original not in present: raise ValueError('native binding for an absent original function: '+original)
+        if not native or not isinstance(native,str): raise ValueError('invalid native counterpart for '+original)
+    functions=[]
+    for f in doc['functions']:
+        ops=[dict(o,kind='native_function',symbol=bindings[o['function']])
+             if o['kind']=='function_address' and o.get('function') in bindings else o for o in f['instructions']]
+        functions.append(dict(f,instructions=ops))
+    return dict(doc,functions=functions)
+
+def compile_module(doc,names,runtime=False,optimize=True,initializer=None,native_bindings=None):
+    if native_bindings and not runtime: raise ValueError('native bindings require the native runtime profile')
+    names=list(names)  # may be a one-shot iterator
+    doc=bind_native_functions(doc,names,native_bindings or {})
     if doc.get('format_version')!=1: raise ValueError('unsupported typed IR format')
     functions={f['name']:f for f in doc['functions']}
     if len(functions)!=len(doc['functions']): raise ValueError('duplicate function name')
@@ -1200,12 +1328,19 @@ if __name__=='__main__':
     parser.add_argument('--runtime',action='store_true',help='Bind tagged values and mutable symbol cells through the native runtime')
     parser.add_argument('--no-optimize',action='store_true',help='Retain the stack baseline for differential checks')
     parser.add_argument('--initializer',help='Export the original top-level code with this unique name')
+    parser.add_argument('--native-binding',action='append',default=[],metavar='ORIGINAL=NATIVE',
+                        help='Use a loaded native counterpart for an uncompilable original function')
     args=parser.parse_args()
     if not args.function and args.initializer is None:
         parser.error('select at least one function or an initializer')
+    bindings={}
+    for item in args.native_binding:
+        original,sep,native=item.partition('=')
+        if not sep or not original or not native or original in bindings: parser.error('invalid --native-binding '+item)
+        bindings[original]=native
     try:
         doc=json.loads(args.input.read_text())
-        objects=compile_module(doc,args.function,args.runtime,not args.no_optimize,args.initializer)
+        objects=compile_module(doc,args.function,args.runtime,not args.no_optimize,args.initializer,bindings)
         if args.native_module:
             if not args.runtime: raise ValueError('native module file requires runtime profile')
             from native_module_format import pack_native_module

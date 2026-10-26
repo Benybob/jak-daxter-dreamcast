@@ -40,7 +40,8 @@ class FrontendMixedStackTest(unittest.TestCase):
         fn=copy.deepcopy(self.functions['dc-ms-p9-a7-call'])
         call=next(op for op in fn['instructions'] if op['kind']=='call')
         call['function_type']='(function _varargs_ int)'
-        with self.assertRaisesRegex(ValueError,'mixed variadic call'): compile_function(fn,runtime=True)
+        variadic,_=compile_function(fn,runtime=True)  # all-integer-slot convention
+        self.assertGreater(len(variadic),0)
         fn=copy.deepcopy(self.functions['dc-ms-p9-a7'])
         fn['parameters'].append(copy.deepcopy(fn['parameters'][-1]))
         with self.assertRaisesRegex(ValueError,'more than eight arguments'): compile_function(fn,runtime=True)

@@ -44,7 +44,7 @@ Full kernel boot and gameplay remain unfinished.
 | Resident color textures | Source published: 70 original color maps verified in VRAM; staged failure preserves old owner; base-pass geometry integrated in bounded native movement |
 | Original background LODs | Source published: original LOD selection; reduced training patch passes movement and camera checks |
 | Original kernel process system | Source published: unchanged original `send-event-function`, `deactivate`, `(suspend)`, `enter-state` and `kernel-dispatcher` (including trans/post hooks) run on native SH-4 fibers |
-| Original kernel compilation | 167 of 184 original kernel functions lower to SH-4 (gcommon 57/65, gkernel 66/75, gstate 6/6, gstring 38/38); reproducible survey |
+| Original kernel compilation | Complete: 176 of 184 original kernel functions compile to SH-4, and the other 8 (x86/ARM64 assembly thread primitives) bind to named native counterparts; whole-file startups lower; see [KERNEL_COMPILATION.md](ports/dreamcast/KERNEL_COMPILATION.md) |
 | Original process initialization | Root C-stack path verified: unchanged initializer, throw, protect exits, native catches and original deactivate/pool return; initialization to a scheduled running state verified end to end; fiber catches pending |
 | Full original game | Unfinished: fiber catch lifetime, cross-stack unwinding, complete kernel boot, general gameplay, progression or release build |
 
@@ -100,7 +100,7 @@ and checkpoints, not a percentage of game completion or a single full-game run.
 | Area | Locally verified scope |
 | --- | --- |
 | Host | 447 tests pass with the complete local SDK/oracle setup |
-| GOAL runtime | 24,844 native checks at its latest verified checkpoint |
+| GOAL runtime | 24,846 native checks at its latest verified checkpoint |
 | Numeric regression | 39 native checks |
 | Original kernel processes | Events, deactivation (including self-deactivation on a fiber), suspension across destroyed stacks, state transitions and four-frame scheduling with trans/post hooks, and initialization through to a scheduled running state, inside the 24,844 runtime checks |
 | Kernel compilation coverage | 166/184 original kernel functions lower; remaining refusals named in `evidence/kernel-lowering-survey.json` |

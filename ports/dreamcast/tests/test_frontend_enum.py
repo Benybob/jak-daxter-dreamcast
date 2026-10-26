@@ -58,6 +58,8 @@ class FrontendEnumTest(unittest.TestCase):
         fn=copy.deepcopy(self.functions['dc-enum-u32'])
         fn['return_abi_type']=fn['return_type']
         with self.assertRaisesRegex(ValueError,'numeric return type'): compile_function(fn,runtime=True)
+        # int128 values are supported (copies, memory, the 128-bit ABI); any other
+        # wide register class still refuses.
         fn=copy.deepcopy(self.functions['dc-enum-u64'])
-        fn['registers'][0]['class']='int128'
+        fn['registers'][0]['class']='vf128'
         with self.assertRaisesRegex(ValueError,'128-bit/vector'): compile_function(fn,runtime=True)

@@ -48,8 +48,8 @@ uint32_t dc_runtime_process_spans_cases(dc_goal_runtime *rt,dc_runtime_check che
  unsigned char expected[272],code[12]={1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0};
  unsigned char owner_before[1136],context_before[48];
  const unsigned false_offsets[]={8,12,16,28,40,44,48,52,56,60,64,72,88};
- const char *transfer_names[]={"dc-c-return-from-thread","dc-c-suspend","dc-c-enter-state-code","dc-c-thread-resume","dc-c-reset-and-call"};
- uint32_t old_transfer[5]={0};
+ const char *transfer_names[]={"dc-c-return-from-thread","dc-c-suspend","dc-c-enter-state-code","dc-c-thread-resume","dc-c-reset-and-call","dc-c-return-from-thread-dead","dc-c-thread-suspend"};
+ uint32_t old_transfer[7]={0};
  dc_goal_code_export exported={"dc-owned-span-body",code,12,NULL,0};
  two_fn create=(two_fn)(uintptr_t)entry(rt,"dc-new-process");
  three_fn alloc=(three_fn)(uintptr_t)entry(rt,"dc-c-object-new");
@@ -144,9 +144,9 @@ uint32_t dc_runtime_process_spans_cases(dc_goal_runtime *rt,dc_runtime_check che
  CHECK(body_identity,1,"compiled getter authenticates owned B in real fiber");CHECK(body_retire,1,"fiber cannot retire borrowed physical ownership");
  CHECK(body_leave,1,"real fiber restores saved scheduler domain");CHECK(body_clear,1,"core teardown refuses current fiber even with no lexical scope");
  CHECK(dc_goal_fiber_clear(&fiber),1,"completed ownership test fiber clears");dc_goal_clear_process_context(rt);
- for(i=0;i<5;++i){uint32_t symbol=dc_goal_find(rt,transfer_names[i]);old_transfer[i]=symbol?dc_goal_symbol_value(rt,symbol):0;}
- CHECK(dc_goal_install_transfer_bridge(rt,sync,&transfer)&&transfer.functions==5,1,"explicit native scheduler hook imports installed for ownership regression");
- if(transfer.functions!=5)goto scope_detach;
+ for(i=0;i<7;++i){uint32_t symbol=dc_goal_find(rt,transfer_names[i]);old_transfer[i]=symbol?dc_goal_symbol_value(rt,symbol):0;}
+ CHECK(dc_goal_install_transfer_bridge(rt,sync,&transfer)&&transfer.functions==7,1,"explicit native scheduler hook imports installed for ownership regression");
+ if(transfer.functions!=7)goto scope_detach;
  body_mode=1;body_resumed=0;
  CHECK(dc_goal_fiber_init(&fiber,rt,owner,1136,thread,stack,16384,entry(rt,"dc-owned-span-body")),1,"owned process fiber initializes before physical lifetime reuse");
  CHECK(dc_goal_bind_process_context(rt,owner,1136),1,"owned process explicitly bound before yield");
@@ -195,7 +195,7 @@ detach:
  CHECK(dc_goal_process_spans_detach(rt),1,"quiescent ownership metadata detaches without dangling caller storage");
  CHECK(dc_goal_process_spans_registered(rt),0,"detached ledger leaves no registered owner");
 restore:
- if(transfer.functions)for(i=0;i<5;++i)CHECK(dc_goal_set_symbol(rt,dc_goal_find(rt,transfer_names[i]),old_transfer[i]),1,"previous native transfer binding restored after ownership regression");
+ if(transfer.functions)for(i=0;i<7;++i)CHECK(dc_goal_set_symbol(rt,dc_goal_find(rt,transfer_names[i]),old_transfer[i]),1,"previous native transfer binding restored after ownership regression");
  CHECK(dc_goal_set_method(rt,rt->object_type,0,old_object),1,"previous original object allocation method restored");
  CHECK(dc_goal_set_method(rt,type,0,old_process),1,"previous original process constructor method restored");
  CHECK(dc_goal_set_method(rt,tree_type,0,old_tree),1,"previous original tree constructor method restored");

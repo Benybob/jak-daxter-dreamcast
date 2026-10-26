@@ -5,6 +5,7 @@
 #include "goal_bridge.h"
 #include "goal_fiber.h"
 #include "goal_stack_call.h"
+#include "goal_scalar_call.h"
 #include "goal_thread_resize.h"
 #include "goal_main_start.h"
 #include "goal_process_heap.h"
@@ -549,23 +550,46 @@ unsupported:
   if(rt->error==DC_GOAL_OK)rt->error=DC_GOAL_UNSUPPORTED_TRANSFER;
   return 0;
 }
+/* Original return-from-thread-dead: (deactivate pp), then return to the kernel.
+ * Deactivating the running process normally abandons inside deactivate itself. */
+static uint64_t return_from_thread_dead(void) {
+  dc_goal_runtime *rt=active_runtime;
+  uint64_t process,ignored=0;uint32_t type,method;
+  if(!rt)return 0;
+  process=current_process();
+  type=process?dc_goal_type_of(rt,(uint32_t)process):0;
+  method=type?dc_goal_get_method(rt,type,10):0;
+  if(!process || !method || !dc_goal_scalar_call(method,1,&process,&ignored)){
+    if(rt->error==DC_GOAL_OK)rt->error=DC_GOAL_UNSUPPORTED_TRANSFER;
+    return 0;
+  }
+  return return_from_thread();
+}
+/* Original (method thread-suspend cpu-thread), the default suspend-hook. */
+static uint64_t thread_suspend(uint64_t thread) {
+  (void)thread; /* the running fiber's own thread; checked by the engine */
+  return suspend_current();
+}
 int dc_goal_install_transfer_bridge(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_goal_module_result *result) {
-  unsigned char code[5][12]={{1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0},{1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0},
-                             {1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0},{1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0},
-                             {1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0}};
-  uint32_t targets[5]={(uint32_t)(uintptr_t)return_from_thread,(uint32_t)(uintptr_t)suspend_current,
+  enum{N=7};
+  unsigned char code[N][12];
+  const unsigned char stub[12]={1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0};
+  uint32_t targets[N]={(uint32_t)(uintptr_t)return_from_thread,(uint32_t)(uintptr_t)suspend_current,
                        (uint32_t)(uintptr_t)enter_state_code,(uint32_t)(uintptr_t)thread_resume,
-                       (uint32_t)(uintptr_t)reset_and_call};
-  dc_goal_code_export functions[5]={{"dc-c-return-from-thread",code[0],12,NULL,0},
+                       (uint32_t)(uintptr_t)reset_and_call,(uint32_t)(uintptr_t)return_from_thread_dead,
+                       (uint32_t)(uintptr_t)thread_suspend};
+  dc_goal_code_export functions[N]={{"dc-c-return-from-thread",code[0],12,NULL,0},
                                     {"dc-c-suspend",code[1],12,NULL,0},
                                     {"dc-c-enter-state-code",code[2],12,NULL,0},
                                     {"dc-c-thread-resume",code[3],12,NULL,0},
-                                    {"dc-c-reset-and-call",code[4],12,NULL,0}};
+                                    {"dc-c-reset-and-call",code[4],12,NULL,0},
+                                    {"dc-c-return-from-thread-dead",code[5],12,NULL,0},
+                                    {"dc-c-thread-suspend",code[6],12,NULL,0}};
   unsigned i;
   if(!rt || !result) return 0;
   if(active_runtime!=rt) { rt->error=DC_GOAL_BAD_ARGUMENT; return 0; }
-  for(i=0;i<5;++i)memcpy(code[i]+8,&targets[i],4);
-  return dc_goal_load_module(rt,functions,5,sync,NULL,result);
+  for(i=0;i<N;++i){memcpy(code[i],stub,12);memcpy(code[i]+8,&targets[i],4);}
+  return dc_goal_load_module(rt,functions,N,sync,NULL,result);
 }
 
 int dc_goal_install_process_bridge(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_goal_module_result *result) {

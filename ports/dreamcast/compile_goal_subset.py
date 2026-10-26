@@ -24,6 +24,8 @@ def main():
     parser.add_argument('--no-optimize',action='store_true')
     parser.add_argument('--initializer',help='Also compile original top-level initialization with this unique export name')
     parser.add_argument('--native-module',type=Path,help='Also produce a native DCSH file for the runtime loader')
+    parser.add_argument('--native-binding',action='append',default=[],metavar='ORIGINAL=NATIVE',
+                        help='Bind an uncompilable original function to a loaded native counterpart')
     args=parser.parse_args()
     if not args.function and args.initializer is None:
         parser.error('select at least one function or an initializer')
@@ -53,12 +55,14 @@ def main():
     if args.runtime: command+=['--runtime']
     if args.no_optimize: command+=['--no-optimize']
     if args.initializer is not None: command+=['--initializer',args.initializer]
+    for binding in args.native_binding: command+=['--native-binding',binding]
     if args.native_module: command+=['--native-module',str(args.native_module.resolve())]
     subprocess.run(command,check=True)
     report={'scope':('Scalar typed GOAL with native tagged values/symbol bindings; incomplete kernel' if args.runtime else 'Numeric typed GOAL subset; native SH-4, no complete game runtime'),
             'runtime_symbols':args.runtime,
             'optimizations':not args.no_optimize,
             'initializer':args.initializer,
+            'native_bindings':args.native_binding,
             'source':str(args.source.resolve()),
             'source_sha256':hashlib.sha256(args.source.read_bytes()).hexdigest(),
             'preloads':[{'source':str(p),'sha256':hashlib.sha256(p.read_bytes()).hexdigest()} for p in dependencies],

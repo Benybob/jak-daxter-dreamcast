@@ -35,7 +35,12 @@ class FrontendMixedTest(unittest.TestCase):
         self.assertTrue(compile_function(self.functions['dc-mixed-stack'],runtime=True)[0])
 
     def test_mixed_variadic_call_is_not_treated_as_a_fixed_signature(self):
+        # Variadic calls pass every argument in an integer slot (floats as bit
+        # patterns, the desktop GOAL convention), so they differ from the fixed
+        # mixed signature, which uses FPU registers for floats.
         fn=copy.deepcopy(self.functions['dc-mixed-call'])
+        fixed,_=compile_function(copy.deepcopy(fn),runtime=True)
         op=next(op for op in fn['instructions'] if op['kind']=='call')
         op['function_type']='(function object string _varargs_ object)'
-        with self.assertRaisesRegex(ValueError,'mixed variadic call'): compile_function(fn,runtime=True)
+        variadic,_=compile_function(fn,runtime=True)
+        self.assertNotEqual(fixed,variadic)
