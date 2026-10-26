@@ -75,6 +75,10 @@ int dc_goal_install_transfer_bridge(dc_goal_runtime *,dc_goal_cache_sync,dc_goal
  * unregister before clearing. At most eight registrations. */
 int dc_goal_register_thread_fiber(dc_goal_runtime *,dc_goal_fiber *);
 int dc_goal_unregister_thread_fiber(dc_goal_runtime *,dc_goal_fiber *);
+/* Caller-owned original *kernel-dram-stack* span used by dc-c-reset-and-call for
+ * post hooks; [base, base+bytes) with top equal to the original stack-top. */
+int dc_goal_register_kernel_stack(dc_goal_runtime *,uint32_t base,uint32_t bytes);
+void dc_goal_clear_kernel_stack(void);
 /* Data-only first CPU-thread construction through the unchanged original
  * native constructor. Caller owns the unmoved process reservation and a
  * disjoint aligned execution-stack span in rt's arena. Main/top thread must

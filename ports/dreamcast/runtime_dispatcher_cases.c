@@ -19,8 +19,15 @@ enum {MASK=4,CHILD=16,STATUS=32,PID=36,MAIN=40,TOP=44,TRANS_HOOK=56,POST_HOOK=60
       DESKTOP_PROCESS_STACK_SIZE=0x6000};
 static void global(dc_goal_runtime *rt,const char *name,uint32_t value){dc_goal_set_symbol(rt,dc_goal_intern(rt,name),value);}
 static dc_goal_runtime *trans_rt;
-static uint32_t trans_calls,trans_pp,trans_top,trans_status;
-static uintptr_t trans_sp;
+static uint32_t trans_calls,trans_pp,trans_top,trans_status,post_calls,post_pp,post_top;
+static uintptr_t trans_sp,post_sp;
+static uint64_t post_hook(void){
+ volatile uint32_t marker=0;uint32_t pp;
+ post_sp=(uintptr_t)&marker;++post_calls;
+ pp=(uint32_t)((zero_fn)(uintptr_t)entry(trans_rt,"dc-c-current-process"))();post_pp=pp;
+ if(pp)post_top=word(trans_rt,pp,TOP);
+ return 0;
+}
 static uint64_t trans_hook(void){
  volatile uint32_t marker=0;uint32_t pp;
  trans_sp=(uintptr_t)&marker;++trans_calls;
@@ -33,7 +40,9 @@ uint32_t dc_runtime_dispatcher_cases(dc_goal_runtime *rt,dc_runtime_check check,
  dc_goal_process_spans table;dc_goal_process_span rows[8];dc_goal_pp_scope_stack scopes;dc_goal_fiber fiber;
  dc_goal_module_result original={0},hook={0};
  unsigned char hook_code[12]={1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0};
- dc_goal_code_export hook_export={"dc-dispatch-trans",hook_code,12,NULL,0};
+ unsigned char post_code[12]={1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0};
+ dc_goal_code_export hook_exports[2]={{"dc-dispatch-trans",hook_code,12,NULL,0},{"dc-dispatch-post",post_code,12,NULL,0}};
+ uint32_t dram=0;
  uint32_t thread_type=entry(rt,"cpu-thread"),old_thread_new=0,old_thread_delete=0,old_reset=0,hook_fn;
  unsigned thread_methods_set=0;
  uint32_t type=entry(rt,"process"),tree_type=entry(rt,"process-tree"),pool_type=entry(rt,"dead-pool");
@@ -58,7 +67,8 @@ uint32_t dc_runtime_dispatcher_cases(dc_goal_runtime *rt,dc_runtime_check check,
   rt->error=DC_GOAL_OK;
  }
  hook_fn=(uint32_t)(uintptr_t)trans_hook;memcpy(hook_code+8,&hook_fn,4);
- CHECK(dc_goal_load_module(rt,&hook_export,1,sync,NULL,&hook),1,"native observing trans hook registered");
+ hook_fn=(uint32_t)(uintptr_t)post_hook;memcpy(post_code+8,&hook_fn,4);
+ CHECK(dc_goal_load_module(rt,hook_exports,2,sync,NULL,&hook),1,"native observing trans and post hooks registered");
  CHECK(thread_type!=0 && entry(rt,"(method new cpu-thread)")!=0 && entry(rt,"dc-c-reset-and-call")!=0,1,
        "original cpu-thread constructor and native reset-and-call available");
  if(!original.functions||!hook.functions||!entry(rt,"dc-c-thread-resume")||!pool_type||!deactivate||!thread_type)goto restore;
@@ -85,6 +95,10 @@ uint32_t dc_runtime_dispatcher_cases(dc_goal_runtime *rt,dc_runtime_check check,
  CHECK(move(s,root),s,"original change-parent attaches the process to the active tree");
  put(rt,s,MASK,0);put(rt,s,MAIN,thread);put(rt,s,TOP,thread);put(rt,s,PID,61);
  put(rt,s,TRANS_HOOK,rt->s7);put(rt,s,POST_HOOK,rt->s7);put(rt,thread,RESUME_HOOK,entry(rt,"dc-c-thread-resume"));
+ /* Original post threads use *kernel-dram-stack* = *dram-stack* + 32 KiB. */
+ dram=dc_goal_alloc(rt,0x8000);CHECK(dram!=0 && !(dram&15u),1,"owned aligned DRAM post stack allocated");if(!dram)goto detach;
+ global(rt,"*dram-stack*",dram);
+ CHECK(dc_goal_register_kernel_stack(rt,dram,0x8000),1,"DRAM post stack registered for reset-and-call");
  global(rt,"*active-pool*",root);global(rt,"*listener-function*",rt->s7);
  global(rt,"*stdcon0*",name);global(rt,"*stdcon1*",name);
  CHECK(dc_goal_register_pp_scope(rt,&scopes),1,"lexical scope metadata registered");
@@ -97,10 +111,20 @@ uint32_t dc_runtime_dispatcher_cases(dc_goal_runtime *rt,dc_runtime_check check,
   put(rt,s,STATUS,i?suspended:waiting);
   /* Frames 1 and 3 install an original trans hook; 0 and 2 run without. */
   put(rt,s,TRANS_HOOK,(i&1)?entry(rt,"dc-dispatch-trans"):rt->s7);
-  trans_calls=0;trans_pp=trans_top=trans_status=0;trans_sp=0;
+  /* Frames 2 and 3 also install an original post hook. */
+  put(rt,s,POST_HOOK,i>=2?entry(rt,"dc-dispatch-post"):rt->s7);
+  trans_calls=post_calls=0;trans_pp=trans_top=trans_status=post_pp=post_top=0;trans_sp=post_sp=0;
   dispatch();
   CHECK(rt->error,DC_GOAL_OK,"original kernel-dispatcher frame completes without error");
   CHECK(trans_calls,(i&1)?1:0,"trans hook runs exactly when installed");
+  CHECK(post_calls,i>=2?1:0,"post hook runs exactly when installed");
+  if(i>=2){
+   uint32_t temp=dram+0x8000-DESKTOP_PROCESS_STACK_SIZE+4;
+   CHECK(post_pp,s,"post hook runs with pp = its process");
+   CHECK(post_top,temp,"original temporary post thread on the DRAM stack is the top thread");
+   CHECK(post_sp>temp+124 && post_sp<dram+0x8000,1,"post hook runs on the DRAM stack above its thread");
+   CHECK(word(rt,temp,0),dc_goal_find(rt,"post"),"temporary thread is the original post thread");
+  }
   if(i&1){
    uint32_t temp=stack+STACK_BYTES-DESKTOP_PROCESS_STACK_SIZE+4;
    CHECK(trans_pp,s,"trans hook runs with pp = its process");
@@ -138,7 +162,7 @@ uint32_t dc_runtime_dispatcher_cases(dc_goal_runtime *rt,dc_runtime_check check,
  CHECK(dc_goal_fiber_clear(&fiber),1,"suspended fiber of the dead process clears");
  CHECK(dc_goal_pp_scope_detach(&scopes,rt),1,"quiescent scope metadata detaches");
 detach:
- rt->error=DC_GOAL_OK;dc_goal_clear_process_context(rt);global(rt,"*active-pool*",rt->s7);
+ rt->error=DC_GOAL_OK;dc_goal_clear_process_context(rt);global(rt,"*active-pool*",rt->s7);dc_goal_clear_kernel_stack();
  CHECK(dc_goal_process_spans_detach(rt),1,"ownership ledger detaches");
 restore:
  CHECK(dc_goal_set_method(rt,rt->object_type,0,old_object),1,"object allocation method restored");

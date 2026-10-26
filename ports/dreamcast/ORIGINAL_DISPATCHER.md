@@ -57,8 +57,13 @@ ownership-checked binding as `thread-resume`. Anything else records
 
 `PROCESS_STACK_SIZE` is still the desktop 24 KiB (the PS2 value is 7 KiB). It is
 one of the audited `PC_PORT` values, so the main stack must exceed it; the test
-uses 32 KiB. Post hooks run on the separate global DRAM stack and are not yet
-supported natively.
+uses 32 KiB.
+
+Post hooks use the same bridge. The original post thread's `stack-top` is
+`*kernel-dram-stack*` (`*dram-stack*` + 32 KiB). The caller registers that owned
+span with `dc_goal_register_kernel_stack`, and `reset-and-call` accepts a thread
+whose `stack-top` is the top of the main fiber stack or of the registered DRAM
+stack. Nothing else is accepted.
 
 ## Verification
 
@@ -91,7 +96,13 @@ exactly then:
 Afterwards the main thread is `top-thread` again and the process resumes and
 suspends normally. Frames 0 and 2 run no hook.
 
-All **23,507 native runtime checks**, **39 numeric checks** and **430 host tests**
+On frames 2 and 3 an original post hook is installed (14 more checks), so frame 3
+runs trans and post together. It runs exactly then, after the main code:
+- `pp` is the process;
+- the original temporary `post` thread on the DRAM stack is `top-thread`;
+- SP is on the DRAM stack above that thread's structure.
+
+All **23,521 native runtime checks**, **39 numeric checks** and **430 host tests**
 (1 optional skip) pass, from a clean object rebuild. Two new host tests pin that the context removes the profiler calls and
 that the resume is a dynamic call through `resume-hook` (+16). Runtime GOAL code
 is 157,294 bytes, using an arena of 789,840 / 1,048,576 bytes with 759 symbols.
@@ -99,6 +110,6 @@ These are emulator diagnostics, not a hardware or whole-game budget.
 
 ## Next gates
 
-Post hooks on the global DRAM stack, a Dreamcast `PROCESS_STACK_SIZE` choice,
+A Dreamcast `PROCESS_STACK_SIZE` choice,
 throw/catch for process initialization (`run-function-in-process`), and driving
 the dispatcher from the native main loop each frame.

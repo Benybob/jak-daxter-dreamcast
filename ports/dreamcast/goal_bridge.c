@@ -497,6 +497,17 @@ static uint64_t enter_state_code(uint64_t code,uint64_t a0,uint64_t a1,uint64_t 
  * fiber, which is free while that fiber is suspended (its image is in the thread
  * backup). A temporary thread's original in-stack structure stays below the
  * span used. Same explicit binding protocol as thread_resume. */
+/* The original post-hook stack: *kernel-dram-stack*, a caller-owned span. */
+static uint32_t kernel_stack_base,kernel_stack_bytes;
+int dc_goal_register_kernel_stack(dc_goal_runtime *rt,uint32_t base,uint32_t bytes) {
+  if(!rt || active_runtime!=rt || dc_goal_fiber_current() || (base&15u) || (bytes&15u) || bytes<4096u ||
+     bytes>UINT32_MAX-base || (bytes && !dc_goal_resolve(rt,base,bytes))) {
+    if(rt && rt->error==DC_GOAL_OK)rt->error=DC_GOAL_BAD_ARGUMENT;
+    return 0;
+  }
+  kernel_stack_base=base;kernel_stack_bytes=bytes;return 1;
+}
+void dc_goal_clear_kernel_stack(void){kernel_stack_base=kernel_stack_bytes=0;}
 static uint64_t reset_and_call(uint64_t thread,uint64_t func) {
   dc_goal_runtime *rt=active_runtime;
   dc_goal_fiber *fiber=NULL;
@@ -509,11 +520,13 @@ static uint64_t reset_and_call(uint64_t thread,uint64_t func) {
   if(!fiber || fiber->runtime!=rt || (fiber->phase!=DC_FIBER_SUSPENDED && fiber->phase!=DC_FIBER_NEW))goto unsupported;
   if(!(p=dc_goal_resolve(rt,(uint32_t)thread+28,4)))goto unsupported;
   memcpy(&top,p,4);
-  if(top!=fiber->stack_base+fiber->stack_bytes)goto unsupported;
+  /* Trans threads use the main stack; post threads the registered DRAM stack. */
+  if(top==fiber->stack_base+fiber->stack_bytes)base=fiber->stack_base;
+  else if(kernel_stack_bytes && top==kernel_stack_base+kernel_stack_bytes)base=kernel_stack_base;
+  else goto unsupported;
   /* Keep the temporary thread's structure (object at thread, 128 bytes from its
-   * tag at thread-4) below the call stack when it lives in the working stack. */
-  base=fiber->stack_base;
-  if((uint32_t)thread>=fiber->stack_base && (uint32_t)thread<top)base=((uint32_t)thread+124u+15u)&~15u;
+   * tag at thread-4) below the call stack when it lives in that stack. */
+  if((uint32_t)thread>=base && (uint32_t)thread<top)base=((uint32_t)thread+124u+15u)&~15u;
   if(base>=top || top-base<4096u)goto unsupported;
   bytes=top-base;
   symbol=dc_goal_find(rt,"*kernel-context*");context=symbol?dc_goal_symbol_value(rt,symbol):0;
