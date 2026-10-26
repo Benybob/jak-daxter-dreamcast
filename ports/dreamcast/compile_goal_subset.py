@@ -26,8 +26,12 @@ def main():
     parser.add_argument('--native-module',type=Path,help='Also produce a native DCSH file for the runtime loader')
     parser.add_argument('--native-binding',action='append',default=[],metavar='ORIGINAL=NATIVE',
                         help='Bind an uncompilable original function to a loaded native counterpart')
+    parser.add_argument('--all-functions',action='store_true',
+                        help='Compile every non-top-level function of the source except natively bound ones')
     args=parser.parse_args()
-    if not args.function and args.initializer is None:
+    if args.all_functions and (args.function or args.select_defuns):
+        parser.error('--all-functions cannot be combined with --function or --select-defuns')
+    if not args.function and args.initializer is None and not args.all_functions:
         parser.error('select at least one function or an initializer')
     if args.select_defuns and not args.function:
         parser.error('--select-defuns requires at least one original defun')
@@ -50,6 +54,10 @@ def main():
     if args.prefix_through_global: command+=['--prefix-through-global',args.prefix_through_global]
     if args.from_global: command+=['--from-global',args.from_global]
     subprocess.run(command,env=env,check=True)
+    if args.all_functions:
+        bound={item.partition('=')[0] for item in args.native_binding}
+        args.function=[f['name'] for f in json.loads(intermediate.read_text())['functions']
+                       if not f.get('top_level') and f['name'] not in bound]
     command=[sys.executable,str(port/'lower_sh4_ir.py'),str(intermediate),'--header',str(header),'--manifest',str(manifest)]
     for name in args.function: command+=['--function',name]
     if args.runtime: command+=['--runtime']

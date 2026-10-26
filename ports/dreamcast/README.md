@@ -1,5 +1,11 @@
 # Jak 1 on Dreamcast: experimental port workbench
 
+**2026-10-26 (AI-assisted):** [Original kernel boot](KERNEL_BOOT.md) runs the
+top-level startup of all eight original KERNEL.CGO files natively, unchanged and in
+original order. 50 of 50 boot checks, 24,846 runtime checks, 452 host tests and 39
+numeric checks pass in stock 16 MiB Flycast. Dispatching a spawned process inside
+the boot image remains next.
+
 **2026-10-26 (AI-assisted):** [Original root initialization](ORIGINAL_INITIALIZATION.md)
 now executes unchanged `run-function-in-process`, `throw` and protect construction
 through guarded native catch boundaries. Tests cover nested throws, lexical

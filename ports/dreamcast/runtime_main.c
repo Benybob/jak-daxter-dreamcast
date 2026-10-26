@@ -9,6 +9,9 @@
 #ifdef DC_RUNTIME_GOAL
 uint32_t dc_runtime_goal_cases(void *,uint32_t,dc_runtime_check,void *,char *,size_t);
 #endif
+#ifdef DC_KERNEL_BOOT
+uint32_t dc_kernel_boot_cases(void *,uint32_t,dc_runtime_check,void *,char *,size_t);
+#endif
 
 KOS_INIT_FLAGS(INIT_DEFAULT);
 typedef struct {
@@ -32,17 +35,29 @@ static void check(uint64_t actual,uint64_t expected,unsigned which,const char *n
   dc_backend.description[i]=0;
 }
 int main(void) {
+#ifdef DC_KERNEL_BOOT
+  /* The original kernel startup builds its pools, stacks and listener here. */
+  const uint32_t capacity=4u*1024u*1024u;
+#else
   const uint32_t capacity=1024u*1024u;
+#endif
   unsigned char *allocation=memalign(32,capacity+32);
   dc_runtime_stats stats;
   dc_backend.state=1; dc_backend.system_ram=_arch_mem_top-0x8c000000u;
   if (!allocation) {
     check(0,1,1000,"runtime arena allocation",NULL); dc_backend.state=3; return 1;
   }
+#ifndef DC_KERNEL_BOOT
   dc_runtime_cases(allocation+16,capacity,(uint32_t)(uintptr_t)(allocation+16),check,NULL,&stats);
+#else
+  memset(&stats,0,sizeof stats);
+#endif
   if (!dc_backend.failed_case) {
     char message[80];
-#ifdef DC_RUNTIME_GOAL
+#ifdef DC_KERNEL_BOOT
+    dc_backend.code_bytes=dc_kernel_boot_cases(allocation+16,capacity,check,NULL,message,sizeof(message));
+    if (!dc_backend.failed_case) memcpy((void*)dc_backend.description,message,strlen(message)+1);
+#elif defined(DC_RUNTIME_GOAL)
     dc_backend.code_bytes=dc_runtime_goal_cases(allocation+16,capacity,check,NULL,message,sizeof(message));
     if (!dc_backend.failed_case) memcpy((void*)dc_backend.description,message,strlen(message)+1);
 #else

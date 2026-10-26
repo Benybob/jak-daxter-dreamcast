@@ -709,3 +709,18 @@ runtime_stack_objects_cases.o: runtime_stack_objects_cases.c build/stack_objects
 	kos-cc $(CFLAGS) -I. -c $< -o $@
 runtime_stack_objects_baseline.o: runtime_stack_objects_baseline.c build/stack_objects_baseline.h goal_module.h
 	kos-cc $(CFLAGS) -I. -c $< -o $@
+
+# Native boot of the unchanged original jak1 kernel startup (AI-assisted).
+KERNEL_BOOT_LIBS=goal_runtime.o goal_runtime_dc.o goal_module.o goal_bridge.o goal_process_heap.o goal_kernel_types.o \
+ goal_fiber.o native_context_swap.o pp_scope.o process_spans.o goal_kos_stack.o goal_stack_call.o native_stack_call.o \
+ goal_scalar_call.o goal_main_start.o goal_main_thread.o goal_thread_stack.o goal_thread_resize.o goal_register_snapshot.o \
+ native_catch.o goal_native_file.o
+kernel_boot_main.o: runtime_main.c runtime_cases.h
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -DDC_KERNEL_BOOT -c runtime_main.c -o $@
+kernel_boot_cases.o: kernel_boot_cases.c goal_bridge.h goal_fiber.h goal_kernel_types.h goal_main_start.h runtime_cases.h \
+ build/boot_gcommon.h build/boot_gstring.h build/boot_gkernel.h build/boot_gstate.h
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -I. -c kernel_boot_cases.c -o $@
+kernel_boot_valid.o: kernel_boot_valid.c goal_module.h build/boot_valid.h
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -I. -c kernel_boot_valid.c -o $@
+jak-dc-kernel-boot.elf: kernel_boot_main.o kernel_boot_cases.o kernel_boot_valid.o $(KERNEL_BOOT_LIBS)
+	kos-cc -o $@ $^

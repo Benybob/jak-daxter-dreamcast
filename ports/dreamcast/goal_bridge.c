@@ -2,6 +2,10 @@
 #include <stdint.h>
 #include <limits.h>
 #include <string.h>
+#include <stdio.h>
+#ifdef __DREAMCAST__
+#include <kos/dbgio.h>
+#endif
 #include "goal_bridge.h"
 #include "goal_fiber.h"
 #include "goal_stack_call.h"
@@ -590,6 +594,107 @@ int dc_goal_install_transfer_bridge(dc_goal_runtime *rt,dc_goal_cache_sync sync,
   if(active_runtime!=rt) { rt->error=DC_GOAL_BAD_ARGUMENT; return 0; }
   for(i=0;i<N;++i){memcpy(code[i],stub,12);memcpy(code[i]+8,&targets[i],4);}
   return dc_goal_load_module(rt,functions,N,sync,NULL,result);
+}
+
+/* Desktop C++-kernel services the original kernel startup calls (AI-assisted).
+ * _format is a bounded subset; unknown directives refuse with BAD_ARGUMENT.
+ * Variadic arguments arrive in integer slots, floats as their bit pattern. */
+static char format_text[DC_GOAL_FORMAT_CAPTURE];
+static uint32_t format_length;
+static int format_put(char *out,uint32_t *n,uint32_t cap,const char *s,uint32_t k) {
+  if(k>cap-*n)return 0;
+  memcpy(out+*n,s,k);*n+=k;return 1;
+}
+static int format_object(dc_goal_runtime *rt,char *out,uint32_t *n,uint32_t cap,uint64_t value,int quoted) {
+  char tmp[48];uint32_t v=(uint32_t)value,type;const char *name;enum dc_goal_error prior=rt->error;
+  if(value>UINT32_MAX){snprintf(tmp,sizeof tmp,"%lld",(long long)value);return format_put(out,n,cap,tmp,strlen(tmp));}
+  if(v==rt->s7)return format_put(out,n,cap,"#f",2);
+  if(v==rt->s7+8u)return format_put(out,n,cap,"#t",2);
+  /* Symbols live in the symbol table, not as tagged basics. */
+  if((name=dc_goal_symbol_name(rt,v)))return format_put(out,n,cap,name,strlen(name));
+  rt->error=prior;
+  if(dc_goal_resolve(rt,v&~3u,4) && (v&15u)==4 && dc_goal_resolve(rt,v-4,4)) {
+    type=dc_goal_type_of(rt,v);
+    if(type==rt->string_type){
+      uint32_t length;const char *text;memcpy(&length,dc_goal_resolve(rt,v,4),4);
+      text=dc_goal_resolve(rt,v+4,length+1);
+      if(text){return (!quoted||format_put(out,n,cap,"\"",1)) && format_put(out,n,cap,text,length) &&
+                      (!quoted||format_put(out,n,cap,"\"",1));}
+    }
+    if(type==rt->symbol_type && (name=dc_goal_symbol_name(rt,v)))return format_put(out,n,cap,name,strlen(name));
+    if(dc_goal_type_of(rt,type)==rt->type_type){
+      uint32_t type_name=0;unsigned char *p=dc_goal_resolve(rt,type,4);
+      if(p){memcpy(&type_name,p,4);}
+      name=type_name?dc_goal_symbol_name(rt,type_name):NULL;rt->error=prior;
+      snprintf(tmp,sizeof tmp,"#<%.24s @ #x%lx>",name?name:"object",(unsigned long)v);
+      return format_put(out,n,cap,tmp,strlen(tmp));
+    }
+  }
+  rt->error=prior;
+  snprintf(tmp,sizeof tmp,"%ld",(long)(int32_t)v);return format_put(out,n,cap,tmp,strlen(tmp));
+}
+static uint64_t format_native(uint64_t dest,uint64_t fmt,uint64_t a0,uint64_t a1,uint64_t a2,uint64_t a3,uint64_t a4,uint64_t a5) {
+  dc_goal_runtime *rt=active_runtime;const uint64_t args[6]={a0,a1,a2,a3,a4,a5};
+  char out[512];uint32_t n=0,i=0,length,arg=0;const char *text;
+  if(!rt)return 0;
+  if(fmt>UINT32_MAX || dc_goal_type_of(rt,(uint32_t)fmt)!=rt->string_type)goto bad;
+  memcpy(&length,dc_goal_resolve(rt,(uint32_t)fmt,4),4);
+  if(!(text=dc_goal_resolve(rt,(uint32_t)fmt+4,length+1)))goto bad;
+  while(i<length){
+    char c=text[i++],tmp[48];unsigned width=0;
+    if(c!='~'){if(!format_put(out,&n,sizeof out,&c,1))goto bad;continue;}
+    while(i<length && text[i]>='0' && text[i]<='9')width=width*10+(unsigned)(text[i++]-'0');
+    if(i>=length)goto bad;
+    c=text[i++];
+    if(c=='%'){if(!format_put(out,&n,sizeof out,"\n",1))goto bad;continue;}
+    if(c=='~'){if(!format_put(out,&n,sizeof out,"~",1))goto bad;continue;}
+    if(c=='T'||c=='t'){if(!format_put(out,&n,sizeof out,"\t",1))goto bad;continue;}
+    if(arg>=6)goto bad;
+    switch(c){
+    case 'A':case 'a':case 'S':case 's':
+      if(!format_object(rt,out,&n,sizeof out,args[arg++],c=='S'||c=='s')){goto bad;}
+      continue;
+    case 'D':case 'd':snprintf(tmp,sizeof tmp,"%*lld",(int)width,(long long)args[arg++]);break;
+    case 'X':case 'x':snprintf(tmp,sizeof tmp,width?"%0*llx":"%*llx",(int)width,(unsigned long long)args[arg++]);break;
+    case 'F':case 'f':{uint32_t bits=(uint32_t)args[arg++];float value;memcpy(&value,&bits,4);
+      snprintf(tmp,sizeof tmp,"%.4f",(double)value);break;}
+    default:goto bad;
+    }
+    if(!format_put(out,&n,sizeof out,tmp,strlen(tmp)))goto bad;
+  }
+  if(dest==rt->s7){if(n>=sizeof out)goto bad;out[n]=0;return dc_goal_string(rt,out);}
+  if(n>sizeof format_text-format_length)format_length=0; /* bounded ring: newest output wins */
+  if(n<=sizeof format_text){memcpy(format_text+format_length,out,n);format_length+=n;}
+#ifdef __DREAMCAST__
+  dbgio_write_buffer_xlat((const uint8_t *)out,(int)n);
+#endif
+  return rt->s7;
+bad:
+  if(rt->error==DC_GOAL_OK)rt->error=DC_GOAL_BAD_ARGUMENT;
+  return 0;
+}
+static uint64_t malloc_native(uint64_t heap,uint64_t bytes) {
+  dc_goal_runtime *rt=active_runtime;
+  if(!rt)return 0;
+  if(heap!=rt->s7+DC_FIX_SYM_GLOBAL_HEAP || !bytes || bytes>UINT32_MAX){
+    if(rt->error==DC_GOAL_OK){rt->error=DC_GOAL_BAD_ARGUMENT;}
+    return 0;
+  }
+  return dc_goal_alloc(rt,(uint32_t)bytes);
+}
+/* Original kscheme nothing: a function that does nothing. */
+static uint64_t nothing_native(void){return 0;}
+uint32_t dc_goal_format_capture(const char **text){if(text)*text=format_text;return format_length;}
+void dc_goal_format_capture_clear(void){format_length=0;}
+int dc_goal_install_kernel_services(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_goal_module_result *result) {
+  unsigned char code[3][12]={{1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0},{1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0},{1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0}};
+  uint32_t targets[3]={(uint32_t)(uintptr_t)format_native,(uint32_t)(uintptr_t)malloc_native,(uint32_t)(uintptr_t)nothing_native};
+  dc_goal_code_export functions[3]={{"_format",code[0],12,NULL,0},{"malloc",code[1],12,NULL,0},{"nothing",code[2],12,NULL,0}};
+  unsigned i;
+  if(!rt || !result) return 0;
+  if(active_runtime!=rt) { rt->error=DC_GOAL_BAD_ARGUMENT; return 0; }
+  for(i=0;i<3;++i)memcpy(code[i]+8,&targets[i],4);
+  return dc_goal_load_module(rt,functions,3,sync,NULL,result);
 }
 
 int dc_goal_install_process_bridge(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_goal_module_result *result) {

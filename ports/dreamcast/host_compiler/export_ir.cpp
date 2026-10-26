@@ -36,6 +36,14 @@ static std::string native_value_type(const TypeSpec& spec,const TypeSystem& type
        (bytes==1 || bytes==2 || bytes==4 || bytes==8))
       return enumeration->get_load_signed()?"int":"uint";
   }
+  // Bitfield types (for example handle) are scalar integers of their declared
+  // layout; 128-bit bitfields keep their own name and the int128 class.
+  if(const auto* bits=dynamic_cast<const BitFieldType*>(type)) {
+    const int bytes=bits->get_load_size();
+    if(!bits->is_boxed() && bits->get_offset()==0 && bits->get_preferred_reg_class()==RegClass::GPR_64 &&
+       (bytes==1 || bytes==2 || bytes==4 || bytes==8))
+      return bits->get_load_signed()?"int":"uint";
+  }
   // User-defined reference types are 32-bit addresses in scalar containers.
   // Non-reference aggregates and their 128-bit values stay unsupported.
   if(type->is_reference() && type->get_load_size()==4) return "object";

@@ -400,3 +400,5 @@ Each whole-file startup now lowers (gcommon, gstring, gkernel with the 8 native 
 3. A separate boot ELF with a 3-4 MiB arena (the startup allocates the 32 KiB DRAM stack, the 128 KiB fake scratchpad, the nk heap, the fixed pools and the listener process), loading gcommon, gstring, gkernel and gstate with their initializers in order.
 4. Assert the resulting globals: *kernel-context*, *dram-stack*, *listener-process*, *null-process*, every dead pool and *dead-pool-list*, *active-pool* and *display-pool* trees. Then spawn a process through the original pools and run it under the original kernel-dispatcher.
 (AI-assisted, Claude Code)
+
+All eight original KERNEL.CGO startups now run natively, unchanged and in original order: 50 of 50 boot checks pass in stock 16 MiB Flycast. Scalar bitfields such as handle now use the integer ABI, and _format prints symbols by name. Help wanted next: spawn a process through the original pools inside the boot image and run it under the original kernel-dispatcher. See KERNEL_BOOT.md. (AI-assisted)
