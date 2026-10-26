@@ -412,15 +412,34 @@ static uint64_t suspend_current(void) {
   dc_goal_fiber_yield(rt,0);
   return rt->error==DC_GOAL_OK;
 }
+/* Original enter-state main-thread branch: reset the main thread's stack and
+ * run the new state's code, returning through return-from-thread-dead. On the
+ * bound scheduler process's running fiber this restarts the fiber at `code`. */
+static uint64_t enter_state_code(uint64_t code,uint64_t a0,uint64_t a1,uint64_t a2,uint64_t a3) {
+  dc_goal_runtime *rt=active_runtime;
+  dc_goal_fiber *fiber=dc_goal_fiber_current();
+  uint64_t arguments[4]={a0,a1,a2,a3};
+  if(!rt)return 0;
+  if(code>UINT32_MAX){if(rt->error==DC_GOAL_OK)rt->error=DC_GOAL_BAD_ARGUMENT;return 0;}
+  if(fiber && fiber->runtime==rt && execution_context && execution_heap.runtime==rt &&
+     fiber->process==execution_heap.process && rt->error==DC_GOAL_OK)
+    dc_goal_fiber_restart(rt,(uint32_t)code,4,arguments); /* returns only on refusal */
+  if(rt->error==DC_GOAL_OK)rt->error=DC_GOAL_UNSUPPORTED_TRANSFER;
+  return 0;
+}
 int dc_goal_install_transfer_bridge(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_goal_module_result *result) {
-  unsigned char code[2][12]={{1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0},{1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0}};
-  uint32_t targets[2]={(uint32_t)(uintptr_t)return_from_thread,(uint32_t)(uintptr_t)suspend_current};
-  dc_goal_code_export functions[2]={{"dc-c-return-from-thread",code[0],12,NULL,0},
-                                    {"dc-c-suspend",code[1],12,NULL,0}};
+  unsigned char code[3][12]={{1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0},{1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0},
+                             {1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0}};
+  uint32_t targets[3]={(uint32_t)(uintptr_t)return_from_thread,(uint32_t)(uintptr_t)suspend_current,
+                       (uint32_t)(uintptr_t)enter_state_code};
+  dc_goal_code_export functions[3]={{"dc-c-return-from-thread",code[0],12,NULL,0},
+                                    {"dc-c-suspend",code[1],12,NULL,0},
+                                    {"dc-c-enter-state-code",code[2],12,NULL,0}};
+  unsigned i;
   if(!rt || !result) return 0;
   if(active_runtime!=rt) { rt->error=DC_GOAL_BAD_ARGUMENT; return 0; }
-  memcpy(code[0]+8,&targets[0],4); memcpy(code[1]+8,&targets[1],4);
-  return dc_goal_load_module(rt,functions,2,sync,NULL,result);
+  for(i=0;i<3;++i)memcpy(code[i]+8,&targets[i],4);
+  return dc_goal_load_module(rt,functions,3,sync,NULL,result);
 }
 
 int dc_goal_install_process_bridge(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_goal_module_result *result) {

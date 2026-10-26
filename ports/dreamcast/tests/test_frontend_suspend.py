@@ -56,6 +56,22 @@ class SuspendTest(unittest.TestCase):
         for number,fn in enumerate(variants):
             with self.subTest(number=number),self.assertRaises(ValueError):self.lower(fn)
 
+    def test_original_enter_state_lowers_both_transfers(self):
+        fn=self.module['enter-state']
+        self.assertEqual(sorted(b['frontend_register'] for b in fn['fixed_registers']),
+                         ['r13','r15','rcx','rdi','rdx','rsi','rsp'])
+        _,report=self.lower(copy.deepcopy(fn))
+        symbols={r['symbol'] for r in report['relocations']}
+        self.assertLessEqual({'function:dc-c-enter-state-code','function:dc-c-return-from-thread',
+                              'cell:return-from-thread-dead','cell:set-to-run'},symbols)
+        # A different trampoline, or another use of a carg register, keeps refusing.
+        bad=copy.deepcopy(fn);trampoline=next(o for o in bad['instructions'] if o.get('symbol')=='return-from-thread-dead')
+        trampoline['symbol']='return-from-thread'
+        with self.assertRaisesRegex(ValueError,'role not implemented'):self.lower(bad)
+        bad=copy.deepcopy(fn);carg=next(b['register'] for b in bad['fixed_registers'] if b['frontend_register']=='rdi')
+        bad['instructions'].append(dict(kind='nop',reads=[carg],writes=[]))
+        with self.assertRaisesRegex(ValueError,'role not implemented'):self.lower(bad)
+
     def test_written_r15_and_non_reset_rsp_keep_refusing(self):
         for name in ('r15','rsp'):
             fn=copy.deepcopy(self.fn);index=next(b['register'] for b in fn['fixed_registers'] if b['frontend_register']==name)

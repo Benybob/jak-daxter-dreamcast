@@ -187,6 +187,105 @@ def allocate_slots(function):
 
 LEXICAL_SCOPE_KINDS=('process_scope_enter','process_scope_leave')
 
+def normalize_register_asm(function):
+    """Read explicit x86 (.mov a b)/(.add a b) asm ops as plain 64-bit IR (AI-assisted).
+
+    The original inline-asm forms between general registers are exactly a
+    64-bit register copy and a 64-bit add; only their operand layout is checked.
+    Every other asm op stays unsupported.
+    """
+    ops=[]
+    for op in function['instructions']:
+        text=op.get('text','').strip()
+        if op['kind']=='unsupported' and text.startswith('.mov ') and len(op['reads'])==1 and len(op['writes'])==1:
+            op=dict(op,kind='move')
+        elif op['kind']=='unsupported' and text.startswith('.add ') and len(op['reads'])==2 and \
+             len(op['writes'])==1 and op['reads'][0]==op['writes'][0]:
+            op=dict(op,kind='add64')
+        ops.append(op)
+    return dict(function,instructions=ops)
+
+STATE_CODE=12          # state code
+MAIN_THREAD=40         # process main-thread
+THREAD_STACK_TOP=28    # thread stack-top
+CARG_REGISTERS=('rdi','rsi','rdx','rcx')
+
+def state_code_idiom(function):
+    """Recognize original enter-state's x86 jump into a new state's code (AI-assisted).
+
+    The desktop branch loads carg0-3, resets rsp to the main thread's stack top,
+    pushes return-from-thread-dead and jumps to (-> new-state code). It becomes
+    one explicit state_code_transfer operation reading the code and the four
+    arguments; the machine-register bindings it used disappear. Any deviation,
+    or any other use of those registers, keeps refusing.
+    """
+    ops=function['instructions']
+    roles={b.get('frontend_register'):b['register'] for b in function.get('fixed_registers',[])
+           if b.get('role')=='unsupported'}
+    if not all(name in roles for name in ('rsp','r15')+CARG_REGISTERS):return function
+    jumps=[p for p,op in enumerate(ops) if op['kind']=='unsupported' and op.get('text','').startswith('.jr ')]
+    if len(jumps)!=1:return function
+    jr=jumps[0];offset=roles['r15'];sp=roles['rsp']
+    targets={op['target'] for op in ops if op['kind'] in ('branch','goto')}
+    def straight(begin,end):
+        return all(not begin<t<=end for t in targets) and \
+               all(ops[q]['kind'] not in ('branch','goto','call','return') for q in range(begin,end))
+    def writer(value,before):
+        for q in range(before-1,-1,-1):
+            if value in ops[q]['writes']:return q
+        return None
+    def offset_add(value,before):
+        """value = <base> + r15, returning the base's defining position."""
+        q=writer(value,before)
+        if q is None or ops[q]['kind']!='add64' or ops[q]['reads']!=[value,offset] or ops[q]['writes']!=[value]:return None,None
+        m=writer(value,q)
+        if m is None or ops[m]['kind']!='move':return None,None
+        return m,ops[m]['reads'][0]
+    push=jr-1
+    if ops[push]['kind']!='unsupported' or not ops[push].get('text','').startswith('.push ') or len(ops[push]['reads'])!=1:
+        return function
+    ret_move,ret_base=offset_add(ops[push]['reads'][0],push)
+    if ret_move is None:return function
+    ret_def=writer(ret_base,ret_move)
+    if ret_def is None or ops[ret_def]['kind']!='symbol_value' or ops[ret_def].get('symbol')!='return-from-thread-dead':
+        return function
+    code_reg=ops[jr]['reads'][0] if len(ops[jr]['reads'])==1 else None
+    code_move,code_base=offset_add(code_reg,jr)
+    if code_move is None:return function
+    code_def=writer(code_base,code_move)
+    if code_def is None or ops[code_def]['kind']!='load_memory' or ops[code_def].get('offset')!=STATE_CODE:return function
+    sp_move,sp_base=offset_add(sp,jr)
+    if sp_move is None:return function
+    sp_def=writer(sp_base,sp_move)
+    if sp_def is None or ops[sp_def]['kind']!='load_memory' or ops[sp_def].get('offset')!=THREAD_STACK_TOP:return function
+    thread_def=writer(ops[sp_def]['reads'][0],sp_def)
+    if thread_def is None or ops[thread_def]['kind']!='load_memory' or ops[thread_def].get('offset')!=MAIN_THREAD:return function
+    arguments=[];start=jr
+    for name in CARG_REGISTERS:
+        q=writer(roles[name],jr)
+        if q is None or ops[q]['kind']!='move' or len(ops[q]['reads'])!=1:return function
+        arguments.append(ops[q]['reads'][0]);start=min(start,q)
+    start=min(start,code_def,ret_def,thread_def)
+    # The two dead (.add carg) keep-alive ops follow the jump; nothing else may.
+    dead=[jr+1,jr+2]
+    if any(len(ops)<=q or ops[q]['kind']!='add64' or ops[q]['writes'][0] not in [roles[n] for n in CARG_REGISTERS]
+           for q in dead):return function
+    if not straight(start,jr):return function
+    machine={roles[n] for n in ('rsp',)+CARG_REGISTERS}
+    rewritten=[dict(op) for op in ops]
+    for q in range(start,jr+3):
+        if q in (code_def,thread_def,sp_def,ret_def):continue
+        op=ops[q]
+        if op['kind']=='nop':continue
+        if not (set(op['writes'])|set(op['reads']))&(machine|{offset}) and q not in (code_move,ret_move,sp_move,push,jr):
+            return function  # unrelated work inside the transfer window
+        rewritten[q]=dict(kind='nop',reads=[],writes=[],text=op.get('text',''))
+    rewritten[jr]=dict(kind='state_code_transfer',reads=[code_base]+arguments,writes=[],text=ops[jr].get('text',''))
+    if any((set(op['reads'])|set(op['writes']))&machine for op in rewritten):
+        return function  # the machine registers have no other native meaning
+    return dict(function,instructions=rewritten,
+                fixed_registers=[b for b in function['fixed_registers'] if b['register'] not in machine])
+
 def return_from_thread_idiom(function):
     """Recognize original x86 (+! temp off) (.push temp) (.ret) to return-from-thread.
 
@@ -248,6 +347,9 @@ def lexical_process_bracket(function,index,binding):
                 raise ValueError('lexical process reset must precede every process use and control transfer')
             ops[position]=dict(kind='nop',reads=[],writes=[],text=op.get('text','entry pp reset'))
     writes=[p for p,op in enumerate(ops) if index in op['writes']]
+    if not writes:
+        # Only entry resets: an authenticated read-only context, no bracket.
+        return dict(function,instructions=ops)
     if len(writes)!=2:
         raise ValueError('lexical process bracket requires exactly one assignment and one restore')
     enter,leave=writes
@@ -387,10 +489,13 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
             parameters=[dict(p,type=p.get('abi_type',p['type'])) for p in function['parameters']])
     if function.get('asm'): raise ValueError('inline/assembly functions unsupported')
     if runtime:
+        function=normalize_register_asm(function)
+        function=state_code_idiom(function)
         function=return_from_thread_idiom(function)
         function=native_machine_registers(function)
         function=suspend_idiom(function)
-    transfers=any(op['kind'] in ('return_from_thread','suspend','process_reread') for op in function['instructions'])
+    transfers=any(op['kind'] in ('return_from_thread','suspend','process_reread','state_code_transfer')
+                  for op in function['instructions'])
     implicit=function.get('implicit_parameters',[])
     if implicit and (not runtime or len(implicit)!=1 or function['parameters'] or
                      implicit[0].get('kind')!='fixed_entry' or implicit[0].get('name')!='self' or
@@ -450,6 +555,7 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
     if lexical:
         function=lexical_process_bracket(function,lexical[0],fixed[lexical[0]])
         context_reads=[lexical[0]]
+        if 'lexical_saved' not in function: lexical=[]  # read-only: no scope to restore
     translated=[]
     for position,op in enumerate(function['instructions']):
         if op['kind']=='current_process': raise ValueError('current process must originate from a fixed entry reset')
@@ -656,6 +762,20 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
                 e.rr(0x2008,0,0)  # TST R0,R0: missing context must exit before body memory access.
                 e.branch('bt','process_entry_failure')
                 store64(writes[0]); continue
+            if kind=='state_code_transfer':
+                # Restart this fiber at the new state's code with four arguments,
+                # returning through return-from-thread-dead. Success never returns.
+                outgoing=(len(reads)-2)*8
+                adjust_stack(-outgoing)
+                for position_,value in enumerate(reads):
+                    if position_<2: load64(value,4+position_*2,5+position_*2)
+                    else:
+                        load64(value); e.mov(2,15); e.add_immediate(2,(position_-2)*8)
+                        e.store(2,0); e.add_immediate(2,4); e.store(2,1)
+                e.literal(0,('symbol','function:dc-c-enter-state-code'))
+                e.word(0x400b); e.nop()
+                adjust_stack(outgoing)
+                e.branch('bra','process_entry_failure'); continue
             if kind=='process_reread':
                 # Original pp reset after resume: re-authenticate before any use.
                 e.literal(0,('symbol','function:dc-c-current-process'))

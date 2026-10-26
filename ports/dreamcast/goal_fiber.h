@@ -21,6 +21,10 @@ typedef struct {
  /* Original-main import receipt: exact C object address and original PID.
   * Generic init leaves both zero. Not a process disarm or a native security token. */
  uintptr_t main_import_self;uint32_t main_import_pid;
+ /* Original enter-state restart: the next root entry boots `entry` afresh on
+  * the reset working stack; dead_on_return deactivates the process when the
+  * new entry returns (original return-from-thread-dead). */
+ uint32_t restart_pending,dead_on_return;
 } dc_goal_fiber;
 /* Metadata is stable caller-owned C storage OUTSIDE rt's arena/working stack;
  * keep it live until clear. Code/stack/metadata pinned and quiescent. Default init
@@ -52,6 +56,11 @@ uint64_t dc_goal_fiber_yield(dc_goal_runtime *,uint64_t value);
  * with value (FAULT if an error is pending), discarding the working stack.
  * Never returns on success; returns 0 with an error when no valid context runs. */
 int dc_goal_fiber_abandon(dc_goal_runtime *,uint64_t value);
+/* From the running body only: discard the working stack and continue this
+ * context at registered `entry` with 0..8 scalar arguments on a fresh stack.
+ * When that entry returns, the process deactivates through its original
+ * deactivate method. Never returns on success. */
+int dc_goal_fiber_restart(dc_goal_runtime *,uint32_t entry,unsigned argument_count,const uint64_t *arguments);
 int dc_goal_fiber_clear(dc_goal_fiber *);
 /* Internal main-completion C witness: no GOAL writes. Requires an original-main
  * import, DONE, a live matching PID, quiescent storage and the native OS owner.

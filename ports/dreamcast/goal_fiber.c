@@ -66,6 +66,14 @@ void dc_goal_fiber_bootstrap(void) {
  if(!f || f->magic!=FIBER_MAGIC || f->phase!=DC_FIBER_RUNNING || !root_ok(f) || f->argument_count>8)abort();
  value=0;
  if(!dc_goal_scalar_call(f->entry,f->argument_count,f->arguments,&value))bad(f->runtime);
+ if(f->dead_on_return && f->runtime->error==DC_GOAL_OK) {
+  /* Original return-from-thread-dead: (deactivate pp). A self-deactivation
+   * normally abandons to the root from inside and never returns here. */
+  uint32_t type=dc_goal_type_of(f->runtime,f->process),method=type?dc_goal_get_method(f->runtime,type,10):0;
+  uint64_t process=f->process,ignored=0;
+  f->dead_on_return=0;
+  if(!method || !dc_goal_scalar_call(method,1,&process,&ignored))bad(f->runtime);
+ }
  dc_goal_lexical_native_return(f->runtime);
  f->value=value;f->phase=f->runtime->error==DC_GOAL_OK?DC_FIBER_DONE:DC_FIBER_FAULT;
  if(!root_ok(f) || !dc_goal_native_regs_snapshot(&terminal) ||
@@ -172,6 +180,7 @@ int dc_goal_fiber_step(dc_goal_fiber *f,uint64_t resume_value,uint64_t *out) {
       f->image.image_bytes!=f->stack_base+f->stack_bytes-f->native_thread.sp)return fault(f,DC_GOAL_BAD_ARGUMENT);
    if(!dc_goal_thread_stack_restore(&f->image))return fault(f,rt->error);
   }
+reenter:
   /* Sample immediately before the three-register-argument enter call: preceding
    * validation may use outgoing argument stack space. No C calls intervene. */
   if(!dc_goal_kos_stack_enter(&os_stack,f->stack_base,f->stack_bytes))return fault(f,DC_GOAL_BAD_ARGUMENT);
@@ -185,6 +194,16 @@ int dc_goal_fiber_step(dc_goal_fiber *f,uint64_t resume_value,uint64_t *out) {
   current=NULL;f->root_live=0;
   if(!dc_goal_kos_stack_leave(&os_stack))return fault(f,DC_GOAL_BAD_ARGUMENT);
   if(rt->error!=DC_GOAL_OK)return fault(f,rt->error);
+  if(f->restart_pending) {
+   /* Original enter-state: the old stack is discarded, not restored. Boot the
+    * new entry from the stack top through the same closed entry site. */
+   f->restart_pending=0;
+   if(f->phase!=DC_FIBER_RUNNING)return fault(f,DC_GOAL_BAD_ARGUMENT);
+   f->native_thread.sp=f->stack_base+f->stack_bytes;f->native_thread.pr=PC(dc_goal_context_boot_raw);
+   if(!thread_ok(f,1) || !dc_goal_code_entry(rt,f->entry,&code) ||
+      overlap(f->entry,code.bytes,f->stack_base,f->stack_bytes))return fault(f,DC_GOAL_BAD_ARGUMENT);
+   is_new=1;goto reenter;
+  }
   if(f->phase==DC_FIBER_SUSPENDED) {
    uint32_t needed;
    if(!thread_ok(f,0))return fault(f,DC_GOAL_BAD_ARGUMENT);
@@ -222,6 +241,35 @@ int dc_goal_fiber_abandon(dc_goal_runtime *rt,uint64_t value) {
  }
 #else
  (void)value;return bad(rt);
+#endif
+}
+int dc_goal_fiber_restart(dc_goal_runtime *rt,uint32_t entry,unsigned argument_count,const uint64_t *arguments) {
+ dc_goal_fiber *f=current;
+ dc_goal_code_entry_info code;
+ unsigned i;
+ if(!f)return bad(rt);
+ if(f->runtime!=rt){bad(f->runtime);return bad(rt);}
+ if(f->magic!=FIBER_MAGIC || f->phase!=DC_FIBER_RUNNING || argument_count>8 ||
+    (argument_count && !arguments))return bad(rt);
+ if(dc_goal_pp_scope_blocks_transfer(rt)){if(rt->error==DC_GOAL_OK)rt->error=DC_GOAL_BAD_ARGUMENT;return 0;}
+ if(!dc_goal_code_entry(rt,entry,&code))return 0;
+ if(overlap(entry,code.bytes,f->stack_base,f->stack_bytes))return bad(rt);
+#ifdef __DREAMCAST__
+ {
+  struct dc_goal_native_regs caller;
+  uint32_t sr;
+  if(!dc_goal_core_bridges_active(rt) || !root_ok(f) || !dc_goal_native_regs_snapshot(&caller) ||
+     !dc_fiber_leave_push_ok(f->stack_base,f->stack_bytes,caller.sp))return bad(rt);
+  sr=irq_disable();
+  if(!dc_goal_kos_stack_sr_ok(sr)){irq_restore(sr);return bad(rt);}
+  /* Arguments may live on the working stack being discarded: copy first. */
+  for(i=0;i<8;++i)f->arguments[i]=i<argument_count?arguments[i]:0;
+  f->entry=entry;f->argument_count=argument_count;f->dead_on_return=1;f->restart_pending=1;
+  dc_goal_context_leave_raw(&f->native_thread,&f->root,sr|0xf0u);
+  abort();
+ }
+#else
+ (void)i;return bad(rt);
 #endif
 }
 uint64_t dc_goal_fiber_yield(dc_goal_runtime *rt,uint64_t value) {

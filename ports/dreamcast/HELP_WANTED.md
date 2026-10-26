@@ -349,3 +349,8 @@ See [ORIGINAL_DEACTIVATE.md](ORIGINAL_DEACTIVATE.md). (AI-assisted).
 
 The original suspend macro, used by every original process loop, now lowers to a native fiber yield. A read-only x86 r15 memory base is the native constant zero and a reset rsp reads the native SP, so the original debug stack check measures real stack use. The exact top-thread/suspend-hook sequence becomes one dc-c-suspend operation, and each pp reset re-authenticates the process. The unchanged original looping-code suspends a real fiber four times across a destroyed working stack and is then killed by original deactivate. 66 new native checks; 23,359 runtime checks, 39 numeric checks and 425 host tests pass in stock 16 MiB Flycast. Next: enter-state, throw/catch and the original kernel-dispatcher. (AI-assisted, Claude Code)
 See [ORIGINAL_SUSPEND.md](ORIGINAL_SUSPEND.md). (AI-assisted).
+
+## Completed: Original enter-state on native fibers
+
+The unchanged original enter-state, the transition behind every go, now executes natively, and all six gstate functions lower. Explicit x86 .mov/.add asm ops normalize to 64-bit moves and adds. The exact enter-state jump window becomes one state_code_transfer, and the new dc_goal_fiber_restart re-boots the fiber at the state code on the reset stack, deactivating the process when the code returns. 63 new native checks cover state installation, the enter/trans calls, code arguments and pp, the stack reset, a body that never resumes and return-through-deactivate. 23,422 runtime checks, 39 numeric checks and 426 host tests pass in stock 16 MiB Flycast. Next: throw/catch and the original kernel-dispatcher. (AI-assisted, Claude Code)
+See [ORIGINAL_ENTER_STATE.md](ORIGINAL_ENTER_STATE.md). (AI-assisted).
