@@ -5,6 +5,10 @@ terrain through the cached world renderer. Jak walks, runs and jumps with the
 existing native C controller and six original animation clips. This is a
 temporary bounded gameplay slice; full original GOAL gameplay remains unfinished.
 
+The current build adds [bounded decoded blocks](DECODED_BLOCK_CACHE.md), reducing
+repeated reads/decodes while preserving this window/payload contract. That update
+records the revised live-heap gate and measured allocation peak.
+
 ## Verified behavior
 
 Stock 16 MiB Flycast passes 26 integrated checks: movement, jump edges, landing,
@@ -14,11 +18,13 @@ texture owner and GPU cleanup. Captured idle, airborne, camera and boundary
 frames were visually reviewed. Initial geometry is 3,593 actor triangles plus
 3,443 unchanged terrain faces. The exercised replacement windows contain 3,819
 and 3,879 faces. Seventy color textures request 392,192 VRAM bytes and remain
-resident across replacements. Observed idle live heap is 3,591,936 bytes, excluding
+resident across replacements. Before decoded-block retention, observed idle live
+heap was 3,591,936 bytes, excluding
 embedded assets, executable/static storage, KOS and stacks. The TA vertex buffer
 is 1 MiB. These are emulator observations, not physical hardware performance.
 
-A separate original-free native oracle passes 93 checks: wrong source binding,
+A separate original-free native oracle now passes 126 checks, including its
+earlier 93: wrong source binding,
 owned-output refusal, view reuse, invalid-camera readiness refusal, both frame
 allocation failures, missing/trailing selected files, preservation of active CPU
 and GPU owners, known-empty commits and idempotent cleanup. It compares saved
@@ -64,7 +70,7 @@ From this directory:
 ```sh
 python prepare_training_render.py /private/training /private/render /private/stream --header build/training_render_fixture.h
 make TRAINING_STREAM_ASSET_DIR=/private/stream jak-dc-training-stream.elf
-python verify_training.py /path/to/flycast jak-dc-training-stream.elf --nm /path/to/sh-elf-nm --output /private/check --stream-bundle /private/stream/STREAM_BUNDLE.json
+python verify_training.py /path/to/flycast jak-dc-training-stream.elf --nm /path/to/sh-elf-nm --output /private/check --stream-bundle /private/stream/STREAM_BUNDLE.json --heap-budget 6291456
 ```
 
 Windows SDK wrapper: `build_dreamcast.py --target jak-dc-training-stream.elf
@@ -77,7 +83,7 @@ Original-free owner checks need no game files:
 ```sh
 python make_training_owner_fixture.py /private/owner --header build/training_owner_fixture.h
 make TRAINING_OWNER_ASSET_DIR=/private/owner jak-dc-training-render.elf
-python verify_backend.py /path/to/flycast jak-dc-training-render.elf --nm /path/to/sh-elf-nm --output /private/owner-check --suite training-render --tests 93
+python verify_backend.py /path/to/flycast jak-dc-training-render.elf --nm /path/to/sh-elf-nm --output /private/owner-check --suite training-render --tests 126
 ```
 
 Reflection, time-of-day shading, original normal/prototype tint fidelity, broader

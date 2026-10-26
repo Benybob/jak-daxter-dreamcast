@@ -38,6 +38,37 @@ static int unchanged_except_refusals(void) {
  memcpy(&after,&owner,sizeof after);after.refusals=before.refusals;
  return !memcmp(&after,&before,sizeof before);
 }
+static void test_block_budgets(void) {
+ dc_render_catalog catalog={0};FILE *file=fopen("/rd/missing/manifest.drm","rb");
+ const char *error;unsigned i;const uint32_t budgets[]={1,116,1024};
+ if(!CHECK(file!=NULL))return;
+ error=dc_render_catalog_load(file,&catalog);CHECK(fclose(file)==0);
+ if(!CHECK(error==NULL))return;
+ for(i=0;i<3;++i) {
+  dc_render_block_cache blocks={0};dc_render_block_cache_stats stats={0};
+  dc_render_window window={0},old;dc_render_block_source source,invalid={0};
+  dc_render_query query={-18.4,-18.4,18.4,18.4};
+  error=dc_render_block_cache_make(&catalog,"/rd/missing",owner_source_sha,budgets[i],&blocks);
+  if(!CHECK(error==NULL))continue;
+  source=dc_render_block_cache_source(&blocks);
+  error=dc_render_window_retarget_source(&catalog,"/rd/missing",owner_source_sha,&query,&source,&window);
+  if(CHECK(error==NULL)) {
+   CHECK(window.count==2&&crc32(0,window.faces,232)==OWNER_INITIAL_CRC);
+   dc_render_block_cache_measure(&blocks,&stats);
+   CHECK(stats.bytes<=budgets[i]&&stats.peak_bytes<=budgets[i]&&stats.loads>0);
+   CHECK(i==0?stats.bypasses>0:(i==1?stats.evictions>0:stats.hits>0));
+   old=window;
+   CHECK(dc_render_window_retarget_source(&catalog,"/rd/missing",owner_source_sha,&query,&invalid,&window)!=NULL);
+   CHECK(!memcmp(&old,&window,sizeof old));
+   query=(dc_render_query){1.6,-18.4,38.4,18.4};
+   CHECK(dc_render_window_retarget_source(&catalog,"/rd/missing",owner_source_sha,&query,&source,&window)!=NULL);
+   CHECK(!memcmp(&old,&window,sizeof old)&&crc32(0,window.faces,232)==OWNER_INITIAL_CRC);
+  }
+  dc_render_window_free(&window);dc_render_block_cache_free(&blocks);dc_render_block_cache_free(&blocks);
+  dc_render_block_cache_measure(&blocks,&stats);CHECK(!blocks.state&&zero(&stats,sizeof stats));
+ }
+ dc_render_catalog_free(&catalog);
+}
 static void test_root(const char *root,uint32_t baseline) {
  dc_render_camera camera={{0,0,0},0,0,4};const char *error;uint32_t held;unsigned n;
  error=dc_training_render_make(root,owner_source_sha,&owner);if(!CHECK(error==NULL))return;
@@ -86,6 +117,7 @@ int main(void) {
  memset(wrong,'0',64);wrong[64]=0;error=dc_training_render_make("/rd/missing",wrong,&owner);
  CHECK(error!=NULL);CHECK(zero(&owner,sizeof owner));CHECK(live==0&&pvr_mem_available()==baseline);
  test_root("/rd/missing",baseline);test_root("/rd/trailing",baseline);
+ test_block_budgets();
 terminal:
  dc_backend.observed_lo=peak;dc_backend.observed_hi=live;
  snprintf((char *)dc_backend.description,80,"Combined render owner rollback/reuse line=%u",(unsigned)dc_backend.failed_case);

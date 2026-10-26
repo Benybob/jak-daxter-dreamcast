@@ -248,6 +248,9 @@ int main(void){
 #endif
   dc_training_layer_draw(&actor_layer,&scene,PVR_LIST_PT_POLY);pvr_list_finish();pvr_scene_finish();
   if(dc_telemetry.state==DC_ERROR)break;
+#ifdef DC_TRAINING_STREAM
+  {struct mallinfo memory=mallinfo();dc_telemetry.allocator_live=memory.uordblks;dc_telemetry.allocator_arena=memory.arena;}
+#endif
   dc_telemetry.frames=++frames;dc_telemetry.yaw=yaw;dc_telemetry.pitch=DC_CAMERA_PITCH;dc_telemetry.distance=dc_camera_state.distance/4;
  }
  pvr_wait_ready();

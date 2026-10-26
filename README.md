@@ -12,7 +12,7 @@ using OpenAI Codex and human-authorized Grok Build collaboration. Proposals are
 reviewed and independently tested before integration. Local automated checks
 cover the supported subset; expert human review is still needed.
 
-## Progress — 2026-10-25
+## Progress — 2026-10-26
 
 | Milestone | Status |
 | --- | --- |
@@ -22,6 +22,7 @@ cover the supported subset; expert human review is still needed.
 | Collision sector loading | Source published: 572 native original-training window loads verified; game/render streaming integration pending |
 | Original render package | Source published: all 140,166 original lower-LOD triangles/material inputs retained; native reader, cache and base-pass drawing verified; bounded native movement integrated; original GOAL/reflections pending |
 | Cached world base pass | Source published: original 3,547-face window rendered with resident colors; bounded controller streaming verified; reflections pending |
+| Decoded terrain blocks | Source published: explicit immutable-file cache, 2 MiB raw cap/128 LRU slots; scripted reads/decodes reduced from 200 to 10 |
 | CPU render windows | Source published: all 572 original windows verified, transactional rollback; bounded playable base-pass integration verified |
 | Resident color textures | Source published: 70 original color maps verified in VRAM; staged failure preserves old owner; base-pass geometry integrated in bounded native movement |
 | Original background LODs | Source published: original LOD selection; reduced training patch passes movement and camera checks |
@@ -54,7 +55,9 @@ windows, full replica checks and bounded ownership.
 [BASE_RENDERING.md](ports/dreamcast/BASE_RENDERING.md) covers the integrated cached
 world-view/clip/base-pass diagnostic.
 [TRAINING_STREAM.md](ports/dreamcast/TRAINING_STREAM.md) covers the new bounded
-playable integration, 26 movement/stream checks and 93 owner failure/reuse checks.
+playable integration and 26 movement/stream checks.
+[DECODED_BLOCK_CACHE.md](ports/dreamcast/DECODED_BLOCK_CACHE.md) covers the bounded
+immutable-file cache, 126 owner/budget checks, revised live-heap gate and allocation peak.
 
 ## Current verification
 
@@ -64,7 +67,7 @@ and checkpoints, not a percentage of game completion or a single full-game run.
 
 | Area | Locally verified scope |
 | --- | --- |
-| Host | 371 tests pass with the complete local SDK/oracle setup |
+| Host | 379 tests pass with the complete local SDK/oracle setup |
 | GOAL runtime | 22,649 native checks at its latest verified checkpoint |
 | Numeric regression | 39 native checks |
 | Prototype movement | 318 native checks; visible test-map controller and platform paths pass |
@@ -80,8 +83,9 @@ and checkpoints, not a percentage of game completion or a single full-game run.
 | Render package IO | 9,578 native checks across 3,158 original local files plus global geometry; 88 synthetic native checks; base-pass drawing verified; bounded native movement integrated; original GOAL/reflections pending |
 | Near-plane rendering | 4,967 native view/clip checks (including 285 analytic clip cases), plus 10 synthetic raster checks |
 | Collision camera | 1,205 native query/rig checks; 454 WLD2/3 manifest checks; 11 original-terrain orbit checks |
+| Decoded block workload | Same scripted route: 10 full reads/decodes versus 200; exact window CRCs retained, stock 16 MiB RAM |
 | Cached playable terrain | 26 integrated movement/stream checks; exact-source windows, resident texture reuse and cleanup; captured idle/air/camera/boundary frames reviewed |
-| Combined render owner | 93 original-free native source/failure/rollback/reuse/known-empty/cleanup checks |
+| Combined render owner | 126 original-free native source/failure/rollback/reuse/known-empty/cleanup and block-budget/bypass/eviction checks |
 | Original-terrain prototype | 20 integrated checks: movement, jump edges, landing, camera, boundary respawn, memory and exit; captured idle/air frames visually reviewed |
 
 The earlier fixed-patch original-LOD training prototype renders 3,593 character triangles and
@@ -104,16 +108,16 @@ not executed by these native tests; runtime and renderer are separate programs.
 
 ## Latest completed contributor task
 
-The native walking prototype now uses cached original terrain, resident PowerVR textures and SH4ZAM transforms. 26 integrated stock-16-MiB Flycast checks pass, including multiple exact-source render windows and stable texture ownership; 93 original-free native failure/reuse/cleanup checks and 371 host tests pass. The earlier prototype retains its 20 passing checks. Captured movement/jump/camera frames were visually reviewed. The region and native C controller remain temporary; full original GOAL gameplay and reflection/TOD fidelity are unfinished. (AI-assisted)
+The native training target now retains validated immutable terrain blocks under a 2 MiB raw-byte cap. The same scripted stock-16-MiB Flycast route performs 10 block reads/decodes instead of 200, with matching source windows and payload CRCs. 379 host tests,126 native owner/budget checks and26 integrated movement/stream checks pass. Independent allocation instrumentation observes a 6,477,168-byte live peak without failed allocations. The explicit sampled live-heap gate is now6MiB; the earlier target keeps its4MiB default. Original GOAL/full gameplay, reflection/TOD and physical validation remain unfinished. (AI-assisted)
 
-See [TRAINING_STREAM.md](ports/dreamcast/TRAINING_STREAM.md). Full kernel/gameplay remains unfinished.
+See [DECODED_BLOCK_CACHE.md](ports/dreamcast/DECODED_BLOCK_CACHE.md). Full kernel/gameplay remains unfinished.
 
 ## Build and orientation
 
 Source is in `ports/dreamcast/`. Follow [BUILDING.md](ports/dreamcast/BUILDING.md).
 The verified baseline is OpenGOAL `6076aab5a95955443a9e1ed8f72a25bc0e2fcf9d`;
 the latest locally verified port source checkpoint is
-`8010ed6a823b22e0d81647d33d4e535f27ce9788`.
+`0f0a41f574ed695f91be93e07de3757c2f8ff011`.
 
 No ISO, BIOS, extracted textures/models, converted game scenes or ELF binaries
 embedding game assets are uploaded. Prepare assets locally from your own game

@@ -16,8 +16,9 @@ def render_lua(template,values):
  return re.sub(r'\b(?:'+'|'.join(map(re.escape,values))+r')\b',lambda m:values[m.group(0)],template)
 
 def main():
- ap=argparse.ArgumentParser(description=__doc__);ap.add_argument('flycast',type=Path);ap.add_argument('elf',type=Path);ap.add_argument('--nm',type=Path,required=True);ap.add_argument('--output',type=Path,required=True);ap.add_argument('--expected-triangles',type=int,default=6566,help='Expected combined actor + terrain source triangles');ap.add_argument('--stream-bundle',type=Path,help='Private STREAM_BUNDLE.json with full-source reachable window oracles');a=ap.parse_args();a.platform=False
+ ap=argparse.ArgumentParser(description=__doc__);ap.add_argument('flycast',type=Path);ap.add_argument('elf',type=Path);ap.add_argument('--nm',type=Path,required=True);ap.add_argument('--output',type=Path,required=True);ap.add_argument('--expected-triangles',type=int,default=6566,help='Expected combined actor + terrain source triangles');ap.add_argument('--stream-bundle',type=Path,help='Private STREAM_BUNDLE.json with full-source reachable window oracles');ap.add_argument('--heap-budget',type=int,default=4*1024*1024,help='Explicit maximum live heap bytes; default retains the earlier prototype 4MiB gate');a=ap.parse_args();a.platform=False
  if not 1<=a.expected_triangles<=16384:ap.error('--expected-triangles must be 1..16384')
+ if not 1<=a.heap_budget<=8*1024*1024:ap.error('--heap-budget must be 1..8MiB')
  symbols=subprocess.check_output([str(a.nm),str(a.elf)],text=True)
  def address(name):return int(re.search(r'^([0-9a-fA-F]+)\s+\w\s+_?'+name+r'$',symbols,re.M)[1],16)
  out=a.output.resolve();out.mkdir(parents=True,exist_ok=True)
@@ -102,7 +103,7 @@ end
  checks['camera_eye_ray']=all(abs(x['camera']['eye_'+axis]-(x['camera']['target_'+axis]+x['camera']['dir_'+axis]*x['camera']['distance']))<.0001 for x in snapshots.values() for axis in ('x','y','z'))
  checks['near_clipping_active']=struct.unpack('<I',(out/'clipped.bin').read_bytes())[0]>0
  checks['training_triangles']=s['idle']['triangles']==a.expected_triangles
- checks['heap_below_4mib']=s['idle']['allocator_live']<4*1024*1024
+ checks['heap_below_4mib' if a.heap_budget==4*1024*1024 else 'heap_within_explicit_budget']=all(x['scene']['allocator_live']<a.heap_budget for x in snapshots.values())
  stream=None
  if a.stream_bundle:
   bundle=json.loads(a.stream_bundle.read_text());oracle={(row['x'],row['z']):row for row in bundle['source_window_oracles']}
@@ -119,6 +120,8 @@ end
  result=dict(ai_assisted=True,result='PASS' if all(checks.values()) else 'FAIL',elf_sha256=hashlib.sha256(a.elf.read_bytes()).hexdigest(),checks=checks,snapshots=snapshots,timebase='monotonic fixed60Hz simulation ticks',scope='Native C original-training patch prototype; captured images require visual review; not original GOAL gameplay or hardware validation')
  if stream:
   result['stream_snapshots']=stream;result['scope']='Native C bounded original training prototype with transactional render-window changes, full-source payload oracles and stable resident texture owner; base pass only, not original GOAL gameplay/full-game streaming or hardware validation'
+ result['heap_budget_bytes']=a.heap_budget
+ result['heap_measurement_scope']='Sampled live allocator telemetry; intermediate allocation peaks require the separate allocation oracle'
  (out/'result.json').write_text(json.dumps(result,indent=2)+'\n');print(json.dumps(dict(result=result['result'],checks=checks),indent=2))
  if result['result']!='PASS':raise SystemExit(1)
 if __name__=='__main__':main()

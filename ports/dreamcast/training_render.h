@@ -2,8 +2,10 @@
 #ifndef DC_TRAINING_RENDER_H
 #define DC_TRAINING_RENDER_H
 #include "render_base.h"
+#include "render_block_cache.h"
 typedef struct {
  dc_render_catalog catalog;dc_render_gpu gpu;dc_render_base_bank bank;
+ dc_render_block_cache blocks;
  dc_render_window window;dc_render_base_frame frame;
  char root[DC_RENDER_CACHE_ROOT_MAX+1],source_sha[65];
  uint32_t initialized,commits,refusals;

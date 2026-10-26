@@ -135,6 +135,23 @@ const char *dc_render_window_retarget(const dc_render_catalog *catalog,
                                       const dc_render_query *query,
                                       dc_render_window *window);
 
+/* Explicit validated-block source. One serial load/release pair at a time.
+ * load must return complete dc_render_block_load-validated records for this
+ * exact catalog entry/path, including EOF, compressed/raw CRC and close checks.
+ * Failure leaves block zero. Successful blocks are borrowed until release;
+ * release clears block. Neither callback mutates catalog/query/old window.
+ * The source and its immutable filesystem identity remain alive for the call.
+ * The normal retarget above always uses direct FILE reads, without this source.
+ * All source-ID, replica/role, full-payload and coverage checks still run. */
+typedef struct {
+    void *user;
+    const char *(*load)(void *,const dc_render_catalog *,const dc_render_entry *,
+                        int global,const char *path,dc_render_block *);
+    void (*release)(void *,dc_render_block *);
+} dc_render_block_source;
+const char *dc_render_window_retarget_source(const dc_render_catalog *,const char *,
+    const char *,const dc_render_query *,const dc_render_block_source *,dc_render_window *);
+
 #ifdef __cplusplus
 }
 #endif

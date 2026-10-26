@@ -82,6 +82,7 @@ typedef struct dc_render_identity {
 
 typedef struct dc_render_job {
     const dc_render_catalog *catalog;
+    const dc_render_block_source *source;
     const char *root;
     const dc_render_query *query;
     dc_render_workspace *ws;
@@ -555,12 +556,15 @@ static const char *cache_run_pass(dc_render_job *job, int validate) {
         error = global ? cache_path_global(path, job->root)
                        : cache_path_local(path, job->root, entry->ix, entry->iz);
         if (error) return error;
-        error = cache_load_block(job->catalog, entry, global, path, &block);
+        memset(&block,0,sizeof block);
+        error = job->source ? job->source->load(job->source->user,job->catalog,entry,global,path,&block)
+                            : cache_load_block(job->catalog, entry, global, path, &block);
         if (error) return error;
         if (block.count != entry->count) error = DC_RENDER_CACHE_ERR_ARGUMENTS;
         else if (validate) error = cache_validate_block(job, &block, global);
         else error = cache_select_block(job, &block);
-        dc_render_block_free(&block);
+        if(job->source) job->source->release(job->source->user,&block);
+        else dc_render_block_free(&block);
         if (error) return error;
     }
     return NULL;
@@ -624,9 +628,9 @@ void dc_render_window_free(dc_render_window *window) {
     memset(window, 0, sizeof(*window));
 }
 
-const char *dc_render_window_retarget(const dc_render_catalog *catalog, const char *root,
+const char *dc_render_window_retarget_source(const dc_render_catalog *catalog, const char *root,
                                       const char *source_sha, const dc_render_query *query,
-                                      dc_render_window *window) {
+                                      const dc_render_block_source *source,dc_render_window *window) {
     char root_copy[DC_RENDER_CACHE_ROOT_MAX + 1u];
     char sha_copy[DC_RENDER_CACHE_SHA_MAX + 1u];
     dc_render_query query_copy;
@@ -640,6 +644,7 @@ const char *dc_render_window_retarget(const dc_render_catalog *catalog, const ch
     if (!window) return DC_RENDER_CACHE_ERR_OUTPUT;
     if (!cache_unowned(window) && !cache_committed(window)) return DC_RENDER_CACHE_ERR_OWNED;
     if (!catalog || !catalog->storage || !root || !source_sha || !query) return DC_RENDER_CACHE_ERR_ARGUMENTS;
+    if(source&&(!source->load||!source->release))return DC_RENDER_CACHE_ERR_ARGUMENTS;
     if (!cache_sha_ok(source_sha,catalog)) return DC_RENDER_CACHE_ERR_SHA;
     if (!cache_root_ok(root)) return DC_RENDER_CACHE_ERR_ROOT;
     if (!cache_query_ok(query)) return DC_RENDER_CACHE_ERR_QUERY;
@@ -661,6 +666,7 @@ const char *dc_render_window_retarget(const dc_render_catalog *catalog, const ch
     if (!job.ws) return DC_RENDER_CACHE_ERR_ALLOCATION;
     memset(job.ws, 0, sizeof(*job.ws));
     job.catalog = catalog;
+    job.source = source;
     job.root = root_copy;
     job.query = &query_copy;
     job.cursor = 0;
@@ -739,4 +745,9 @@ fail:
     if (job.payloads) CACHE_FREE(job.payloads);
     if (job.ws) CACHE_FREE(job.ws);
     return error;
+}
+
+const char *dc_render_window_retarget(const dc_render_catalog *catalog,const char *root,
+    const char *source_sha,const dc_render_query *query,dc_render_window *window) {
+    return dc_render_window_retarget_source(catalog,root,source_sha,query,NULL,window);
 }

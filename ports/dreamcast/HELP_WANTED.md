@@ -299,3 +299,8 @@ See [BASE_RENDERING.md](BASE_RENDERING.md). (AI-assisted).
 
 The native walking prototype now uses cached original terrain, resident PowerVR textures and SH4ZAM transforms. 26 integrated stock-16-MiB Flycast checks pass, including multiple exact-source render windows and stable texture ownership; 93 original-free native failure/reuse/cleanup checks and 371 host tests pass. The earlier prototype retains its 20 passing checks. Captured movement/jump/camera frames were visually reviewed. The region and native C controller remain temporary; full original GOAL gameplay and reflection/TOD fidelity are unfinished. (AI-assisted)
 See [TRAINING_STREAM.md](TRAINING_STREAM.md). (AI-assisted).
+
+## Completed: Bounded decoded terrain blocks in native movement
+
+The native training target now retains validated immutable terrain blocks under a 2 MiB raw-byte cap. The same scripted stock-16-MiB Flycast route performs 10 block reads/decodes instead of 200, with matching source windows and payload CRCs. 379 host tests,126 native owner/budget checks and26 integrated movement/stream checks pass. Independent allocation instrumentation observes a 6,477,168-byte live peak without failed allocations. The explicit sampled live-heap gate is now6MiB; the earlier target keeps its4MiB default. Original GOAL/full gameplay, reflection/TOD and physical validation remain unfinished. (AI-assisted)
+See [DECODED_BLOCK_CACHE.md](DECODED_BLOCK_CACHE.md). (AI-assisted).
