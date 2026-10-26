@@ -58,7 +58,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Thread stack checker compilation failed' }
 if ($LASTEXITCODE -ne 0) { throw 'Code entry checker compilation failed' }
 & $Compiler @flags (Join-Path $port 'host_stack_call.c') (Join-Path $port 'goal_stack_call.c') (Join-Path $port 'goal_module.c') (Join-Path $port 'goal_runtime.c') -o (Join-Path $build 'stack-call-check.exe')
 if ($LASTEXITCODE -ne 0) { throw 'Stack call boundary checker compilation failed' }
-& $Compiler @flags (Join-Path $port 'host_fiber.c') (Join-Path $port 'goal_fiber.c') (Join-Path $port 'goal_thread_stack.c') (Join-Path $port 'goal_process_heap.c') (Join-Path $port 'goal_module.c') (Join-Path $port 'goal_kernel_types.c') (Join-Path $port 'goal_runtime.c') -o (Join-Path $build 'fiber-check.exe')
+& $Compiler @flags (Join-Path $port 'host_fiber.c') (Join-Path $port 'goal_fiber.c') (Join-Path $port 'pp_scope.c') (Join-Path $port 'goal_thread_stack.c') (Join-Path $port 'goal_process_heap.c') (Join-Path $port 'goal_module.c') (Join-Path $port 'goal_kernel_types.c') (Join-Path $port 'goal_runtime.c') -o (Join-Path $build 'fiber-check.exe')
 if ($LASTEXITCODE -ne 0) { throw 'Fiber lifecycle checker compilation failed' }
 & $Compiler @flags (Join-Path $port 'host_scalar_call.c') (Join-Path $port 'scalar_call_cases.c') (Join-Path $port 'goal_scalar_call.c') -o (Join-Path $build 'scalar-call-check.exe')
 if ($LASTEXITCODE -ne 0) { throw 'Scalar argument ABI checker compilation failed' }
@@ -66,7 +66,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Scalar argument ABI checker compilation failed
 if ($LASTEXITCODE -ne 0) { throw 'Read-only main-thread resize checker compilation failed' }
 & $Compiler @flags (Join-Path $port 'host_main_thread.c') (Join-Path $port 'main_thread_cases.c') (Join-Path $port 'goal_main_thread.c') (Join-Path $port 'goal_thread_stack.c') (Join-Path $port 'goal_process_heap.c') (Join-Path $port 'goal_kernel_types.c') (Join-Path $port 'goal_runtime.c') -o (Join-Path $build 'main-thread-check.exe')
 if ($LASTEXITCODE -ne 0) { throw 'Read-only main-thread state checker compilation failed' }
-& $Compiler @flags (Join-Path $port 'host_main_completion.c') (Join-Path $port 'goal_main_start.c') (Join-Path $port 'goal_main_thread.c') (Join-Path $port 'goal_fiber.c') (Join-Path $port 'goal_scalar_call.c') (Join-Path $port 'goal_thread_stack.c') (Join-Path $port 'goal_process_heap.c') (Join-Path $port 'goal_module.c') (Join-Path $port 'goal_kernel_types.c') (Join-Path $port 'goal_runtime.c') -o (Join-Path $build 'main-completion-check.exe')
+& $Compiler @flags (Join-Path $port 'host_main_completion.c') (Join-Path $port 'goal_main_start.c') (Join-Path $port 'goal_main_thread.c') (Join-Path $port 'goal_fiber.c') (Join-Path $port 'pp_scope.c') (Join-Path $port 'goal_scalar_call.c') (Join-Path $port 'goal_thread_stack.c') (Join-Path $port 'goal_process_heap.c') (Join-Path $port 'goal_module.c') (Join-Path $port 'goal_kernel_types.c') (Join-Path $port 'goal_runtime.c') -o (Join-Path $build 'main-completion-check.exe')
 if ($LASTEXITCODE -ne 0) { throw 'Original main completion checker compilation failed' }
 & $Compiler @flags (Join-Path $port 'host_player_motion.c') (Join-Path $port 'player_motion.c') (Join-Path $port 'player_motion_cases.c') -o (Join-Path $build 'player-motion-check.exe') -lm
 if ($LASTEXITCODE -ne 0) { throw 'Native movement checker compilation failed' }
@@ -111,5 +111,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Decoded block cache compilation failed' }
 if ($LASTEXITCODE -ne 0) { throw 'Render window cache compilation failed' }
 & $Compiler @flags -shared (Join-Path $port 'tests/render_cache_bridge.c') (Join-Path $build 'render-cache-host.o') (Join-Path $build 'render-package-host.o') (Join-Path $port 'sector_inflate.c') $hostZlib -o (Join-Path $build 'render-cache-check.dll') -lm
 if ($LASTEXITCODE -ne 0) { throw 'Render window cache bridge compilation failed' }
+& $Compiler @flags (Join-Path $port 'host_pp_scope.c') (Join-Path $port 'pp_scope.c') (Join-Path $port 'goal_runtime.c') (Join-Path $port 'goal_kernel_types.c') (Join-Path $port 'goal_process_heap.c') -o (Join-Path $build 'pp-scope-check.exe')
+if ($LASTEXITCODE -ne 0) { throw 'Portable lexical scope checker compilation failed' }
 & $pythonCommand -m unittest discover -s (Join-Path $port 'tests') -v
 if ($LASTEXITCODE -ne 0) { throw 'Host tests failed' }

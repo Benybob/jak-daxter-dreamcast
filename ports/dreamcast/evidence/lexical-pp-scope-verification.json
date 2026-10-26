@@ -1,0 +1,39 @@
+{
+  "ai_assisted": true,
+  "goal_complete": false,
+  "scope": "Explicit lexical C scopes consumed by unchanged original frame functions; not complete deactivation or gameplay",
+  "host_tests_passed": 394,
+  "portable_scope_checks": 140,
+  "runtime_native_checks": 23056,
+  "new_runtime_checks": 207,
+  "numeric_checks_retained": 39,
+  "system_ram": 16777216,
+  "runtime_elf_sha256": "bd7e85ceb5b547e166ebc96ed1e97e9f7c998d4b1549a5ab41173b1cd061be41",
+  "numeric_elf_sha256": "83ea558f30e866dee335efa57adcd671828ff9ab188f6566ddef394618285b7f",
+  "runtime_code_bytes": 144782,
+  "runtime_arena_used": 679472,
+  "runtime_arena_capacity": 1048576,
+  "installed_symbols": 708,
+  "scope_depth_limit": 8,
+  "scope_native_metadata_bytes": 348,
+  "metadata_size_evidence": "Installed SH4 GCC DWARF structure byte size",
+  "arena_includes_diagnostic_working_stacks": true,
+  "physical_hardware_tested": false,
+  "native_modes": [
+    "Normal foreign-process frame/pop/allocation",
+    "Single scope leak",
+    "Yield refusal",
+    "Retained-fault scope leak",
+    "Corrupt-depth return",
+    "Retained-fault yield refusal",
+    "Nested scope leak",
+    "Retained-fault nested leak"
+  ],
+  "remaining": [
+    "Trusted process-span lookup and mutable pp lowering",
+    "Original exit/deactivation and abandon/initialize transfers",
+    "Derived process and moving-heap support",
+    "Full startup/scheduler/GC",
+    "Original gameplay/rendering fidelity/audio/progression/saves"
+  ]
+}

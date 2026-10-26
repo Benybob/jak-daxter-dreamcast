@@ -38,6 +38,17 @@ int dc_goal_install_process_bridge(dc_goal_runtime *rt,dc_goal_cache_sync sync,
                                     dc_goal_module_result *result);
 int dc_goal_bind_process_context(dc_goal_runtime *rt,uint32_t process,uint32_t allocation_bytes);
 void dc_goal_clear_process_context(dc_goal_runtime *rt);
+/* Explicit pinned lexical pp + allocation domain over the independently bound
+ * scheduler process. Caller-owned metadata stays outside the arena/fiber stack.
+ * Registration alone establishes no identity. No frontend mutable-pp lowering,
+ * GOAL exit/unwind or scheduler support. Native step/yield refuse live scopes;
+ * leaked scopes on native return restore metadata and fault the fiber. */
+struct dc_goal_pp_scope_stack;
+int dc_goal_register_pp_scope(dc_goal_runtime *,struct dc_goal_pp_scope_stack *);
+int dc_goal_enter_lexical_scope(dc_goal_runtime *,uint32_t process,uint32_t bytes);
+int dc_goal_leave_lexical_scope(dc_goal_runtime *,uint32_t process,uint32_t bytes);
+/* Internal fixed native-return site, before the raw transition to the root. */
+void dc_goal_lexical_native_return(dc_goal_runtime *);
 /* Data-only first CPU-thread construction through the unchanged original
  * native constructor. Caller owns the unmoved process reservation and a
  * disjoint aligned execution-stack span in rt's arena. Main/top thread must

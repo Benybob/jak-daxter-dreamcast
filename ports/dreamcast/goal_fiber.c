@@ -4,6 +4,7 @@
 #include "goal_fiber.h"
 #include "goal_scalar_call.h"
 #include "fiber_bounds.h"
+#include "pp_scope.h"
 #ifdef __DREAMCAST__
 #include "goal_bridge.h"
 #include "goal_kos_stack.h"
@@ -65,6 +66,7 @@ void dc_goal_fiber_bootstrap(void) {
  if(!f || f->magic!=FIBER_MAGIC || f->phase!=DC_FIBER_RUNNING || !root_ok(f) || f->argument_count>8)abort();
  value=0;
  if(!dc_goal_scalar_call(f->entry,f->argument_count,f->arguments,&value))bad(f->runtime);
+ dc_goal_lexical_native_return(f->runtime);
  f->value=value;f->phase=f->runtime->error==DC_GOAL_OK?DC_FIBER_DONE:DC_FIBER_FAULT;
  if(!root_ok(f) || !dc_goal_native_regs_snapshot(&terminal) ||
     !dc_fiber_leave_push_ok(f->stack_base,f->stack_bytes,terminal.sp))abort();
@@ -135,6 +137,7 @@ int dc_goal_fiber_step(dc_goal_fiber *f,uint64_t resume_value,uint64_t *out) {
  void *working;
  if(!f || f->magic!=FIBER_MAGIC)return 0;
  rt=f->runtime;
+ if(dc_goal_pp_scope_blocks_transfer(rt)){if(rt && rt->error==DC_GOAL_OK)rt->error=DC_GOAL_BAD_ARGUMENT;return 0;}
  if(current || !out || (f->phase!=DC_FIBER_NEW && f->phase!=DC_FIBER_SUSPENDED))return bad(rt);
  if(!storage_ok(rt,f,sizeof *f) || !storage_ok(rt,out,sizeof *out) ||
     overlap(address(out),sizeof *out,address(f),sizeof *f))return bad(rt);
@@ -199,6 +202,7 @@ uint64_t dc_goal_fiber_yield(dc_goal_runtime *rt,uint64_t value) {
  dc_goal_fiber *f=current;
  if(!f)return (uint64_t)bad(rt);
  if(f->runtime!=rt){bad(f->runtime);return (uint64_t)bad(rt);}
+ if(dc_goal_pp_scope_blocks_transfer(rt)){if(rt->error==DC_GOAL_OK)rt->error=DC_GOAL_BAD_ARGUMENT;return 0;}
  if(f->phase!=DC_FIBER_RUNNING || rt->error!=DC_GOAL_OK)return (uint64_t)bad(rt);
 #ifdef __DREAMCAST__
  {

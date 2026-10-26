@@ -200,7 +200,7 @@ runtime_native_file_cases.o: runtime_native_file_cases.c runtime_cases.h goal_na
 kernel_types_data.h: generate_kernel_types.py ../../game/kernel/jak1/kscheme.cpp ../../common/symbols.h
 	$(PYTHON) generate_kernel_types.py
 
-jak-dc-runtime-goal.elf: goal_thread_resize.o thread_resize_cases.o runtime_thread_resize_cases.o runtime_fiber_words_cases.o goal_scalar_call.o scalar_call_cases.o runtime_activation_cases.o native_context_swap.o goal_fiber.o runtime_fiber_cases.o native_stack_call.o goal_stack_call.o runtime_stack_call_cases.o code_entry_cases.o goal_register_snapshot.o register_snapshot_probe.o runtime_register_snapshot_cases.o runtime_goal_main.o runtime_goal_cases.o runtime_memory_cases.o runtime_static_cases.o runtime_float_cases.o runtime_bridge_cases.o runtime_quoted_cases.o runtime_void_cases.o runtime_type_cases.o runtime_shift_cases.o runtime_shift_baseline.o runtime_division_cases.o runtime_native_file_cases.o runtime_locals_cases.o runtime_early_cases.o runtime_sort_cases.o runtime_operator_cases.o runtime_fixed_cases.o runtime_far_cases.o runtime_dependency_cases.o runtime_mixed_cases.o runtime_validation_cases.o runtime_kernel_globals_cases.o runtime_enum_cases.o runtime_mixed_stack_cases.o runtime_process_tree_cases.o runtime_process_new_cases.o runtime_dead_pool_cases.o runtime_process_heap_cases.o runtime_structured_cases.o runtime_process_entry_cases.o runtime_process_query_cases.o runtime_call_guard_cases.o runtime_cpu_thread_cases.o goal_native_file.o type_cases.o kernel_type_cases.o goal_kernel_types.o runtime_cases.o goal_runtime.o goal_runtime_dc.o goal_module.o goal_bridge.o goal_process_heap.o process_heap_cases.o goal_thread_stack.o thread_stack_cases.o
+jak-dc-runtime-goal.elf: goal_thread_resize.o thread_resize_cases.o runtime_thread_resize_cases.o runtime_fiber_words_cases.o goal_scalar_call.o scalar_call_cases.o runtime_activation_cases.o native_context_swap.o goal_fiber.o pp_scope.o runtime_fiber_cases.o native_stack_call.o goal_stack_call.o runtime_stack_call_cases.o code_entry_cases.o goal_register_snapshot.o register_snapshot_probe.o runtime_register_snapshot_cases.o runtime_goal_main.o runtime_goal_cases.o runtime_memory_cases.o runtime_static_cases.o runtime_float_cases.o runtime_bridge_cases.o runtime_quoted_cases.o runtime_void_cases.o runtime_type_cases.o runtime_shift_cases.o runtime_shift_baseline.o runtime_division_cases.o runtime_native_file_cases.o runtime_locals_cases.o runtime_early_cases.o runtime_sort_cases.o runtime_operator_cases.o runtime_fixed_cases.o runtime_far_cases.o runtime_dependency_cases.o runtime_mixed_cases.o runtime_validation_cases.o runtime_kernel_globals_cases.o runtime_enum_cases.o runtime_mixed_stack_cases.o runtime_process_tree_cases.o runtime_process_new_cases.o runtime_dead_pool_cases.o runtime_process_heap_cases.o runtime_structured_cases.o runtime_process_entry_cases.o runtime_process_query_cases.o runtime_call_guard_cases.o runtime_cpu_thread_cases.o runtime_pp_scope_cases.o goal_native_file.o type_cases.o kernel_type_cases.o goal_kernel_types.o runtime_cases.o goal_runtime.o goal_runtime_dc.o goal_module.o goal_bridge.o goal_process_heap.o process_heap_cases.o goal_thread_stack.o thread_stack_cases.o
 	kos-cc -o $@ $^
 goal_layout.h: generate_runtime_layout.py ../../common/goal_constants.h ../../common/symbols.h ../../game/kernel/jak1/kscheme.h
 	$(PYTHON) generate_runtime_layout.py
@@ -296,12 +296,12 @@ clean:
 	rm -f runtime_fiber_words_cases.o
 	rm -f goal_scalar_call.o scalar_call_cases.o
 	rm -f runtime_activation_cases.o
-	rm -f native_context_swap.o goal_fiber.o runtime_fiber_cases.o
+	rm -f native_context_swap.o goal_fiber.o pp_scope.o runtime_fiber_cases.o
 	rm -f native_stack_call.o goal_stack_call.o runtime_stack_call_cases.o
 	rm -f code_entry_cases.o
 	rm -f goal_register_snapshot.o register_snapshot_probe.o runtime_register_snapshot_cases.o
 	rm -f goal_thread_stack.o thread_stack_cases.o
-	rm -f goal_process_heap.o process_heap_cases.o runtime_process_heap_cases.o runtime_structured_cases.o runtime_process_entry_cases.o runtime_process_query_cases.o runtime_call_guard_cases.o runtime_cpu_thread_cases.o
+	rm -f goal_process_heap.o process_heap_cases.o runtime_process_heap_cases.o runtime_structured_cases.o runtime_process_entry_cases.o runtime_process_query_cases.o runtime_call_guard_cases.o runtime_cpu_thread_cases.o runtime_pp_scope_cases.o
 	rm -f runtime_validation_cases.o runtime_kernel_globals_cases.o runtime_enum_cases.o runtime_mixed_stack_cases.o runtime_process_tree_cases.o runtime_process_new_cases.o runtime_dead_pool_cases.o
 	rm -f runtime_locals_cases.o runtime_early_cases.o runtime_sort_cases.o runtime_operator_cases.o runtime_fixed_cases.o runtime_far_cases.o runtime_dependency_cases.o runtime_mixed_cases.o
 	rm -f runtime_native_file_cases.o goal_native_file.o
@@ -349,14 +349,14 @@ build/stack-call-check$(HOST_EXE): host_stack_call.c goal_stack_call.c goal_stac
 # Scoped cooperative bootstrap contexts (AI-assisted).
 native_context_swap.o: native_context_swap.S
 	$(KOS_CC) $(KOS_CFLAGS) -c $< -o $@
-goal_fiber.o: goal_fiber.c goal_fiber.h goal_module.h goal_register_snapshot.h goal_thread_stack.h
+goal_fiber.o: goal_fiber.c pp_scope.c goal_fiber.h goal_module.h goal_register_snapshot.h goal_thread_stack.h
 runtime_fiber_cases.o: runtime_fiber_cases.c goal_fiber.h goal_bridge.h runtime_cases.h build/fiber_fixture.h
 	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -I. -c $< -o $@
 goal_bridge.o: goal_fiber.h
 
 host: build/fiber-check$(HOST_EXE)
-build/fiber-check$(HOST_EXE): host_fiber.c goal_fiber.c goal_fiber.h goal_thread_stack.c goal_process_heap.c goal_module.c goal_kernel_types.c goal_runtime.c
-	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -pedantic host_fiber.c goal_fiber.c goal_thread_stack.c goal_process_heap.c goal_module.c goal_kernel_types.c goal_runtime.c -o $@
+build/fiber-check$(HOST_EXE): host_fiber.c goal_fiber.c pp_scope.c goal_fiber.h goal_thread_stack.c goal_process_heap.c goal_module.c goal_kernel_types.c goal_runtime.c
+	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -pedantic host_fiber.c goal_fiber.c pp_scope.c goal_thread_stack.c goal_process_heap.c goal_module.c goal_kernel_types.c goal_runtime.c -o $@
 
 goal_fiber.o: fiber_bounds.h
 runtime_fiber_cases.o: fiber_bounds.h fiber_bounds_cases.h
@@ -411,8 +411,8 @@ build/main-thread-check$(HOST_EXE): host_main_thread.c main_thread_cases.c main_
 
 # Original-main completion receipt oracle; bridge liveness modeled on host only.
 host: build/main-completion-check$(HOST_EXE)
-build/main-completion-check$(HOST_EXE): host_main_completion.c goal_main_start.c goal_main_thread.c goal_fiber.c goal_scalar_call.c goal_thread_stack.c goal_process_heap.c goal_module.c goal_kernel_types.c goal_runtime.c goal_fiber.h goal_main_start.h
-	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -pedantic host_main_completion.c goal_main_start.c goal_main_thread.c goal_fiber.c goal_scalar_call.c goal_thread_stack.c goal_process_heap.c goal_module.c goal_kernel_types.c goal_runtime.c -o $@
+build/main-completion-check$(HOST_EXE): host_main_completion.c goal_main_start.c goal_main_thread.c goal_fiber.c pp_scope.c goal_scalar_call.c goal_thread_stack.c goal_process_heap.c goal_module.c goal_kernel_types.c goal_runtime.c goal_fiber.h goal_main_start.h
+	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -pedantic host_main_completion.c goal_main_start.c goal_main_thread.c goal_fiber.c pp_scope.c goal_scalar_call.c goal_thread_stack.c goal_process_heap.c goal_module.c goal_kernel_types.c goal_runtime.c -o $@
 
 host: build/player-motion-check$(HOST_EXE) build/player-anim-check$(HOST_EXE)
 build/player-motion-check$(HOST_EXE): host_player_motion.c player_motion.c player_motion_cases.c player_motion.h
@@ -662,3 +662,11 @@ build/scene-clip-check$(HOST_EXE): host_scene_clip.c scene_clip.c scene_clip_cas
 
 runtime_dead_pool_cases.o: runtime_dead_pool_cases.c goal_bridge.h build/original_dead_pool.h build/dead_pool_fixture.h build/original_dead_pool_schema.h
 	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -I. -c $< -o $@
+
+pp_scope.o: pp_scope.c pp_scope.h goal_process_heap.h goal_fiber.h
+goal_fiber.o goal_bridge.o: pp_scope.h
+host: build/pp-scope-check$(HOST_EXE)
+build/pp-scope-check$(HOST_EXE): host_pp_scope.c pp_scope.c pp_scope.h goal_runtime.c goal_kernel_types.c goal_process_heap.c
+	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -pedantic host_pp_scope.c pp_scope.c goal_runtime.c goal_kernel_types.c goal_process_heap.c -o $@
+
+runtime_pp_scope_cases.o: runtime_pp_scope_cases.c goal_bridge.h pp_scope.h fiber_test_support.h runtime_cases.h
