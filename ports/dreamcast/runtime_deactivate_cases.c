@@ -3,6 +3,7 @@
 #include "process_spans.h"
 #include "pp_scope.h"
 #include "runtime_cases.h"
+#include "fiber_test_support.h"
 #include "build/original_deactivate.h"
 #include <string.h>
 typedef uint64_t (*zero_fn)(void);
@@ -24,6 +25,13 @@ static uint64_t record_exit(uint32_t tag){
 }
 static uint64_t first_exit(void){return record_exit(1);}
 static uint64_t second_exit(void){return record_exit(2);}
+/* Fiber body: the original self-deactivation must not return here. */
+static uint32_t self_process,self_started,self_after;
+static uint64_t self_body(void){
+ self_started=1;
+ ((one_fn)(uintptr_t)entry(exit_rt,"(method deactivate process)"))(self_process);
+ self_after=1;return 99;
+}
 static int in_pool(dc_goal_runtime *rt,uint32_t pool,uint32_t process){
  uint32_t handle=word(rt,pool,CHILD);unsigned guard=0;
  while(handle!=rt->s7 && guard++<16){if(word(rt,handle,0)==process)return 1;handle=word(rt,word(rt,handle,0),BROTHER);}
@@ -128,6 +136,40 @@ uint32_t dc_runtime_deactivate_cases(dc_goal_runtime *rt,dc_runtime_check check,
  CHECK(in_pool(rt,pool,m2),1,"running process returned to its pool before the transfer");
  CHECK(dc_goal_pp_scope_depth(rt),0,"self-deactivation leaks no scope");
  rt->error=DC_GOAL_OK;
+ /* Self-deactivation on a real native fiber returns to its kernel root. */
+ {
+  dc_goal_fiber fiber;dc_goal_module_result body={0};uint64_t out=1234;unsigned intact=0;
+  unsigned char body_code[12]={1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0};
+  dc_goal_code_export body_export={"dc-deactivate-self-body",body_code,12,NULL,0};
+  uint32_t big=(uint32_t)pool_create(1,1024,name),s,stack,thread;
+  CHECK(big!=0,1,"original pool with a thread-sized member constructed");if(!big)goto scopes_done;
+  s=word(rt,word(rt,big,CHILD),0);stack=dc_goal_alloc(rt,16384);
+  CHECK(stack!=0,1,"owned native working stack allocated");if(!stack)goto scopes_done;
+  thread=dc_goal_construct_main_thread(rt,s,1136,stack,16384,name,512);
+  CHECK(thread!=0,1,"original main CPU thread constructed for the member");if(!thread)goto scopes_done;
+  fn=(uint32_t)(uintptr_t)self_body;memcpy(body_code+8,&fn,4);
+  CHECK(dc_goal_load_module(rt,&body_export,1,sync,NULL,&body),1,"self-deactivating fiber body registered");
+  if(!body.functions)goto scopes_done;
+  dc_goal_clear_process_context(rt);put(rt,s,STATUS,ready);put(rt,s,PID,36);
+  CHECK(dc_goal_bind_process_context(rt,s,1136),1,"member bound as the fiber's scheduler process");
+  self_process=s;self_started=self_after=0;memset(&fiber,0,sizeof fiber);
+  CHECK(dc_goal_fiber_init(&fiber,rt,s,1136,thread,stack,16384,entry(rt,"dc-deactivate-self-body")),1,"native fiber initializes");
+  CHECK(dc_runtime_fiber_checked_step(&fiber,0,&out,&intact),DC_FIBER_COMPLETED,"self-deactivation completes the fiber to its root");
+  CHECK(intact,1,"abandon preserves root integer/FP registers, canaries and stack");
+  CHECK(out,0,"abandoned context reports the transfer value, not the body's return");
+  CHECK(self_started,1,"fiber body started");CHECK(self_after,0,"code after self-deactivation never runs");
+  CHECK(fiber.phase,DC_FIBER_DONE,"abandoned fiber is DONE and cannot resume");
+  CHECK(rt->error,DC_GOAL_OK,"fiber abandon is a normal completion");
+  CHECK(word(rt,s,STATUS),dead,"self-deactivated process is dead");CHECK(word(rt,s,PID),0,"self-deactivated PID cleared");
+  CHECK(in_pool(rt,big,s),1,"self-deactivated process returned to its pool");
+  CHECK(dc_goal_pp_scope_depth(rt),0,"fiber abandon leaks no lexical scope");
+  CHECK(dc_goal_fiber_step(&fiber,0,&out),0,"DONE fiber refuses another step");rt->error=DC_GOAL_OK;
+  CHECK(dc_goal_fiber_clear(&fiber),1,"completed fiber clears");
+  dc_goal_clear_process_context(rt);
+  CHECK(dc_goal_fiber_abandon(rt,0),0,"abandon outside a running fiber refuses");
+  CHECK(rt->error,DC_GOAL_BAD_ARGUMENT,"abandon outside a fiber reports bad argument");rt->error=DC_GOAL_OK;
+ }
+scopes_done:
  /* No execution identity: the original body never starts. */
  dc_goal_clear_process_context(rt);put(rt,m0,STATUS,ready);put(rt,m0,PID,35);exit_count=0;
  deactivate(m0);

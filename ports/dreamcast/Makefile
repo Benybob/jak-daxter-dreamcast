@@ -681,5 +681,5 @@ jak-dc-runtime-goal.elf: runtime_lexical_pp_cases.o
 runtime_lexical_pp_cases.o: runtime_lexical_pp_cases.c process_spans.h goal_bridge.h pp_scope.h runtime_cases.h build/original_send_event.h
 	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -I. -c runtime_lexical_pp_cases.c -o $@
 jak-dc-runtime-goal.elf: runtime_deactivate_cases.o
-runtime_deactivate_cases.o: runtime_deactivate_cases.c process_spans.h goal_bridge.h pp_scope.h runtime_cases.h build/original_deactivate.h
+runtime_deactivate_cases.o: runtime_deactivate_cases.c process_spans.h goal_bridge.h pp_scope.h runtime_cases.h fiber_test_support.h goal_fiber.h build/original_deactivate.h
 	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -I. -c runtime_deactivate_cases.c -o $@

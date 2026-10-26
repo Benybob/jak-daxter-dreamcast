@@ -71,7 +71,7 @@ and checkpoints, not a percentage of game completion or a single full-game run.
 | Area | Locally verified scope |
 | --- | --- |
 | Host | 422 tests pass with the complete local SDK/oracle setup (1 optional skip) |
-| GOAL runtime | 23,272 native checks at its latest verified checkpoint |
+| GOAL runtime | 23,293 native checks at its latest verified checkpoint |
 | Numeric regression | 39 native checks |
 | Prototype movement | 318 native checks; visible test-map controller and platform paths pass |
 | Original collision | 789 synthetic native checks; 2,063 combined checks including the original 576-triangle patch |
@@ -111,7 +111,7 @@ not executed by these native tests; runtime and renderer are separate programs.
 
 ## Latest completed contributor task
 
-The unchanged original process `deactivate`, which is how every original process dies, now executes natively. Protect-frame exits run under the dying process, children deactivate recursively, and processes return to their original pools with status, PID and state cleared. Deactivating the *running* process does the original cleanup, then reports an explicit unsupported transfer, because no verified native abandon continuation exists yet. 66 new native checks pass; 23,272 runtime checks, 39 numeric checks and 422 host tests pass in stock 16 MiB Flycast. See [ORIGINAL_DEACTIVATE.md](ports/dreamcast/ORIGINAL_DEACTIVATE.md). (AI-assisted, Claude Code)
+The unchanged original process `deactivate`, which is how every original process dies, now executes natively. Protect-frame exits run under the dying process, children deactivate recursively, and processes return to their original pools with status, PID and state cleared. A running process that deactivates itself on a native fiber does the original cleanup and then returns to its kernel root, discarding its stack as the original does. 87 new native checks pass; 23,293 runtime checks, 39 numeric checks and 422 host tests pass in stock 16 MiB Flycast. See [ORIGINAL_DEACTIVATE.md](ports/dreamcast/ORIGINAL_DEACTIVATE.md). (AI-assisted, Claude Code)
 
 ### Previous: lexical pp brackets
 

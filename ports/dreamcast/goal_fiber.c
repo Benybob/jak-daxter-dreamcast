@@ -198,6 +198,32 @@ int dc_goal_fiber_step(dc_goal_fiber *f,uint64_t resume_value,uint64_t *out) {
  }
 #endif
 }
+/* Original return-from-thread: the running body is discarded and the context
+ * finishes to its root exactly like a bootstrap return. The working stack is
+ * not unwound (the original discards it too) and DONE is never resumed. */
+int dc_goal_fiber_abandon(dc_goal_runtime *rt,uint64_t value) {
+ dc_goal_fiber *f=current;
+ if(!f)return bad(rt);
+ if(f->runtime!=rt){bad(f->runtime);return bad(rt);}
+ if(f->magic!=FIBER_MAGIC || f->phase!=DC_FIBER_RUNNING)return bad(rt);
+#ifdef __DREAMCAST__
+ {
+  struct dc_goal_native_regs caller;
+  uint32_t sr;
+  if(!dc_goal_core_bridges_active(rt) || !root_ok(f) || !dc_goal_native_regs_snapshot(&caller) ||
+     !dc_fiber_leave_push_ok(f->stack_base,f->stack_bytes,caller.sp))return bad(rt);
+  sr=irq_disable();
+  if(!dc_goal_kos_stack_sr_ok(sr)){irq_restore(sr);return bad(rt);}
+  /* Same fixed-site scope cleanup as bootstrap return: a leaked nest faults. */
+  dc_goal_lexical_native_return(rt);
+  f->value=value;f->phase=rt->error==DC_GOAL_OK?DC_FIBER_DONE:DC_FIBER_FAULT;
+  dc_goal_context_leave_raw(&f->native_thread,&f->root,sr|0xf0u);
+  abort();
+ }
+#else
+ (void)value;return bad(rt);
+#endif
+}
 uint64_t dc_goal_fiber_yield(dc_goal_runtime *rt,uint64_t value) {
  dc_goal_fiber *f=current;
  if(!f)return (uint64_t)bad(rt);

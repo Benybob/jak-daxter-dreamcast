@@ -2,9 +2,9 @@
 
 2026-10-26. (AI-assisted, Claude Code). The unchanged original
 `(method deactivate process)` from `goal_src/jak1/kernel/gkernel.gc` now lowers
-and executes on native SH-4. It is how every original process dies.
-Scheduler-driven execution, a native abandon continuation, `throw`, GC and
-gameplay remain unfinished.
+and executes on native SH-4. It is how every original process dies. A running
+process that deactivates itself on a native fiber now returns to its kernel
+root. Scheduler-driven execution, `throw`, GC and gameplay remain unfinished.
 
 ## What runs
 
@@ -27,10 +27,17 @@ For a process other than the running one, the whole original body executes:
 `return_from_thread_idiom` recognizes exactly that straight-line sequence (no
 branch into it, no call inside, the offset used nowhere else) and replaces it with
 one explicit `return_from_thread` operation that calls the new
-`dc-c-return-from-thread` bridge. No verified native abandon continuation exists
-yet, so the bridge records the new `DC_GOAL_UNSUPPORTED_TRANSFER` error and the
-body exits instead of guessing an SP/PC. The original cleanup before the transfer
-has already run. Any other `r15` use or near-miss keeps refusing.
+`dc-c-return-from-thread` bridge. Any other `r15` use or near-miss keeps refusing.
+
+On a running native fiber whose process is the bound scheduler process, the
+bridge calls the new `dc_goal_fiber_abandon`. That finishes the context to its
+root exactly like a bootstrap return: the same fixed-site lexical-scope cleanup,
+DONE (or FAULT if an error is pending), the same closed root continuation and
+masked-IRQ KOS stack handover. The working stack is discarded, not unwound, as
+the original discards it. A DONE context can never resume. With no such kernel
+continuation (a direct C call, a foreign runtime or a mismatched process), the
+bridge records the new `DC_GOAL_UNSUPPORTED_TRANSFER` and the body exits instead
+of guessing an SP/PC. In both cases the original cleanup has already run.
 
 **Initialization.** The original calls `(throw 'initialize #f)`. `throw` is not
 native yet, so the existing call guard faults with `BAD_FUNCTION`, after the
@@ -56,21 +63,27 @@ an original `change-parent` child link:
 - **Already dead:** returns without callbacks.
 - **Initialize:** marks the process dead, then faults on the unbound `throw`
   without leaking a scope.
-- **Self-deactivation:** cleanup and pool return complete, then
+- **Self-deactivation from C:** cleanup and pool return complete, then
   `UNSUPPORTED_TRANSFER` is reported.
+- **Self-deactivation on a real fiber:** the body's own `deactivate` completes
+  the fiber to its root. Root registers, FPU state and canaries are intact; the
+  code after the call never runs; the value is 0; the fiber is DONE and refuses
+  another step; the process is dead and back in its pool; no scope leaks.
+  Abandon outside a fiber refuses.
 - **Missing identity:** the body never starts and nothing is written.
 
-All **23,272 native runtime checks**, **39 numeric checks** and **422 host tests**
+All **23,293 native runtime checks** (87 new), **39 numeric checks** and **422 host tests**
 (1 optional skip) pass. Four new synthetic host tests cover the idiom, its seven
 near-misses, the numeric profile and the phantom-copy rule. The original-frontend
 test now pins successful lowering and continued refusal of other `r15` uses. The
 original lowers to 2,324 bytes with a 72-byte frame. Runtime GOAL code is 148,318
-bytes, using an arena of 705,552 / 1,048,576 bytes with 728 symbols. The test
+bytes, using an arena of 723,168 / 1,048,576 bytes with 729 symbols (including
+the 16 KiB diagnostic working stack). The test
 defines `protect-frame` as a real stack-frame subtype when no earlier module has.
 See [evidence/original-deactivate-verification.json](evidence/original-deactivate-verification.json).
 
 ## Next gates
 
-A verified fiber abandon continuation for `return-from-thread` (the running process
-returns to its kernel), and native `throw`/catch for `initialize` and
-`run-function-in-process`. Do not remove original branches to compile them.
+Native `throw`/catch for the `initialize` path and `run-function-in-process`,
+then the original scheduler dispatch that steps these fibers. Do not remove
+original branches to compile them.

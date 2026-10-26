@@ -384,11 +384,17 @@ int dc_goal_install_scope_bridge(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_
 }
 
 /* Original (deactivate self) abandons the running thread to return-from-thread.
- * No verified native abandon continuation exists yet, so the transfer refuses
- * explicitly (an earlier error wins) and the compiled body exits. */
+ * On a running native fiber for the bound scheduler process this finishes the
+ * fiber to its root. Without such a kernel continuation (a direct C call) the
+ * transfer refuses explicitly (an earlier error wins) and the body exits. */
 static uint64_t return_from_thread(void) {
   dc_goal_runtime *rt=active_runtime;
-  if(rt && rt->error==DC_GOAL_OK)rt->error=DC_GOAL_UNSUPPORTED_TRANSFER;
+  dc_goal_fiber *fiber=dc_goal_fiber_current();
+  if(!rt)return 0;
+  if(fiber && fiber->runtime==rt && execution_context && execution_heap.runtime==rt &&
+     fiber->process==execution_heap.process && rt->error==DC_GOAL_OK)
+    dc_goal_fiber_abandon(rt,0); /* returns only when the context is invalid */
+  if(rt->error==DC_GOAL_OK)rt->error=DC_GOAL_UNSUPPORTED_TRANSFER;
   return 0;
 }
 int dc_goal_install_transfer_bridge(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_goal_module_result *result) {

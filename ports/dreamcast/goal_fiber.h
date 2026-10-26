@@ -48,6 +48,10 @@ int dc_goal_fiber_init_words(dc_goal_fiber *,dc_goal_runtime *,uint32_t process,
  * restored before resumption, so contexts may share one owned working stack. */
 int dc_goal_fiber_step(dc_goal_fiber *,uint64_t resume_value,uint64_t *out);
 uint64_t dc_goal_fiber_yield(dc_goal_runtime *,uint64_t value);
+/* From the running body only: finish the current context to its root as DONE
+ * with value (FAULT if an error is pending), discarding the working stack.
+ * Never returns on success; returns 0 with an error when no valid context runs. */
+int dc_goal_fiber_abandon(dc_goal_runtime *,uint64_t value);
 int dc_goal_fiber_clear(dc_goal_fiber *);
 /* Internal main-completion C witness: no GOAL writes. Requires an original-main
  * import, DONE, a live matching PID, quiescent storage and the native OS owner.
