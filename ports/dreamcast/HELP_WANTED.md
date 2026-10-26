@@ -377,3 +377,8 @@ See [KERNEL_OWNERSHIP_LIFETIMES.md](KERNEL_OWNERSHIP_LIFETIMES.md). (AI-assisted
 
 Original frontend stack arrays and boxed stack objects now execute on SH-4 in both compiler modes, including calls, lexical cleanup and suspension after destroyed working stacks. The unchanged original run-function-in-process now compiles in both modes; native catch/throw execution remains next. 443 host tests, 23,639 native runtime checks (83 new) and 39 freshly rebuilt numeric checks pass in stock 16 MiB Flycast. Full kernel boot and gameplay remain unfinished. (AI-assisted: Codex with reviewed human-authorized Grok proposal; prior kernel process-system work by Claude Code)
 See [KERNEL_STACK_OBJECTS.md](KERNEL_STACK_OBJECTS.md). (AI-assisted).
+
+## Completed: Native same-stack catch return
+
+A private SH-4 invoke/escape primitive now restores the exact caller stack, fixed return site, saved integer/floating registers, FPUL and FPSCR across normal and nested nonlocal returns. An independent clobber oracle passes 802 new native checks: 24,441 total runtime checks and 445 host tests pass in stock 16 MiB Flycast. The unchanged numeric binary matches its prior sealed 39-check execution. This is a trusted-C dependency, not an installed GOAL catch/throw implementation; original catch integration, unwinding, full kernel boot and gameplay remain unfinished. (AI-assisted: Codex; human-authorized isolated Grok review requested separately)
+See [NATIVE_CATCH_RETURN.md](NATIVE_CATCH_RETURN.md). (AI-assisted).

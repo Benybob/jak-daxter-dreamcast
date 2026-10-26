@@ -82,10 +82,10 @@ and checkpoints, not a percentage of game completion or a single full-game run.
 
 | Area | Locally verified scope |
 | --- | --- |
-| Host | 443 tests pass with the complete local SDK/oracle setup |
-| GOAL runtime | 23,639 native checks at its latest verified checkpoint |
+| Host | 445 tests pass with the complete local SDK/oracle setup |
+| GOAL runtime | 24,441 native checks at its latest verified checkpoint |
 | Numeric regression | 39 native checks |
-| Original kernel processes | Events, deactivation (including self-deactivation on a fiber), suspension across destroyed stacks, state transitions and four-frame scheduling with trans/post hooks, inside the 23,639 runtime checks |
+| Original kernel processes | Events, deactivation (including self-deactivation on a fiber), suspension across destroyed stacks, state transitions and four-frame scheduling with trans/post hooks, inside the 24,441 runtime checks |
 | Kernel compilation coverage | 166/184 original kernel functions lower; remaining refusals named in `evidence/kernel-lowering-survey.json` |
 | Prototype movement | 318 native checks; visible test-map controller and platform paths pass |
 | Original collision | 789 synthetic native checks; 2,063 combined checks including the original 576-triangle patch |
@@ -124,6 +124,12 @@ checkpoint evidence, not a GitHub Actions run. Original PS2 MIPS code is
 not executed by these native tests; runtime and renderer are separate programs.
 
 ## Latest completed contributor task
+
+A private SH-4 invoke/escape primitive now restores the exact caller stack, fixed return site, saved integer/floating registers, FPUL and FPSCR across normal and nested nonlocal returns. An independent clobber oracle passes 802 new native checks: 24,441 total runtime checks and 445 host tests pass in stock 16 MiB Flycast. The unchanged numeric binary matches its prior sealed 39-check execution. This is a trusted-C dependency, not an installed GOAL catch/throw implementation; original catch integration, unwinding, full kernel boot and gameplay remain unfinished. (AI-assisted: Codex; human-authorized isolated Grok review requested separately)
+
+See [NATIVE_CATCH_RETURN.md](ports/dreamcast/NATIVE_CATCH_RETURN.md). Full kernel/gameplay remains unfinished.
+
+### Previous: native kernel stack objects
 
 Original frontend stack arrays and boxed stack objects now execute on SH-4 in both compiler modes, including calls, lexical cleanup and suspension after destroyed working stacks. The unchanged original run-function-in-process now compiles in both modes; native catch/throw execution remains next. 443 host tests, 23,639 native runtime checks (83 new) and 39 freshly rebuilt numeric checks pass in stock 16 MiB Flycast. Full kernel boot and gameplay remain unfinished. (AI-assisted: Codex with reviewed human-authorized Grok proposal; prior kernel process-system work by Claude Code)
 
@@ -166,7 +172,7 @@ See [PROCESS_OWNERSHIP.md](ports/dreamcast/PROCESS_OWNERSHIP.md). Full kernel/ga
 Source is in `ports/dreamcast/`. Follow [BUILDING.md](ports/dreamcast/BUILDING.md).
 The verified baseline is OpenGOAL `6076aab5a95955443a9e1ed8f72a25bc0e2fcf9d`;
 the earlier verified port source checkpoint is
-`e54981bd229e1839fc0d39382187ba5e3853ddfd`. The kernel process-system milestones
+`02def7f6e7cd8c9257e6f8a3bc4e0f7030eab9d6`. The kernel process-system milestones
 are verified at the tip of the `dreamcast` branch; each milestone's
 `ports/dreamcast/evidence/*-verification.json` records its ELF hash and counts.
 

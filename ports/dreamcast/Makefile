@@ -292,6 +292,7 @@ test: host
 	$(PYTHON) -m unittest discover -s tests -v
 
 clean:
+	rm -f native_catch.o catch_escape_probe.o runtime_catch_raw_cases.o
 	rm -f runtime_stack_objects_cases.o runtime_stack_objects_baseline.o
 	rm -f goal_thread_resize.o thread_resize_cases.o runtime_thread_resize_cases.o
 	rm -f runtime_fiber_words_cases.o
@@ -696,6 +697,10 @@ runtime_dispatcher_cases.o: runtime_dispatcher_cases.c process_spans.h goal_brid
 goal_fiber.o: process_spans.h
 
 jak-dc-runtime-goal.elf: runtime_stack_objects_cases.o runtime_stack_objects_baseline.o
+jak-dc-runtime-goal.elf: native_catch.o catch_escape_probe.o runtime_catch_raw_cases.o
+native_catch.o: native_catch.S
+catch_escape_probe.o: catch_escape_probe.S
+runtime_catch_raw_cases.o: runtime_catch_raw_cases.c goal_catch_raw.h goal_register_snapshot.h runtime_cases.h
 runtime_stack_objects_cases.o: runtime_stack_objects_cases.c build/stack_objects_fixture.h goal_bridge.h goal_fiber.h fiber_test_support.h pp_scope.h
 	kos-cc $(CFLAGS) -I. -c $< -o $@
 runtime_stack_objects_baseline.o: runtime_stack_objects_baseline.c build/stack_objects_baseline.h goal_module.h

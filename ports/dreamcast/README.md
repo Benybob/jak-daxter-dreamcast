@@ -1,5 +1,11 @@
 # Jak 1 on Dreamcast: experimental port workbench
 
+**2026-10-26 (AI-assisted):** [Native catch return](NATIVE_CATCH_RETURN.md)
+adds a private SH-4 invoke/escape primitive with fixed return sites. Nested
+escapes restore native registers and stack under an independent clobber oracle:
+445 host tests and 24,441 runtime checks pass in stock 16 MiB Flycast. Original
+catch/throw integration, unwinding and complete kernel boot remain unfinished.
+
 **2026-10-26 (AI-assisted):** [Kernel stack objects](KERNEL_STACK_OBJECTS.md)
 now survive calls, lexical process scopes and original suspension in both
 compiler modes. The unchanged original `run-function-in-process` now compiles;

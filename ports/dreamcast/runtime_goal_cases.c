@@ -14,6 +14,7 @@
 #include "thread_resize_cases.h"
 uint32_t dc_runtime_stack_call_cases(dc_goal_runtime *,dc_runtime_check,void *,unsigned *,dc_goal_cache_sync);
 void dc_runtime_register_snapshot_cases(dc_runtime_check,void *,unsigned *);
+void dc_runtime_catch_raw_cases(dc_runtime_check,void *,unsigned *);
 #include "build/runtime_fixture.h"
 #include "build/initializer_fixture.h"
 #include "build/runtime_identity.h"
@@ -223,6 +224,7 @@ uint32_t dc_runtime_goal_cases(void *memory,uint32_t capacity,dc_runtime_check c
   code_bytes+=dc_runtime_stack_objects_cases(&rt,check,context,&id,sync_code);
   dc_thread_stack_cases(check,context,&id);
   dc_runtime_register_snapshot_cases(check,context,&id);
+  dc_runtime_catch_raw_cases(check,context,&id);
   dc_code_entry_cases(check,context,&id);
   dc_scalar_call_cases(check,context,&id);
   dc_thread_resize_cases(check,context,&id);

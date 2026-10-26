@@ -1,0 +1,20 @@
+{
+  "ai_assisted": true,
+  "host_tests_passed": 445,
+  "host_optional_skips": 0,
+  "runtime_native_checks_passed": 24441,
+  "new_native_checks": 802,
+  "raw_test_combinations": 80,
+  "stock_ram_bytes": 16777216,
+  "physical_hardware_tested": false,
+  "runtime_elf_sha256": "5ec0ef23e2b7f8639d71bf4779595b48ae756542c85dc34ae97ed33202e3eea0",
+  "numeric_regression": {
+    "checks": 39,
+    "scope": "Unchanged ELF rehashed against the previous sealed 39/39 execution; not a new execution",
+    "elf_sha256": "83ea558f30e866dee335efa57adcd671828ff9ab188f6566ddef394618285b7f"
+  },
+  "native_scope": "Private trusted-C same-stack invoke/escape; no GOAL imports installed",
+  "original_catch_throw_executed": false,
+  "full_kernel_boot": false,
+  "full_gameplay": false
+}
