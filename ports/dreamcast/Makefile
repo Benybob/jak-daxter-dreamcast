@@ -700,7 +700,7 @@ goal_fiber.o: process_spans.h
 jak-dc-runtime-goal.elf: runtime_stack_objects_cases.o runtime_stack_objects_baseline.o
 jak-dc-runtime-goal.elf: native_catch.o catch_escape_probe.o runtime_catch_raw_cases.o
 jak-dc-runtime-goal.elf: runtime_initialization_cases.o
-runtime_initialization_cases.o: runtime_initialization_cases.c goal_bridge.h pp_scope.h build/original_initialization.h build/initialization_fixture.h
+runtime_initialization_cases.o: runtime_initialization_cases.c goal_bridge.h pp_scope.h goal_main_start.h fiber_test_support.h build/original_initialization.h build/initialization_fixture.h build/original_set_to_run.h
 	kos-cc $(CFLAGS) -I. -c $< -o $@
 native_catch.o: native_catch.S
 catch_escape_probe.o: catch_escape_probe.S

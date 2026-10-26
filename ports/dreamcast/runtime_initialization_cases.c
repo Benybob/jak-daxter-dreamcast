@@ -3,8 +3,11 @@
 #include "pp_scope.h"
 #include "runtime_cases.h"
 #include "fiber_test_support.h"
+#include "goal_main_start.h"
+#include "goal_main_thread.h"
 #include "build/original_initialization.h"
 #include "build/initialization_fixture.h"
+#include "build/original_set_to_run.h"
 #include <string.h>
 typedef uint64_t (*zero_fn)(void);
 typedef uint64_t (*two_fn)(uint64_t,uint64_t);
@@ -17,6 +20,23 @@ static void put(dc_goal_runtime *r,uint32_t p,unsigned o,uint32_t v){memcpy(dc_g
 static dc_goal_runtime *exit_runtime;static unsigned exits;static uint32_t exit_process;
 static unsigned fault_mode,fault_entered;
 static unsigned fault_storage_ok;
+static unsigned state_entered,state_ran;static uint32_t state_process,state_observed;
+static uint64_t state_arguments[6],state_code_arguments[4];
+static uint32_t state_setter;static unsigned state_setter_calls;static uint64_t state_setter_words[8];
+static uint64_t initialize_state_setter(uint64_t a,uint64_t b,uint64_t c,uint64_t d,uint64_t e,uint64_t f,uint64_t g,uint64_t h){
+ ++state_setter_calls;state_setter_words[0]=a;state_setter_words[1]=b;state_setter_words[2]=c;state_setter_words[3]=d;
+ state_setter_words[4]=e;state_setter_words[5]=f;state_setter_words[6]=g;state_setter_words[7]=h;
+ return ((eight_fn)(uintptr_t)state_setter)(a,b,c,d,e,f,g,h);
+}
+static uint64_t initialize_state_enter(uint64_t a,uint64_t b,uint64_t c,uint64_t d,uint64_t e,uint64_t f){
+ ++state_entered;state_arguments[0]=a;state_arguments[1]=b;state_arguments[2]=c;
+ state_arguments[3]=d;state_arguments[4]=e;state_arguments[5]=f;return 0;
+}
+static uint64_t initialize_state_code(uint64_t a,uint64_t b,uint64_t c,uint64_t d){
+ ++state_ran;state_code_arguments[0]=a;state_code_arguments[1]=b;state_code_arguments[2]=c;state_code_arguments[3]=d;
+ state_process=(uint32_t)((zero_fn)(uintptr_t)entry(exit_runtime,"dc-c-current-process"))();
+ state_observed=word(exit_runtime,state_process,52);return 55;
+}
 static uint64_t observe_exit(void){++exits;exit_process=(uint32_t)((zero_fn)(uintptr_t)entry(exit_runtime,"dc-c-current-process"))();return 0;}
 static uint64_t cause_fault(void){
  dc_goal_runtime *rt=exit_runtime;uint32_t p=(uint32_t)((zero_fn)(uintptr_t)entry(rt,"dc-c-current-process"))();
@@ -79,7 +99,7 @@ uint32_t dc_runtime_initialization_cases(dc_goal_runtime *rt,dc_runtime_check ch
  a=(uint32_t)create(dc_goal_intern(rt,"dc-init-scheduler"),1024);b=(uint32_t)create(dc_goal_intern(rt,"dc-init-target"),1024);
  CHECK(a&&b,1,"two original processes created before binding any execution identity");if(!a||!b)goto detach;
  put(rt,a,36,81);put(rt,b,36,82);
- pool=(uint32_t)((three_fn)(uintptr_t)entry(rt,"dc-dead-pool-create"))(1,256,dc_goal_intern(rt,"dc-init-pool"));
+ pool=(uint32_t)((three_fn)(uintptr_t)entry(rt,"dc-dead-pool-create"))(1,1024,dc_goal_intern(rt,"dc-init-pool"));
  CHECK(pool!=0,1,"original fixed pool provides owned member for initialize-dead branch");
  if(!pool)goto detach;
  member=word(rt,word(rt,pool,16),0);put(rt,member,36,83);
@@ -166,6 +186,76 @@ uint32_t dc_runtime_initialization_cases(dc_goal_runtime *rt,dc_runtime_check ch
   CHECK(word(rt,b,88),rt->s7,"unsupported fiber catch leaves process frame chain untouched");
   CHECK(dc_goal_fiber_clear(&fiber),1,"faulted unsupported catch fiber clears without a stale active descriptor");
   dc_goal_clear_process_context(rt);rt->error=DC_GOAL_OK;
+ }
+ {
+  dc_goal_module_result guard={0},setter={0},hooks={0};dc_goal_fiber fiber;
+  uint32_t stack,thread,state_type,state;unsigned i,intact;uint64_t out=123;
+  const uint64_t args[6]={UINT64_C(0x100000001),2,3,4,UINT64_C(0xfedcba9876543210),6};
+  const unsigned char stub[12]={1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0};unsigned char bytes[3][12];
+  uint32_t targets[3]={(uint32_t)(uintptr_t)initialize_state_enter,(uint32_t)(uintptr_t)initialize_state_code,(uint32_t)(uintptr_t)initialize_state_setter};
+  dc_goal_code_export entries[3]={{"dc-initialize-state-enter",bytes[0],12,NULL,0},{"dc-initialize-state-code",bytes[1],12,NULL,0},{"dc-initialize-state-setter",bytes[2],12,NULL,0}};
+  CHECK(dc_goal_install_main_start_guard(rt,sync,&guard),1,"initialization state handoff installs canonical unsupported-ASM bootstrap guard");code+=guard.code_bytes;
+  CHECK(dc_goal_load_module(rt,goal_original_set_to_run_exports,GOAL_ORIGINAL_SET_TO_RUN_EXPORT_COUNT,sync,NULL,&setter),1,"original enter-state arms through unchanged original set-to-run");code+=setter.code_bytes;
+  for(i=0;i<3;++i){memcpy(bytes[i],stub,12);memcpy(bytes[i]+8,&targets[i],4);}
+  CHECK(dc_goal_load_module(rt,entries,3,sync,NULL,&hooks),1,"state enter and code observers use exact six/four-word native prototypes");code+=hooks.code_bytes;
+  state_type=dc_goal_define_type(rt,"state",protect,36,0,9);CHECK(state_type!=0,1,"original state schema has measured protect parent and 36-byte layout");
+  state=dc_goal_new_basic(rt,state_type,36);CHECK(state!=0,1,"initializer target has an actual typed original-layout state");
+  put(rt,state,0,dc_goal_intern(rt,"dc-initialize-state"));put(rt,state,4,rt->s7);put(rt,state,8,rt->s7);
+  put(rt,state,12,entry(rt,"dc-initialize-state-code"));put(rt,state,16,rt->s7);put(rt,state,20,rt->s7);
+  put(rt,state,24,entry(rt,"dc-initialize-state-enter"));put(rt,state,28,rt->s7);
+  stack=dc_goal_alloc(rt,16384);put(rt,member,32,dc_goal_find(rt,"ready"));put(rt,member,36,84);
+  thread=dc_goal_construct_main_thread(rt,member,1136,stack,16384,dc_goal_intern(rt,"dc-initialize-main"),256);
+  CHECK(thread!=0,1,"previously returned pool member receives original main CPU thread");
+  /* The original constructor sets only top-thread; original activate stores the
+   * new thread as main-thread. This harness bypasses activate, so it performs
+   * that one original store explicitly (otherwise enter-state arms #f). */
+  CHECK(word(rt,member,40),rt->s7,"constructor alone leaves main-thread unset, as in the original");
+  put(rt,member,40,thread);
+  CHECK(((two_fn)(uintptr_t)entry(rt,"change-parent"))(member,a),member,"state initializer detaches original pool member into active tree");
+  put(rt,member,72,state);state_entered=state_ran=0;
+  CHECK(dc_goal_bind_process_context(rt,a,1136),1,"scheduler A explicitly bound for initialize-to-state handoff");
+  state_setter=entry(rt,"set-to-run");state_setter_calls=0;
+  dc_goal_set_symbol(rt,dc_goal_find(rt,"set-to-run"),entry(rt,"dc-initialize-state-setter"));
+  result=run(member,entry(rt,"enter-state"),args[0],args[1],args[2],args[3],args[4],args[5]);
+  dc_goal_set_symbol(rt,dc_goal_find(rt,"set-to-run"),state_setter);
+  CHECK(state_setter_calls,1,"original initialization actually calls original setter through observing trampoline");
+  CHECK(state_setter_words[0],thread,"initialize enter-state passes exact main thread to arming function");
+  CHECK(result,rt->s7+8,"original enter-state throws true through initialization catch");
+  CHECK(rt->error,DC_GOAL_OK,"initialize branch of unchanged original enter-state completes");
+  CHECK(word(rt,member,32),dc_goal_find(rt,"waiting-to-run"),"original initialization leaves newly armed state ready for later scheduling");
+  CHECK(state_entered+state_ran,0,"initialization arms state without running enter or code observers early");
+  CHECK(word(rt,member,88),rt->s7,"initialization catch expires before native main-thread import");
+  CHECK(dc_goal_pp_scope_depth(rt),0,"state initialization restores lexical scope before scheduling");
+  CHECK(((zero_fn)(uintptr_t)entry(rt,"dc-c-current-process"))(),a,"state initialization returns to original scheduler A");
+  dc_goal_clear_process_context(rt);memset(&fiber,0,sizeof fiber);
+  CHECK(word(rt,thread,8),rt->s7,"initialized main previous thread remains false");
+  CHECK(word(rt,thread,20),entry(rt,"set-to-run-bootstrap"),"initialized main PC is canonical bootstrap");
+  CHECK(word(rt,thread,24),stack+16384,"initialized main SP is owned stack top");
+  CHECK(word(rt,member,40),thread,"initialized main thread owner link remains exact");
+  CHECK(word(rt,member,44),thread,"initialized top thread remains main thread");
+  CHECK(word(rt,thread,36),entry(rt,"enter-state"),"initialized target word names original enter-state");
+  CHECK(dc_goal_main_thread_check(rt,member,1136,thread,stack,16384,1,entry(rt,"set-to-run-bootstrap")),1,"initialized original main header passes armed schema preflight");
+  {int imported=dc_goal_fiber_init_main(&fiber,rt,member,1136,thread,stack,16384);
+   CHECK(imported?1:100+rt->error,1,"native main import accepts exact original image armed by initialize enter-state");
+   if(!imported){rt->error=DC_GOAL_OK;goto state_handoff_done;}}
+  CHECK(dc_goal_bind_process_context(rt,member,1136),1,"later scheduling explicitly binds the initialized process");
+  CHECK(dc_runtime_fiber_checked_step(&fiber,0,&out,&intact),DC_FIBER_COMPLETED,"original initialized enter-state runs code and deactivates through native restart");
+  CHECK(intact,1,"complete initialization-to-state pipeline preserves root integer FP registers and canaries");
+  CHECK(out,0,"return-from-thread-dead completion comes from original state deactivation");
+  CHECK(state_entered,1,"original initialized state enter observer runs once on scheduling");
+  CHECK(state_ran,1,"original initialized state code runs once after native stack reset");
+  for(i=0;i<6;++i)CHECK(state_arguments[i],args[i],"original arming and native import retain all six full-width state arguments");
+  for(i=0;i<4;++i)CHECK(state_code_arguments[i],args[i],"original enter-state forwards four code arguments after initialization");
+  CHECK(state_process,member,"state code observes initialized process identity");CHECK(state_observed,state,"original state installed before initialized code runs");
+  CHECK(word(rt,member,32),dc_goal_find(rt,"dead"),"completed initialized state becomes dead through original deactivate");
+  CHECK(word(rt,member,36),0,"original initialized-state deactivation clears PID");
+  CHECK(word(rt,pool,16),member+24,"initialized-state completion returns to original fixed pool");
+  CHECK(word(rt,a,16),rt->s7,"completed initialized state leaves active tree");
+  CHECK(dc_goal_pp_scope_depth(rt),0,"complete initialize-state pipeline leaves no lexical bracket");
+  CHECK(rt->error,DC_GOAL_OK,"initialized original state pipeline completes without retained fault");
+  CHECK(dc_goal_fiber_clear(&fiber),1,"original-deactivated main context is discarded without replay");
+state_handoff_done:
+  dc_goal_clear_process_context(rt);
  }
  dc_goal_clear_process_context(rt);CHECK(dc_goal_pp_scope_detach(&scopes,rt),1,"initialization scope owner detaches after all original returns");
 detach:

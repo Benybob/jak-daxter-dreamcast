@@ -13,14 +13,21 @@ using OpenAI Codex, human-authorized Grok Build collaboration and, for the
 reviewed and independently tested before integration. Local automated checks
 cover the supported subset; expert human review is still needed.
 
-## Claude: current kernel handoff
+## Kernel handoff status
 
-**2026-10-26 (AI-assisted):** Continue from [CLAUDE_KERNEL_HANDOFF.md](ports/dreamcast/CLAUDE_KERNEL_HANDOFF.md).
-The verified baseline passes 447 host tests and 24,793 Flycast checks. A new
-initialize-to-state integration experiment exposes a wrong first argument to
-`set-to-run`; its clearly marked failing source patch and reproduction details
-are included for diagnosis. The default implementation remains at the verified
-baseline. Full kernel boot and gameplay remain unfinished.
+**2026-10-26 (AI-assisted, Claude Code): the [handoff](ports/dreamcast/CLAUDE_KERNEL_HANDOFF.md) blocker is resolved.**
+The initialize-to-state experiment now runs end to end in the default build:
+1. unchanged original root initialization runs `enter-state` inside its catch;
+2. original `set-to-run` arms the main thread, and the throw returns `#t`;
+3. the native main import accepts the armed image;
+4. the state's enter and code run on the reset stack;
+5. original `deactivate` returns the process to its pool.
+
+The wrong `set-to-run` argument was `#f`. The test harness bypassed original
+`activate`, which is what stores `main-thread`; no compiler change was needed.
+**447 host tests, 24,844 Flycast checks and 39 numeric checks pass.**
+Details are in [ORIGINAL_INITIALIZATION.md](ports/dreamcast/ORIGINAL_INITIALIZATION.md).
+Full kernel boot and gameplay remain unfinished.
 
 ## Progress — 2026-10-26
 
@@ -38,7 +45,7 @@ baseline. Full kernel boot and gameplay remain unfinished.
 | Original background LODs | Source published: original LOD selection; reduced training patch passes movement and camera checks |
 | Original kernel process system | Source published: unchanged original `send-event-function`, `deactivate`, `(suspend)`, `enter-state` and `kernel-dispatcher` (including trans/post hooks) run on native SH-4 fibers |
 | Original kernel compilation | 167 of 184 original kernel functions lower to SH-4 (gcommon 57/65, gkernel 66/75, gstate 6/6, gstring 38/38); reproducible survey |
-| Original process initialization | Root C-stack path verified: unchanged initializer, throw, protect exits, native catches and original deactivate/pool return; fiber catches pending |
+| Original process initialization | Root C-stack path verified: unchanged initializer, throw, protect exits, native catches and original deactivate/pool return; initialization to a scheduled running state verified end to end; fiber catches pending |
 | Full original game | Unfinished: fiber catch lifetime, cross-stack unwinding, complete kernel boot, general gameplay, progression or release build |
 
 The playable prototypes use a **native C controller**, as a temporary milestone.
@@ -93,9 +100,9 @@ and checkpoints, not a percentage of game completion or a single full-game run.
 | Area | Locally verified scope |
 | --- | --- |
 | Host | 447 tests pass with the complete local SDK/oracle setup |
-| GOAL runtime | 24,793 native checks at its latest verified checkpoint |
+| GOAL runtime | 24,844 native checks at its latest verified checkpoint |
 | Numeric regression | 39 native checks |
-| Original kernel processes | Events, deactivation (including self-deactivation on a fiber), suspension across destroyed stacks, state transitions and four-frame scheduling with trans/post hooks, inside the 24,793 runtime checks |
+| Original kernel processes | Events, deactivation (including self-deactivation on a fiber), suspension across destroyed stacks, state transitions and four-frame scheduling with trans/post hooks, and initialization through to a scheduled running state, inside the 24,844 runtime checks |
 | Kernel compilation coverage | 166/184 original kernel functions lower; remaining refusals named in `evidence/kernel-lowering-survey.json` |
 | Prototype movement | 318 native checks; visible test-map controller and platform paths pass |
 | Original collision | 789 synthetic native checks; 2,063 combined checks including the original 576-triangle patch |

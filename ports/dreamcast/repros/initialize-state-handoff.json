@@ -1,6 +1,6 @@
 {
   "ai_assisted": true,
-  "status": "KNOWN FAILING OPT-IN REPRODUCTION",
+  "status": "RESOLVED (applied in the default build; this patch is kept as history)",
   "verified_public_baseline": "8483b8ba8d8ead292a007283c6b9b4dd3a68ebc1",
   "patch_sha256": "a1505921a7fd1db498aabd06e4d6726d5f7ccd35b227ed07b3dfcddb6d87b65e",
   "patch_paths": [
@@ -9,20 +9,24 @@
     "ports/dreamcast/runtime_initialization_cases.c",
     "ports/dreamcast/tests/test_initialization.py"
   ],
-  "result": {
+  "original_failure": {
     "result": "FAIL",
     "total": 23527,
     "passed": 23513,
     "failed_case": 13945,
-    "observed_lo": 202584628,
-    "observed_hi": 0,
-    "expected_lo": 203202164,
-    "expected_hi": 0,
     "description": "initialize enter-state passes exact main thread to arming function",
     "elf_sha256": "b668ac2779c69abbf61309c428dac956852359cb4f43eb9fb9a8fa2f4b399611"
   },
-  "expected_complete_count": 24843,
-  "patch_builder_count": 24834,
+  "root_cause": "Harness setup: the original cpu-thread constructor sets only top-thread and original activate stores main-thread; the harness bypassed activate, so (-> pp main-thread) was #f and enter-state correctly armed #f. Not a compiler or catch defect.",
+  "fix": "runtime_initialization_cases.c performs the original activate main-thread store after asserting the constructor leaves it #f",
+  "resolution": {
+    "result": "PASS",
+    "runtime_native_checks_passed": 24844,
+    "host_tests_run": 447,
+    "numeric_native_checks_passed": 39,
+    "elf_sha256": "41b6555acd7cc91e514831880f8ba4fad850a51cd080061d49acb3bbc0ede838",
+    "ai_tool": "Claude Code (Anthropic)"
+  },
   "full_kernel_boot": false,
   "full_gameplay": false
 }

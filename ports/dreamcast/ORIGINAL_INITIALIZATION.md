@@ -61,3 +61,39 @@ scope blocks native stack transfers. Cross-stack unwinding and KOS stack-record
 restoration are not implemented here. Moving heaps/GC, general failure unwinding,
 full kernel boot and full gameplay remain unfinished. Verification uses stock
 16 MiB Flycast; no physical Dreamcast or disc testing is claimed.
+
+## Initialization to a running state (2026-10-26, AI-assisted: Claude Code)
+
+The handoff experiment now passes end to end. Unchanged original
+`run-function-in-process` runs unchanged original `enter-state` inside its catch.
+`enter-state` takes its initialize branch, arms the main thread through unchanged
+original `set-to-run`, marks the process `initialize-go` and throws `#t` back.
+Initialization leaves the process `waiting-to-run` with no state observer run
+early and A's lexical scope restored. The armed main header (canonical
+`set-to-run-bootstrap` PC, owned SP, `enter-state` target) passes the native
+preflight and native main import. One fiber step then runs the state enter
+function with all six full-width arguments and the state code with four, on the
+reset stack with `pp` = the process. The state code's return deactivates it
+through original `deactivate`: dead, PID cleared, returned to its fixed pool and
+removed from the active tree, with no scope left and no fault.
+
+**Diagnosis.** `set-to-run` received `#f` as its thread. The original
+`cpu-thread` constructor stores only `top-thread`; the original `activate` is
+what stores `main-thread`. The harness built the thread with
+`dc_goal_construct_main_thread`, which bypasses `activate`, so `main-thread`
+stayed `#f`. Original `enter-state` correctly passed `(-> pp main-thread)` = `#f`.
+The value was the `#f` symbol address, not the `enter-state` code address.
+
+Native probes ruled out the suspected causes:
+- with stack-slot optimization off, the result is identical;
+- inside the catch, the authenticated `pp` is the process with one live scope;
+- the original sets the `going` mask bit on that process.
+
+The compiler and the native catch were correct. The harness now performs the one
+original `activate` store explicitly, after checking that the constructor alone
+leaves it `#f`. No compiler change was needed.
+
+**Verification.** All **24,844 native runtime checks** (the 24,843-check success
+path plus the setup assertion), **447 host tests** (1 optional skip) and a freshly
+re-run **39-check numeric** suite pass in stock 16 MiB Flycast. Runtime ELF
+SHA-256: `41b6555acd7cc91e514831880f8ba4fad850a51cd080061d49acb3bbc0ede838`.

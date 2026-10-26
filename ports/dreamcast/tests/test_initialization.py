@@ -33,11 +33,12 @@ class OriginalCatchSchemaTest(unittest.TestCase):
    elif kind=='move':value=values.get(reads[0])
    elif kind=='call' and op.get('function_type')=='(function symbol type int type)':
     args=[values.get(r) for r in reads[1:]]
-    if len(args)==3 and args[0] in [('symbol_pointer','catch-frame'),('symbol_pointer','protect-frame')]:
+    if len(args)==3 and args[0] in [('symbol_pointer','catch-frame'),('symbol_pointer','protect-frame'),('symbol_pointer','state')]:
      types[args[0][1]]=(args[1],args[2])
    for dest in writes:values[dest]=value
   self.assertEqual(types['catch-frame'],(('symbol_value','stack-frame'),(9<<32)|176))
   self.assertEqual(types['protect-frame'],(('symbol_value','stack-frame'),(9<<32)|16))
+  self.assertEqual(types['state'],(('symbol_value','protect-frame'),(9<<32)|36))
  def test_original_protect_constructor_uses_tagged_header_and_complete_exit_slot(self):
   f=next(f for f in self.docs['gkernel.gc']['functions'] if f['name']=='(method new protect-frame)')
   stores=[o['offset'] for o in f['instructions'] if o['kind']=='store_memory']

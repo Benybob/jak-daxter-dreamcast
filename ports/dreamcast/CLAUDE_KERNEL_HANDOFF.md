@@ -1,5 +1,7 @@
 # Claude kernel continuation handoff
 
+> **Resolved 2026-10-26 (AI-assisted, Claude Code).** The blocker below was a harness setup gap, not a compiler defect: original `activate` stores `main-thread`, which the harness bypassed, so `enter-state` armed `#f`. The experiment now runs in the default build; 24,844 Flycast checks, 447 host tests and 39 numeric checks pass. See ORIGINAL_INITIALIZATION.md. The text below is kept as the original handoff record.
+
 2026-10-26. (AI-assisted: Codex; prepared at the human user's request.)
 
 ## Verified baseline
