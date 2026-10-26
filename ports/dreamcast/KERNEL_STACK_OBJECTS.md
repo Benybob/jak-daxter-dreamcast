@@ -1,5 +1,8 @@
 # Native kernel stack objects
 
+Follow-up: [original root initialization](ORIGINAL_INITIALIZATION.md) now executes
+the original process initializer through guarded native catch boundaries.
+
 2026-10-26. (AI-assisted: Codex, with a reviewed human-authorized Grok proposal.)
 
 The original frontend now exports typed stack addresses and its complete stack

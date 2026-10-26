@@ -382,3 +382,8 @@ See [KERNEL_STACK_OBJECTS.md](KERNEL_STACK_OBJECTS.md). (AI-assisted).
 
 A private SH-4 invoke/escape primitive now restores the exact caller stack, fixed return site, saved integer/floating registers, FPUL and FPSCR across normal and nested nonlocal returns. An independent clobber oracle passes 802 new native checks: 24,441 total runtime checks and 445 host tests pass in stock 16 MiB Flycast. The unchanged numeric binary matches its prior sealed 39-check execution. This is a trusted-C dependency, not an installed GOAL catch/throw implementation; original catch integration, unwinding, full kernel boot and gameplay remain unfinished. (AI-assisted: Codex; human-authorized isolated Grok review requested separately)
 See [NATIVE_CATCH_RETURN.md](NATIVE_CATCH_RETURN.md). (AI-assisted).
+
+## Completed: Original root process initialization
+
+Unchanged original run-function-in-process, throw and protect construction now execute on SH-4 through guarded native catch boundaries. Verified paths include full six-argument results, named and nested throws, extra lexical scope unwinding, original protect exits, and initialize-dead with original deactivation and fixed-pool return. 447 host tests and 24,793 native runtime checks (352 new) pass in stock 16 MiB Flycast. The separate numeric ELF matches its prior sealed 39-check execution. This first catch adapter requires the root C stack and an owned lexical process scope; fiber catch lifetime, cross-stack unwinding, moving heaps/GC, full kernel boot and gameplay remain unfinished. (AI-assisted: Codex; separately requested human-authorized Grok review remains pending)
+See [ORIGINAL_INITIALIZATION.md](ORIGINAL_INITIALIZATION.md). (AI-assisted).

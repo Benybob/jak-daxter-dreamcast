@@ -69,7 +69,7 @@ uint32_t dc_runtime_deactivate_cases(dc_goal_runtime *rt,dc_runtime_check check,
  /* Original protect-frame: stack-frame plus a 4-byte exit, inherited 9 methods.
   * Deactivation dispatches on its type identity, so it must be a real type. */
  if(!protect && entry(rt,"stack-frame"))
-  protect=dc_goal_new_type(rt,dc_goal_intern(rt,"protect-frame"),entry(rt,"stack-frame"),((uint64_t)9<<32)|12u);
+  protect=dc_goal_new_type(rt,dc_goal_intern(rt,"protect-frame"),entry(rt,"stack-frame"),((uint64_t)9<<32)|16u);
  CHECK(pool_type!=0,1,"original dead-pool type available from earlier pool cases");
  CHECK(protect!=0,1,"original protect-frame type available");
  CHECK(entry(rt,"protect-frame"),protect,"protect-frame symbol names the frame type deactivate compares against");
@@ -90,7 +90,7 @@ uint32_t dc_runtime_deactivate_cases(dc_goal_runtime *rt,dc_runtime_check check,
  CHECK(move(m1,m0),m1,"original change-parent makes m1 a child of m0");
  CHECK(in_pool(rt,pool,m1),0,"child left the pool chain");
  put(rt,m0,STATUS,ready);put(rt,m0,PID,31);put(rt,m1,STATUS,ready);put(rt,m1,PID,32);
- f1=dc_goal_new_basic(rt,protect,12);f2=dc_goal_new_basic(rt,protect,12);
+ f1=dc_goal_new_basic(rt,protect,16);f2=dc_goal_new_basic(rt,protect,16);
  CHECK(f1&&f2,1,"two original-schema protect frames allocated");if(!f1||!f2)goto detach;
  put(rt,f1,0,name);put(rt,f1,4,rt->s7);put(rt,f1,8,entry(rt,"dc-deactivate-exit-1"));
  put(rt,f2,0,name);put(rt,f2,4,f1);put(rt,f2,8,entry(rt,"dc-deactivate-exit-2"));put(rt,m0,FRAMES,f2);

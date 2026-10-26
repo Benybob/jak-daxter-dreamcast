@@ -1,0 +1,44 @@
+{
+  "ai_assisted": true,
+  "host_tests_passed": 447,
+  "host_optional_skips": 0,
+  "runtime_native_checks_passed": 24793,
+  "new_native_checks": 352,
+  "stock_ram_bytes": 16777216,
+  "physical_hardware_tested": false,
+  "runtime_elf_sha256": "f42360f4f603434831c355756e20806f81427f96906a5ca463fbac754de534e9",
+  "original_source_bodies_unchanged": [
+    "run-function-in-process",
+    "throw",
+    "(method new protect-frame)"
+  ],
+  "native_assembly_boundaries": [
+    "catch-frame.new",
+    "throw-dispatch"
+  ],
+  "executed": [
+    "normal six-argument initialization",
+    "initialize-dead and original deactivate/pool return",
+    "named initialize throw",
+    "original protect exit",
+    "outer named catch across unmatched inner catch",
+    "extra lexical scope unwind",
+    "retained faults with frame cleanup",
+    "unsupported native fiber rejection",
+    "P2/P4 alias rejection before dereference"
+  ],
+  "catch_scope": "Root C stack, authenticated live lexical process scope, owned process generation and exact KOS owner/stack",
+  "measured_type_flags": {
+    "catch-frame": 38654705840,
+    "protect-frame": 38654705680
+  },
+  "numeric": {
+    "checks": 39,
+    "elf_sha256": "83ea558f30e866dee335efa57adcd671828ff9ab188f6566ddef394618285b7f",
+    "scope": "Unchanged ELF rehashed against prior sealed execution; not rerun"
+  },
+  "fiber_catch_lifetime": false,
+  "cross_stack_unwinding": false,
+  "full_kernel_boot": false,
+  "full_gameplay": false
+}

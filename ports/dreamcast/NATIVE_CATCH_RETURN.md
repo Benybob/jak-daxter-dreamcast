@@ -1,5 +1,8 @@
 # Native catch return primitive
 
+Follow-up: [original root initialization](ORIGINAL_INITIALIZATION.md) now uses
+this primitive. The limitations below describe this earlier raw-shim milestone.
+
 2026-10-26. (AI-assisted: Codex implementation; human-authorized Grok review
 requested separately.)
 

@@ -1,5 +1,12 @@
 # Jak 1 on Dreamcast: experimental port workbench
 
+**2026-10-26 (AI-assisted):** [Original root initialization](ORIGINAL_INITIALIZATION.md)
+now executes unchanged `run-function-in-process`, `throw` and protect construction
+through guarded native catch boundaries. Tests cover nested throws, lexical
+unwinding, initialize-go and initialize-dead with original pool return. 447 host
+tests and 24,793 runtime checks pass in stock 16 MiB Flycast. Fiber catch lifetime,
+cross-stack unwinding and complete kernel boot remain unfinished.
+
 **2026-10-26 (AI-assisted):** [Native catch return](NATIVE_CATCH_RETURN.md)
 adds a private SH-4 invoke/escape primitive with fixed return sites. Nested
 escapes restore native registers and stack under an independent clobber oracle:

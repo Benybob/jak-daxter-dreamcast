@@ -104,4 +104,8 @@ uint32_t dc_goal_activate_process(dc_goal_runtime *,uint32_t process,uint32_t re
  * must be reopened. No payload clearing, bindings, execution or scheduler. */
 int dc_goal_resize_main_backup(dc_goal_runtime *,uint32_t process,uint32_t reservation,
                                uint32_t thread,uint32_t stack_base,uint32_t stack_bytes,uint32_t backup_bytes);
+/* First original catch adapter: only live root C-stack lexical pp scopes.
+ * Registered process ownership and supported KOS owner/stack required. No
+ * fiber/yield/cross-stack catch lifetime yet; guest RA/SP is never executed. */
+int dc_goal_install_catch_bridge(dc_goal_runtime *,dc_goal_cache_sync,dc_goal_module_result *);
 #endif

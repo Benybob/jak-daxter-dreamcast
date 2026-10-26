@@ -11,6 +11,7 @@
 #include "pp_scope.h"
 #include "process_spans.h"
 #include "goal_kos_stack.h"
+#include "goal_catch_raw.h"
 #ifndef __DREAMCAST__
 #error These boxed tail bridges require native SH-4 code execution.
 #endif
@@ -742,4 +743,147 @@ int dc_goal_resize_main_backup(dc_goal_runtime *rt,uint32_t process,uint32_t res
  rt->error=DC_GOAL_OK;
  ((setter)(uintptr_t)body)(thread,backup_bytes);
  return rt->error==DC_GOAL_OK;
+}
+
+/* First original initialization catch adapter: root C stack only, inside a
+ * registered lexical pp bracket. That bracket blocks all native stack
+ * transfers. No fiber/suspended catch anchor is inferred from this C chain. */
+typedef struct native_catch_frame {
+ dc_goal_catch_raw raw;
+ struct native_catch_frame *previous;
+ dc_goal_runtime *runtime;
+ dc_goal_process_span ownership;
+ dc_goal_pp_scope_stack *scopes;
+ dc_goal_pp_scope_frame prefix[DC_GOAL_PP_SCOPE_MAX_DEPTH];
+ uint32_t process,pid,object,type,name,next,owner,base,bytes,expected_sp;
+ unsigned depth,thrown;
+ uint32_t function;uint64_t arguments[6];
+} native_catch_frame;
+static native_catch_frame *native_catch_top;
+static uint32_t native_catch_owner;
+static int catch_bad(dc_goal_runtime *rt){if(rt && rt->error==DC_GOAL_OK)rt->error=DC_GOAL_BAD_ARGUMENT;return 0;}
+static uint32_t catch_word(const void *p){uint32_t v;memcpy(&v,p,4);return v;}
+static void catch_put(void *p,uint32_t v){memcpy(p,&v,4);}
+static uint32_t catch_physical(uint32_t p){return p&0x1fffffffu;}
+static int catch_stack_range(uint32_t base,uint32_t bytes,uint32_t p,uint32_t n){
+ /* Only the actual native P0/P1 RAM aliases are supported. Masking an arbitrary
+  * P2/P3/P4 address and then dereferencing the original would be unsafe. */
+ if(((p&0xe0000000u)!=0 && (p&0xe0000000u)!=0x80000000u) ||
+    ((base&0xe0000000u)!=0 && (base&0xe0000000u)!=0x80000000u))return 0;
+ base=catch_physical(base);p=catch_physical(p);
+ return bytes<=0x20000000u-base && p>=base && n<=bytes && p-base<=bytes-n;
+}
+static int catch_same_stack(const native_catch_frame *f){
+ kthread_t *owner;
+ if(!f->owner || dc_goal_kos_stack_owner()!=f->owner || dc_goal_fiber_current())return 0;
+ owner=(kthread_t *)(uintptr_t)f->owner;
+ return (uint32_t)(uintptr_t)owner->stack==f->base && owner->stack_size==f->bytes;
+}
+static int catch_auth(native_catch_frame *f){
+ dc_goal_runtime *rt=f->runtime;dc_goal_pp_scope_stack *scopes;uint32_t process;const void *p;
+ if(rt!=active_runtime || !catch_same_stack(f) || !(scopes=dc_goal_pp_scope_active(rt)) ||
+    scopes!=f->scopes || scopes->depth<f->depth || !f->depth ||
+    memcmp(scopes->frames,f->prefix,f->depth*sizeof f->prefix[0]) ||
+    !dc_goal_process_span_check(rt,&f->ownership))return catch_bad(rt);
+ process=(uint32_t)current_process();
+ if(process!=f->process || !(p=dc_goal_resolve(rt,process+36,4)) || catch_word(p)!=f->pid)return catch_bad(rt);
+ if(!catch_stack_range(f->base,f->bytes,f->object-4,176))return catch_bad(rt);
+ p=(const void *)(uintptr_t)(f->object-4);
+ if(catch_word(p)!=f->type || catch_word((const unsigned char *)p+4)!=f->name ||
+    catch_word((const unsigned char *)p+8)!=f->next)return catch_bad(rt);
+ return 1;
+}
+static int catch_unwind_scopes(native_catch_frame *f){
+ dc_goal_pp_scope_stack *scopes=f->scopes;
+ while(scopes->depth>f->depth){
+  dc_goal_pp_scope_frame *top=&scopes->frames[scopes->depth-1];
+  if(!dc_goal_leave_lexical_scope(f->runtime,top->lexical_process,top->lexical_bytes))return 0;
+ }
+ return (uint32_t)current_process()==f->process?1:catch_bad(f->runtime);
+}
+static uint64_t catch_call_body(void *v){
+ typedef uint64_t (*six)(uint64_t,uint64_t,uint64_t,uint64_t,uint64_t,uint64_t);
+ native_catch_frame *f=v;
+ return ((six)(uintptr_t)f->function)(f->arguments[0],f->arguments[1],f->arguments[2],
+                                    f->arguments[3],f->arguments[4],f->arguments[5]);
+}
+static uint64_t new_catch_frame(uint64_t allocation,uint64_t type,uint64_t name,uint64_t function,uint64_t params){
+ dc_goal_runtime *rt=active_runtime;native_catch_frame frame;dc_goal_pp_scope_stack *scopes;
+ dc_goal_code_entry_info code;struct dc_goal_native_regs caller;kthread_t *owner;
+ uint32_t process,sp;unsigned char *top;uint64_t value;dc_goal_type_fields *schema;
+ if(!rt || rt->error!=DC_GOAL_OK)return 0;
+ memset(&frame,0,sizeof frame);
+ if(allocation>UINT32_MAX || type>UINT32_MAX || name>UINT32_MAX || function>UINT32_MAX || params>UINT32_MAX ||
+    ((uint32_t)allocation&15u) || ((uint32_t)params&7u) || dc_goal_fiber_current() ||
+    !(scopes=dc_goal_pp_scope_active(rt)) || !scopes->depth ||
+    !(frame.owner=dc_goal_kos_stack_owner()))return catch_bad(rt);
+ if(native_catch_top && native_catch_owner!=frame.owner)return catch_bad(rt);
+ owner=(kthread_t *)(uintptr_t)frame.owner;frame.base=(uint32_t)(uintptr_t)owner->stack;frame.bytes=owner->stack_size;
+ __asm__ volatile("mov r15,%0":"=r"(sp));
+ if(!catch_stack_range(frame.base,frame.bytes,(uint32_t)allocation,176) ||
+    !catch_stack_range(frame.base,frame.bytes,(uint32_t)params,48) ||
+    catch_physical((uint32_t)allocation)<catch_physical(sp) || catch_physical((uint32_t)params)<catch_physical(sp) ||
+    activation_overlap(catch_physical((uint32_t)allocation),176,catch_physical((uint32_t)params),48))return catch_bad(rt);
+ process=(uint32_t)current_process();
+ if(!process || !dc_goal_process_span_lookup(rt,process,&frame.ownership) ||
+    frame.ownership.bytes!=active_process_heap.allocation_bytes)return catch_bad(rt);
+ if(type!=dc_goal_symbol_value(rt,dc_goal_find(rt,"catch-frame")) || dc_goal_type_of(rt,(uint32_t)type)!=rt->type_type ||
+    !(schema=dc_goal_resolve(rt,(uint32_t)type,sizeof *schema)) || schema->allocated_size!=176 ||
+    schema->heap_base || schema->num_methods!=9 ||
+    schema->parent!=dc_goal_symbol_value(rt,dc_goal_find(rt,"stack-frame")) ||
+    !dc_goal_code_entry(rt,(uint32_t)function,&code))return catch_bad(rt);
+ if(!dc_goal_symbol_name(rt,(uint32_t)name))return 0;
+ frame.runtime=rt;frame.process=process;frame.pid=catch_word(dc_goal_resolve(rt,process+36,4));
+ frame.type=(uint32_t)type;frame.name=(uint32_t)name;frame.object=(uint32_t)allocation+4;frame.function=(uint32_t)function;
+ frame.scopes=scopes;frame.depth=scopes->depth;memcpy(frame.prefix,scopes->frames,frame.depth*sizeof frame.prefix[0]);
+ memcpy(frame.arguments,(const void *)(uintptr_t)(uint32_t)params,sizeof frame.arguments);
+ top=dc_goal_resolve(rt,process+88,4);if(!top)return 0;frame.next=catch_word(top);
+ /* Original raw field offsets include the basic header; native saved state is
+  * private C storage, never guest SP/RA fields. The guest diagnostic slots zero. */
+ memset((void *)(uintptr_t)(uint32_t)allocation,0,176);
+ catch_put((void *)(uintptr_t)(uint32_t)allocation,frame.type);
+ catch_put((void *)(uintptr_t)(frame.object),frame.name);catch_put((void *)(uintptr_t)(frame.object+4),frame.next);
+ catch_put(top,frame.object);frame.previous=native_catch_top;native_catch_top=&frame;native_catch_owner=frame.owner;
+ if(!dc_goal_native_regs_snapshot(&caller)){native_catch_top=frame.previous;native_catch_owner=frame.previous?frame.owner:0;catch_put(top,frame.next);return catch_bad(rt);}
+ frame.expected_sp=caller.sp-4;
+ value=dc_goal_catch_invoke_raw(&frame.raw,catch_call_body,&frame);
+ if(native_catch_top!=&frame || !catch_auth(&frame) || frame.scopes->depth!=frame.depth ||
+    catch_word(top)!=(frame.thrown?frame.next:frame.object)){
+  enum dc_goal_error prior=rt->error;
+  /* Our stack objects expire on every C return, including faults. Restore the
+   * old chain only while the same physical allocation is still owned. A stale
+   * or retired allocation is never written through a saved process pointer. */
+  if(catch_same_stack(&frame) && dc_goal_process_span_check(rt,&frame.ownership))catch_put(top,frame.next);
+  native_catch_top=frame.previous;native_catch_owner=frame.previous?frame.owner:0;
+  if(prior!=DC_GOAL_OK)rt->error=prior;
+  catch_bad(rt);return 0;
+ }
+ native_catch_top=frame.previous;native_catch_owner=frame.previous?frame.owner:0;
+ catch_put(top,frame.next);return rt->error==DC_GOAL_OK?value:0;
+}
+static uint64_t catch_throw_dispatch(uint64_t object,uint64_t value){
+ dc_goal_runtime *rt=active_runtime;native_catch_frame *f;
+ if(!rt || rt->error!=DC_GOAL_OK)return 0;
+ if(object>UINT32_MAX || !native_catch_top || !native_catch_owner ||
+    dc_goal_kos_stack_owner()!=native_catch_owner)return catch_bad(rt);
+ /* Only trusted active C descriptors are traversed. A guest pointer is a key,
+  * never a descriptor address. No discarded inner descriptor is retained. */
+ for(f=native_catch_top;f && f->object!=(uint32_t)object;f=f->previous){}
+ if(!f || !catch_auth(f) || f->raw.regs.pr!=(uint32_t)(uintptr_t)dc_goal_catch_invoke_return ||
+    f->raw.regs.sp!=f->expected_sp || (f->raw.regs.sp&3u) || (f->raw.regs.fpscr&0x00380000u) ||
+    !catch_stack_range(f->base,f->bytes,f->raw.regs.sp,4) || !catch_unwind_scopes(f))return catch_bad(rt);
+ catch_put(dc_goal_resolve(rt,f->process+88,4),f->next);
+ native_catch_top=f;f->thrown=1;f->raw.result=value;dc_goal_catch_escape_raw(&f->raw);
+}
+int dc_goal_install_catch_bridge(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_goal_module_result *result){
+ unsigned char code[2][12]={{1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0},{1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0}};
+ uint32_t targets[2]={(uint32_t)(uintptr_t)new_catch_frame,(uint32_t)(uintptr_t)catch_throw_dispatch};
+ dc_goal_code_export exports[2]={{"dc-c-catch-frame-new",code[0],12,NULL,0},{"throw-dispatch",code[1],12,NULL,0}};
+ uint32_t type;
+ if(!rt || !result || rt!=active_runtime || native_catch_top || dc_goal_fiber_current())return catch_bad(rt);
+ type=dc_goal_define_type(rt,"catch-frame",dc_goal_symbol_value(rt,dc_goal_find(rt,"stack-frame")),176,0,9);
+ if(!type)return 0;
+ memcpy(code[0]+8,&targets[0],4);memcpy(code[1]+8,&targets[1],4);
+ if(!dc_goal_load_module(rt,exports,2,sync,NULL,result))return 0;
+ return dc_goal_set_method(rt,type,0,dc_goal_symbol_value(rt,dc_goal_find(rt,"dc-c-catch-frame-new")));
 }

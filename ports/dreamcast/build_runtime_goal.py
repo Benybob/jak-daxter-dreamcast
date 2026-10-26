@@ -270,10 +270,18 @@ def main():
         if baseline:command+=['--no-optimize']
         for name in stack_functions:command+=['--function',name]
         subprocess.run(command,check=True)
+    subprocess.run(compiler+process_context+['--source',str(port.parents[1]/'goal_src/jak1/kernel/gkernel.gc'),
+        '--function','run-function-in-process','--function','throw','--function','(method new protect-frame)',
+        '--header',str(port/'build/original_initialization.h')],check=True)
+    subprocess.run(compiler+process_context+['--preload',str(port.parents[1]/'goal_src/jak1/kernel/gkernel.gc'),
+        '--source',str(port/'initialization_fixture.gc'),'--function','dc-initialize-return',
+        '--function','dc-initialize-throw','--function','dc-initialize-protect','--function','dc-initialize-error','--function','dc-initialize-die',
+        '--function','dc-initialize-nested','--function','dc-initialize-scoped',
+        '--header',str(port/'build/initialization_fixture.h')],check=True)
     subprocess.run([sys.executable,str(port/'build_dreamcast.py'),'--msys',str(args.msys),'--target','jak-dc-runtime-goal.elf'],check=True)
     if args.verify:
         subprocess.run([sys.executable,str(port/'verify_backend.py'),str(args.flycast),
                         str(port/'jak-dc-runtime-goal.elf'),'--nm',str(args.nm),'--output',str(args.output),
-                        '--tests','24441','--suite','runtime-goal'],check=True)
+                        '--tests','24793','--suite','runtime-goal'],check=True)
 
 if __name__=='__main__': main()
