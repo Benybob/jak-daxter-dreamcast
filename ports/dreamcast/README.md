@@ -4,7 +4,8 @@
 top-level startup of all eight original KERNEL.CGO files natively, unchanged and in
 original order. A process started the original way then runs under the original
 kernel-dispatcher. 87 of 87 boot checks, 24,846 runtime checks, 452 host tests and 39
-numeric checks pass in stock 16 MiB Flycast. GC, DGO loading and gameplay remain unfinished.
+numeric checks pass in stock 16 MiB Flycast. The kernel also boots from a KERNEL.CGO DGO
+of native DCSH objects (90 of 90 checks). GC, GAME.CGO and gameplay remain unfinished.
 
 **2026-10-26 (AI-assisted):** [Original root initialization](ORIGINAL_INITIALIZATION.md)
 now executes unchanged `run-function-in-process`, `throw` and protect construction

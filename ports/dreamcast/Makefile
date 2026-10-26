@@ -718,9 +718,21 @@ KERNEL_BOOT_LIBS=goal_runtime.o goal_runtime_dc.o goal_module.o goal_bridge.o go
 kernel_boot_main.o: runtime_main.c runtime_cases.h
 	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -DDC_KERNEL_BOOT -c runtime_main.c -o $@
 kernel_boot_cases.o: kernel_boot_cases.c goal_bridge.h goal_fiber.h goal_kernel_types.h goal_main_start.h runtime_cases.h \
- build/boot_gcommon.h build/boot_gstring.h build/boot_gkernel.h build/boot_gstate.h
+ build/boot_gcommon.h build/boot_gstring_h.h build/boot_gkernel_h.h build/boot_gkernel.h build/boot_pskernel.h \
+ build/boot_gstring.h build/boot_dgo_h.h build/boot_gstate.h
 	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -I. -c kernel_boot_cases.c -o $@
 kernel_boot_valid.o: kernel_boot_valid.c goal_module.h build/boot_valid.h
 	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -I. -c kernel_boot_valid.c -o $@
 jak-dc-kernel-boot.elf: kernel_boot_main.o kernel_boot_cases.o kernel_boot_valid.o $(KERNEL_BOOT_LIBS)
+	kos-cc -o $@ $^
+# The same boot, loading the kernel from a KERNEL.CGO DGO of DCSH objects (AI-assisted).
+goal_dgo.o: goal_dgo.c goal_dgo.h goal_native_file.h goal_module.h
+kernel_dgo_cases.o: kernel_boot_cases.c goal_dgo.h goal_bridge.h goal_fiber.h goal_main_start.h runtime_cases.h
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -DDC_KERNEL_DGO -I. -c kernel_boot_cases.c -o $@
+build/kernel-dgo-romdisk.o: build/kernel-dgo/KERNEL.CGO
+	$(KOS_GENROMFS) -f build/kernel-dgo-romdisk.img -d build/kernel-dgo
+	$(KOS_BASE)/utils/bin2c/bin2c build/kernel-dgo-romdisk.img build/kernel-dgo-romdisk.c romdisk
+	$(KOS_CC) $(KOS_CFLAGS) -c build/kernel-dgo-romdisk.c -o build/kernel-dgo-romdisk-tmp.o
+	$(KOS_CC) -o $@ -r build/kernel-dgo-romdisk-tmp.o $(KOS_LIB_PATHS) -Wl,--whole-archive -lromdiskbase
+jak-dc-kernel-dgo.elf: kernel_boot_main.o kernel_dgo_cases.o goal_dgo.o build/kernel-dgo-romdisk.o $(KERNEL_BOOT_LIBS)
 	kos-cc -o $@ $^

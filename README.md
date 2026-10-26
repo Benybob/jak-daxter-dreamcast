@@ -27,11 +27,15 @@ The wrong `set-to-run` argument was `#f`. The test harness bypassed original
 `activate`, which is what stores `main-thread`; no compiler change was needed.
 **447 host tests, 24,844 Flycast checks and 39 numeric checks pass.**
 Details are in [ORIGINAL_INITIALIZATION.md](ports/dreamcast/ORIGINAL_INITIALIZATION.md).
+
 **Kernel boot (2026-10-26, AI-assisted):** the top-level startup of every original
 KERNEL.CGO file now runs natively, unchanged and in original order, in stock 16 MiB
-Flycast: **50 of 50 boot checks pass.** Details are in
-[KERNEL_BOOT.md](ports/dreamcast/KERNEL_BOOT.md). Running a spawned process under
-the original dispatcher inside the boot image, and gameplay, remain unfinished.
+Flycast. A process then starts the original way (get-process, activate,
+run-next-time-in-process) and runs under the original kernel-dispatcher:
+**87 of 87 boot checks pass.** The same kernel also boots from a KERNEL.CGO DGO
+file of native objects on the romdisk: **90 of 90 checks pass.** Details are in
+[KERNEL_BOOT.md](ports/dreamcast/KERNEL_BOOT.md). GC, GAME.CGO and later DGOs, the
+engine and gameplay remain unfinished.
 
 ## Progress — 2026-10-26
 
@@ -49,9 +53,9 @@ the original dispatcher inside the boot image, and gameplay, remain unfinished.
 | Original background LODs | Source published: original LOD selection; reduced training patch passes movement and camera checks |
 | Original kernel process system | Source published: unchanged original `send-event-function`, `deactivate`, `(suspend)`, `enter-state` and `kernel-dispatcher` (including trans/post hooks) run on native SH-4 fibers |
 | Original kernel compilation | Complete: 176 of 184 original kernel functions compile to SH-4, and the other 8 (x86/ARM64 assembly thread primitives) bind to named native counterparts; whole-file startups lower; see [KERNEL_COMPILATION.md](ports/dreamcast/KERNEL_COMPILATION.md) |
-| Original kernel boot | Verified: all 8 KERNEL.CGO startups run natively in original order, and an originally spawned process runs under the original dispatcher (87/87 checks); see [KERNEL_BOOT.md](ports/dreamcast/KERNEL_BOOT.md) |
+| Original kernel boot | Verified: all 8 KERNEL.CGO startups run natively in original order, and an originally spawned process runs under the original dispatcher (87/87 checks); also boots from a native KERNEL.CGO DGO (90/90); see [KERNEL_BOOT.md](ports/dreamcast/KERNEL_BOOT.md) |
 | Original process initialization | Root C-stack path verified: unchanged initializer, throw, protect exits, native catches and original deactivate/pool return; initialization to a scheduled running state verified end to end; fiber catches pending |
-| Full original game | Unfinished: fiber catch lifetime, cross-stack unwinding, GC, DGO loading, general gameplay, progression or release build |
+| Full original game | Unfinished: fiber catch lifetime, cross-stack unwinding, GC, GAME.CGO and later DGOs, general gameplay, progression or release build |
 
 The playable prototypes use a **native C controller**, as a temporary milestone.
 They do not execute original GOAL movement. The real-terrain target and local

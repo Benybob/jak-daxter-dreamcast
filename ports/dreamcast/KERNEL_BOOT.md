@@ -77,6 +77,35 @@ After boot, the checks follow the original `process-spawn-function` sequence:
    process, kills it and returns it to the 8k pool. A further dispatcher frame
    skips it.
 
+## Loading the kernel from KERNEL.CGO
+
+`jak-dc-kernel-dgo.elf` boots the same kernel from a DGO file, not from
+compiled-in modules. **90 of 90 checks pass.** Code bytes (247,366), arena use
+and symbol count match the compiled-in boot exactly.
+
+- Each module is also written as a DCSH native module ([NATIVE_MODULES.md](NATIVE_MODULES.md)).
+- `pack_native_dgo.py` packs them into `build/kernel-dgo/KERNEL.CGO`, using the
+  original DGO container layout:
+  - a header with the object count and a 60-byte name;
+  - per object, its size and 60-byte name, the payload, then padding to 16 bytes.
+
+  This is the same layout `dgo_stream.c` validates. The objects are the 8 original
+  files in order, with the Dreamcast `valid?` override as a ninth object right
+  after gcommon.
+- The romdisk carries the file to `/rd/KERNEL.CGO`.
+- `goal_dgo.c` is the native counterpart of the C++ kernel's `load_and_link_dgo`:
+  - it reads each object, links it, and runs its startup before reading the next;
+  - the first failure stops loading and names the failed object.
+- The checks confirm the object names and order, and that 8 startups ran.
+  Everything after that is the same as the compiled-in boot.
+- Damaged files refuse before anything links:
+  - a compressed (`oZlB`) header;
+  - a first object with a flipped payload byte, which its CRC catches.
+
+  The symbol count and arena are unchanged afterwards.
+
+DCSH objects are native SH-4 code from this port's compiler. Retail PS2 objects
+are not loaded. Engine and level DGOs (GAME.CGO and the rest) are next.
 ## Fixes this needed
 
 - `export_ir.cpp` now gives scalar bitfield types (for example `handle`) the
@@ -89,5 +118,5 @@ After boot, the checks follow the original `process-spawn-function` sequence:
 - The fiber import and span notes are still explicit trusted-C steps; no original
   GOAL caller performs them yet. Trans/post hooks and state `go` are verified only in the
   runtime suite ([ORIGINAL_DISPATCHER.md](ORIGINAL_DISPATCHER.md)), not in this image.
-- GC, DGO loading, the engine and gameplay are unfinished.
+- GC, engine/level DGOs (GAME.CGO onward), the engine and gameplay are unfinished.
 - No hardware claims.

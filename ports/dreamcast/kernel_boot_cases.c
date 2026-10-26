@@ -1,6 +1,7 @@
 /* Native boot of the unchanged original jak1 kernel startup (AI-assisted), ISC.
  * Native counterpart of the desktop C++ kernel's setup, then the original
- * top-level startups of all eight KERNEL.CGO files in their original load order. */
+ * top-level startups of all eight KERNEL.CGO files in their original load order.
+ * With DC_KERNEL_DGO the same modules load from /rd/KERNEL.CGO, a DGO of DCSH objects. */
 #include <kos.h>
 #include <arch/cache.h>
 #include <stdint.h>
@@ -13,6 +14,9 @@
 #include "process_spans.h"
 #include "pp_scope.h"
 #include "runtime_cases.h"
+#ifdef DC_KERNEL_DGO
+#include "goal_dgo.h"
+#else
 #include "build/boot_gcommon.h"
 #include "build/boot_gstring_h.h"
 #include "build/boot_gkernel_h.h"
@@ -22,6 +26,7 @@
 #include "build/boot_dgo_h.h"
 #include "build/boot_gstate.h"
 int dc_kernel_boot_load_valid(dc_goal_runtime *,dc_goal_cache_sync,dc_goal_module_result *);
+#endif
 static void sync_code(uint32_t allocation,uint32_t bytes,void *context){
   (void)context;dcache_flush_range(allocation,bytes);icache_flush_range(allocation,bytes);
 }
@@ -53,6 +58,26 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
   STEP(dc_goal_install_kernel_services(&rt,sync_code,&r),"_format, malloc and nothing services");
   CHECK(dc_goal_set_symbol(&rt,dc_goal_intern(&rt,"*debug-segment*"),rt.s7),1,"no debug segment, as a non-debug kernel");
   dc_goal_format_capture_clear();before=rt.used;
+#ifdef DC_KERNEL_DGO
+  /* Native counterpart of the C++ kernel's load_and_link_dgo("KERNEL.CGO"). */
+  {
+    static dc_goal_dgo_result dgo;
+    static const char *const order[]={"gcommon","dc-scalar-valid","gstring-h","gkernel-h","gkernel",
+                                      "pskernel","gstring","dgo-h","gstate"};
+    FILE *file=fopen("/rd/KERNEL.CGO","rb");int loaded;unsigned i;
+    CHECK(file!=NULL,1,"KERNEL.CGO opens from the romdisk");if(!file)goto done;
+    loaded=dc_goal_load_dgo(&rt,file,sync_code,NULL,&dgo);fclose(file);
+    CHECK(loaded?1:100+rt.error,1,"every KERNEL.CGO object links and runs its original startup in order");
+    CHECK(dgo.failed_object,UINT32_MAX,"no KERNEL.CGO object fails");
+    CHECK(strcmp(dgo.name,"KERNEL.CGO"),0,"DGO header names KERNEL.CGO");
+    CHECK(dgo.objects,9,"eight original objects plus the scalar valid? override");
+    CHECK(dgo.completed,9,"all nine objects complete");
+    CHECK(dgo.initializers,8,"each original object runs its top-level startup");
+    for(i=0;i<9;++i)CHECK(strcmp(dgo.object_names[i],order[i]),0,"objects load in original KERNEL.CGO order");
+    if(!loaded)goto done;
+    code_bytes+=dgo.code_bytes;(void)value;
+  }
+#else
   /* The unchanged original kernel files, in their original KERNEL.CGO load order. */
 #define BOOT(M,m,label) \
   STEP(dc_goal_load_module_data(&rt,goal_boot_##m##_exports,GOAL_BOOT_##M##_EXPORT_COUNT, \
@@ -68,6 +93,7 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
   BOOT(DGO_H,dgo_h,"dgo-h");
   BOOT(GSTATE,gstate,"gstate");
 #undef BOOT
+#endif
   CHECK(rt.error,DC_GOAL_OK,"complete original kernel startup leaves no fault");
   /* What the original startup built. */
   CHECK(typed(&rt,"*kernel-context*","kernel-context"),1,"original kernel context");
@@ -151,6 +177,26 @@ spawn_done:
     rt.error=DC_GOAL_OK;dc_goal_clear_process_context(&rt);
     CHECK(dc_goal_process_spans_detach(&rt),1,"ownership ledger detaches");
   }
+#ifdef DC_KERNEL_DGO
+  /* Damaged containers refuse before linking anything. */
+  {
+    static dc_goal_dgo_result bad;static unsigned char image[400000];
+    FILE *file=fopen("/rd/KERNEL.CGO","rb");size_t n=file?fread(image,1,sizeof image,file):0;uint32_t symbols=rt.symbol_count,used=rt.used;
+    if(file){fclose(file);}
+    CHECK(n>64+64+64 && n<sizeof image,1,"KERNEL.CGO read back for damage tests");
+    memcpy(image+0,"oZlB",4);file=fopen("/ram/bad.cgo","wb");if(file){fwrite(image,1,n,file);fclose(file);}
+    file=fopen("/ram/bad.cgo","rb");
+    CHECK(file && !dc_goal_load_dgo(&rt,file,sync_code,NULL,&bad) && bad.failed_object==UINT32_MAX,1,"compressed DGO header refuses");
+    if(file){fclose(file);}rt.error=DC_GOAL_OK;
+    image[0]=9;image[1]=image[2]=image[3]=0;image[64+64+100]^=0x5a;  /* inside the first DCSH object */
+    file=fopen("/ram/bad.cgo","wb");if(file){fwrite(image,1,n,file);fclose(file);}
+    file=fopen("/ram/bad.cgo","rb");
+    CHECK(file && !dc_goal_load_dgo(&rt,file,sync_code,NULL,&bad) && bad.failed_object==0 && bad.completed==0,1,
+          "corrupted first object refuses through its CRC");
+    if(file){fclose(file);}rt.error=DC_GOAL_OK;unlink("/ram/bad.cgo");
+    CHECK(rt.symbol_count==symbols && rt.used==used,1,"refused DGOs link nothing");
+  }
+#endif
   snprintf(description,description_bytes,"BOOT GOAL=%lu arena=%lu/%lu startup=%lu symbols=%lu",
            (unsigned long)code_bytes,(unsigned long)rt.used,(unsigned long)capacity,
            (unsigned long)(rt.used-before),(unsigned long)rt.symbol_count);

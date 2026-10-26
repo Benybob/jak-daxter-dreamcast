@@ -4,12 +4,15 @@ Compiles the four unchanged original kernel files as whole modules, each with it
 original top-level startup as an initializer, under the explicit Dreamcast
 target contexts (scalar memory bounds, no desktop profiler, original console
 memory sizes). gkernel's eight x86/ARM64 assembly primitives bind to their
-native counterparts. Then links jak-dc-kernel-boot.elf and, with --verify, runs it.
+native counterparts. Links jak-dc-kernel-boot.elf (modules compiled in) and
+jak-dc-kernel-dgo.elf (the same modules loaded from a KERNEL.CGO DGO on the romdisk)
+and, with --verify, runs both.
 """
 import argparse
 from pathlib import Path
 import subprocess
 import sys
+from pack_native_dgo import write_dgo
 
 BINDINGS = {
     'return-from-thread': 'dc-c-return-from-thread',
@@ -22,6 +25,7 @@ BINDINGS = {
     'set-to-run-bootstrap': 'set-to-run-bootstrap',
 }
 EXPECTED_CHECKS = 87  # verified in Flycast; never weakened afterwards
+EXPECTED_DGO_CHECKS = 90  # verified KERNEL.CGO boot in Flycast
 
 
 def main():
@@ -36,6 +40,8 @@ def main():
     parser.add_argument('--flycast', type=Path, default=work / 'flycast/flycast.exe')
     parser.add_argument('--nm', type=Path, default=work / 'dc-sdk/sh-elf/bin/sh-elf-nm.exe')
     parser.add_argument('--output', type=Path, default=work / 'flycast-kernel-boot')
+    parser.add_argument('--dgo-tests', type=int, default=EXPECTED_DGO_CHECKS)
+    parser.add_argument('--dgo-output', type=Path, default=work / 'flycast-kernel-dgo')
     args = parser.parse_args()
     compiler = [sys.executable, str(port / 'compile_goal_subset.py'), '--frontend', str(args.frontend),
                 '--runtime', '--msys', str(args.msys), '--all-functions']
@@ -57,26 +63,36 @@ def main():
         ('dgo-h', preloads(kernel / 'gcommon.gc')),
         ('gstate', target + preloads(kernel / 'gkernel.gc')),
     ]
+    dcsh = port / 'build/kernel-dcsh'
     for name, extra in modules:
         stem = name.replace('-', '_')
         subprocess.run(compiler + extra + ['--source', str(kernel / f'{name}.gc'),
                                            '--initializer', f'dc-boot-{name}',
-                                           '--header', str(port / f'build/boot_{stem}.h')], check=True)
+                                           '--header', str(port / f'build/boot_{stem}.h'),
+                                           '--native-module', str(dcsh / f'{name}.dcsh')], check=True)
     # The whole-file gcommon keeps its desktop END_OF_MEMORY; replace valid? with
     # the explicitly scalar-configured original (as the runtime suite does).
     subprocess.run([sys.executable, str(port / 'compile_goal_subset.py'), '--frontend', str(args.frontend),
                     '--runtime', '--msys', str(args.msys),
                     '--preload', str(kernel / 'gcommon.gc'), '--preload', str(port / 'scalar_validation_context.gc'),
                     '--source', str(kernel / 'gcommon.gc'), '--select-defuns', '--function', 'valid?',
-                    '--header', str(port / 'build/boot_valid.h')], check=True)
-    subprocess.run([sys.executable, str(port / 'build_dreamcast.py'), '--msys', str(args.msys),
-                    '--target', 'jak-dc-kernel-boot.elf'], check=True)
+                    '--header', str(port / 'build/boot_valid.h'),
+                    '--native-module', str(dcsh / 'dc-scalar-valid.dcsh')], check=True)
+    # KERNEL.CGO for the DGO boot: the original order, with the Dreamcast valid?
+    # override as an extra object straight after gcommon.
+    order = ['gcommon', 'dc-scalar-valid'] + [name for name, _ in modules[1:]]
+    write_dgo(port / 'build/kernel-dgo/KERNEL.CGO', 'KERNEL.CGO', [(n, dcsh / f'{n}.dcsh') for n in order])
+    elves = (('jak-dc-kernel-boot.elf', args.tests, args.output),
+             ('jak-dc-kernel-dgo.elf', args.dgo_tests, args.dgo_output))
+    for elf, _, _ in elves:
+        subprocess.run([sys.executable, str(port / 'build_dreamcast.py'), '--msys', str(args.msys),
+                        '--target', elf], check=True)
     if args.verify:
-        if args.tests <= 0: parser.error('pass the verified --tests count')
-        subprocess.run([sys.executable, str(port / 'verify_backend.py'), str(args.flycast),
-                        str(port / 'jak-dc-kernel-boot.elf'), '--nm', str(args.nm), '--output', str(args.output),
-                        '--tests', str(args.tests), '--suite', 'runtime-goal', '--timeout', '300'], check=True)
-
+        for elf, tests, output in elves:
+            if tests <= 0: parser.error('pass the verified --tests/--dgo-tests counts')
+            subprocess.run([sys.executable, str(port / 'verify_backend.py'), str(args.flycast),
+                            str(port / elf), '--nm', str(args.nm), '--output', str(output),
+                            '--tests', str(tests), '--suite', 'runtime-goal', '--timeout', '300'], check=True)
 
 if __name__ == '__main__':
     main()
