@@ -58,6 +58,9 @@ world-view/clip/base-pass diagnostic.
 playable integration and 26 movement/stream checks.
 [DECODED_BLOCK_CACHE.md](ports/dreamcast/DECODED_BLOCK_CACHE.md) covers the bounded
 immutable-file cache, 170 owner/budget/root checks, revised live-heap gate and allocation peak.
+[TARGET_CONFIG_AUDIT.md](ports/dreamcast/TARGET_CONFIG_AUDIT.md) inventories the original
+kernel's PC/profiler/VM/instruction-set branches, scratchpad literals and 8 inline-asm
+functions that need Dreamcast decisions before original startup (host-only source audit).
 
 ## Current verification
 

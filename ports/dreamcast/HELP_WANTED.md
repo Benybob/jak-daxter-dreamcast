@@ -6,7 +6,7 @@ Most compiler/runtime work uses synthetic fixtures and needs no original assets.
 
 | Task | Useful experience | Concrete acceptance target |
 | --- | --- | --- |
-| Remaining full-kernel target configuration | GOAL, platform runtime | Scalar validator now uses explicit stock-RAM/table limits; audit remaining profiler/PC branches, scratchpad and MMIO before original startup |
+| Remaining full-kernel target configuration | GOAL, platform runtime | Scalar validator uses explicit stock-RAM/table limits; the kernel branch/scratchpad/MMIO inventory is in TARGET_CONFIG_AUDIT.md. Choose Dreamcast values for its 6 roots and provide SH-4 paths for its 8 inline-asm functions before original startup |
 | Remaining variadic and vector ABI | SH-4 GCC, GOAL | Fixed scalar mixed calls through eight arguments now pass, including integer stack spills; independently verify mixed variadic and vector boundaries |
 | Remaining process lifecycle and kernel startup | GOAL, runtime systems | Original context/globals/tree/constructors and guarded zero-argument self entry execute; extend ABI/context support, failure unwinding, GC and thread startup |
 | PowerVR scene pipeline | KOS, PVR, graphics | Measured culling/material deduplication and bounded residency on synthetic fixtures before expanding game scenes |
@@ -329,3 +329,8 @@ See [LEXICAL_PP_SCOPES.md](LEXICAL_PP_SCOPES.md). (AI-assisted).
 
 Original global process allocations now record their declared extents independently of mutable process fields. Unchanged original symbol/raw constructors and fixed-pool ownership/return are verified; explicit lexical selection uses trusted span lookup without publishing allocation as execution. Full-table allocation fails before committing memory, stale physical generations refuse, and real native fiber lookup/scope/teardown guards pass. 398 host tests and 23,145 native runtime checks pass in stock 16 MiB Flycast, including 101 new portable and 89 new native ownership checks. The separate 39 numeric checks remain verified. Moving pools, mutable GOAL pp, scheduler startup, GC/unwinding and full gameplay remain unfinished. (AI-assisted)
 See [PROCESS_OWNERSHIP.md](PROCESS_OWNERSHIP.md). (AI-assisted).
+
+## Completed: Original kernel target-configuration inventory
+
+A strict, host-only GOAL reader now inventories every configuration-dependent site in the eight original jak1 kernel files: 6 global-constant roots plus INSTRUCTION_SET, 24 configuration branches (7 inside macro templates), 27 transitively dependent macros/constants/globals, 39 affected top-level forms, 2 scratchpad literals and 8 inline-asm functions with only x86-64/ARM64 bodies. Committed evidence pins LF-normalized source hashes, and a drift check fails when the original source changes. Ten new host tests pass without ISO, SDK or emulator; the same reader parses all 533 jak1 sources. This is an audit, not target configuration: no original values or startup were changed. The dead-pool schema test now skips like other frontend tests when the frontend is not built. (AI-assisted, Claude Code)
+See [TARGET_CONFIG_AUDIT.md](TARGET_CONFIG_AUDIT.md). (AI-assisted).

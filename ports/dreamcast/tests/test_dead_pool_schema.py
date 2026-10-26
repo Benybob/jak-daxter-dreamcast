@@ -7,13 +7,15 @@ import tempfile
 import unittest
 PORT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(PORT))
 import make_dead_pool_schema as schema
+FRONTEND=PORT.parents[2]/'og-host/bin/goalc-dreamcast-ir.exe'
 
 
+@unittest.skipUnless(FRONTEND.is_file(),'build original frontend for dead-pool schema checks')
 class DeadPoolSchemaTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.temp=tempfile.TemporaryDirectory();cls.header=Path(cls.temp.name)/'schema.h'
-        cls.report=schema.generate(PORT.parents[2]/'og-host/bin/goalc-dreamcast-ir.exe',cls.header)
+        cls.report=schema.generate(FRONTEND,cls.header)
         cls.doc=json.loads(cls.header.with_suffix('.ir.json').read_text())
     @classmethod
     def tearDownClass(cls):cls.temp.cleanup()

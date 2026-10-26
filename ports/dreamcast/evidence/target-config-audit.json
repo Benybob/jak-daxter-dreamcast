@@ -1,0 +1,1237 @@
+{
+  "ai_assisted": true,
+  "scope": "Unmodified GOAL source text only; no compilation, linking or execution",
+  "warning": "An unlisted form is not proven portable; hardware literals are candidates",
+  "upstream_commit": "6076aab5a95955443a9e1ed8f72a25bc0e2fcf9d",
+  "sources": [
+    {
+      "path": "goal_src/jak1/kernel/dgo-h.gc",
+      "sha256_lf": "8ecb2971fdf32a1639573ca7b3c3b70a21185c0ec60c716e8cf6b6dc3ea5c4fb",
+      "top_level_forms": 5
+    },
+    {
+      "path": "goal_src/jak1/kernel/gcommon.gc",
+      "sha256_lf": "b568d9982f0b6f63243a4c490ded662172706432e48bf370d59eaf7cc829da2a",
+      "top_level_forms": 103
+    },
+    {
+      "path": "goal_src/jak1/kernel/gkernel-h.gc",
+      "sha256_lf": "c5f6ce8d8b900ad42f91e91f18e17b517e21cfe36ba79b27607f579d7945e3fe",
+      "top_level_forms": 71
+    },
+    {
+      "path": "goal_src/jak1/kernel/gkernel.gc",
+      "sha256_lf": "2aa732f49704f3828f4fe048ed2ac181fbdaa5ffc970f4463f9843fc9e6caaab",
+      "top_level_forms": 141
+    },
+    {
+      "path": "goal_src/jak1/kernel/gstate.gc",
+      "sha256_lf": "d2d2764ed240a6b9f28533fddabbd6ad5f17476e58ba2ea98039c3d57168ddea",
+      "top_level_forms": 34
+    },
+    {
+      "path": "goal_src/jak1/kernel/gstring-h.gc",
+      "sha256_lf": "39258b04b8ca25fe21eaed69ec7d2c5d8953650dc9d0fda170f79ec1e089c84c",
+      "top_level_forms": 9
+    },
+    {
+      "path": "goal_src/jak1/kernel/gstring.gc",
+      "sha256_lf": "510f4fc319846e06e8e0628e7160ac430813d5ef4439fe23e2888ac37c0f64c0",
+      "top_level_forms": 53
+    },
+    {
+      "path": "goal_src/jak1/kernel/pskernel.gc",
+      "sha256_lf": "c9197e063201e11d30669bf6c51cf04c345649d479c85be25d724e342f549246",
+      "top_level_forms": 20
+    }
+  ],
+  "roots": [
+    {
+      "name": "PC_PORT",
+      "file": "goal_src/jak1/kernel/gcommon.gc",
+      "line": 16,
+      "value": "#t"
+    },
+    {
+      "name": "BIG_MEMORY",
+      "file": "goal_src/jak1/kernel/gcommon.gc",
+      "line": 19,
+      "value": "#t"
+    },
+    {
+      "name": "PC_BIG_MEMORY",
+      "file": "goal_src/jak1/kernel/gcommon.gc",
+      "line": 21,
+      "value": "(and PC_PORT BIG_MEMORY)"
+    },
+    {
+      "name": "USE_VM",
+      "file": "goal_src/jak1/kernel/gcommon.gc",
+      "line": 25,
+      "value": "#f"
+    },
+    {
+      "name": "PC_PROFILER_ENABLE",
+      "file": "goal_src/jak1/kernel/gcommon.gc",
+      "line": 29,
+      "value": "#t"
+    },
+    {
+      "name": "KERNEL_DEBUG",
+      "file": "goal_src/jak1/kernel/gkernel-h.gc",
+      "line": 20,
+      "value": "#t"
+    }
+  ],
+  "builtin_roots": [
+    "INSTRUCTION_SET"
+  ],
+  "conditionals": [
+    {
+      "file": "goal_src/jak1/kernel/gcommon.gc",
+      "line": 61,
+      "directive": "#cond",
+      "conditions": [
+        "USE_VM",
+        "#t"
+      ],
+      "config_names": [
+        "USE_VM"
+      ],
+      "config": true,
+      "form": "defmacro get-vm-ptr",
+      "in_template": true
+    },
+    {
+      "file": "goal_src/jak1/kernel/gcommon.gc",
+      "line": 920,
+      "directive": "#when",
+      "conditions": [
+        "PC_PORT"
+      ],
+      "config_names": [
+        "PC_PORT"
+      ],
+      "config": true,
+      "form": "#when",
+      "in_template": false
+    },
+    {
+      "file": "goal_src/jak1/kernel/gcommon.gc",
+      "line": 968,
+      "directive": "#when",
+      "conditions": [
+        "PC_PROFILER_ENABLE"
+      ],
+      "config_names": [
+        "PC_PROFILER_ENABLE"
+      ],
+      "config": true,
+      "form": "defmacro profiler-instant-event",
+      "in_template": true
+    },
+    {
+      "file": "goal_src/jak1/kernel/gcommon.gc",
+      "line": 973,
+      "directive": "#when",
+      "conditions": [
+        "PC_PROFILER_ENABLE"
+      ],
+      "config_names": [
+        "PC_PROFILER_ENABLE"
+      ],
+      "config": true,
+      "form": "defmacro profiler-start-event",
+      "in_template": true
+    },
+    {
+      "file": "goal_src/jak1/kernel/gcommon.gc",
+      "line": 980,
+      "directive": "#when",
+      "conditions": [
+        "PC_PROFILER_ENABLE"
+      ],
+      "config_names": [
+        "PC_PROFILER_ENABLE"
+      ],
+      "config": true,
+      "form": "defmacro profiler-end-event",
+      "in_template": true
+    },
+    {
+      "file": "goal_src/jak1/kernel/gcommon.gc",
+      "line": 987,
+      "directive": "#if",
+      "conditions": [
+        "PC_PROFILER_ENABLE"
+      ],
+      "config_names": [
+        "PC_PROFILER_ENABLE"
+      ],
+      "config": true,
+      "form": "defmacro with-profiler",
+      "in_template": true
+    },
+    {
+      "file": "goal_src/jak1/kernel/gkernel-h.gc",
+      "line": 55,
+      "directive": "#if",
+      "conditions": [
+        "PC_PORT"
+      ],
+      "config_names": [
+        "PC_PORT"
+      ],
+      "config": true,
+      "form": "defconstant PROCESS_STACK_SIZE",
+      "in_template": false
+    },
+    {
+      "file": "goal_src/jak1/kernel/gkernel-h.gc",
+      "line": 61,
+      "directive": "#if",
+      "conditions": [
+        "PC_BIG_MEMORY"
+      ],
+      "config_names": [
+        "PC_BIG_MEMORY"
+      ],
+      "config": true,
+      "form": "#if",
+      "in_template": false
+    },
+    {
+      "file": "goal_src/jak1/kernel/gkernel-h.gc",
+      "line": 466,
+      "directive": "#when",
+      "conditions": [
+        "(or KERNEL_DEBUG)"
+      ],
+      "config_names": [
+        "KERNEL_DEBUG"
+      ],
+      "config": true,
+      "form": "defmacro suspend",
+      "in_template": true
+    },
+    {
+      "file": "goal_src/jak1/kernel/gkernel.gc",
+      "line": 123,
+      "directive": "#cond",
+      "conditions": [
+        "PC_PORT",
+        "else"
+      ],
+      "config_names": [
+        "PC_PORT"
+      ],
+      "config": true,
+      "form": "#cond",
+      "in_template": false
+    },
+    {
+      "file": "goal_src/jak1/kernel/gkernel.gc",
+      "line": 429,
+      "directive": "#cond",
+      "conditions": [
+        "(eq? INSTRUCTION_SET 'arm64)",
+        "#t"
+      ],
+      "config_names": [
+        "INSTRUCTION_SET"
+      ],
+      "config": true,
+      "form": "defun return-from-thread",
+      "in_template": false
+    },
+    {
+      "file": "goal_src/jak1/kernel/gkernel.gc",
+      "line": 481,
+      "directive": "#cond",
+      "conditions": [
+        "(eq? INSTRUCTION_SET 'arm64)",
+        "#t"
+      ],
+      "config_names": [
+        "INSTRUCTION_SET"
+      ],
+      "config": true,
+      "form": "defun return-from-thread-dead",
+      "in_template": false
+    },
+    {
+      "file": "goal_src/jak1/kernel/gkernel.gc",
+      "line": 538,
+      "directive": "#cond",
+      "conditions": [
+        "(eq? INSTRUCTION_SET 'arm64)",
+        "#t"
+      ],
+      "config_names": [
+        "INSTRUCTION_SET"
+      ],
+      "config": true,
+      "form": "defmacro abandon-thread",
+      "in_template": true
+    },
+    {
+      "file": "goal_src/jak1/kernel/gkernel.gc",
+      "line": 561,
+      "directive": "#cond",
+      "conditions": [
+        "(eq? INSTRUCTION_SET 'arm64)",
+        "#t"
+      ],
+      "config_names": [
+        "INSTRUCTION_SET"
+      ],
+      "config": true,
+      "form": "defun reset-and-call",
+      "in_template": false
+    },
+    {
+      "file": "goal_src/jak1/kernel/gkernel.gc",
+      "line": 648,
+      "directive": "#cond",
+      "conditions": [
+        "(eq? INSTRUCTION_SET 'arm64)",
+        "#t"
+      ],
+      "config_names": [
+        "INSTRUCTION_SET"
+      ],
+      "config": true,
+      "form": "defmethod thread-suspend cpu-thread",
+      "in_template": false
+    },
+    {
+      "file": "goal_src/jak1/kernel/gkernel.gc",
+      "line": 827,
+      "directive": "#cond",
+      "conditions": [
+        "(eq? INSTRUCTION_SET 'arm64)",
+        "#t"
+      ],
+      "config_names": [
+        "INSTRUCTION_SET"
+      ],
+      "config": true,
+      "form": "defmethod thread-resume cpu-thread",
+      "in_template": false
+    },
+    {
+      "file": "goal_src/jak1/kernel/gkernel.gc",
+      "line": 1637,
+      "directive": "#when",
+      "conditions": [
+        "KERNEL_DEBUG"
+      ],
+      "config_names": [
+        "KERNEL_DEBUG"
+      ],
+      "config": true,
+      "form": "defun kernel-dispatcher",
+      "in_template": false
+    },
+    {
+      "file": "goal_src/jak1/kernel/gkernel.gc",
+      "line": 1731,
+      "directive": "#cond",
+      "conditions": [
+        "(eq? INSTRUCTION_SET 'arm64)",
+        "#t"
+      ],
+      "config_names": [
+        "INSTRUCTION_SET"
+      ],
+      "config": true,
+      "form": "defmethod new catch-frame",
+      "in_template": false
+    },
+    {
+      "file": "goal_src/jak1/kernel/gkernel.gc",
+      "line": 1892,
+      "directive": "#cond",
+      "conditions": [
+        "(eq? INSTRUCTION_SET 'arm64)",
+        "#t"
+      ],
+      "config_names": [
+        "INSTRUCTION_SET"
+      ],
+      "config": true,
+      "form": "defun throw-dispatch",
+      "in_template": false
+    },
+    {
+      "file": "goal_src/jak1/kernel/gkernel.gc",
+      "line": 2170,
+      "directive": "#when",
+      "conditions": [
+        "PC_PORT"
+      ],
+      "config_names": [
+        "PC_PORT"
+      ],
+      "config": true,
+      "form": "defmethod activate process",
+      "in_template": false
+    },
+    {
+      "file": "goal_src/jak1/kernel/gkernel.gc",
+      "line": 2257,
+      "directive": "#cond",
+      "conditions": [
+        "(eq? INSTRUCTION_SET 'arm64)",
+        "#t"
+      ],
+      "config_names": [
+        "INSTRUCTION_SET"
+      ],
+      "config": true,
+      "form": "defun set-to-run-bootstrap",
+      "in_template": false
+    },
+    {
+      "file": "goal_src/jak1/kernel/gkernel.gc",
+      "line": 2404,
+      "directive": "#cond",
+      "conditions": [
+        "(eq? INSTRUCTION_SET 'arm64)",
+        "#t"
+      ],
+      "config_names": [
+        "INSTRUCTION_SET"
+      ],
+      "config": true,
+      "form": "defmethod deactivate process",
+      "in_template": false
+    },
+    {
+      "file": "goal_src/jak1/kernel/gstate.gc",
+      "line": 346,
+      "directive": "#cond",
+      "conditions": [
+        "(eq? INSTRUCTION_SET 'arm64)",
+        "#t"
+      ],
+      "config_names": [
+        "INSTRUCTION_SET"
+      ],
+      "config": true,
+      "form": "defun enter-state",
+      "in_template": false
+    },
+    {
+      "file": "goal_src/jak1/kernel/gstate.gc",
+      "line": 422,
+      "directive": "#cond",
+      "conditions": [
+        "(eq? INSTRUCTION_SET 'arm64)",
+        "#t"
+      ],
+      "config_names": [
+        "INSTRUCTION_SET"
+      ],
+      "config": true,
+      "form": "defun enter-state",
+      "in_template": false
+    }
+  ],
+  "dependent_definitions": [
+    {
+      "name": "get-vm-ptr",
+      "kind": "macro",
+      "file": "goal_src/jak1/kernel/gcommon.gc",
+      "line": 59,
+      "reason": "references",
+      "via": [
+        "USE_VM"
+      ]
+    },
+    {
+      "name": "profiler-instant-event",
+      "kind": "macro",
+      "file": "goal_src/jak1/kernel/gcommon.gc",
+      "line": 962,
+      "reason": "references",
+      "via": [
+        "PC_PROFILER_ENABLE"
+      ]
+    },
+    {
+      "name": "profiler-start-event",
+      "kind": "macro",
+      "file": "goal_src/jak1/kernel/gcommon.gc",
+      "line": 971,
+      "reason": "references",
+      "via": [
+        "PC_PROFILER_ENABLE"
+      ]
+    },
+    {
+      "name": "profiler-end-event",
+      "kind": "macro",
+      "file": "goal_src/jak1/kernel/gcommon.gc",
+      "line": 976,
+      "reason": "references",
+      "via": [
+        "PC_PROFILER_ENABLE"
+      ]
+    },
+    {
+      "name": "with-profiler",
+      "kind": "macro",
+      "file": "goal_src/jak1/kernel/gcommon.gc",
+      "line": 983,
+      "reason": "references",
+      "via": [
+        "PC_PROFILER_ENABLE"
+      ]
+    },
+    {
+      "name": "*scratch-memory-top*",
+      "kind": "constant",
+      "file": "goal_src/jak1/kernel/gkernel-h.gc",
+      "line": 27,
+      "reason": "hardware-address",
+      "via": [
+        "#x70004000"
+      ]
+    },
+    {
+      "name": "PROCESS_STACK_SIZE",
+      "kind": "constant",
+      "file": "goal_src/jak1/kernel/gkernel-h.gc",
+      "line": 55,
+      "reason": "references",
+      "via": [
+        "PC_PORT"
+      ]
+    },
+    {
+      "name": "PROCESS_HEAP_MULT",
+      "kind": "constant",
+      "file": "goal_src/jak1/kernel/gkernel-h.gc",
+      "line": 62,
+      "reason": "inside-config-branch",
+      "via": [
+        "PC_BIG_MEMORY"
+      ]
+    },
+    {
+      "name": "PROCESS_HEAP_MULT",
+      "kind": "constant",
+      "file": "goal_src/jak1/kernel/gkernel-h.gc",
+      "line": 63,
+      "reason": "inside-config-branch",
+      "via": [
+        "PC_BIG_MEMORY"
+      ]
+    },
+    {
+      "name": "PROCESS_HEAP_SIZE",
+      "kind": "constant",
+      "file": "goal_src/jak1/kernel/gkernel-h.gc",
+      "line": 65,
+      "reason": "references",
+      "via": [
+        "PROCESS_HEAP_MULT"
+      ]
+    },
+    {
+      "name": "suspend",
+      "kind": "macro",
+      "file": "goal_src/jak1/kernel/gkernel-h.gc",
+      "line": 462,
+      "reason": "references",
+      "via": [
+        "KERNEL_DEBUG"
+      ]
+    },
+    {
+      "name": "scratchpad-object",
+      "kind": "macro",
+      "file": "goal_src/jak1/kernel/gkernel-h.gc",
+      "line": 540,
+      "reason": "references",
+      "via": [
+        "*fake-scratchpad-data*"
+      ]
+    },
+    {
+      "name": "scratchpad-ptr",
+      "kind": "macro",
+      "file": "goal_src/jak1/kernel/gkernel-h.gc",
+      "line": 544,
+      "reason": "references",
+      "via": [
+        "*fake-scratchpad-data*"
+      ]
+    },
+    {
+      "name": "*fake-scratchpad-data*",
+      "kind": "global",
+      "file": "goal_src/jak1/kernel/gkernel.gc",
+      "line": 129,
+      "reason": "inside-config-branch",
+      "via": [
+        "PC_PORT"
+      ]
+    },
+    {
+      "name": "*fake-scratchpad-stack*",
+      "kind": "global",
+      "file": "goal_src/jak1/kernel/gkernel.gc",
+      "line": 132,
+      "reason": "inside-config-branch",
+      "via": [
+        "PC_PORT"
+      ]
+    },
+    {
+      "name": "scratchpad-start",
+      "kind": "macro",
+      "file": "goal_src/jak1/kernel/gkernel.gc",
+      "line": 133,
+      "reason": "inside-config-branch",
+      "via": [
+        "PC_PORT"
+      ]
+    },
+    {
+      "name": "scratchpad-start",
+      "kind": "macro",
+      "file": "goal_src/jak1/kernel/gkernel.gc",
+      "line": 136,
+      "reason": "inside-config-branch",
+      "via": [
+        "PC_PORT"
+      ]
+    },
+    {
+      "name": "scratchpad-end",
+      "kind": "macro",
+      "file": "goal_src/jak1/kernel/gkernel.gc",
+      "line": 138,
+      "reason": "references",
+      "via": [
+        "scratchpad-start"
+      ]
+    },
+    {
+      "name": "in-scratchpad?",
+      "kind": "macro",
+      "file": "goal_src/jak1/kernel/gkernel.gc",
+      "line": 142,
+      "reason": "references",
+      "via": [
+        "scratchpad-end",
+        "scratchpad-start"
+      ]
+    },
+    {
+      "name": "abandon-thread",
+      "kind": "macro",
+      "file": "goal_src/jak1/kernel/gkernel.gc",
+      "line": 530,
+      "reason": "references",
+      "via": [
+        "INSTRUCTION_SET"
+      ]
+    },
+    {
+      "name": "*nk-dead-pool*",
+      "kind": "global",
+      "file": "goal_src/jak1/kernel/gkernel.gc",
+      "line": 2454,
+      "reason": "references",
+      "via": [
+        "PROCESS_HEAP_MULT",
+        "PROCESS_HEAP_SIZE"
+      ]
+    },
+    {
+      "name": "*default-dead-pool*",
+      "kind": "global",
+      "file": "goal_src/jak1/kernel/gkernel.gc",
+      "line": 2457,
+      "reason": "references",
+      "via": [
+        "*nk-dead-pool*"
+      ]
+    },
+    {
+      "name": "*pickup-dead-pool*",
+      "kind": "global",
+      "file": "goal_src/jak1/kernel/gkernel.gc",
+      "line": 2459,
+      "reason": "references",
+      "via": [
+        "*nk-dead-pool*"
+      ]
+    },
+    {
+      "name": "*dead-pool-list*",
+      "kind": "global",
+      "file": "goal_src/jak1/kernel/gkernel.gc",
+      "line": 2462,
+      "reason": "references",
+      "via": [
+        "*nk-dead-pool*"
+      ]
+    },
+    {
+      "name": "process-spawn-function",
+      "kind": "macro",
+      "file": "goal_src/jak1/kernel/gstate.gc",
+      "line": 82,
+      "reason": "references",
+      "via": [
+        "*default-dead-pool*",
+        "*scratch-memory-top*"
+      ]
+    },
+    {
+      "name": "process-spawn",
+      "kind": "macro",
+      "file": "goal_src/jak1/kernel/gstate.gc",
+      "line": 92,
+      "reason": "references",
+      "via": [
+        "*default-dead-pool*",
+        "*scratch-memory-top*"
+      ]
+    },
+    {
+      "name": "suspend-for",
+      "kind": "macro",
+      "file": "goal_src/jak1/kernel/gstate.gc",
+      "line": 483,
+      "reason": "references",
+      "via": [
+        "suspend"
+      ]
+    }
+  ],
+  "use_sites": [
+    {
+      "file": "goal_src/jak1/kernel/gcommon.gc",
+      "line": 21,
+      "form": "defglobalconstant PC_BIG_MEMORY",
+      "names": {
+        "BIG_MEMORY": [
+          21
+        ],
+        "PC_PORT": [
+          21
+        ]
+      }
+    },
+    {
+      "file": "goal_src/jak1/kernel/gcommon.gc",
+      "line": 59,
+      "form": "defmacro get-vm-ptr",
+      "names": {
+        "USE_VM": [
+          62
+        ]
+      }
+    },
+    {
+      "file": "goal_src/jak1/kernel/gcommon.gc",
+      "line": 920,
+      "form": "#when",
+      "names": {
+        "PC_PORT": [
+          920
+        ]
+      }
+    },
+    {
+      "file": "goal_src/jak1/kernel/gcommon.gc",
+      "line": 962,
+      "form": "defmacro profiler-instant-event",
+      "names": {
+        "PC_PROFILER_ENABLE": [
+          968
+        ]
+      }
+    },
+    {
+      "file": "goal_src/jak1/kernel/gcommon.gc",
+      "line": 971,
+      "form": "defmacro profiler-start-event",
+      "names": {
+        "PC_PROFILER_ENABLE": [
+          973
+        ]
+      }
+    },
+    {
+      "file": "goal_src/jak1/kernel/gcommon.gc",
+      "line": 976,
+      "form": "defmacro profiler-end-event",
+      "names": {
+        "PC_PROFILER_ENABLE": [
+          980
+        ]
+      }
+    },
+    {
+      "file": "goal_src/jak1/kernel/gcommon.gc",
+      "line": 983,
+      "form": "defmacro with-profiler",
+      "names": {
+        "PC_PROFILER_ENABLE": [
+          987
+        ]
+      }
+    },
+    {
+      "file": "goal_src/jak1/kernel/gkernel-h.gc",
+      "line": 55,
+      "form": "defconstant PROCESS_STACK_SIZE",
+      "names": {
+        "PC_PORT": [
+          55
+        ]
+      }
+    },
+    {
+      "file": "goal_src/jak1/kernel/gkernel-h.gc",
+      "line": 61,
+      "form": "#if",
+      "names": {
+        "PC_BIG_MEMORY": [
+          61
+        ]
+      }
+    },
+    {
+      "file": "goal_src/jak1/kernel/gkernel-h.gc",
+      "line": 65,
+      "form": "defconstant PROCESS_HEAP_SIZE",
+      "names": {
+        "PROCESS_HEAP_MULT": [
+          65
+        ]
+      }
+    },
+    {
+      "file": "goal_src/jak1/kernel/gkernel-h.gc",
+      "line": 462,
+      "form": "defmacro suspend",
+      "names": {
+        "KERNEL_DEBUG": [
+          466
+        ]
+      }
+    },
+    {
+      "file": "goal_src/jak1/kernel/gkernel-h.gc",
+      "line": 540,
+      "form": "defmacro scratchpad-object",
+      "names": {
+        "*fake-scratchpad-data*": [
+          542
+        ]
+      }
+    },
+    {
+      "file": "goal_src/jak1/kernel/gkernel-h.gc",
+      "line": 544,
+      "form": "defmacro scratchpad-ptr",
+      "names": {
+        "*fake-scratchpad-data*": [
+          546
+        ]
+      }
+    },
+    {
+      "file": "goal_src/jak1/kernel/gkernel.gc",
+      "line": 116,
+      "form": "set!",
+      "names": {
+        "*scratch-memory-top*": [
+          116
+        ]
+      }
+    },
+    {
+      "file": "goal_src/jak1/kernel/gkernel.gc",
+      "line": 123,
+      "form": "#cond",
+      "names": {
+        "*fake-scratchpad-data*": [
+          132,
+          135
+        ],
+        "PC_PORT": [
+          124
+        ]
+      }
+    },
+    {
+      "file": "goal_src/jak1/kernel/gkernel.gc",
+      "line": 138,
+      "form": "defmacro scratchpad-end",
+      "names": {
+        "scratchpad-start": [
+          140
+        ]
+      }
+    },
+    {
+      "file": "goal_src/jak1/kernel/gkernel.gc",
+      "line": 142,
+      "form": "defmacro in-scratchpad?",
+      "names": {
+        "scratchpad-end": [
+          144
+        ],
+        "scratchpad-start": [
+          144
+        ]
+      }
+    },
+    {
+      "file": "goal_src/jak1/kernel/gkernel.gc",
+      "line": 202,
+      "form": "defmethod new cpu-thread",
+      "names": {
+        "PROCESS_STACK_SIZE": [
+          215
+        ]
+      }
+    },
+    {
+      "file": "goal_src/jak1/kernel/gkernel.gc",
+      "line": 420,
+      "form": "defun return-from-thread",
+      "names": {
+        "INSTRUCTION_SET": [
+          430
+        ]
+      }
+    },
+    {
+      "file": "goal_src/jak1/kernel/gkernel.gc",
+      "line": 475,
+      "form": "defun return-from-thread-dead",
+      "names": {
+        "INSTRUCTION_SET": [
+          482
+        ]
+      }
+    },
+    {
+      "file": "goal_src/jak1/kernel/gkernel.gc",
+      "line": 530,
+      "form": "defmacro abandon-thread",
+      "names": {
+        "INSTRUCTION_SET": [
+          539
+        ]
+      }
+    },
+    {
+      "file": "goal_src/jak1/kernel/gkernel.gc",
+      "line": 554,
+      "form": "defun reset-and-call",
+      "names": {
+        "INSTRUCTION_SET": [
+          562
+        ]
+      }
+    },
+    {
+      "file": "goal_src/jak1/kernel/gkernel.gc",
+      "line": 642,
+      "form": "defmethod thread-suspend cpu-thread",
+      "names": {
+        "INSTRUCTION_SET": [
+          649
+        ]
+      }
+    },
+    {
+      "file": "goal_src/jak1/kernel/gkernel.gc",
+      "line": 820,
+      "form": "defmethod thread-resume cpu-thread",
+      "names": {
+        "INSTRUCTION_SET": [
+          828
+        ]
+      }
+    },
+    {
+      "file": "goal_src/jak1/kernel/gkernel.gc",
+      "line": 1590,
+      "form": "defun kernel-dispatcher",
+      "names": {
+        "KERNEL_DEBUG": [
+          1637
+        ],
+        "profiler-end-event": [
+          1645,
+          1659,
+          1674,
+          1678
+        ],
+        "profiler-instant-event": [
+          1594
+        ],
+        "profiler-start-event": [
+          1613
+        ]
+      }
+    },
+    {
+      "file": "goal_src/jak1/kernel/gkernel.gc",
+      "line": 1723,
+      "form": "defmethod new catch-frame",
+      "names": {
+        "INSTRUCTION_SET": [
+          1732
+        ]
+      }
+    },
+    {
+      "file": "goal_src/jak1/kernel/gkernel.gc",
+      "line": 1888,
+      "form": "defun throw-dispatch",
+      "names": {
+        "INSTRUCTION_SET": [
+          1893
+        ]
+      }
+    },
+    {
+      "file": "goal_src/jak1/kernel/gkernel.gc",
+      "line": 2167,
+      "form": "defmethod activate process",
+      "names": {
+        "*fake-scratchpad-stack*": [
+          2172
+        ],
+        "*scratch-memory-top*": [
+          2171
+        ],
+        "PC_PORT": [
+          2170
+        ]
+      }
+    },
+    {
+      "file": "goal_src/jak1/kernel/gkernel.gc",
+      "line": 2247,
+      "form": "defun set-to-run-bootstrap",
+      "names": {
+        "INSTRUCTION_SET": [
+          2258
+        ]
+      }
+    },
+    {
+      "file": "goal_src/jak1/kernel/gkernel.gc",
+      "line": 2352,
+      "form": "defmethod deactivate process",
+      "names": {
+        "INSTRUCTION_SET": [
+          2405
+        ]
+      }
+    },
+    {
+      "file": "goal_src/jak1/kernel/gkernel.gc",
+      "line": 2454,
+      "form": "define *nk-dead-pool*",
+      "names": {
+        "*nk-dead-pool*": [
+          2454
+        ],
+        "PROCESS_HEAP_MULT": [
+          2454
+        ],
+        "PROCESS_HEAP_SIZE": [
+          2454
+        ]
+      }
+    },
+    {
+      "file": "goal_src/jak1/kernel/gkernel.gc",
+      "line": 2457,
+      "form": "define *default-dead-pool*",
+      "names": {
+        "*nk-dead-pool*": [
+          2457
+        ]
+      }
+    },
+    {
+      "file": "goal_src/jak1/kernel/gkernel.gc",
+      "line": 2459,
+      "form": "define *pickup-dead-pool*",
+      "names": {
+        "*nk-dead-pool*": [
+          2459
+        ]
+      }
+    },
+    {
+      "file": "goal_src/jak1/kernel/gkernel.gc",
+      "line": 2462,
+      "form": "define *dead-pool-list*",
+      "names": {
+        "*nk-dead-pool*": [
+          2465
+        ]
+      }
+    },
+    {
+      "file": "goal_src/jak1/kernel/gstate.gc",
+      "line": 82,
+      "form": "defmacro process-spawn-function",
+      "names": {
+        "*default-dead-pool*": [
+          82
+        ],
+        "*scratch-memory-top*": [
+          82
+        ]
+      }
+    },
+    {
+      "file": "goal_src/jak1/kernel/gstate.gc",
+      "line": 92,
+      "form": "defmacro process-spawn",
+      "names": {
+        "*default-dead-pool*": [
+          92
+        ],
+        "*scratch-memory-top*": [
+          92
+        ]
+      }
+    },
+    {
+      "file": "goal_src/jak1/kernel/gstate.gc",
+      "line": 284,
+      "form": "defun enter-state",
+      "names": {
+        "INSTRUCTION_SET": [
+          347,
+          423
+        ]
+      }
+    },
+    {
+      "file": "goal_src/jak1/kernel/gstate.gc",
+      "line": 465,
+      "form": "defun looping-code",
+      "names": {
+        "suspend": [
+          468
+        ]
+      }
+    },
+    {
+      "file": "goal_src/jak1/kernel/gstate.gc",
+      "line": 483,
+      "form": "defmacro suspend-for",
+      "names": {
+        "suspend": [
+          484
+        ]
+      }
+    }
+  ],
+  "hardware_addresses": [
+    {
+      "file": "goal_src/jak1/kernel/gkernel-h.gc",
+      "line": 27,
+      "value": "#x70004000",
+      "region": "scratchpad",
+      "form": "defconstant *scratch-memory-top*",
+      "in_template": false
+    },
+    {
+      "file": "goal_src/jak1/kernel/gkernel.gc",
+      "line": 136,
+      "value": "#x70000000",
+      "region": "scratchpad",
+      "form": "#cond",
+      "in_template": false
+    }
+  ],
+  "asm_functions": [
+    {
+      "file": "goal_src/jak1/kernel/gkernel.gc",
+      "line": 420,
+      "form": "defun return-from-thread",
+      "instruction_set_conditional": true
+    },
+    {
+      "file": "goal_src/jak1/kernel/gkernel.gc",
+      "line": 475,
+      "form": "defun return-from-thread-dead",
+      "instruction_set_conditional": true
+    },
+    {
+      "file": "goal_src/jak1/kernel/gkernel.gc",
+      "line": 554,
+      "form": "defun reset-and-call",
+      "instruction_set_conditional": true
+    },
+    {
+      "file": "goal_src/jak1/kernel/gkernel.gc",
+      "line": 642,
+      "form": "defmethod thread-suspend cpu-thread",
+      "instruction_set_conditional": true
+    },
+    {
+      "file": "goal_src/jak1/kernel/gkernel.gc",
+      "line": 820,
+      "form": "defmethod thread-resume cpu-thread",
+      "instruction_set_conditional": true
+    },
+    {
+      "file": "goal_src/jak1/kernel/gkernel.gc",
+      "line": 1723,
+      "form": "defmethod new catch-frame",
+      "instruction_set_conditional": true
+    },
+    {
+      "file": "goal_src/jak1/kernel/gkernel.gc",
+      "line": 1888,
+      "form": "defun throw-dispatch",
+      "instruction_set_conditional": true
+    },
+    {
+      "file": "goal_src/jak1/kernel/gkernel.gc",
+      "line": 2247,
+      "form": "defun set-to-run-bootstrap",
+      "instruction_set_conditional": true
+    }
+  ],
+  "summary": {
+    "roots": 6,
+    "conditionals": 24,
+    "config_conditionals": 24,
+    "config_conditionals_in_templates": 7,
+    "config_names_used": {
+      "INSTRUCTION_SET": 12,
+      "KERNEL_DEBUG": 2,
+      "PC_BIG_MEMORY": 1,
+      "PC_PORT": 4,
+      "PC_PROFILER_ENABLE": 4,
+      "USE_VM": 1
+    },
+    "dependent_definitions": 27,
+    "use_sites": 39,
+    "hardware_addresses": 2,
+    "asm_functions": 8,
+    "asm_functions_without_instruction_set_branch": 0
+  }
+}
