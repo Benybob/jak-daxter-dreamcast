@@ -24,7 +24,7 @@
       }
     },
     "gkernel.gc": {
-      "lowered": 65,
+      "lowered": 66,
       "total": 75,
       "refused": {
         "(method inspect dead-pool-heap)": "unsupported integer call argument",
@@ -34,7 +34,6 @@
         "reset-and-call": "inline/assembly functions unsupported",
         "return-from-thread": "inline/assembly functions unsupported",
         "return-from-thread-dead": "inline/assembly functions unsupported",
-        "run-function-in-process": "unsupported typed IR operation unsupported",
         "set-to-run-bootstrap": "inline/assembly functions unsupported",
         "throw-dispatch": "inline/assembly functions unsupported"
       }
@@ -51,15 +50,14 @@
     }
   },
   "summary": {
-    "lowered": 166,
+    "lowered": 167,
     "total": 184,
     "reasons": {
       "inline/assembly functions unsupported": 8,
       "128-bit/vector register lowering not implemented": 4,
       "bootstrap ABI requires a numeric return type": 2,
       "mixed variadic call ABI not verified": 2,
-      "unsupported integer call argument": 1,
-      "unsupported typed IR operation unsupported": 1
+      "unsupported integer call argument": 1
     }
   }
 }

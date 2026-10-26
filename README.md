@@ -28,7 +28,7 @@ cover the supported subset; expert human review is still needed.
 | Resident color textures | Source published: 70 original color maps verified in VRAM; staged failure preserves old owner; base-pass geometry integrated in bounded native movement |
 | Original background LODs | Source published: original LOD selection; reduced training patch passes movement and camera checks |
 | Original kernel process system | Source published: unchanged original `send-event-function`, `deactivate`, `(suspend)`, `enter-state` and `kernel-dispatcher` (including trans/post hooks) run on native SH-4 fibers |
-| Original kernel compilation | 166 of 184 original kernel functions lower to SH-4 (gcommon 57/65, gkernel 65/75, gstate 6/6, gstring 38/38); reproducible survey |
+| Original kernel compilation | 167 of 184 original kernel functions lower to SH-4 (gcommon 57/65, gkernel 66/75, gstate 6/6, gstring 38/38); reproducible survey |
 | Full original game | Unfinished: no process initialization (catch/throw), complete kernel boot, general gameplay, progression or release build |
 
 The playable prototypes use a **native C controller**, as a temporary milestone.
@@ -82,10 +82,10 @@ and checkpoints, not a percentage of game completion or a single full-game run.
 
 | Area | Locally verified scope |
 | --- | --- |
-| Host | 430 tests pass with the complete local SDK/oracle setup |
-| GOAL runtime | 23,556 native checks at its latest verified checkpoint |
+| Host | 443 tests pass with the complete local SDK/oracle setup |
+| GOAL runtime | 23,639 native checks at its latest verified checkpoint |
 | Numeric regression | 39 native checks |
-| Original kernel processes | Events, deactivation (including self-deactivation on a fiber), suspension across destroyed stacks, state transitions and four-frame scheduling with trans/post hooks, inside the 23,556 runtime checks |
+| Original kernel processes | Events, deactivation (including self-deactivation on a fiber), suspension across destroyed stacks, state transitions and four-frame scheduling with trans/post hooks, inside the 23,639 runtime checks |
 | Kernel compilation coverage | 166/184 original kernel functions lower; remaining refusals named in `evidence/kernel-lowering-survey.json` |
 | Prototype movement | 318 native checks; visible test-map controller and platform paths pass |
 | Original collision | 789 synthetic native checks; 2,063 combined checks including the original 576-triangle patch |
@@ -125,6 +125,12 @@ not executed by these native tests; runtime and renderer are separate programs.
 
 ## Latest completed contributor task
 
+Original frontend stack arrays and boxed stack objects now execute on SH-4 in both compiler modes, including calls, lexical cleanup and suspension after destroyed working stacks. The unchanged original run-function-in-process now compiles in both modes; native catch/throw execution remains next. 443 host tests, 23,639 native runtime checks (83 new) and 39 freshly rebuilt numeric checks pass in stock 16 MiB Flycast. Full kernel boot and gameplay remain unfinished. (AI-assisted: Codex with reviewed human-authorized Grok proposal; prior kernel process-system work by Claude Code)
+
+See [KERNEL_STACK_OBJECTS.md](ports/dreamcast/KERNEL_STACK_OBJECTS.md). Full kernel/gameplay remains unfinished.
+
+### Previous: kernel lifetime guards
+
 Claude Code's original dispatcher, trans/post hooks, state transitions, suspension and deactivation are integrated and independently verified. Native fibers now capture the physical process allocation generation; stale continuations and registered scheduler hooks refuse before restoring stacks or changing process fields. The original same-address suspended-resume defect was reproduced and corrected. 430 host tests, 23,556 native runtime checks (35 new lifetime/layout checks) and a freshly rebuilt 39-check numeric regression pass in stock 16 MiB Flycast. Original stack objects/catch/throw, full kernel boot, moving heaps/GC and full gameplay remain unfinished. (AI-assisted, Codex with human-authorized Grok review; prior kernel work by Claude Code)
 
 See [KERNEL_OWNERSHIP_LIFETIMES.md](ports/dreamcast/KERNEL_OWNERSHIP_LIFETIMES.md). Full kernel/gameplay remains unfinished.
@@ -160,7 +166,7 @@ See [PROCESS_OWNERSHIP.md](ports/dreamcast/PROCESS_OWNERSHIP.md). Full kernel/ga
 Source is in `ports/dreamcast/`. Follow [BUILDING.md](ports/dreamcast/BUILDING.md).
 The verified baseline is OpenGOAL `6076aab5a95955443a9e1ed8f72a25bc0e2fcf9d`;
 the earlier verified port source checkpoint is
-`9eb2b5ae9d10c41d52e4fb8319a81e6b7b6159e4`. The kernel process-system milestones
+`e54981bd229e1839fc0d39382187ba5e3853ddfd`. The kernel process-system milestones
 are verified at the tip of the `dreamcast` branch; each milestone's
 `ports/dreamcast/evidence/*-verification.json` records its ELF hash and counts.
 

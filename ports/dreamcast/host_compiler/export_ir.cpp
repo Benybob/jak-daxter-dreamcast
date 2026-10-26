@@ -194,6 +194,12 @@ static json instruction(IR* ir,const StaticNames& statics,const TypeSystem& type
     output["target"]=rai.jumps[0];
   } else if(dynamic_cast<IR_Return*>(ir)) {
     output["kind"]="return";
+  } else if(auto* stack_addr=dynamic_cast<IR_GetStackAddr*>(ir)) {
+    // slot() is the typed accessor. Never parse the print text.
+    const int slot=stack_addr->slot();
+    if(slot<0 || !output["reads"].empty() || output["writes"].size()!=1)
+      throw std::runtime_error("invalid stack address operation");
+    output["kind"]="stack_address"; output["slot"]=slot;
   } else if(dynamic_cast<IR_Null*>(ir)||dynamic_cast<IR_Nop*>(ir)||dynamic_cast<IR_ValueReset*>(ir)) {
     output["kind"]="nop";
   }
@@ -343,9 +349,15 @@ int main(int argc,char** argv) {
       output["statics"].push_back(std::move(entry));
     }
     for(const auto& function:file->functions()) {
+      const int stack_object_slots=function->stack_slots_used_for_stack_vars();
+      // Export original metadata even for unselected functions. The native
+      // lowerer enforces its frame budget on the functions actually selected.
+      if(stack_object_slots<0)
+        throw std::runtime_error("stack object slot count out of range in "+function->name());
       json fn={{"name",function->name()},{"asm",function->is_asm_func},
                {"return_type","none"},{"return_abi_type","none"},
                {"top_level",function.get()==&file->top_level_function()},
+               {"stack_slots_used_for_stack_vars",stack_object_slots},
                {"registers",json::array()},{"parameters",json::array()},{"instructions",json::array()}};
       export_parameters(*function,compiler.type_system(),fn);
       BlockEnv* shared_block=nullptr;
@@ -475,6 +487,23 @@ int main(int argc,char** argv) {
               json::array({shared_block->return_value->ireg().id});
           exported["writes"]=json::array();
           exported["text"]="shared function exit";
+        }
+        if(exported["kind"]=="stack_address") {
+          if(!exported["reads"].empty() || exported["writes"].size()!=1)
+            throw std::runtime_error("stack address read/write shape in "+function->name());
+          const int slot=exported["slot"].get<int>();
+          if(slot<0 || slot>=stack_object_slots)
+            throw std::runtime_error("stack address slot outside reservation in "+function->name());
+          const int dest=exported["writes"][0].get<int>();
+          const auto record=register_records.find(dest);
+          if(record==register_records.end() || record->second.at("class")!="gpr64")
+            throw std::runtime_error("stack address destination requires a scalar register in "+function->name());
+          if(fixed_registers.count(dest))
+            throw std::runtime_error("stack address destination overlaps a fixed register in "+function->name());
+          const std::string abi=record->second.at("abi_type").get<std::string>();
+          if(abi!="object" && abi!="pointer" &&
+             !(abi.size()>=11 && abi.compare(0,9,"(pointer ")==0 && abi.back()==')'))
+            throw std::runtime_error("stack address destination is not a scalar address in "+function->name());
         }
         fn["instructions"].push_back(std::move(exported));
         ++position;

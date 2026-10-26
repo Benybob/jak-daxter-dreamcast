@@ -1,5 +1,12 @@
 # Jak 1 on Dreamcast: experimental port workbench
 
+**2026-10-26 (AI-assisted):** [Kernel stack objects](KERNEL_STACK_OBJECTS.md)
+now survive calls, lexical process scopes and original suspension in both
+compiler modes. The unchanged original `run-function-in-process` now compiles;
+native catch/throw execution is the next dependency. 443 host tests, 23,639
+runtime checks and 39 numeric checks pass in stock 16 MiB Flycast. The kernel
+lowering survey reaches 167/184 functions; full kernel boot remains unfinished.
+
 **2026-10-26 (AI-assisted):** [Kernel lifetime guards](KERNEL_OWNERSHIP_LIFETIMES.md)
 extend Claude Code's original dispatcher, state and deactivation work. Suspended
 fibers and scheduler hooks now refuse a reclaimed process generation before

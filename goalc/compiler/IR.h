@@ -426,6 +426,7 @@ class IR_GetStackAddr : public IR {
   IR_GetStackAddr(const RegVal* dest, int slot);
   std::string print() override;
   RegAllocInstr to_rai() override;
+  int slot() const { return m_slot; }
   void do_codegen_x86(emitter::ObjectGenerator* gen,
                       const AllocationResult& allocs,
                       emitter::IR_Record irec) override;

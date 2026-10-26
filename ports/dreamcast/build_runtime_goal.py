@@ -260,10 +260,20 @@ def main():
         '--function','kernel-dispatcher','--function','anon-function-5','--function','(method run-logic? process)',
         '--function','(method delete thread)',
         '--header',str(port/'build/original_dispatcher.h')],check=True)
+    stack_functions=['(method new dc-stack-record)']+['dc-stack-'+name for name in
+        ('distinct','alignment','high-word','bounds','boxed','sum4','outgoing','touch','mixed','spill','plus-one','lexical','suspend')]
+    for baseline in (False,True):
+        stem='stack_objects_baseline' if baseline else 'stack_objects_fixture'
+        command=compiler+process_context+['--preload',str(port.parents[1]/'goal_src/jak1/kernel/gkernel.gc'),
+            '--source',str(port/'stack_objects_fixture.gc'),'--header',str(port/'build'/(stem+'.h')),
+            '--initializer','dc-stack-baseline-init' if baseline else 'dc-stack-fixture-init']
+        if baseline:command+=['--no-optimize']
+        for name in stack_functions:command+=['--function',name]
+        subprocess.run(command,check=True)
     subprocess.run([sys.executable,str(port/'build_dreamcast.py'),'--msys',str(args.msys),'--target','jak-dc-runtime-goal.elf'],check=True)
     if args.verify:
         subprocess.run([sys.executable,str(port/'verify_backend.py'),str(args.flycast),
                         str(port/'jak-dc-runtime-goal.elf'),'--nm',str(args.nm),'--output',str(args.output),
-                        '--tests','23556','--suite','runtime-goal'],check=True)
+                        '--tests','23639','--suite','runtime-goal'],check=True)
 
 if __name__=='__main__': main()

@@ -185,6 +185,32 @@ def allocate_slots(function):
         colors[value]=color
     return {value:color*8 for value,color in colors.items()}
 
+def stack_object_reservation(function,registers,fixed,runtime):
+    """Validate original FunctionEnv capacity, never infer it from addresses."""
+    addresses=[op for op in function['instructions'] if op.get('kind')=='stack_address']
+    if 'stack_slots_used_for_stack_vars' not in function:
+        if addresses: raise ValueError('stack address operation missing stack slot count')
+        return 0
+    count=function['stack_slots_used_for_stack_vars']
+    if type(count) is not int or count<0 or count>4096//8:
+        raise ValueError('stack object slot count out of range')
+    if (count or addresses) and not runtime:
+        raise ValueError('stack objects require native runtime profile')
+    for op in addresses:
+        reads,writes,slot=op.get('reads'),op.get('writes'),op.get('slot')
+        if not isinstance(reads,list) or not isinstance(writes,list) or reads or len(writes)!=1:
+            raise ValueError('stack address operation must write one register and read none')
+        dest=writes[0]
+        if type(slot) is not int or slot<0 or slot>=count:
+            raise ValueError('stack address slot outside reserved stack objects')
+        if type(dest) is not int or dest not in registers or registers[dest].get('class')!='gpr64':
+            raise ValueError('stack address destination requires a scalar register')
+        if scalar_kind(registers[dest].get('type'),True) not in ('object','pointer'):
+            raise ValueError('stack address destination is not a scalar address')
+        if dest in fixed:
+            raise ValueError('stack address destination overlaps a fixed register')
+    return count
+
 LEXICAL_SCOPE_KINDS=('process_scope_enter','process_scope_leave')
 
 def normalize_register_asm(function):
@@ -545,6 +571,8 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
         elif registers[index]['class']!='gpr64' or registers[index]['type'] not in ('uint','int','integer'):
             raise ValueError('fixed symbol-table register requires an integer container')
         fixed[index]=binding
+    # Check stack-op shapes before generic CFG/definition walkers inspect them.
+    stack_objects=stack_object_reservation(function,registers,fixed,runtime)
     if len(context_reads)>1:
         raise ValueError('ambiguous read-only process context')
     if len(lexical)>1 or (lexical and context_reads):
@@ -625,13 +653,13 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
     for kind in parameter_types:
         if kind not in value_types|{'float'}:
             raise ValueError('bootstrap ABI currently accepts numeric parameters only' if not runtime else 'unsupported tagged/scalar parameter')
-    if void_return and all(op['kind']=='nop' for op in function['instructions']):
+    if not stack_objects and void_return and all(op['kind']=='nop' for op in function['instructions']):
         e=Emitter(); e.ret(); data,relocations=e.finish()
         return data,{'name':function['name'],'bytes':len(data),'stack_bytes':0,
                      'relocations':relocations,'optimization':'empty_void_return',
                      'instruction_stream_bytes':len(data),'literal_pool_and_alignment_bytes':0,
                      'minimum_32_byte_cache_lines':1}
-    if optimize:
+    if optimize and not stack_objects:
         leaf=argument_return_leaf(function)
         if leaf is None: leaf=shift_return_leaf(function)
         if leaf is not None: return leaf
@@ -642,6 +670,12 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
     scope_flag=None
     if lexical:
         scope_flag=frame; frame+=8
+    # Independent function-lifetime objects above spills and the cleanup flag.
+    # A fixed 16-byte slack allows slot0 alignment for either SP alias/alignment.
+    stack_region=None
+    if stack_objects:
+        stack_region=frame
+        frame+=16+stack_objects*8
     if frame>4096: raise ValueError('bootstrap stack frame too large')
     e=Emitter()
     local=0
@@ -666,6 +700,17 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
     def store64(index,low=0,high=1):
         if registers[index]['class']!='gpr64': raise ValueError('expected integer virtual value')
         address(index); e.store(8,low); e.add_immediate(8,4); e.store(8,high)
+    def stack_object_address(slot,dest):
+        if stack_region is None: raise ValueError('stack address without a stack object region')
+        e.mov(8,14)
+        raw=stack_region+15
+        if raw<=127: e.add_immediate(8,raw)
+        else: e.constant(9,raw); e.add(8,9)
+        e.immediate(9,-16); e.rr(0x2009,8,9)  # align upward, preserving native P0/P1
+        if slot:
+            if slot*8<=127: e.add_immediate(8,slot*8)
+            else: e.constant(9,slot*8); e.add(8,9)
+        e.mov(0,8); e.immediate(1,0); store64(dest)
     def load_float(index,reg=0):
         address(index); e.word(0xf008|(reg<<8)|(8<<4))
     def store_float(index,reg=0):
@@ -1005,6 +1050,8 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
                     else: load64(reads[0]); e.word(0x405a); e.word(0xf00d)
                 else: load64(reads[0])
                 e.branch('bra','epilogue')
+            elif kind=='stack_address':
+                stack_object_address(op['slot'],writes[0])
             else: raise ValueError('unsupported typed IR operation '+kind)
         except (ValueError,KeyError,IndexError) as error:
             raise ValueError(f'{function["name"]} IR {position} ({op.get("text",kind)}): {error}') from error
@@ -1038,7 +1085,9 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
     return data,{'name':function['name'],'bytes':len(data),'stack_bytes':frame+16,'relocations':relocations,
                 'optimization':'stack_slot_reuse' if optimize else 'stack_baseline','instruction_stream_bytes':instruction_bytes,
                 'stack_slot_count':frame//8,'virtual_register_count':len(registers),
-                'baseline_stack_bytes':len(registers)*8+16,'coalesced_stack_moves':coalesced_moves,
+                'baseline_stack_bytes':len(registers)*8+16+(8 if lexical and stack_objects else 0)+(16+stack_objects*8 if stack_objects else 0),
+                'coalesced_stack_moves':coalesced_moves,
+                **({'stack_object_slots':stack_objects,'stack_object_region':stack_region} if stack_objects else {}),
                 'expanded_conditional_branches':layout['expanded_conditional_branches'],
                 'literal_islands':layout['literal_islands'],
                 'far_branches':layout.get('far_branches',0),

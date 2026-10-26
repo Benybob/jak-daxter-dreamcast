@@ -1,0 +1,21 @@
+{
+  "ai_assisted": true,
+  "host_tests_passed": 443,
+  "host_optional_skips": 0,
+  "runtime_native_checks_passed": 23639,
+  "new_native_checks": 83,
+  "numeric_native_checks_passed": 39,
+  "stock_ram_bytes": 16777216,
+  "physical_hardware_tested": false,
+  "runtime_elf_sha256": "e48946d3c3a53adb507e9237765d4159023e205ac54a771352f2e39701302f2b",
+  "numeric_elf_sha256": "83ea558f30e866dee335efa57adcd671828ff9ab188f6566ddef394618285b7f",
+  "original_run_function_in_process": "Unchanged body lowers in optimized and baseline modes; catch/throw execution pending",
+  "lowering_survey": {
+    "lowered": 167,
+    "total": 184,
+    "gkernel_lowered": 66,
+    "gkernel_total": 75
+  },
+  "full_kernel_boot": false,
+  "full_gameplay": false
+}

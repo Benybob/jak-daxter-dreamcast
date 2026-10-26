@@ -292,6 +292,7 @@ test: host
 	$(PYTHON) -m unittest discover -s tests -v
 
 clean:
+	rm -f runtime_stack_objects_cases.o runtime_stack_objects_baseline.o
 	rm -f goal_thread_resize.o thread_resize_cases.o runtime_thread_resize_cases.o
 	rm -f runtime_fiber_words_cases.o
 	rm -f goal_scalar_call.o scalar_call_cases.o
@@ -693,3 +694,9 @@ jak-dc-runtime-goal.elf: runtime_dispatcher_cases.o
 runtime_dispatcher_cases.o: runtime_dispatcher_cases.c process_spans.h goal_bridge.h pp_scope.h runtime_cases.h goal_fiber.h build/original_dispatcher.h
 	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -I. -c runtime_dispatcher_cases.c -o $@
 goal_fiber.o: process_spans.h
+
+jak-dc-runtime-goal.elf: runtime_stack_objects_cases.o runtime_stack_objects_baseline.o
+runtime_stack_objects_cases.o: runtime_stack_objects_cases.c build/stack_objects_fixture.h goal_bridge.h goal_fiber.h fiber_test_support.h pp_scope.h
+	kos-cc $(CFLAGS) -I. -c $< -o $@
+runtime_stack_objects_baseline.o: runtime_stack_objects_baseline.c build/stack_objects_baseline.h goal_module.h
+	kos-cc $(CFLAGS) -I. -c $< -o $@

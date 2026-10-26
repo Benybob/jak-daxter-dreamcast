@@ -372,3 +372,8 @@ Original run-function-in-process (the initializer behind every process-spawn) is
 
 Claude Code's original dispatcher, trans/post hooks, state transitions, suspension and deactivation are integrated and independently verified. Native fibers now capture the physical process allocation generation; stale continuations and registered scheduler hooks refuse before restoring stacks or changing process fields. The original same-address suspended-resume defect was reproduced and corrected. 430 host tests, 23,556 native runtime checks (35 new lifetime/layout checks) and a freshly rebuilt 39-check numeric regression pass in stock 16 MiB Flycast. Original stack objects/catch/throw, full kernel boot, moving heaps/GC and full gameplay remain unfinished. (AI-assisted, Codex with human-authorized Grok review; prior kernel work by Claude Code)
 See [KERNEL_OWNERSHIP_LIFETIMES.md](KERNEL_OWNERSHIP_LIFETIMES.md). (AI-assisted).
+
+## Completed: Native kernel stack objects
+
+Original frontend stack arrays and boxed stack objects now execute on SH-4 in both compiler modes, including calls, lexical cleanup and suspension after destroyed working stacks. The unchanged original run-function-in-process now compiles in both modes; native catch/throw execution remains next. 443 host tests, 23,639 native runtime checks (83 new) and 39 freshly rebuilt numeric checks pass in stock 16 MiB Flycast. Full kernel boot and gameplay remain unfinished. (AI-assisted: Codex with reviewed human-authorized Grok proposal; prior kernel process-system work by Claude Code)
+See [KERNEL_STACK_OBJECTS.md](KERNEL_STACK_OBJECTS.md). (AI-assisted).
