@@ -258,11 +258,12 @@ def main():
         dispatcher_context+=['--preload',str(source)]
     subprocess.run(compiler+dispatcher_context+['--source',str(port.parents[1]/'goal_src/jak1/kernel/gkernel.gc'),
         '--function','kernel-dispatcher','--function','anon-function-5','--function','(method run-logic? process)',
+        '--function','(method delete thread)',
         '--header',str(port/'build/original_dispatcher.h')],check=True)
     subprocess.run([sys.executable,str(port/'build_dreamcast.py'),'--msys',str(args.msys),'--target','jak-dc-runtime-goal.elf'],check=True)
     if args.verify:
         subprocess.run([sys.executable,str(port/'verify_backend.py'),str(args.flycast),
                         str(port/'jak-dc-runtime-goal.elf'),'--nm',str(args.nm),'--output',str(args.output),
-                        '--tests','23485','--suite','runtime-goal'],check=True)
+                        '--tests','23507','--suite','runtime-goal'],check=True)
 
 if __name__=='__main__': main()

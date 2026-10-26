@@ -4,6 +4,7 @@
 #include <string.h>
 #include "goal_bridge.h"
 #include "goal_fiber.h"
+#include "goal_stack_call.h"
 #include "goal_thread_resize.h"
 #include "goal_main_start.h"
 #include "goal_process_heap.h"
@@ -489,20 +490,65 @@ static uint64_t enter_state_code(uint64_t code,uint64_t a0,uint64_t a1,uint64_t 
   if(rt->error==DC_GOAL_OK)rt->error=DC_GOAL_UNSUPPORTED_TRANSFER;
   return 0;
 }
+/* Original reset-and-call: make `thread` the top thread of its process, reset the
+ * stack to the thread's stack-top and call func, returning to the kernel. Used by
+ * the original dispatcher for trans/post hooks on temporary threads. Natively the
+ * function runs on the owned working stack of the process's registered main
+ * fiber, which is free while that fiber is suspended (its image is in the thread
+ * backup). A temporary thread's original in-stack structure stays below the
+ * span used. Same explicit binding protocol as thread_resume. */
+static uint64_t reset_and_call(uint64_t thread,uint64_t func) {
+  dc_goal_runtime *rt=active_runtime;
+  dc_goal_fiber *fiber=NULL;
+  uint32_t symbol,context,current,process=0,top,base,bytes;unsigned char *fields,*p;uint64_t out=0;unsigned i;
+  if(!rt)return 0;
+  if(thread>UINT32_MAX || func>UINT32_MAX || dc_goal_fiber_current() || execution_context)goto unsupported;
+  if(!(p=dc_goal_resolve(rt,(uint32_t)thread+4,4)))goto unsupported;
+  memcpy(&process,p,4);
+  for(i=0;i<DC_THREAD_FIBERS;++i)if(thread_fibers[i] && thread_fibers[i]->process==process)fiber=thread_fibers[i];
+  if(!fiber || fiber->runtime!=rt || (fiber->phase!=DC_FIBER_SUSPENDED && fiber->phase!=DC_FIBER_NEW))goto unsupported;
+  if(!(p=dc_goal_resolve(rt,(uint32_t)thread+28,4)))goto unsupported;
+  memcpy(&top,p,4);
+  if(top!=fiber->stack_base+fiber->stack_bytes)goto unsupported;
+  /* Keep the temporary thread's structure (object at thread, 128 bytes from its
+   * tag at thread-4) below the call stack when it lives in the working stack. */
+  base=fiber->stack_base;
+  if((uint32_t)thread>=fiber->stack_base && (uint32_t)thread<top)base=((uint32_t)thread+124u+15u)&~15u;
+  if(base>=top || top-base<4096u)goto unsupported;
+  bytes=top-base;
+  symbol=dc_goal_find(rt,"*kernel-context*");context=symbol?dc_goal_symbol_value(rt,symbol):0;
+  if(!context || !(fields=context_fields(rt,context)))goto unsupported;
+  memcpy(&current,fields+20,4);
+  if(current!=process)goto unsupported;
+  memcpy(fields+20,&rt->s7,4);
+  if(!dc_goal_bind_process_context(rt,process,fiber->reservation)){memcpy(fields+20,&current,4);return 0;}
+  {uint32_t value=(uint32_t)thread;unsigned char *q=dc_goal_resolve(rt,process+44,4);if(q)memcpy(q,&value,4);}
+  set_process_status(rt,process,"running");
+  if(!dc_goal_call_on_stack(rt,(uint32_t)func,base,bytes,&out))out=0;
+  {enum dc_goal_error error=rt->error;dc_goal_clear_process_context(rt);rt->error=error;}
+  memcpy(fields+20,&current,4);
+  return out;
+unsupported:
+  if(rt->error==DC_GOAL_OK)rt->error=DC_GOAL_UNSUPPORTED_TRANSFER;
+  return 0;
+}
 int dc_goal_install_transfer_bridge(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_goal_module_result *result) {
-  unsigned char code[4][12]={{1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0},{1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0},
-                             {1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0},{1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0}};
-  uint32_t targets[4]={(uint32_t)(uintptr_t)return_from_thread,(uint32_t)(uintptr_t)suspend_current,
-                       (uint32_t)(uintptr_t)enter_state_code,(uint32_t)(uintptr_t)thread_resume};
-  dc_goal_code_export functions[4]={{"dc-c-return-from-thread",code[0],12,NULL,0},
+  unsigned char code[5][12]={{1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0},{1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0},
+                             {1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0},{1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0},
+                             {1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0}};
+  uint32_t targets[5]={(uint32_t)(uintptr_t)return_from_thread,(uint32_t)(uintptr_t)suspend_current,
+                       (uint32_t)(uintptr_t)enter_state_code,(uint32_t)(uintptr_t)thread_resume,
+                       (uint32_t)(uintptr_t)reset_and_call};
+  dc_goal_code_export functions[5]={{"dc-c-return-from-thread",code[0],12,NULL,0},
                                     {"dc-c-suspend",code[1],12,NULL,0},
                                     {"dc-c-enter-state-code",code[2],12,NULL,0},
-                                    {"dc-c-thread-resume",code[3],12,NULL,0}};
+                                    {"dc-c-thread-resume",code[3],12,NULL,0},
+                                    {"dc-c-reset-and-call",code[4],12,NULL,0}};
   unsigned i;
   if(!rt || !result) return 0;
   if(active_runtime!=rt) { rt->error=DC_GOAL_BAD_ARGUMENT; return 0; }
-  for(i=0;i<4;++i)memcpy(code[i]+8,&targets[i],4);
-  return dc_goal_load_module(rt,functions,4,sync,NULL,result);
+  for(i=0;i<5;++i)memcpy(code[i]+8,&targets[i],4);
+  return dc_goal_load_module(rt,functions,5,sync,NULL,result);
 }
 
 int dc_goal_install_process_bridge(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_goal_module_result *result) {

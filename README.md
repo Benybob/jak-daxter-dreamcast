@@ -70,8 +70,8 @@ and checkpoints, not a percentage of game completion or a single full-game run.
 
 | Area | Locally verified scope |
 | --- | --- |
-| Host | 428 tests pass with the complete local SDK/oracle setup (1 optional skip) |
-| GOAL runtime | 23,485 native checks at its latest verified checkpoint |
+| Host | 430 tests pass with the complete local SDK/oracle setup (1 optional skip) |
+| GOAL runtime | 23,507 native checks at its latest verified checkpoint |
 | Numeric regression | 39 native checks |
 | Prototype movement | 318 native checks; visible test-map controller and platform paths pass |
 | Original collision | 789 synthetic native checks; 2,063 combined checks including the original 576-triangle patch |
@@ -111,7 +111,7 @@ not executed by these native tests; runtime and renderer are separate programs.
 
 ## Latest completed contributor task
 
-The unchanged original `kernel-dispatcher`, the per-frame scheduler, now runs a real process. Under an explicit Dreamcast target context that removes the desktop profiler, the original tree walk resumes an original `looping-code` process through its thread's resume-hook, now a native fiber step. The process runs until its original `(suspend)`, frame after frame, across a deliberately destroyed working stack. 63 new native checks pass; 23,485 runtime checks, 39 numeric checks and 428 host tests pass in stock 16 MiB Flycast. See [ORIGINAL_DISPATCHER.md](ports/dreamcast/ORIGINAL_DISPATCHER.md). (AI-assisted, Claude Code)
+The unchanged original `kernel-dispatcher`, the per-frame scheduler, now runs a real process. Under an explicit Dreamcast target context that removes the desktop profiler, the original tree walk resumes an original `looping-code` process through its thread's resume-hook, now a native fiber step. The process runs until its original `(suspend)`, frame after frame, across a deliberately destroyed working stack. Original trans hooks run each frame on the original temporary thread through a native `reset-and-call`. 85 new native checks pass; 23,507 runtime checks, 39 numeric checks and 430 host tests pass in stock 16 MiB Flycast. See [ORIGINAL_DISPATCHER.md](ports/dreamcast/ORIGINAL_DISPATCHER.md). (AI-assisted, Claude Code)
 
 ### Previous: original enter-state
 

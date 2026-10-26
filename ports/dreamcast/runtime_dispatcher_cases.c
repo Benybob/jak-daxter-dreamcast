@@ -12,13 +12,30 @@ typedef uint64_t (*three_fn)(uint64_t,uint64_t,uint64_t);
 static uint32_t entry(dc_goal_runtime *r,const char *n){return dc_goal_symbol_value(r,dc_goal_find(r,n));}
 static uint32_t word(dc_goal_runtime *r,uint32_t p,unsigned off){uint32_t v;memcpy(&v,dc_goal_resolve(r,p+off,4),4);return v;}
 static void put(dc_goal_runtime *r,uint32_t p,unsigned off,uint32_t v){memcpy(dc_goal_resolve(r,p+off,4),&v,4);}
+/* The desktop PROCESS_STACK_SIZE (24 KiB) places the original temporary trans
+ * thread at stack-top - 0x6000 inside the main stack, so the stack exceeds it. */
 enum {MASK=4,CHILD=16,STATUS=32,PID=36,MAIN=40,TOP=44,TRANS_HOOK=56,POST_HOOK=60,RESUME_HOOK=16,
-      MEMBER_BYTES=2160,STACK_BYTES=16384,BACKUP=1024,DEACTIVATE_SLOT=10,RUN_LOGIC_SLOT=12,RETURN_SLOT=15,FRAMES=4};
+      MEMBER_BYTES=2160,STACK_BYTES=32768,BACKUP=1024,DEACTIVATE_SLOT=10,RUN_LOGIC_SLOT=12,RETURN_SLOT=15,FRAMES=4,
+      DESKTOP_PROCESS_STACK_SIZE=0x6000};
 static void global(dc_goal_runtime *rt,const char *name,uint32_t value){dc_goal_set_symbol(rt,dc_goal_intern(rt,name),value);}
+static dc_goal_runtime *trans_rt;
+static uint32_t trans_calls,trans_pp,trans_top,trans_status;
+static uintptr_t trans_sp;
+static uint64_t trans_hook(void){
+ volatile uint32_t marker=0;uint32_t pp;
+ trans_sp=(uintptr_t)&marker;++trans_calls;
+ pp=(uint32_t)((zero_fn)(uintptr_t)entry(trans_rt,"dc-c-current-process"))();trans_pp=pp;
+ if(pp){trans_top=word(trans_rt,pp,TOP);trans_status=word(trans_rt,pp,STATUS);}
+ return 0;
+}
 uint32_t dc_runtime_dispatcher_cases(dc_goal_runtime *rt,dc_runtime_check check,void *context,
  unsigned *id,dc_goal_cache_sync sync){
  dc_goal_process_spans table;dc_goal_process_span rows[8];dc_goal_pp_scope_stack scopes;dc_goal_fiber fiber;
- dc_goal_module_result original={0};
+ dc_goal_module_result original={0},hook={0};
+ unsigned char hook_code[12]={1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0};
+ dc_goal_code_export hook_export={"dc-dispatch-trans",hook_code,12,NULL,0};
+ uint32_t thread_type=entry(rt,"cpu-thread"),old_thread_new=0,old_thread_delete=0,old_reset=0,hook_fn;
+ unsigned thread_methods_set=0;
  uint32_t type=entry(rt,"process"),tree_type=entry(rt,"process-tree"),pool_type=entry(rt,"dead-pool");
  uint32_t name=dc_goal_intern(rt,"dc-dispatch-process"),waiting=dc_goal_intern(rt,"waiting-to-run");
  uint32_t suspended=dc_goal_intern(rt,"suspended"),dead=dc_goal_find(rt,"dead");
@@ -40,7 +57,16 @@ uint32_t dc_runtime_dispatcher_cases(dc_goal_runtime *rt,dc_runtime_check check,
   CHECK(loaded?1:100+rt->error,1,"unchanged original kernel-dispatcher links under the Dreamcast profiler context");
   rt->error=DC_GOAL_OK;
  }
- if(!original.functions||!entry(rt,"dc-c-thread-resume")||!pool_type||!deactivate)goto restore;
+ hook_fn=(uint32_t)(uintptr_t)trans_hook;memcpy(hook_code+8,&hook_fn,4);
+ CHECK(dc_goal_load_module(rt,&hook_export,1,sync,NULL,&hook),1,"native observing trans hook registered");
+ CHECK(thread_type!=0 && entry(rt,"(method new cpu-thread)")!=0 && entry(rt,"dc-c-reset-and-call")!=0,1,
+       "original cpu-thread constructor and native reset-and-call available");
+ if(!original.functions||!hook.functions||!entry(rt,"dc-c-thread-resume")||!pool_type||!deactivate||!thread_type)goto restore;
+ old_thread_new=dc_goal_get_method(rt,thread_type,0);old_thread_delete=dc_goal_get_method(rt,thread_type,1);
+ old_reset=entry(rt,"reset-and-call");trans_rt=rt;
+ CHECK(dc_goal_set_method(rt,thread_type,0,entry(rt,"(method new cpu-thread)")),1,"original cpu-thread constructor selected");
+ CHECK(dc_goal_set_method(rt,thread_type,1,entry(rt,"(method delete thread)")),1,"original thread delete selected");
+ global(rt,"reset-and-call",entry(rt,"dc-c-reset-and-call"));thread_methods_set=1;
  dispatch=(zero_fn)(uintptr_t)entry(rt,"kernel-dispatcher");
  CHECK(dc_goal_set_method(rt,rt->object_type,0,entry(rt,"dc-c-object-new")),1,"sized allocation bridge selected");
  CHECK(dc_goal_set_method(rt,type,0,entry(rt,"(method new process)")),1,"original process constructor selected");
@@ -69,8 +95,21 @@ uint32_t dc_runtime_dispatcher_cases(dc_goal_runtime *rt,dc_runtime_check check,
  CHECK(dc_goal_register_thread_fiber(rt,&fiber),0,"duplicate thread registration refuses");rt->error=DC_GOAL_OK;
  for(i=0;i<FRAMES;++i){
   put(rt,s,STATUS,i?suspended:waiting);
+  /* Frames 1 and 3 install an original trans hook; 0 and 2 run without. */
+  put(rt,s,TRANS_HOOK,(i&1)?entry(rt,"dc-dispatch-trans"):rt->s7);
+  trans_calls=0;trans_pp=trans_top=trans_status=0;trans_sp=0;
   dispatch();
   CHECK(rt->error,DC_GOAL_OK,"original kernel-dispatcher frame completes without error");
+  CHECK(trans_calls,(i&1)?1:0,"trans hook runs exactly when installed");
+  if(i&1){
+   uint32_t temp=stack+STACK_BYTES-DESKTOP_PROCESS_STACK_SIZE+4;
+   CHECK(trans_pp,s,"trans hook runs with pp = its process");
+   CHECK(trans_top,temp,"original temporary trans thread is the top thread during the hook");
+   CHECK(trans_status,dc_goal_find(rt,"running"),"reset-and-call marks the process running");
+   CHECK(trans_sp>temp+124 && trans_sp<stack+STACK_BYTES,1,"trans hook runs on the reset main-thread stack above its thread");
+   CHECK(word(rt,temp-4,0),thread_type,"temporary thread keeps its original cpu-thread type through the hook");
+   CHECK(word(rt,temp,0),dc_goal_find(rt,"trans"),"temporary thread is the original trans thread");
+  }
   CHECK(word(rt,s,STATUS),suspended,"each frame resumes the process, which suspends again");
   CHECK(fiber.phase,DC_FIBER_SUSPENDED,"the main-thread fiber is suspended between frames");
   CHECK(word(rt,ctx,20),rt->s7,"original dispatcher clears current-process after the frame");
@@ -111,6 +150,12 @@ restore:
  }
  CHECK(dc_goal_set_method(rt,type,DEACTIVATE_SLOT,old_deactivate),1,"deactivate slot restored");
  CHECK(dc_goal_set_method(rt,type,RUN_LOGIC_SLOT,old_run),1,"run-logic? slot restored");
+ if(thread_methods_set){
+  CHECK(dc_goal_set_method(rt,thread_type,0,old_thread_new),1,"cpu-thread constructor restored");
+  CHECK(dc_goal_set_method(rt,thread_type,1,old_thread_delete),1,"thread delete restored");
+  global(rt,"reset-and-call",old_reset);
+ }
+ trans_rt=NULL;
  rt->error=DC_GOAL_OK;
 #undef CHECK
  return original.code_bytes;
