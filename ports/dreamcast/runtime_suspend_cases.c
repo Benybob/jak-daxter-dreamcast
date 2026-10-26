@@ -75,7 +75,7 @@ uint32_t dc_runtime_suspend_cases(dc_goal_runtime *rt,dc_runtime_check check,voi
   CHECK(out,0,"original suspend yields value zero");
   CHECK(fiber.phase,DC_FIBER_SUSPENDED,"fiber is suspended between frames");
   CHECK(rt->error,DC_GOAL_OK,"suspension is not an error");
-  CHECK(word(rt,s,STATUS),ready,"suspension leaves process status unchanged");
+  CHECK(word(rt,s,STATUS),dc_goal_find(rt,"suspended"),"suspension marks the process suspended like original thread-suspend");
   CHECK(dc_goal_pp_scope_depth(rt),0,"suspension holds no lexical scope");
   /* The engine restores the suspended image from the thread backup. */
   memset(dc_goal_resolve(rt,stack,STACK_BYTES),0xa5,STACK_BYTES);

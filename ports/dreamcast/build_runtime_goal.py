@@ -250,10 +250,19 @@ def main():
     subprocess.run(compiler+process_context+['--preload',str(port.parents[1]/'goal_src/jak1/kernel/gkernel.gc'),
         '--source',str(port.parents[1]/'goal_src/jak1/kernel/gstate.gc'),'--function','enter-state',
         '--header',str(port/'build/original_enter_state.h')],check=True)
+    # The original scheduler under the explicit Dreamcast no-desktop-profiler context.
+    dispatcher_context=[]
+    for source in (port.parents[1]/'goal_src/jak1/kernel/gcommon.gc',port/'scalar_validation_context.gc',
+                   port/'dreamcast_profiler_context.gc',port.parents[1]/'goal_src/jak1/kernel/gkernel-h.gc',
+                   port.parents[1]/'goal_src/jak1/kernel/gstring-h.gc'):
+        dispatcher_context+=['--preload',str(source)]
+    subprocess.run(compiler+dispatcher_context+['--source',str(port.parents[1]/'goal_src/jak1/kernel/gkernel.gc'),
+        '--function','kernel-dispatcher','--function','anon-function-5','--function','(method run-logic? process)',
+        '--header',str(port/'build/original_dispatcher.h')],check=True)
     subprocess.run([sys.executable,str(port/'build_dreamcast.py'),'--msys',str(args.msys),'--target','jak-dc-runtime-goal.elf'],check=True)
     if args.verify:
         subprocess.run([sys.executable,str(port/'verify_backend.py'),str(args.flycast),
                         str(port/'jak-dc-runtime-goal.elf'),'--nm',str(args.nm),'--output',str(args.output),
-                        '--tests','23422','--suite','runtime-goal'],check=True)
+                        '--tests','23485','--suite','runtime-goal'],check=True)
 
 if __name__=='__main__': main()

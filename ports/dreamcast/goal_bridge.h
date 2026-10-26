@@ -2,6 +2,7 @@
 #ifndef DC_GOAL_BRIDGE_H
 #define DC_GOAL_BRIDGE_H
 #include "goal_module.h"
+#include "goal_fiber.h"
 /* One active runtime, quiescent installation, scalar GCC ABI only.
  * Installs pair new (global selector only), namespaced type-of and missing-call
  * error bridges. Install before linking runtime modules containing calls.
@@ -68,6 +69,12 @@ int dc_goal_install_scope_bridge(dc_goal_runtime *,dc_goal_cache_sync,dc_goal_mo
  * (fiber yield). Without a running fiber for the bound scheduler process both
  * record DC_GOAL_UNSUPPORTED_TRANSFER and the compiled body exits. */
 int dc_goal_install_transfer_bridge(dc_goal_runtime *,dc_goal_cache_sync,dc_goal_module_result *);
+/* dc-c-thread-resume (also installed above) is the native original cpu-thread
+ * resume-hook: it steps the fiber registered for that thread. Fibers are
+ * caller-owned; register before the original kernel-dispatcher runs and
+ * unregister before clearing. At most eight registrations. */
+int dc_goal_register_thread_fiber(dc_goal_runtime *,dc_goal_fiber *);
+int dc_goal_unregister_thread_fiber(dc_goal_runtime *,dc_goal_fiber *);
 /* Data-only first CPU-thread construction through the unchanged original
  * native constructor. Caller owns the unmoved process reservation and a
  * disjoint aligned execution-stack span in rt's arena. Main/top thread must

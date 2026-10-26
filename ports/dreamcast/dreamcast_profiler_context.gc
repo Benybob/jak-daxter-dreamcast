@@ -1,0 +1,8 @@
+;;-*-Lisp-*-
+;; Dreamcast target configuration: no desktop frame profiler (AI-assisted).
+;; gcommon enables PC_PROFILER_ENABLE, whose with-profiler/profiler-*-event
+;; macros expand to pc-prof calls into the C++ desktop profiler. The native
+;; runtime has no such profiler, so this explicit context, preloaded after
+;; gcommon, makes those original macros expand to nothing. No original body is
+;; changed. See TARGET_CONFIG_AUDIT.md for every PC_PROFILER_ENABLE use.
+(defglobalconstant PC_PROFILER_ENABLE #f)
