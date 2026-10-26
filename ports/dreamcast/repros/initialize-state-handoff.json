@@ -1,0 +1,28 @@
+{
+  "ai_assisted": true,
+  "status": "KNOWN FAILING OPT-IN REPRODUCTION",
+  "verified_public_baseline": "8483b8ba8d8ead292a007283c6b9b4dd3a68ebc1",
+  "patch_sha256": "a1505921a7fd1db498aabd06e4d6726d5f7ccd35b227ed07b3dfcddb6d87b65e",
+  "patch_paths": [
+    "ports/dreamcast/Makefile",
+    "ports/dreamcast/build_runtime_goal.py",
+    "ports/dreamcast/runtime_initialization_cases.c",
+    "ports/dreamcast/tests/test_initialization.py"
+  ],
+  "result": {
+    "result": "FAIL",
+    "total": 23527,
+    "passed": 23513,
+    "failed_case": 13945,
+    "observed_lo": 202584628,
+    "observed_hi": 0,
+    "expected_lo": 203202164,
+    "expected_hi": 0,
+    "description": "initialize enter-state passes exact main thread to arming function",
+    "elf_sha256": "b668ac2779c69abbf61309c428dac956852359cb4f43eb9fb9a8fa2f4b399611"
+  },
+  "expected_complete_count": 24843,
+  "patch_builder_count": 24834,
+  "full_kernel_boot": false,
+  "full_gameplay": false
+}

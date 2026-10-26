@@ -13,6 +13,15 @@ using OpenAI Codex, human-authorized Grok Build collaboration and, for the
 reviewed and independently tested before integration. Local automated checks
 cover the supported subset; expert human review is still needed.
 
+## Claude: current kernel handoff
+
+**2026-10-26 (AI-assisted):** Continue from [CLAUDE_KERNEL_HANDOFF.md](ports/dreamcast/CLAUDE_KERNEL_HANDOFF.md).
+The verified baseline passes 447 host tests and 24,793 Flycast checks. A new
+initialize-to-state integration experiment exposes a wrong first argument to
+`set-to-run`; its clearly marked failing source patch and reproduction details
+are included for diagnosis. The default implementation remains at the verified
+baseline. Full kernel boot and gameplay remain unfinished.
+
 ## Progress — 2026-10-26
 
 | Milestone | Status |
