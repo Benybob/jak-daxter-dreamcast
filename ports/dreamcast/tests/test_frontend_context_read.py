@@ -94,5 +94,7 @@ class ContextReadTest(unittest.TestCase):
                            env=self.env,capture_output=True,text=True)
         self.assertEqual(run.returncode,0,run.stdout+run.stderr)
         fn=next(f for f in json.loads(output.read_text())['functions'] if f['name']=='(method deactivate process)')
-        self.assertTrue(all(b['role']=='unsupported' for b in fn['fixed_registers']))
+        # Its pp bracket is now recognized; the r15 inline-asm return jump still refuses.
+        self.assertEqual({b['frontend_register']:b['role'] for b in fn['fixed_registers']},
+                         {'r13':'process_lexical','r15':'unsupported'})
         with self.assertRaisesRegex(ValueError,'role not implemented'):compile_function(fn,runtime=True)

@@ -395,22 +395,27 @@ int main(int argc,char** argv) {
         // A typed, read-only rlet pp is an authenticated context input, not a
         // machine-register allocation on SH-4. Mutable/other roles stay explicit.
         bool context_read=name=="r13" && !process_self;
-        bool context_type=false,context_used=false;
+        bool context_type=false,context_used=false,context_written=false,process_typed=true;
         for(const auto& value:function->reg_vals())
           if(value->ireg().id==constraint.ireg.id) {
             context_type=true;
-            if(value->type()!=TypeSpec("process")) context_read=false;
+            if(value->type()!=TypeSpec("process")) process_typed=false;
           }
         for(const auto& op:function->code()) {
           const auto rai=op->to_rai();
           for(const auto& reg:rai.read) if(reg.id==constraint.ireg.id) context_used=true;
-          for(const auto& reg:rai.write) if(reg.id==constraint.ireg.id) context_read=false;
+          for(const auto& reg:rai.write) if(reg.id==constraint.ireg.id) context_written=true;
         }
-        context_read=context_read && context_type && context_used;
+        context_read=context_read && process_typed && context_type && context_used && !context_written;
+        // A typed, written rlet pp is a candidate lexical bracket. The SH-4
+        // lowerer proves the save/assign/restore shape or refuses it.
+        const bool lexical=name=="r13" && !process_self && process_typed && context_type &&
+                           context_used && context_written;
         json binding={{"register",constraint.ireg.id},{"frontend_register",name},
                       {"role",name=="r14" ? "symbol_table" :
                               (name=="r13" && process_self ? "process_self" :
-                               (context_read ? "process_context_read" : "unsupported"))}};
+                               (context_read ? "process_context_read" :
+                                (lexical ? "process_lexical" : "unsupported")))}};
         const auto found=fixed_registers.find(constraint.ireg.id);
         if(found!=fixed_registers.end()) {
           if(found->second!=binding) throw std::runtime_error("conflicting fixed register constraints");

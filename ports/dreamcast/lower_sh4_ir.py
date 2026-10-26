@@ -185,6 +185,53 @@ def allocate_slots(function):
         colors[value]=color
     return {value:color*8 for value,color in colors.items()}
 
+LEXICAL_SCOPE_KINDS=('process_scope_enter','process_scope_leave')
+
+def lexical_process_bracket(function,index,binding):
+    """Prove one original (old=pp; pp=X; ...; pp=old) bracket (AI-assisted).
+
+    The entry value comes from the authenticated getter. The single assignment
+    becomes an explicit lexical scope entry and the restore its matching leave.
+    The region between them must be single-entry/single-exit with no return,
+    so every normal path that enters also leaves. Anything else refuses.
+    """
+    ops=[dict(op) for op in function['instructions']]
+    for position,op in enumerate(ops):
+        if op['kind']=='fixed_register_reset' and index in op['writes']:
+            if op['reads'] or op['writes']!=[index] or op.get('bindings')!=[binding]:
+                raise ValueError('unsupported lexical process reset layout')
+            if any(o['kind'] in ('branch','goto','call') or index in o['reads'] or index in o['writes']
+                   for o in ops[:position]):
+                raise ValueError('lexical process reset must precede every process use and control transfer')
+            ops[position]=dict(kind='nop',reads=[],writes=[],text=op.get('text','entry pp reset'))
+    writes=[p for p,op in enumerate(ops) if index in op['writes']]
+    if len(writes)!=2:
+        raise ValueError('lexical process bracket requires exactly one assignment and one restore')
+    enter,leave=writes
+    for position in writes:
+        if ops[position]['kind']!='move' or len(ops[position]['reads'])!=1 or ops[position]['writes']!=[index]:
+            raise ValueError('lexical process assignment must be a plain move')
+    target,saved=ops[enter]['reads'][0],ops[leave]['reads'][0]
+    if index in (target,saved) or target==saved:
+        raise ValueError('lexical process assignment must not restore its own entry value')
+    saved_writers=[p for p,op in enumerate(ops) if saved in op['writes']]
+    if len(saved_writers)!=1 or not saved_writers[0]<enter or ops[saved_writers[0]]['kind']!='move' or \
+       ops[saved_writers[0]]['reads']!=[index]:
+        raise ValueError('lexical process restore must use a single saved copy of the entry value')
+    for position,op in enumerate(ops):
+        inside=enter<position<leave
+        if inside and op['kind']=='return':
+            raise ValueError('return inside lexical process bracket is unsupported')
+        if op['kind'] in ('branch','goto'):
+            lands_inside=isinstance(op['target'],int) and enter<op['target']<=leave
+            if inside and not lands_inside:
+                raise ValueError('control transfer leaves lexical process bracket')
+            if not inside and position!=leave and lands_inside:
+                raise ValueError('control transfer enters lexical process bracket')
+    ops[enter]=dict(ops[enter],kind='process_scope_enter')
+    ops[leave]=dict(ops[leave],kind='process_scope_leave')
+    return dict(function,instructions=ops,lexical_saved=saved)
+
 def compile_function(function,module=None,runtime=False,optimize=True,statics=None):
     semantic_types={r['id']:r['type'] for r in function['registers']}
     if runtime:
@@ -212,7 +259,7 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
             raise ValueError('return value does not match function return type')
     registers={r['id']:r for r in function['registers']}
     if len(registers)!=len(function['registers']): raise ValueError('duplicate virtual register')
-    fixed={}; context_reads=[]
+    fixed={}; context_reads=[]; lexical=[]
     for binding in function.get('fixed_registers',[]):
         index=binding['register']
         if index in fixed or index not in registers: raise ValueError('invalid fixed register metadata')
@@ -221,9 +268,18 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
                       implicit and implicit[0]['register']==index)
         context_read=(runtime and binding.get('frontend_register')=='r13' and
                       binding.get('role')=='process_context_read' and not implicit)
-        if not process_self and not context_read and (binding.get('frontend_register')!='r14' or binding.get('role')!='symbol_table'):
+        lexical_role=(runtime and binding.get('frontend_register')=='r13' and
+                      binding.get('role')=='process_lexical' and not implicit)
+        if not process_self and not context_read and not lexical_role and \
+           (binding.get('frontend_register')!='r14' or binding.get('role')!='symbol_table'):
             raise ValueError('fixed runtime register role not implemented')
-        if context_read:
+        if lexical_role:
+            if semantic_types[index]!='process' or registers[index]['class']!='gpr64' or registers[index]['type']!='object':
+                raise ValueError('lexical process bracket requires an exact process container')
+            if index in {p['register'] for p in function['parameters']}:
+                raise ValueError('lexical process bracket must not alias an argument')
+            lexical.append(index)
+        elif context_read:
             if semantic_types[index]!='process' or registers[index]['class']!='gpr64' or registers[index]['type']!='object':
                 raise ValueError('read-only process context requires an exact process container')
             if index in {p['register'] for p in function['parameters']} or not any(index in op['reads'] for op in function['instructions']):
@@ -237,9 +293,14 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
         fixed[index]=binding
     if len(context_reads)>1:
         raise ValueError('ambiguous read-only process context')
+    if len(lexical)>1 or (lexical and context_reads):
+        raise ValueError('ambiguous lexical process context')
     if implicit and (implicit[0]['register'] not in fixed or
                      fixed[implicit[0]['register']].get('role')!='process_self'):
         raise ValueError('implicit self is missing its fixed entry declaration')
+    if lexical:
+        function=lexical_process_bracket(function,lexical[0],fixed[lexical[0]])
+        context_reads=[lexical[0]]
     translated=[]
     for position,op in enumerate(function['instructions']):
         if op['kind']=='current_process': raise ValueError('current process must originate from a fixed entry reset')
@@ -255,6 +316,8 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
                 if position!=0: raise ValueError('implicit self reset must be at function entry')
                 op=dict(op,kind='current_process')
             else: op=dict(op,kind='symbol_pointer',symbol='#f')
+        elif op['kind'] in LEXICAL_SCOPE_KINDS:
+            if not lexical or op['writes']!=lexical: raise ValueError('lexical scope operation without its bracket')
         elif set(op['writes'])&fixed.keys():
             raise ValueError('fixed runtime register mutation is unsupported')
         translated.append(op)
@@ -309,6 +372,11 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
         if leaf is not None: return leaf
     slots=allocate_slots(function) if optimize else {index:i*8 for i,index in enumerate(sorted(registers))}
     frame=max(slots.values(),default=-8)+8
+    # A dedicated slot, outside liveness reuse, records an entered lexical
+    # scope so the call-fault exit can restore the saved process first.
+    scope_flag=None
+    if lexical:
+        scope_flag=frame; frame+=8
     if frame>4096: raise ValueError('bootstrap stack frame too large')
     e=Emitter()
     local=0
@@ -380,10 +448,17 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
         if kind in ('gt','ge'): e.rr(opcode,1,3)
         else: e.rr(opcode,3,1)
         e.label(done); e.branch('bt',target)
+    def scope_flag_address():
+        e.mov(8,14)
+        if scope_flag<=127: e.add_immediate(8,scope_flag)
+        else: e.constant(9,scope_flag); e.add(8,9)
+    def set_scope_flag(value):
+        scope_flag_address(); e.immediate(0,value); e.store(8,0)
     # Preserve GCC callee-saved address scratch registers and PR.
     e.word(0x4f22)
     for reg in (14,8,9): e.rr(0x2006,15,reg)
     adjust_stack(-frame); e.mov(14,15)
+    if lexical: set_scope_flag(0)
     gpr_args=float_args=0
     for parameter in function['parameters']:
         index=parameter['register']
@@ -422,6 +497,15 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
                 e.rr(0x2008,0,0)  # TST R0,R0: missing context must exit before body memory access.
                 e.branch('bt','process_entry_failure')
                 store64(writes[0]); continue
+            if kind in LEXICAL_SCOPE_KINDS:
+                entering=kind=='process_scope_enter'
+                load64(reads[0],4,5)
+                e.literal(0,('symbol','function:dc-c-'+('enter' if entering else 'leave')+'-process-scope'))
+                e.word(0x400b); e.nop()
+                e.rr(0x2008,0,0)  # TST R0,R0: refused selection/restore exits without the body
+                e.branch('bt','process_entry_failure')
+                set_scope_flag(1 if entering else 0)
+                load64(reads[0]); store64(writes[0]); continue
             if kind=='symbol_pointer':
                 # A while-expression's unused #f result has no side effects.
                 # Never substitute a made-up address for a live GOAL symbol.
@@ -629,7 +713,16 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
     if implicit or context_reads or guarded_calls:
         e.branch('bra','epilogue')
     if guarded_calls:
-        e.label('call_failure'); e.literal(0,('symbol','function:dc-c-call-error'))
+        e.label('call_failure')
+        if lexical:
+            # A missing callee inside the bracket must not leak the entered
+            # scope: restore the saved process (an earlier error is retained).
+            restored=label_name()
+            scope_flag_address(); e.load(0,8); e.rr(0x2008,0,0); e.branch('bt',restored)
+            load64(function['lexical_saved'],4,5)
+            e.literal(0,('symbol','function:dc-c-leave-process-scope'))
+            e.word(0x400b); e.nop(); set_scope_flag(0); e.label(restored)
+        e.literal(0,('symbol','function:dc-c-call-error'))
         e.word(0x400b); e.nop()
         # The boxed fault bridge returns uint64 zero. Floating callers must
         # explicitly define FR0; void callers promise no result register.

@@ -61,6 +61,9 @@ int dc_goal_note_process_span(dc_goal_runtime *,uint32_t process,uint32_t bytes,
  * from process fields. Restore is a separate operation, not a value heuristic. */
 int dc_goal_enter_known_scope(dc_goal_runtime *,uint32_t process);
 int dc_goal_leave_known_scope(dc_goal_runtime *,uint32_t previous_process);
+/* Installs dc-c-enter-process-scope/dc-c-leave-process-scope for compiled
+ * original lexical pp brackets; requires registered spans and pp scopes. */
+int dc_goal_install_scope_bridge(dc_goal_runtime *,dc_goal_cache_sync,dc_goal_module_result *);
 /* Data-only first CPU-thread construction through the unchanged original
  * native constructor. Caller owns the unmoved process reservation and a
  * disjoint aligned execution-stack span in rt's arena. Main/top thread must

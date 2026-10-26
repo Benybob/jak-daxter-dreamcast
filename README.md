@@ -70,8 +70,8 @@ and checkpoints, not a percentage of game completion or a single full-game run.
 
 | Area | Locally verified scope |
 | --- | --- |
-| Host | 398 tests pass with the complete local SDK/oracle setup |
-| GOAL runtime | 23,145 native checks at its latest verified checkpoint |
+| Host | 418 tests pass with the complete local SDK/oracle setup (1 optional skip) |
+| GOAL runtime | 23,206 native checks at its latest verified checkpoint |
 | Numeric regression | 39 native checks |
 | Prototype movement | 318 native checks; visible test-map controller and platform paths pass |
 | Original collision | 789 synthetic native checks; 2,063 combined checks including the original 576-triangle patch |
@@ -110,6 +110,10 @@ checkpoint evidence, not a GitHub Actions run. Original PS2 MIPS code is
 not executed by these native tests; runtime and renderer are separate programs.
 
 ## Latest completed contributor task
+
+The unchanged original `send-event-function`, which dispatches every original `send-event`, now executes natively. Its event hook runs under the target process as lexical `pp`, and the caller's `pp` is restored afterwards, including on a call fault. The compiler proves the original save/assign/restore bracket and refuses any other shape. 61 new native checks pass; 23,206 runtime checks, 39 numeric checks and 418 host tests pass in stock 16 MiB Flycast. See [LEXICAL_PP_BRACKETS.md](ports/dreamcast/LEXICAL_PP_BRACKETS.md). Full deactivation, scheduler, GC and gameplay remain unfinished. (AI-assisted, Claude Code)
+
+### Previous: allocator-owned process extents
 
 Original global process allocations now record their declared extents independently of mutable process fields. Unchanged original symbol/raw constructors and fixed-pool ownership/return are verified; explicit lexical selection uses trusted span lookup without publishing allocation as execution. Full-table allocation fails before committing memory, stale physical generations refuse, and real native fiber lookup/scope/teardown guards pass. 398 host tests and 23,145 native runtime checks pass in stock 16 MiB Flycast, including 101 new portable and 89 new native ownership checks. The separate 39 numeric checks remain verified. Moving pools, mutable GOAL pp, scheduler startup, GC/unwinding and full gameplay remain unfinished. (AI-assisted)
 

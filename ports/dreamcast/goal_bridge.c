@@ -358,6 +358,31 @@ int dc_goal_leave_known_scope(dc_goal_runtime *rt,uint32_t previous_process) {
   return dc_goal_leave_lexical_scope(rt,top->lexical_process,top->lexical_bytes);
 }
 
+/* Compiled original (set! pp X) ... (set! pp saved) brackets. Both are boxed
+ * 0/1 results; the lowerer exits before body memory access on zero. */
+static uint64_t enter_process_scope(uint64_t process) {
+  dc_goal_runtime *rt=active_runtime;
+  if(!rt)return 0;
+  if(process>UINT32_MAX){if(rt->error==DC_GOAL_OK)rt->error=DC_GOAL_BAD_ARGUMENT;return 0;}
+  return (uint64_t)dc_goal_enter_known_scope(rt,(uint32_t)process);
+}
+static uint64_t leave_process_scope(uint64_t previous_process) {
+  dc_goal_runtime *rt=active_runtime;
+  if(!rt)return 0;
+  if(previous_process>UINT32_MAX){if(rt->error==DC_GOAL_OK)rt->error=DC_GOAL_BAD_ARGUMENT;return 0;}
+  return (uint64_t)dc_goal_leave_known_scope(rt,(uint32_t)previous_process);
+}
+int dc_goal_install_scope_bridge(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_goal_module_result *result) {
+  unsigned char code[2][12]={{1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0},{1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0}};
+  uint32_t targets[2]={(uint32_t)(uintptr_t)enter_process_scope,(uint32_t)(uintptr_t)leave_process_scope};
+  dc_goal_code_export functions[2]={{"dc-c-enter-process-scope",code[0],12,NULL,0},
+                                    {"dc-c-leave-process-scope",code[1],12,NULL,0}};
+  if(!rt || !result) return 0;
+  if(active_runtime!=rt) { rt->error=DC_GOAL_BAD_ARGUMENT; return 0; }
+  memcpy(code[0]+8,&targets[0],4); memcpy(code[1]+8,&targets[1],4);
+  return dc_goal_load_module(rt,functions,2,sync,NULL,result);
+}
+
 int dc_goal_install_process_bridge(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_goal_module_result *result) {
   unsigned char code[12]={1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0};
   uint32_t target=(uint32_t)(uintptr_t)current_process;
