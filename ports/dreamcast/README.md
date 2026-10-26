@@ -1,5 +1,13 @@
 # Jak 1 on Dreamcast: experimental port workbench
 
+**2026-10-26 (AI-assisted):** [Process ownership](PROCESS_OWNERSHIP.md) now
+captures original global process allocations, including original fixed-pool
+members, and supports explicit selection using their known extents. Raw buffers
+require their trusted owner's actual size; original pool return preserves
+ownership. The native runtime passes 23,145 checks in stock 16 MiB Flycast;
+398 host tests pass.
+Moving pools, original scheduler startup and full gameplay remain unfinished.
+
 **2026-10-25 (AI-assisted):** [Cached base rendering](BASE_RENDERING.md) now
 draws an original 3,547-face training window through SH4ZAM, full viewport
 clipping and resident PowerVR colors. Original and procedural frames each pass

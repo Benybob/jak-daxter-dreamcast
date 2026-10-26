@@ -49,6 +49,18 @@ int dc_goal_enter_lexical_scope(dc_goal_runtime *,uint32_t process,uint32_t byte
 int dc_goal_leave_lexical_scope(dc_goal_runtime *,uint32_t process,uint32_t bytes);
 /* Internal fixed native-return site, before the raw transition to the root. */
 void dc_goal_lexical_native_return(dc_goal_runtime *);
+struct dc_goal_process_spans;
+struct dc_goal_process_span;
+/* Configure pinned caller-owned ownership metadata before process construction.
+ * Symbol/global process allocations are captured from the actual allocator size.
+ * Other raw buffers require an explicit TRUSTED C ownership note. Neither path
+ * binds execution. Moving/nested process suballocations remain unsupported. */
+int dc_goal_register_process_spans(dc_goal_runtime *,struct dc_goal_process_spans *,struct dc_goal_process_span *,uint32_t capacity);
+int dc_goal_note_process_span(dc_goal_runtime *,uint32_t process,uint32_t bytes,struct dc_goal_process_span *optional_out);
+/* An explicit request selects an OWNED span; byte counts are never inferred
+ * from process fields. Restore is a separate operation, not a value heuristic. */
+int dc_goal_enter_known_scope(dc_goal_runtime *,uint32_t process);
+int dc_goal_leave_known_scope(dc_goal_runtime *,uint32_t previous_process);
 /* Data-only first CPU-thread construction through the unchanged original
  * native constructor. Caller owns the unmoved process reservation and a
  * disjoint aligned execution-stack span in rt's arena. Main/top thread must

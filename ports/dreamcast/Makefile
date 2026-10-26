@@ -296,7 +296,7 @@ clean:
 	rm -f runtime_fiber_words_cases.o
 	rm -f goal_scalar_call.o scalar_call_cases.o
 	rm -f runtime_activation_cases.o
-	rm -f native_context_swap.o goal_fiber.o pp_scope.o runtime_fiber_cases.o
+	rm -f native_context_swap.o goal_fiber.o pp_scope.o process_spans.o runtime_process_spans_cases.o runtime_fiber_cases.o
 	rm -f native_stack_call.o goal_stack_call.o runtime_stack_call_cases.o
 	rm -f code_entry_cases.o
 	rm -f goal_register_snapshot.o register_snapshot_probe.o runtime_register_snapshot_cases.o
@@ -670,3 +670,10 @@ build/pp-scope-check$(HOST_EXE): host_pp_scope.c pp_scope.c pp_scope.h goal_runt
 	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -pedantic host_pp_scope.c pp_scope.c goal_runtime.c goal_kernel_types.c goal_process_heap.c -o $@
 
 runtime_pp_scope_cases.o: runtime_pp_scope_cases.c goal_bridge.h pp_scope.h fiber_test_support.h runtime_cases.h
+
+process_spans.o goal_bridge.o: process_spans.h
+host: build/process-spans-check$(HOST_EXE)
+build/process-spans-check$(HOST_EXE): host_process_spans.c process_spans.c process_spans.h goal_fiber.h goal_runtime.c
+	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -pedantic host_process_spans.c process_spans.c goal_runtime.c -o $@
+jak-dc-runtime-goal.elf: process_spans.o runtime_process_spans_cases.o
+runtime_process_spans_cases.o: runtime_process_spans_cases.c process_spans.h goal_bridge.h pp_scope.h fiber_test_support.h runtime_cases.h

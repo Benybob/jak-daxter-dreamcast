@@ -8,6 +8,7 @@
 #include "goal_main_start.h"
 #include "goal_process_heap.h"
 #include "pp_scope.h"
+#include "process_spans.h"
 #include "goal_kos_stack.h"
 #ifndef __DREAMCAST__
 #error These boxed tail bridges require native SH-4 code execution.
@@ -16,6 +17,17 @@ static dc_goal_runtime *active_runtime;
 static dc_goal_process_heap active_process_heap;
 static dc_goal_process_heap execution_heap;
 static uint32_t execution_context;
+static int spans_quiescent(const dc_goal_runtime *rt) {
+  return rt && active_runtime==rt && !execution_context && !active_process_heap.runtime &&
+    dc_goal_pp_scope_runtime_clear_allowed(rt) && !dc_goal_fiber_current();
+}
+static int known_span_matches(dc_goal_runtime *rt,uint32_t process,uint32_t bytes) {
+  dc_goal_process_span span;int registered=dc_goal_process_spans_registered(rt);
+  if(!registered)return 1; /* legacy explicit C ownership contract, no lookup */
+  if(registered<0 || !dc_goal_process_span_lookup(rt,process,&span))return 0;
+  if(span.bytes!=bytes){if(rt->error==DC_GOAL_OK)rt->error=DC_GOAL_BAD_ARGUMENT;return 0;}
+  return 1;
+}
 static int refuse_live_scope(dc_goal_runtime *rt) {
   if(dc_goal_pp_scope_runtime_clear_allowed(rt))return 0;
   if(rt && rt->error==DC_GOAL_OK)rt->error=DC_GOAL_BAD_ARGUMENT;
@@ -54,6 +66,7 @@ int dc_goal_bind_process_context(dc_goal_runtime *rt,uint32_t process,uint32_t a
   if(!rt || active_runtime!=rt) { if(rt) rt->error=DC_GOAL_BAD_ARGUMENT; return 0; }
   if(refuse_live_scope(rt))return 0;
   dc_goal_clear_process_context(rt);
+  if(!known_span_matches(rt,process,allocation_bytes))return 0;
   if(!dc_goal_process_heap_open(&candidate,rt,process,allocation_bytes)) return 0;
   symbol=dc_goal_find(rt,"*kernel-context*");
   context=symbol?dc_goal_symbol_value(rt,symbol):0;
@@ -110,6 +123,34 @@ static uint64_t method_set(uint64_t type,uint64_t index,uint64_t method) {
   return dc_goal_method_set(rt,(uint32_t)type,(uint32_t)index,(uint32_t)method,
                             enable && dc_goal_symbol_value(rt,enable)!=0);
 }
+static int process_family(dc_goal_runtime *rt,uint32_t type) {
+  uint32_t root=dc_goal_symbol_value(rt,rt->s7+DC_FIX_SYM_PROCESS_TYPE);
+  dc_goal_type_fields *schema;
+  if(!root || dc_goal_type_of(rt,root)!=rt->type_type || !(schema=dc_goal_resolve(rt,root,sizeof *schema)) ||
+     schema->allocated_size!=112 || schema->heap_base!=0){if(rt->error==DC_GOAL_OK)rt->error=DC_GOAL_BAD_TYPE;return -1;}
+  return dc_goal_is_subtype(rt,type,root);
+}
+static int process_heap_type_allowed(dc_goal_runtime *rt,uint32_t type) {
+  int configured=dc_goal_process_spans_registered(rt),family;
+  if(configured<0)return 0;
+  if(!configured)return 1;
+  family=process_family(rt,type);
+  if(family==0)return 1;
+  if(rt->error==DC_GOAL_OK)rt->error=DC_GOAL_BAD_ARGUMENT;
+  return 0; /* nested process ownership needs a verified parent-subspan protocol */
+}
+static uint32_t global_basic_new(dc_goal_runtime *rt,uint32_t type,uint32_t bytes) {
+  int configured=dc_goal_process_spans_registered(rt),tracked=0;uint32_t result;
+  if(configured<0)return 0;
+  if(configured){tracked=process_family(rt,type);if(tracked<0)return 0;}
+  if(tracked && (bytes<112 || dc_goal_process_span_room(rt)!=1)){
+    if(rt->error==DC_GOAL_OK)rt->error=DC_GOAL_BAD_ARGUMENT;
+    return 0;
+  }
+  result=dc_goal_new_basic(rt,type,bytes);
+  if(result && tracked && !dc_goal_process_span_note(rt,result,bytes,NULL))return 0;
+  return result;
+}
 static uint64_t new_basic(uint64_t heap,uint64_t type) {
   dc_goal_runtime *rt=active_runtime;
   dc_goal_type_fields *fields;
@@ -122,9 +163,10 @@ static uint64_t new_basic(uint64_t heap,uint64_t type) {
   fields=dc_goal_resolve(rt,(uint32_t)type,sizeof(*fields));
   if(!fields) return 0;
   if(heap==rt->s7+DC_FIX_SYM_GLOBAL_HEAP)
-    return dc_goal_new_basic(rt,(uint32_t)type,fields->allocated_size);
+    return global_basic_new(rt,(uint32_t)type,fields->allocated_size);
   if(heap==rt->s7+DC_FIX_SYM_PROCESS_TYPE && active_process_heap.runtime==rt) {
     uint32_t lexical;
+    if(!process_heap_type_allowed(rt,(uint32_t)type))return 0;
     if(dc_goal_pp_scope_resolve(rt,execution_context,execution_heap.process,execution_heap.allocation_bytes,
                                 &active_process_heap,&lexical)==DC_GOAL_PP_SCOPE_DENIED)return 0;
     return dc_goal_process_new_basic(&active_process_heap,(uint32_t)type,fields->allocated_size);
@@ -140,9 +182,10 @@ static uint64_t new_object(uint64_t heap,uint64_t type,uint64_t size) {
     rt->error=DC_GOAL_BAD_ARGUMENT; return 0;
   }
   if(heap==rt->s7+DC_FIX_SYM_GLOBAL_HEAP)
-    return dc_goal_new_basic(rt,(uint32_t)type,(uint32_t)size);
+    return global_basic_new(rt,(uint32_t)type,(uint32_t)size);
   if(heap==rt->s7+DC_FIX_SYM_PROCESS_TYPE && active_process_heap.runtime==rt) {
     uint32_t lexical;
+    if(!process_heap_type_allowed(rt,(uint32_t)type))return 0;
     if(dc_goal_pp_scope_resolve(rt,execution_context,execution_heap.process,execution_heap.allocation_bytes,
                                 &active_process_heap,&lexical)==DC_GOAL_PP_SCOPE_DENIED)return 0;
     return dc_goal_process_new_basic(&active_process_heap,(uint32_t)type,(uint32_t)size);
@@ -195,10 +238,13 @@ int dc_goal_install_core_bridges(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_
 void dc_goal_clear_core_bridges(dc_goal_runtime *rt) {
   if (active_runtime==rt && rt) {
     dc_goal_pp_scope_stack *stack;
+    if(dc_goal_fiber_current()){if(rt->error==DC_GOAL_OK)rt->error=DC_GOAL_BAD_ARGUMENT;return;}
     if(refuse_live_scope(rt))return;
     stack=dc_goal_pp_scope_active(rt);
     if(stack && !dc_goal_pp_scope_detach(stack,rt))return;
-    dc_goal_clear_process_context(rt); active_runtime=NULL;
+    dc_goal_clear_process_context(rt);
+    if(!dc_goal_process_spans_detach(rt))return;
+    active_runtime=NULL;
   }
 }
 int dc_goal_core_bridges_active(const dc_goal_runtime *rt) {
@@ -251,6 +297,7 @@ int dc_goal_bind_process_heap(dc_goal_runtime *rt,uint32_t process,uint32_t allo
   /* Invalid same-runtime binding must not retain a previous allocation target. */
   if(refuse_live_scope(rt))return 0;
   dc_goal_clear_process_context(rt);
+  if(!known_span_matches(rt,process,allocation_bytes))return 0;
   return dc_goal_process_heap_open(&active_process_heap,rt,process,allocation_bytes);
 }
 void dc_goal_clear_process_heap(dc_goal_runtime *rt) {
@@ -267,6 +314,7 @@ int dc_goal_enter_lexical_scope(dc_goal_runtime *rt,uint32_t process,uint32_t by
   if(!rt || active_runtime!=rt || execution_heap.runtime!=rt){if(rt && rt->error==DC_GOAL_OK)rt->error=DC_GOAL_BAD_ARGUMENT;return 0;}
   stack=dc_goal_pp_scope_active(rt);
   if(!stack){if(rt->error==DC_GOAL_OK)rt->error=DC_GOAL_BAD_ARGUMENT;return 0;}
+  if(!known_span_matches(rt,process,bytes))return 0;
   return dc_goal_pp_scope_enter(stack,rt,execution_context,execution_heap.process,execution_heap.allocation_bytes,
                                 process,bytes,&active_process_heap,&active_process_heap);
 }
@@ -284,6 +332,30 @@ void dc_goal_lexical_native_return(dc_goal_runtime *rt) {
   if(result==DC_GOAL_PP_SCOPE_ABSENT)return;
   if(result==DC_GOAL_PP_SCOPE_DENIED)dc_goal_clear_process_context(rt);
   rt->error=prior==DC_GOAL_OK?DC_GOAL_BAD_ARGUMENT:prior;
+}
+int dc_goal_register_process_spans(dc_goal_runtime *rt,dc_goal_process_spans *table,dc_goal_process_span *rows,uint32_t capacity) {
+  const dc_goal_process_span_hooks hooks={dc_goal_kos_stack_owner,spans_quiescent};
+  if(!rt || active_runtime!=rt){if(rt&&rt->error==DC_GOAL_OK)rt->error=DC_GOAL_BAD_ARGUMENT;return 0;}
+  if(process_family(rt,dc_goal_symbol_value(rt,rt->s7+DC_FIX_SYM_PROCESS_TYPE))!=1)return 0;
+  return dc_goal_process_spans_init(table,rt,rows,capacity,&hooks);
+}
+int dc_goal_note_process_span(dc_goal_runtime *rt,uint32_t process,uint32_t bytes,dc_goal_process_span *out) {
+  if(!rt || active_runtime!=rt){if(rt&&rt->error==DC_GOAL_OK)rt->error=DC_GOAL_BAD_ARGUMENT;return 0;}
+  return dc_goal_process_span_note(rt,process,bytes,out);
+}
+int dc_goal_enter_known_scope(dc_goal_runtime *rt,uint32_t process) {
+  dc_goal_process_span span;
+  if(!rt || active_runtime!=rt){if(rt&&rt->error==DC_GOAL_OK)rt->error=DC_GOAL_BAD_ARGUMENT;return 0;}
+  return dc_goal_process_span_lookup(rt,process,&span) && dc_goal_enter_lexical_scope(rt,process,span.bytes);
+}
+int dc_goal_leave_known_scope(dc_goal_runtime *rt,uint32_t previous_process) {
+  dc_goal_pp_scope_stack *stack;dc_goal_pp_scope_frame *top;
+  if(!rt || active_runtime!=rt){if(rt&&rt->error==DC_GOAL_OK)rt->error=DC_GOAL_BAD_ARGUMENT;return 0;}
+  stack=dc_goal_pp_scope_active(rt);
+  if(!stack || !stack->depth){if(rt->error==DC_GOAL_OK)rt->error=DC_GOAL_BAD_ARGUMENT;return 0;}
+  top=&stack->frames[stack->depth-1];
+  if(top->saved_allocation.process!=previous_process){if(rt->error==DC_GOAL_OK)rt->error=DC_GOAL_BAD_ARGUMENT;return 0;}
+  return dc_goal_leave_lexical_scope(rt,top->lexical_process,top->lexical_bytes);
 }
 
 int dc_goal_install_process_bridge(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_goal_module_result *result) {

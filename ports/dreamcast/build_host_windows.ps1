@@ -113,5 +113,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Render window cache compilation failed' }
 if ($LASTEXITCODE -ne 0) { throw 'Render window cache bridge compilation failed' }
 & $Compiler @flags (Join-Path $port 'host_pp_scope.c') (Join-Path $port 'pp_scope.c') (Join-Path $port 'goal_runtime.c') (Join-Path $port 'goal_kernel_types.c') (Join-Path $port 'goal_process_heap.c') -o (Join-Path $build 'pp-scope-check.exe')
 if ($LASTEXITCODE -ne 0) { throw 'Portable lexical scope checker compilation failed' }
+& $Compiler @flags (Join-Path $port 'host_process_spans.c') (Join-Path $port 'process_spans.c') (Join-Path $port 'goal_runtime.c') -o (Join-Path $build 'process-spans-check.exe')
+if ($LASTEXITCODE -ne 0) { throw 'Process memory ownership checker compilation failed' }
 & $pythonCommand -m unittest discover -s (Join-Path $port 'tests') -v
 if ($LASTEXITCODE -ne 0) { throw 'Host tests failed' }

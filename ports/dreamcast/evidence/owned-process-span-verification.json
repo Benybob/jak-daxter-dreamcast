@@ -1,0 +1,50 @@
+{
+  "ai_assisted": true,
+  "result": "PASS",
+  "host_tests": 398,
+  "portable_checks": 101,
+  "new_native_checks": 89,
+  "runtime": {
+    "magic": 877155143,
+    "version": 1,
+    "state": 2,
+    "total": 23145,
+    "passed": 23145,
+    "failed_case": 0,
+    "system_ram": 16777216,
+    "code_bytes": 144794,
+    "observed_lo": 0,
+    "observed_hi": 0,
+    "expected_lo": 0,
+    "expected_hi": 0,
+    "description": "GOAL=144794 init/lists=pass arena=698592 symbols=710 img=312/432",
+    "elf_sha256": "2496fe1d0cf53851ff63dbdb498e6636e4455646eb35cb2f7ddd68409d4a2071",
+    "scope": "Native compiled GOAL scalar runtime, original list routines, typed memory, startup and static strings/floats; incomplete kernel/game",
+    "result": "PASS"
+  },
+  "numeric_checks_retained": 39,
+  "native_metadata": {
+    "descriptor_bytes": 32,
+    "row_bytes": 16,
+    "configured_capacity_in_test": 8,
+    "caller_metadata_bytes": 160
+  },
+  "features": [
+    "Actual sized global allocator captures process-family allocations before construction",
+    "Original symbol constructor and entire 272-byte fenced raw constructor oracle",
+    "Trusted C raw owner note separate from execution identity",
+    "Both original fixed-pool members captured and physical generations preserved on original pool return",
+    "Explicit known-extent lexical entry and distinct saved-process restoration",
+    "Real native fiber working-stack lookup, preserved integer/FP registers and root canaries",
+    "Full capacity refuses new process allocation before arena mutation",
+    "Generation reuse and global-quiescent retirement"
+  ],
+  "limits": [
+    "No automatic moving-pool/raw subspan lifecycle",
+    "No derived heap activation",
+    "No mutable GOAL pp lowering or throw/unwind",
+    "No full startup/scheduler/GC/gameplay",
+    "Stock 16 MiB Flycast, no hardware verification",
+    "Diagnostic arena includes working stacks; renderer/KOS/executable/root C stacks separate"
+  ]
+}

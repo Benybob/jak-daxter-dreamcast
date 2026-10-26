@@ -324,3 +324,8 @@ See [PROTECT_FRAME_ENTRY.md](PROTECT_FRAME_ENTRY.md). (AI-assisted).
 
 Original protect-frame construction and remove-exit now use an authenticated lexical process distinct from scheduler current-process. Process allocation follows nested lexical scopes and restores the prior domain. Native transfer guards and fixed-site return cleanup preserve faults and reject leaked/corrupt scopes. 394 host tests and 23,056 native runtime checks pass in stock 16 MiB Flycast, including 207 new native checks. The separate 39 numeric checks remain verified. Original deactivation, unwind, startup, scheduler and full gameplay remain unfinished. (AI-assisted)
 See [LEXICAL_PP_SCOPES.md](LEXICAL_PP_SCOPES.md). (AI-assisted).
+
+## Completed: Allocator-owned process extents and explicit process selection
+
+Original global process allocations now record their declared extents independently of mutable process fields. Unchanged original symbol/raw constructors and fixed-pool ownership/return are verified; explicit lexical selection uses trusted span lookup without publishing allocation as execution. Full-table allocation fails before committing memory, stale physical generations refuse, and real native fiber lookup/scope/teardown guards pass. 398 host tests and 23,145 native runtime checks pass in stock 16 MiB Flycast, including 101 new portable and 89 new native ownership checks. The separate 39 numeric checks remain verified. Moving pools, mutable GOAL pp, scheduler startup, GC/unwinding and full gameplay remain unfinished. (AI-assisted)
+See [PROCESS_OWNERSHIP.md](PROCESS_OWNERSHIP.md). (AI-assisted).
