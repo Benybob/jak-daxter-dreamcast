@@ -23,7 +23,8 @@ typedef struct {
  * Returns1 on success; invalid args or SR.FD/FPSCR.PR/SZ/FR return0 without output
  * writes. Normal KOS scalar FPU ABI only. Preserves caller XMTRX bit patterns and
  * FPU control mode; arithmetic exception/status flags are not preserved.
- * Near/behind projected fields are zero, view fields retained for clipping.
+ * Below-near projected fields are zero, view fields retained for clipping;
+ * vertices exactly on the near plane are projected.
  * This transforms the whole selected cache; it does not cull or drop materials. */
 int dc_render_world_prepare(const dc_render_window *,dc_render_vertex *,uint32_t,
                             const dc_render_camera *);

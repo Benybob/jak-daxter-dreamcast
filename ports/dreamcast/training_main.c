@@ -14,6 +14,11 @@
 #include "world_manifest.h"
 #include "training_layer.h"
 #include "camera_rig.h"
+#ifdef DC_TRAINING_STREAM
+#include <zlib.h>
+#include "training_render.h"
+#include "build/training_render_fixture.h"
+#endif
 
 KOS_INIT_FLAGS(INIT_DEFAULT);
 
@@ -81,30 +86,78 @@ dc_camera_rig dc_camera_state;
 static float *terrain_camera;
 static float camera_floor;
 static dc_world_manifest meta;
+#ifdef DC_TRAINING_STREAM
+static dc_training_render render_stream;
+volatile uint32_t dc_render_stream_commits,dc_render_stream_refusals,dc_render_stream_max_faces;
+volatile uint32_t dc_render_stream_texture_bytes,dc_render_stream_gpu_slots,dc_render_stream_payload_crc;
+volatile uint32_t dc_render_stream_faces,dc_render_stream_clipped,dc_render_stream_near_clipped;
+volatile int32_t dc_render_stream_anchor_x,dc_render_stream_anchor_z;
+static uint32_t verified_render_commits;
+static const char *stream_update(float yaw) {
+ dc_render_camera camera={{meta.origin.x+dc_camera_state.target.x,meta.origin.y+dc_camera_state.target.y,
+                           meta.origin.z+dc_camera_state.target.z},yaw,DC_CAMERA_PITCH,dc_camera_state.distance};
+ const char *error=dc_training_render_update(&render_stream,&camera);unsigned i;
+ dc_render_stream_refusals=render_stream.refusals;if(error)return error;
+ if(render_stream.commits!=verified_render_commits) {
+  const dc_render_window *w=&render_stream.window;int found=0;uint32_t crc=(uint32_t)crc32(0,w->faces,w->count*116u);
+  for(i=0;i<TRAINING_RENDER_ORACLE_COUNT;++i) {
+   const struct training_render_oracle *o=&training_render_oracles[i];
+   if(w->coverage.x0==(double)o->x-18.4&&w->coverage.z0==(double)o->z-18.4) {
+    if(w->count!=o->count||crc!=o->crc)return "render window payload oracle mismatch";
+    dc_render_stream_anchor_x=o->x;dc_render_stream_anchor_z=o->z;
+    found=1;break;
+   }
+  }
+  if(!found)return "render window outside prepared prototype coverage";
+  verified_render_commits=render_stream.commits;dc_render_stream_payload_crc=crc;
+  if(w->count>dc_render_stream_max_faces)dc_render_stream_max_faces=w->count;
+ }
+ dc_render_stream_commits=render_stream.commits;dc_render_stream_texture_bytes=render_stream.gpu.bytes;
+ dc_render_stream_faces=render_stream.window.count;
+ dc_render_stream_gpu_slots=(uint32_t)(uintptr_t)render_stream.gpu.slots;
+ return NULL;
+}
+#endif
 static const char *load_terrain(void){
  FILE *f;const char *error;dc_vec3 origin;
  f=fopen("/rd/world.xfm","rb");if(!f)return "world.xfm missing";
- error=dc_world_manifest_load(f,&meta);fclose(f);if(error)return error;
+#ifdef DC_TRAINING_STREAM
+ error=dc_world_manifest_check_file(f,TRAINING_RENDER_XFM_BYTES,TRAINING_RENDER_XFM_CRC);
+ if(!error)error=dc_world_manifest_load(f,&meta);
+#else
+ error=dc_world_manifest_load(f,&meta);
+#endif
+ if(fclose(f)&&!error)error="world.xfm close failed";
+ if(error)return error;
  if(fabsf(meta.spawn.x)>6.5f||fabsf(meta.spawn.z)>6.5f||meta.spawn.y< -4)
   return "spawn outside bounded training map";
  f=fopen("/rd/world.dct","rb");if(!f)return "world.dct missing";
  error=dc_world_manifest_check_file(f,meta.dct_bytes,meta.dct_crc);
  if(!error)error=dc_textured_load(f,&terrain);
- fclose(f);if(error)return error;
+ if(fclose(f)&&!error)error="world.dct close failed";
+ if(error)return error;
  f=fopen("/rd/world.dcc","rb");if(!f)return "world.dcc missing";
  error=dc_world_manifest_check_file(f,meta.dcc_bytes,meta.dcc_crc);
  if(!error)error=dc_collision_load(f,&world,&origin);
- fclose(f);if(error)return error;
+ if(fclose(f)&&!error)error="world.dcc close failed";
+ if(error)return error;
  error=dc_world_manifest_match(&meta,&terrain,&world,origin);if(error)return error;
  if(meta.extent.x<=0||meta.extent.y<=0||meta.extent.z<=0)return "camera requires WLD3 collision coverage";
+#ifdef DC_TRAINING_STREAM
+ dc_textured_free(&terrain);
+#else
  terrain_camera=malloc(terrain.vertex_count*3*sizeof(float));
  if(!terrain_camera)return "world camera allocation failed";
+#endif
  return NULL;
 }
 int main(void){
  dc_textured_scene scene;FILE *f;const char *error=NULL;uint64_t previous;float accumulator=0,yaw=0,landing_time=1;
  unsigned frames=0,last_landings=0,i;int result=1;
  pvr_init_params_t params={.opb_sizes={PVR_BINSIZE_32,0,0,0,PVR_BINSIZE_32},.vertex_buf_size=512*1024,.opb_overflow_count=3};
+#ifdef DC_TRAINING_STREAM
+ params.vertex_buf_size=1024*1024;
+#endif
  dc_telemetry.state=DC_BOOT;dc_telemetry.source=2;
  f=fopen("/rd/player.dct","rb");if(!f){record_error("player.dct missing");return 1;}
  error=dc_textured_load(f,&scene);fclose(f);if(error){record_error(error);return 1;}
@@ -116,10 +169,23 @@ int main(void){
  vid_set_mode(DM_640x480,PM_RGB565);
  if(pvr_init(&params)<0){record_error("PVR initialization failed");goto release;}
  pvr_set_bg_color(0.12f,0.20f,0.29f);
- if(!local_pose || !camera_vertices || !dc_training_layer_make(&actor_layer,&scene) || !dc_training_layer_make(&terrain_layer,&terrain) || make_label(0)<0){record_error("render allocation failed");goto shutdown;}
+ if(!local_pose || !camera_vertices || !dc_training_layer_make(&actor_layer,&scene) ||
+#ifndef DC_TRAINING_STREAM
+    !dc_training_layer_make(&terrain_layer,&terrain) ||
+#endif
+    make_label(0)<0){record_error("render allocation failed");goto shutdown;}
  if(!dc_player_world_place(&dc_player_state,&world,meta.spawn)){record_error("world placement refused");goto shutdown;}camera_floor=dc_player_state.y;
+#ifdef DC_TRAINING_STREAM
+ if(!dc_camera_rig_update(&dc_camera_state,&world,meta.extent,(dc_vec3){dc_player_state.x,dc_player_state.y,dc_player_state.z},camera_floor,0,0)){record_error("initial camera refused");goto shutdown;}
+ error=dc_training_render_make("/rd/render",training_render_source_sha,&render_stream);if(error){record_error(error);goto shutdown;}
+ error=stream_update(0);if(error){record_error(error);goto shutdown;}
+#endif
  dc_telemetry.triangles=scene.index_count/3+terrain.index_count/3;
  dc_telemetry.geometry_bytes=scene.vertex_count*24+scene.index_count*2+animation.vertices*animation.frames*6+terrain.vertex_count*24+terrain.index_count*2+world.count*76;
+#ifdef DC_TRAINING_STREAM
+ dc_telemetry.triangles+=render_stream.window.count;
+ dc_telemetry.geometry_bytes+=render_stream.window.count*190u;
+#endif
  dc_telemetry.system_ram=_arch_mem_top-0x8c000000u;dc_telemetry.vram_free=pvr_mem_available();
  {struct mallinfo m=mallinfo();dc_telemetry.allocator_live=m.uordblks;dc_telemetry.allocator_arena=m.arena;}
  dc_telemetry.state=DC_READY;previous=timer_us_gettime64();
@@ -149,21 +215,47 @@ int main(void){
   for(i=0;i<scene.vertex_count;++i){float x=local_pose[i*3],z=local_pose[i*3+2];
    camera_vertices[i*3]=c*x+s*z;camera_vertices[i*3+1]=local_pose[i*3+1]+(dc_player_state.y-dc_camera_state.target.y)/4;camera_vertices[i*3+2]=-s*x+c*z;
   }
+#ifndef DC_TRAINING_STREAM
   for(i=0;i<terrain.vertex_count;++i){
    terrain_camera[i*3]=(terrain.vertices[i].x*meta.scale+meta.shift.x-dc_player_state.x)/4;
    terrain_camera[i*3+1]=(terrain.vertices[i].y*meta.scale+meta.shift.y-dc_camera_state.target.y)/4;
    terrain_camera[i*3+2]=(terrain.vertices[i].z*meta.scale+meta.shift.z-dc_player_state.z)/4;
   }
+#endif
   /* Preserve view coordinates for clipping; divide only front-side vertices. */
-  if(!dc_scene_prepare(camera_vertices,12,actor_layer.vertices,scene.vertex_count,yaw,DC_CAMERA_PITCH,dc_camera_state.distance/4) ||
-     !dc_scene_prepare(terrain_camera,12,terrain_layer.vertices,terrain.vertex_count,yaw,DC_CAMERA_PITCH,dc_camera_state.distance/4)){record_error("projection mode rejected");break;}
-  pvr_wait_ready();pvr_scene_begin();pvr_list_begin(PVR_LIST_OP_POLY);dc_training_layer_draw(&terrain_layer,&terrain,PVR_LIST_OP_POLY);dc_training_layer_draw(&actor_layer,&scene,PVR_LIST_OP_POLY);draw_label();pvr_list_finish();
-  pvr_list_begin(PVR_LIST_PT_POLY);dc_training_layer_draw(&terrain_layer,&terrain,PVR_LIST_PT_POLY);dc_training_layer_draw(&actor_layer,&scene,PVR_LIST_PT_POLY);pvr_list_finish();pvr_scene_finish();
+  if(!dc_scene_prepare(camera_vertices,12,actor_layer.vertices,scene.vertex_count,yaw,DC_CAMERA_PITCH,dc_camera_state.distance/4)){record_error("projection mode rejected");break;}
+#ifdef DC_TRAINING_STREAM
+  error=stream_update(yaw);if(error){record_error(error);break;}
+  dc_telemetry.triangles=scene.index_count/3+render_stream.window.count;
+  dc_telemetry.geometry_bytes=scene.vertex_count*24+scene.index_count*2+animation.vertices*animation.frames*6+world.count*76+render_stream.window.count*190u;
+#else
+  if(!dc_scene_prepare(terrain_camera,12,terrain_layer.vertices,terrain.vertex_count,yaw,DC_CAMERA_PITCH,dc_camera_state.distance/4)){record_error("projection mode rejected");break;}
+#endif
+  pvr_wait_ready();pvr_scene_begin();pvr_list_begin(PVR_LIST_OP_POLY);
+#ifdef DC_TRAINING_STREAM
+  {dc_render_base_stats stats={0};if(!dc_render_base_draw(&render_stream.bank,&render_stream.frame,PVR_LIST_OP_POLY,&stats))record_error("terrain OP draw refused");
+   dc_render_stream_clipped+=stats.clipped;dc_render_stream_near_clipped+=stats.near_clipped;}
+#else
+  dc_training_layer_draw(&terrain_layer,&terrain,PVR_LIST_OP_POLY);
+#endif
+  dc_training_layer_draw(&actor_layer,&scene,PVR_LIST_OP_POLY);draw_label();pvr_list_finish();
+  pvr_list_begin(PVR_LIST_PT_POLY);
+#ifdef DC_TRAINING_STREAM
+  {dc_render_base_stats stats={0};if(!dc_render_base_draw(&render_stream.bank,&render_stream.frame,PVR_LIST_PT_POLY,&stats))record_error("terrain PT draw refused");
+   dc_render_stream_clipped+=stats.clipped;dc_render_stream_near_clipped+=stats.near_clipped;}
+#else
+  dc_training_layer_draw(&terrain_layer,&terrain,PVR_LIST_PT_POLY);
+#endif
+  dc_training_layer_draw(&actor_layer,&scene,PVR_LIST_PT_POLY);pvr_list_finish();pvr_scene_finish();
+  if(dc_telemetry.state==DC_ERROR)break;
   dc_telemetry.frames=++frames;dc_telemetry.yaw=yaw;dc_telemetry.pitch=DC_CAMERA_PITCH;dc_telemetry.distance=dc_camera_state.distance/4;
  }
  pvr_wait_ready();
 shutdown:
  if(label_texture){pvr_wait_ready();pvr_mem_free(label_texture);label_texture=NULL;}
+#ifdef DC_TRAINING_STREAM
+ pvr_wait_ready();dc_training_render_free(&render_stream);dc_render_stream_gpu_slots=0;dc_render_stream_texture_bytes=0;
+#endif
  pvr_wait_ready();dc_training_layer_free(&actor_layer);dc_training_layer_free(&terrain_layer);pvr_shutdown();
 release:
  dc_textured_free(&terrain);dc_collision_free(&world);free(terrain_camera);

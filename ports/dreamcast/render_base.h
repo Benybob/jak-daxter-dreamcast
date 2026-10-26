@@ -14,7 +14,7 @@ typedef struct {
  const unsigned char *faces;
  uint32_t first[257],count,materials,catalog_crc,ready,valid;
 } dc_render_base_frame;
-typedef struct {uint32_t faces,clipped,culled,triangles,invalid;} dc_render_base_stats;
+typedef struct {uint32_t faces,clipped,culled,triangles,invalid,near_clipped;} dc_render_base_stats;
 /* Normal KOS FPU ABI; all owners zero-initialized. Bank borrows GPU texture
  * addresses but owns only its CPU header/metadata arrays. GPU textures must
  * outlive every submitted borrowing frame. Opaque and texture-baked MASK base

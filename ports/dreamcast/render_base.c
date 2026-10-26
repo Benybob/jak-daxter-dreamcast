@@ -119,15 +119,17 @@ int dc_render_base_draw(const dc_render_base_bank *bank,const dc_render_base_fra
   if(bank->materials[material].list!=(uint32_t)list||frame->first[material]==frame->first[material+1])continue;
   pvr_prim(&bank->headers[material],sizeof(bank->headers[material]));
   for(index=frame->first[material];index<frame->first[material+1];++index) {
-   uint32_t face=frame->order[index];dc_clip_vertex input[3],poly[8];dc_projected_vertex projected[8];int n,fan;
+   uint32_t face=frame->order[index];dc_clip_vertex input[3],poly[8];dc_projected_vertex projected[8];int n,fan;unsigned front=0;
    const unsigned char *record=frame->faces+(size_t)face*116u+8u;++stats->faces;
    for(j=0;j<3;++j,record+=36) {
     dc_view_vertex v=frame->vertices[face*3u+j].view;
+    if(v.z>=DC_SCENE_NEAR)++front;
     input[j]=(dc_clip_vertex){v.x,v.y,v.z,read_float(record+12),read_float(record+16),read32(record+32)};
    }
    n=dc_render_clip_viewport(input,poly);
    if(n<0){++stats->invalid;flush(&queued);return 0;}
    if(n<3){++stats->culled;continue;}
+   if(front&&front<3)++stats->near_clipped;
    if(n==3&&!memcmp(input,poly,3*sizeof(*input))) {
     for(j=0;j<3;++j)projected[j]=frame->vertices[face*3u+j].projected;
    }else {

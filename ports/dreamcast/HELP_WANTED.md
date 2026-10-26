@@ -294,3 +294,8 @@ See [RENDER_CACHE.md](RENDER_CACHE.md). (AI-assisted).
 
 The cached renderer now draws a 3,547-face original training window using resident PowerVR colors, packed SH4ZAM world transforms and full viewport clipping. Original and procedural base-pass runs each pass 42 native ownership/readiness checks; six framebuffer samples check masks, depth and sidedness. 367 host tests, 164,852 native world-view checks and 12,620 viewport checks pass. Controller streaming, reflection/TOD shading and full original GOAL gameplay remain unfinished. (AI-assisted)
 See [BASE_RENDERING.md](BASE_RENDERING.md). (AI-assisted).
+
+## Completed: Playable cached original terrain with resident PowerVR textures
+
+The native walking prototype now uses cached original terrain, resident PowerVR textures and SH4ZAM transforms. 26 integrated stock-16-MiB Flycast checks pass, including multiple exact-source render windows and stable texture ownership; 93 original-free native failure/reuse/cleanup checks and 371 host tests pass. The earlier prototype retains its 20 passing checks. Captured movement/jump/camera frames were visually reviewed. The region and native C controller remain temporary; full original GOAL gameplay and reflection/TOD fidelity are unfinished. (AI-assisted)
+See [TRAINING_STREAM.md](TRAINING_STREAM.md). (AI-assisted).

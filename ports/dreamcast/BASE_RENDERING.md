@@ -2,8 +2,8 @@
 
 2026-10-25. (AI-assisted). The cached geometry now reaches PowerVR through
 SH4ZAM world transforms, full viewport clipping and independently resident
-textures. This is a separate renderer diagnostic. The walking prototype still
-uses its earlier bounded terrain path; integration is the next step.
+textures. This remains a separate renderer diagnostic. The walking prototype
+now also uses this path through [TRAINING_STREAM.md](TRAINING_STREAM.md).
 
 ## Verified behavior
 

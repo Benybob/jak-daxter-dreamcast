@@ -24,6 +24,8 @@ KOS_ROMDISK_DIR := romdisk
 private-romdisk-refresh:
 build/player-romdisk.o build/world-romdisk.o build/training-romdisk.o build/camera-world-romdisk.o build/sector-romdisk.o build/render-romdisk.o build/gpu-catalog-romdisk.o build/render-cache-romdisk.o: private-romdisk-refresh
 build/render-base-romdisk.o: private-romdisk-refresh
+build/training-stream-romdisk.o: private-romdisk-refresh
+build/training-owner-romdisk.o: private-romdisk-refresh
 all: $(TARGET) $(SCENE_TARGET) $(TEXTURED_TARGET) $(BACKEND_TARGET) $(RUNTIME_TARGET)
 
 # Host-only commands need no KallistiOS installation.
@@ -611,6 +613,30 @@ build/render-base-romdisk.o: $(RENDER_BASE_ASSET_DIR)/BASE_CASE.json
 	$(KOS_CC) $(KOS_CFLAGS) -c build/render-base-romdisk.c -o build/render-base-romdisk-tmp.o
 	$(KOS_CC) -o $@ -r build/render-base-romdisk-tmp.o $(KOS_LIB_PATHS) -Wl,--whole-archive -lromdiskbase
 jak-dc-render-base.elf: render_base_main.o render_base_test.o render_gpu.o render_cache.o render_package.o sector_inflate.o render_world_view.o render_world_view_gate.o render_frustum.o build/render-base-romdisk.o | render_base.o
+	kos-cc -o $@ $^ -lsh4zam -lz -lm
+TRAINING_STREAM_ASSET_DIR ?= build/private-training-stream-assets
+training_render.o: training_render.c training_render.h render_base.h
+training_stream_main.o: training_main.c training_render.h build/training_render_fixture.h private-romdisk-refresh
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -DDC_TRAINING_STREAM -c $< -o $@
+build/training-stream-romdisk.o: $(TRAINING_STREAM_ASSET_DIR)/STREAM_BUNDLE.json
+	mkdir -p build
+	$(KOS_GENROMFS) -f build/training-stream-romdisk.img -d $(TRAINING_STREAM_ASSET_DIR) -x '*.json'
+	$(KOS_BASE)/utils/bin2c/bin2c build/training-stream-romdisk.img build/training-stream-romdisk.c romdisk
+	$(KOS_CC) $(KOS_CFLAGS) -c build/training-stream-romdisk.c -o build/training-stream-romdisk-tmp.o
+	$(KOS_CC) -o $@ -r build/training-stream-romdisk-tmp.o $(KOS_LIB_PATHS) -Wl,--whole-archive -lromdiskbase
+jak-dc-training-stream.elf: training_stream_main.o training_render.o render_base.o render_gpu.o render_cache.o render_package.o sector_inflate.o render_world_view.o render_world_view_gate.o render_frustum.o training_layer.o scene_clip.o player_motion.o player_world_motion.o player_anim.o world_collision.o world_manifest.o camera_boom.o camera_rig.o textured_scene.o scene_projection_sh4zam.o scene_projection_gate.o build/training-stream-romdisk.o
+	kos-cc -o $@ $^ -lsh4zam -lz -lm
+TRAINING_OWNER_ASSET_DIR ?= build/private-training-owner-assets
+build/training_owner_fixture.h: make_training_owner_fixture.py
+	$(PYTHON) make_training_owner_fixture.py build/private-training-owner-assets --header $@
+training_render_cases_main.o: training_render_cases_main.c training_render.h build/training_owner_fixture.h private-romdisk-refresh
+build/training-owner-romdisk.o: $(TRAINING_OWNER_ASSET_DIR)/OWNER_CASES.json
+	mkdir -p build
+	$(KOS_GENROMFS) -f build/training-owner-romdisk.img -d $(TRAINING_OWNER_ASSET_DIR) -x '*.json'
+	$(KOS_BASE)/utils/bin2c/bin2c build/training-owner-romdisk.img build/training-owner-romdisk.c romdisk
+	$(KOS_CC) $(KOS_CFLAGS) -c build/training-owner-romdisk.c -o build/training-owner-romdisk-tmp.o
+	$(KOS_CC) -o $@ -r build/training-owner-romdisk-tmp.o $(KOS_LIB_PATHS) -Wl,--whole-archive -lromdiskbase
+jak-dc-training-render.elf: training_render_cases_main.o training_render.o render_base_test.o render_gpu.o render_cache.o render_package.o sector_inflate.o render_world_view.o render_world_view_gate.o render_frustum.o build/training-owner-romdisk.o
 	kos-cc -o $@ $^ -lsh4zam -lz -lm
 build/frustum_fixture.h: make_frustum_fixture.py frustum_oracle.py
 	$(PYTHON) make_frustum_fixture.py $@

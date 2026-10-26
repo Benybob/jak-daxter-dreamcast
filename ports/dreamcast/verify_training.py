@@ -16,7 +16,7 @@ def render_lua(template,values):
  return re.sub(r'\b(?:'+'|'.join(map(re.escape,values))+r')\b',lambda m:values[m.group(0)],template)
 
 def main():
- ap=argparse.ArgumentParser(description=__doc__);ap.add_argument('flycast',type=Path);ap.add_argument('elf',type=Path);ap.add_argument('--nm',type=Path,required=True);ap.add_argument('--output',type=Path,required=True);ap.add_argument('--expected-triangles',type=int,default=6566,help='Expected combined actor + terrain source triangles');a=ap.parse_args();a.platform=False
+ ap=argparse.ArgumentParser(description=__doc__);ap.add_argument('flycast',type=Path);ap.add_argument('elf',type=Path);ap.add_argument('--nm',type=Path,required=True);ap.add_argument('--output',type=Path,required=True);ap.add_argument('--expected-triangles',type=int,default=6566,help='Expected combined actor + terrain source triangles');ap.add_argument('--stream-bundle',type=Path,help='Private STREAM_BUNDLE.json with full-source reachable window oracles');a=ap.parse_args();a.platform=False
  if not 1<=a.expected_triangles<=16384:ap.error('--expected-triangles must be 1..16384')
  symbols=subprocess.check_output([str(a.nm),str(a.elf)],text=True)
  def address(name):return int(re.search(r'^([0-9a-fA-F]+)\s+\w\s+_?'+name+r'$',symbols,re.M)[1],16)
@@ -34,7 +34,42 @@ def main():
  values=dict(PLATFORM='false',ADDRESS=str(address('dc_telemetry')),PLAYER=str(address('dc_player_state')),
   CAMERA=str(address('dc_camera_state')),CLIP=str(address('dc_play_clip')),TICKS=str(address('dc_training_ticks')),
   CLIPPED=str(address('dc_training_clipped_triangles')),RESPAWNS=str(address('dc_world_respawns')),OUT=json.dumps(out.as_posix()))
- lua=render_lua(LUA,values)
+ template=LUA
+ stream_fields=('commits','refusals','faces','max_faces','anchor_x','anchor_z','texture_bytes','gpu_slots','payload_crc','clipped','near_clipped')
+ if a.stream_bundle:
+  stream_bundle=json.loads(a.stream_bundle.read_text())
+  addresses=[address('dc_render_stream_'+name) for name in stream_fields]
+  extra="""local original_snapshot=snapshot
+snapshot=function(name)
+ original_snapshot(name)
+ local f=assert(io.open(OUT..'/'..name..'-stream.bin','wb'))
+ local addresses={STREAM_ADDRESSES}
+ for _,address in ipairs(addresses) do
+  for byte=0,3 do f:write(string.char(flycast.memory.read8(address+byte))) end
+ end
+ f:close()
+end
+""".replace('STREAM_ADDRESSES',','.join(map(str,addresses)))
+  template=template.replace('local function capture(name)',extra+'local function capture(name)')
+  # A vblank can interrupt publication of several separate telemetry words.
+  # Delay that observation until the count/anchor/CRC form one known window;
+  # a permanent disagreement still fails at the normal completion deadline.
+  oracle_rows=','.join('['+json.dumps(str(row['x'])+','+str(row['z']))+']={'+str(row['count'])+','+str(row['crc'])+'}' for row in stream_bundle['source_window_oracles'])
+  guard="""local stream_oracles={ORACLE_ROWS}
+local function stream_coherent()
+ if word(8)~=2 then return true end
+ local function signed(address)
+  local v=flycast.memory.read32(address);if v>=2147483648 then v=v-4294967296 end;return v
+ end
+ local x=signed(ANCHOR_X);local z=signed(ANCHOR_Z)
+ local known=stream_oracles[string.format('%d,%d',x,z)]
+ local faces=flycast.memory.read32(FACES)
+ return known and faces==known[1] and flycast.memory.read32(CRC)==known[2] and word(16)==ACTOR+faces
+end
+""".replace('ORACLE_ROWS',oracle_rows).replace('ANCHOR_X',str(addresses[4])).replace('ANCHOR_Z',str(addresses[5])).replace('FACES',str(addresses[2])).replace('CRC',str(addresses[8])).replace('ACTOR',str(stream_bundle['actor_triangles']))
+  template=template.replace('local function vblank()',guard+'local function vblank()')
+  template=template.replace('if done then return end\n ticks=ticks+1','if done then return end\n if not stream_coherent() then return end\n ticks=ticks+1')
+ lua=render_lua(template,values)
  lua_path.write_text(lua)
  command=[str(exe),'-config','config:UseReios=yes','-config','config:Dreamcast.RamMod32MB=no','-config','config:Debug.SerialConsoleEnabled=no','-config','config:LuaFileName=verify.lua','-config','config:rend.EmulateFramebuffer=yes','-config','audio:backend=null','-config','log:LogToFile=yes',str(a.elf.resolve())]
  with (out/'frontend.log').open('w') as log:
@@ -68,7 +103,22 @@ def main():
  checks['near_clipping_active']=struct.unpack('<I',(out/'clipped.bin').read_bytes())[0]>0
  checks['training_triangles']=s['idle']['triangles']==a.expected_triangles
  checks['heap_below_4mib']=s['idle']['allocator_live']<4*1024*1024
+ stream=None
+ if a.stream_bundle:
+  bundle=json.loads(a.stream_bundle.read_text());oracle={(row['x'],row['z']):row for row in bundle['source_window_oracles']}
+  names=(*snapshots,'boundary');stream={name:dict(zip(stream_fields,struct.unpack('<4I2i5I',(out/(name+'-stream.bin')).read_bytes()))) for name in names}
+  active={name:row for name,row in stream.items() if name!='exit'}
+  checks['near_clipping_active']=checks['near_clipping_active'] or any(row['near_clipped']>0 for row in active.values())
+  checks['training_triangles']=all(s[name]['triangles']==bundle['actor_triangles']+stream[name]['faces'] for name in snapshots)
+  checks['stream_multiple_commits']=max(row['commits'] for row in active.values())>=2
+  checks['stream_multiple_anchors']=len({(row['anchor_x'],row['anchor_z']) for row in active.values()})>=2
+  checks['stream_no_refusals']=all(row['refusals']==0 for row in stream.values())
+  checks['stream_exact_source_windows']=all((row['anchor_x'],row['anchor_z']) in oracle and row['faces']==oracle[row['anchor_x'],row['anchor_z']]['count'] and row['payload_crc']==oracle[row['anchor_x'],row['anchor_z']]['crc'] for row in active.values())
+  checks['stream_resident_texture_owner']=len({row['gpu_slots'] for row in active.values()})==1 and all(row['gpu_slots'] and row['texture_bytes']==bundle['resident_color_bytes'] for row in active.values())
+  checks['stream_GPU_cleanup']=stream['exit']['gpu_slots']==0 and stream['exit']['texture_bytes']==0
  result=dict(ai_assisted=True,result='PASS' if all(checks.values()) else 'FAIL',elf_sha256=hashlib.sha256(a.elf.read_bytes()).hexdigest(),checks=checks,snapshots=snapshots,timebase='monotonic fixed60Hz simulation ticks',scope='Native C original-training patch prototype; captured images require visual review; not original GOAL gameplay or hardware validation')
+ if stream:
+  result['stream_snapshots']=stream;result['scope']='Native C bounded original training prototype with transactional render-window changes, full-source payload oracles and stable resident texture owner; base pass only, not original GOAL gameplay/full-game streaming or hardware validation'
  (out/'result.json').write_text(json.dumps(result,indent=2)+'\n');print(json.dumps(dict(result=result['result'],checks=checks),indent=2))
  if result['result']!='PASS':raise SystemExit(1)
 if __name__=='__main__':main()
