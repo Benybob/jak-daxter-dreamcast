@@ -1,0 +1,106 @@
+{
+  "ai_assisted": true,
+  "result": "PASS",
+  "host_tests": 367,
+  "native_results": {
+    "world_view": {
+      "result": "PASS",
+      "total": 164852,
+      "passed": 164852,
+      "elf_sha256": "270f8c4b718586d2bb14a032d917c448bfed3d69a195dffd3e25e95692cb980f",
+      "scope": "Native packed world geometry SH4ZAM camera transform, large-coordinate precision, projection/near masking and matrix/FPU controls; no GPU drawing/game integration or hardware validation"
+    },
+    "frustum": {
+      "result": "PASS",
+      "total": 12620,
+      "passed": 12620,
+      "elf_sha256": "b6630f3fdf64e65df4deda2d2834aae8e943648bf6a738bac55dba4d77a8ecbf",
+      "scope": "Native full viewport/near clipping against exact rational barycentric hulls; raw UV/color/winding and long-face coverage, no GPU drawing/game integration or hardware validation"
+    },
+    "original_base": {
+      "result": "PASS",
+      "total": 42,
+      "passed": 42,
+      "elf_sha256": "dd3e9cccc6d955a5e008bf62aa3b1492c8360d4606cedc890b2827f14d4e39a7",
+      "scope": "Native cached geometry, independent resident textures, SH4ZAM world transform and clipped base-pass raster; allocation rollback/cleanup, no reflection/TOD shader, playable streaming integration or hardware validation"
+    }
+  },
+  "captures": {
+    "original": {
+      "result": "PASS",
+      "checks": {
+        "native_pass": true,
+        "ram_16mib": true,
+        "capture_hash": true,
+        "capture_format": true,
+        "all_faces": true,
+        "completed_frames": true,
+        "triangles_submitted": true,
+        "CPU_owners_released": true
+      },
+      "metrics": {
+        "frames": 12,
+        "faces": 3547,
+        "triangles": 1759,
+        "clipped": 220,
+        "culled": 1913,
+        "secondary": 42,
+        "cpu_live": 0,
+        "cpu_peak": 529236,
+        "vram_bytes": 392192
+      },
+      "elf_sha256": "dd3e9cccc6d955a5e008bf62aa3b1492c8360d4606cedc890b2827f14d4e39a7",
+      "framebuffer_sha256": "93f081208ca875b321542985d5e66ca28a1d8abc713a5c4f91710897f095f524"
+    },
+    "synthetic": {
+      "result": "PASS",
+      "checks": {
+        "native_pass": true,
+        "ram_16mib": true,
+        "capture_hash": true,
+        "capture_format": true,
+        "all_faces": true,
+        "completed_frames": true,
+        "triangles_submitted": true,
+        "CPU_owners_released": true,
+        "red": true,
+        "green": true,
+        "mask_hole": true,
+        "single_back": true,
+        "double_back": true,
+        "clipped_background": true,
+        "clipping_exercised": true,
+        "sidedness_exercised": true,
+        "secondary_maps_retained": true
+      },
+      "metrics": {
+        "frames": 12,
+        "faces": 5,
+        "triangles": 5,
+        "clipped": 1,
+        "culled": 1,
+        "secondary": 1,
+        "cpu_live": 0,
+        "cpu_peak": 940,
+        "vram_bytes": 640
+      },
+      "elf_sha256": "092f91bb7af91cec90d35740df8297e7e81768dc1bcbdb48d168b5e989a1a5c3",
+      "framebuffer_sha256": "c1be851ba7b075f2354cf1ab1e180966ed74b378d45e9f1b083ff226263cd6a6"
+    }
+  },
+  "original_visual_review": {
+    "ai_assisted": true,
+    "result": "PASS",
+    "scope": "Local visual visibility review only, not original PS2 visual equivalence",
+    "framebuffer_sha256": "93f081208ca875b321542985d5e66ca28a1d8abc713a5c4f91710897f095f524",
+    "observations": [
+      "Original training grass, rock cliffs and tree geometry visible",
+      "No character expected in this renderer diagnostic",
+      "Base pass only; reflections/time-of-day and playable streaming remain unfinished"
+    ]
+  },
+  "scope": "Base-pass diagnostic, not playable streaming or full original renderer/game",
+  "physical_hardware_tested": false,
+  "full_game_complete": false,
+  "CPU_frame_peak_excludes": "catalog/cache/decoder, fixed owner structs, allocator overhead, executable/ROM disk, KOS/stacks/GPU"
+}

@@ -20,9 +20,10 @@ cover the supported subset; expert human review is still needed.
 | Original training-island collision | Source published: bounded capsule movement against a 576-triangle patch with retained surface metadata |
 | Original training-island rendering + movement | Source published: separate native target, private asset conversion, transform/file binding; 20 integrated checks pass, including boundary respawn |
 | Collision sector loading | Source published: 572 native original-training window loads verified; game/render streaming integration pending |
-| Original render package | Source published: all 140,166 original lower-LOD triangles/material inputs retained; native CPU reader and cache verified; GPU drawing/game integration pending |
-| CPU render windows | Source published: all 572 original windows verified, transactional rollback; drawing/game integration pending |
-| Resident color textures | Source published: 70 original color maps verified in VRAM; staged failure preserves old owner; geometry/cache integration pending |
+| Original render package | Source published: all 140,166 original lower-LOD triangles/material inputs retained; native reader, cache and base-pass drawing verified; gameplay/reflection integration pending |
+| Cached world base pass | Source published: original 3,547-face window rendered with resident colors; controller streaming and reflections pending |
+| CPU render windows | Source published: all 572 original windows verified, transactional rollback; base-pass drawing verified; game integration pending |
+| Resident color textures | Source published: 70 original color maps verified in VRAM; staged failure preserves old owner; base-pass geometry integrated in a diagnostic; game integration pending |
 | Original background LODs | Source published: original LOD selection; reduced training patch passes movement and camera checks |
 | Full original game | Unfinished: no complete kernel boot, general gameplay, progression or release build |
 
@@ -49,7 +50,9 @@ material preservation, bounded CPU decoding and verified storage/window measurem
 [RESIDENT_TEXTURES.md](ports/dreamcast/RESIDENT_TEXTURES.md) covers resident VRAM colors,
 staged replacement and independent geometry/texture ownership.
 [RENDER_CACHE.md](ports/dreamcast/RENDER_CACHE.md) covers bounded transactional geometry
-windows, full replica checks and pending rendering integration.
+windows, full replica checks and bounded ownership.
+[BASE_RENDERING.md](ports/dreamcast/BASE_RENDERING.md) covers the integrated cached
+world-view/clip/base-pass diagnostic and pending playable streaming/reflections.
 
 ## Current verification
 
@@ -59,7 +62,7 @@ and checkpoints, not a percentage of game completion or a single full-game run.
 
 | Area | Locally verified scope |
 | --- | --- |
-| Host | 354 tests pass with the complete local SDK/oracle setup |
+| Host | 367 tests pass with the complete local SDK/oracle setup |
 | GOAL runtime | 22,649 native checks at its latest verified checkpoint |
 | Numeric regression | 39 native checks |
 | Prototype movement | 318 native checks; visible test-map controller and platform paths pass |
@@ -67,9 +70,12 @@ and checkpoints, not a percentage of game completion or a single full-game run.
 | Collision file loader | 147 host checks |
 | Sector loading | 5,164 native cache/IO/rollback checks across 572 windows; all 61,576 original faces exercised |
 | Compressed blocks | 158 native exact-framing, workspace and canary checks; used by the new CPU render reader |
+| Cached base-pass raster | Original/procedural frames each pass 42 native owner/readiness checks; six pixel samples verify masks, depth and sidedness |
+| Packed world view | 164,852 native SH4ZAM precision/layout/mode/state checks; maximum 24,576 vertices without XYZ staging |
+| Viewport clipping | 12,620 native checks against 256 exact rational hulls, including eight-vertex and long-face cases |
 | CPU render cache | 2,813 native checks across 572 original windows in five bounded runs; exact payload CRC and failure rollback |
 | Resident color catalog | 370 original / 30 synthetic native upload, exact VRAM readback and staged ownership checks; 392,192 resident color bytes |
-| Render package IO | 9,578 native checks across 3,158 original local files plus global geometry; 88 synthetic native checks; GPU drawing/game integration pending |
+| Render package IO | 9,578 native checks across 3,158 original local files plus global geometry; 88 synthetic native checks; base-pass drawing verified; game/reflection integration pending |
 | Near-plane rendering | 4,967 native view/clip checks (including 285 analytic clip cases), plus 10 synthetic raster checks |
 | Collision camera | 1,205 native query/rig checks; 454 WLD2/3 manifest checks; 11 original-terrain orbit checks |
 | Original-terrain prototype | 20 integrated checks: movement, jump edges, landing, camera, boundary respawn, memory and exit; captured idle/air frames visually reviewed |
@@ -94,16 +100,16 @@ not executed by these native tests; runtime and renderer are separate programs.
 
 ## Latest completed contributor task
 
-The transactional CPU render cache now passes 2,813 native checks across all 572 original training geometry windows in stock 16 MiB Flycast. Exact face payloads and staged failure rollback are verified, including overfetch and both-filtered replica mismatches. 354 host tests pass. Geometry drawing, streamed playable integration and the full game remain unfinished. (AI-assisted)
+The cached renderer now draws a 3,547-face original training window using resident PowerVR colors, packed SH4ZAM world transforms and full viewport clipping. Original and procedural base-pass runs each pass 42 native ownership/readiness checks; six framebuffer samples check masks, depth and sidedness. 367 host tests, 164,852 native world-view checks and 12,620 viewport checks pass. Controller streaming, reflection/TOD shading and full original GOAL gameplay remain unfinished. (AI-assisted)
 
-See [RENDER_CACHE.md](ports/dreamcast/RENDER_CACHE.md). Full kernel/gameplay remains unfinished.
+See [BASE_RENDERING.md](ports/dreamcast/BASE_RENDERING.md). Full kernel/gameplay remains unfinished.
 
 ## Build and orientation
 
 Source is in `ports/dreamcast/`. Follow [BUILDING.md](ports/dreamcast/BUILDING.md).
 The verified baseline is OpenGOAL `6076aab5a95955443a9e1ed8f72a25bc0e2fcf9d`;
 the latest locally verified port source checkpoint is
-`7cae8a87f6e382cafde4224501bc583d0fbfe24c`.
+`03b6da47ed48ef729192cca417d73795938345e4`.
 
 No ISO, BIOS, extracted textures/models, converted game scenes or ELF binaries
 embedding game assets are uploaded. Prepare assets locally from your own game

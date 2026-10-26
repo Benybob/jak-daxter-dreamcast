@@ -289,3 +289,8 @@ See [RESIDENT_TEXTURES.md](RESIDENT_TEXTURES.md). (AI-assisted).
 
 The transactional CPU render cache now passes 2,813 native checks across all 572 original training geometry windows in stock 16 MiB Flycast. Exact face payloads and staged failure rollback are verified, including overfetch and both-filtered replica mismatches. 354 host tests pass. Geometry drawing, streamed playable integration and the full game remain unfinished. (AI-assisted)
 See [RENDER_CACHE.md](RENDER_CACHE.md). (AI-assisted).
+
+## Completed: Cached original terrain base pass with SH4ZAM and viewport clipping
+
+The cached renderer now draws a 3,547-face original training window using resident PowerVR colors, packed SH4ZAM world transforms and full viewport clipping. Original and procedural base-pass runs each pass 42 native ownership/readiness checks; six framebuffer samples check masks, depth and sidedness. 367 host tests, 164,852 native world-view checks and 12,620 viewport checks pass. Controller streaming, reflection/TOD shading and full original GOAL gameplay remain unfinished. (AI-assisted)
+See [BASE_RENDERING.md](BASE_RENDERING.md). (AI-assisted).

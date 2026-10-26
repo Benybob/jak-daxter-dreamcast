@@ -23,6 +23,7 @@ KOS_ROMDISK_DIR := romdisk
 .PHONY: private-romdisk-refresh
 private-romdisk-refresh:
 build/player-romdisk.o build/world-romdisk.o build/training-romdisk.o build/camera-world-romdisk.o build/sector-romdisk.o build/render-romdisk.o build/gpu-catalog-romdisk.o build/render-cache-romdisk.o: private-romdisk-refresh
+build/render-base-romdisk.o: private-romdisk-refresh
 all: $(TARGET) $(SCENE_TARGET) $(TEXTURED_TARGET) $(BACKEND_TARGET) $(RUNTIME_TARGET)
 
 # Host-only commands need no KallistiOS installation.
@@ -586,6 +587,43 @@ view_projection_main.o: view_projection_main.c scene_projection.h
 clip_scene_main.o: clip_scene_main.c training_layer.h scene_projection.h scene_telemetry.h
 jak-dc-view-clip.elf: view_projection_main.o view_projection_mode_probe.o scene_projection_sh4zam.o scene_projection_gate.o scene_clip.o scene_clip_cases.o
 	kos-cc -o $@ $^ -lsh4zam -lm
+render_world_view.o: render_world_view.c render_world_view.h render_cache.h scene_projection.h
+	$(KOS_CC) $(KOS_CFLAGS) -std=gnu17 -Wall -Wextra -Werror -c $< -o $@
+render_world_view_main.o: render_world_view_main.c render_world_view.h
+	$(KOS_CC) $(KOS_CFLAGS) -std=gnu17 -Wall -Wextra -Werror -c $< -o $@
+jak-dc-world-view.elf: render_world_view.o render_world_view_gate.o render_world_view_main.o render_world_view_mode_probe.o
+	kos-cc -o $@ $^ -lsh4zam -lm
+RENDER_BASE_ASSET_DIR ?= build/private-render-base-assets
+build/render_base_fixture.h:
+	$(PYTHON) make_render_base_fixture.py build/private-render-base-assets --header $@
+$(RENDER_BASE_ASSET_DIR)/BASE_CASE.json: build/render_base_fixture.h
+	@test -f $@
+render_base.o: render_base.c render_base.h render_frustum.h render_world_view.h
+render_base_test.o: render_base.c render_base.h render_frustum.h render_world_view.h
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -DDC_RENDER_BASE_TEST_ALLOC -c $< -o $@
+# A restored fixture header can also have an OLDER timestamp than the previous
+# asset choice's object. Recompile its embedded binding with the fresh ROM disk.
+render_base_main.o: render_base_main.c render_base.h build/render_base_fixture.h private-romdisk-refresh
+build/render-base-romdisk.o: $(RENDER_BASE_ASSET_DIR)/BASE_CASE.json
+	mkdir -p build
+	$(KOS_GENROMFS) -f build/render-base-romdisk.img -d $(RENDER_BASE_ASSET_DIR) -x '*.json'
+	$(KOS_BASE)/utils/bin2c/bin2c build/render-base-romdisk.img build/render-base-romdisk.c romdisk
+	$(KOS_CC) $(KOS_CFLAGS) -c build/render-base-romdisk.c -o build/render-base-romdisk-tmp.o
+	$(KOS_CC) -o $@ -r build/render-base-romdisk-tmp.o $(KOS_LIB_PATHS) -Wl,--whole-archive -lromdiskbase
+jak-dc-render-base.elf: render_base_main.o render_base_test.o render_gpu.o render_cache.o render_package.o sector_inflate.o render_world_view.o render_world_view_gate.o render_frustum.o build/render-base-romdisk.o | render_base.o
+	kos-cc -o $@ $^ -lsh4zam -lz -lm
+build/frustum_fixture.h: make_frustum_fixture.py frustum_oracle.py
+	$(PYTHON) make_frustum_fixture.py $@
+render_frustum.o: render_frustum.c render_frustum.h scene_clip.h
+render_frustum_cases.o: render_frustum_cases.c render_frustum_cases.h build/frustum_fixture.h
+render_frustum_main.o: render_frustum_main.c render_frustum_cases.h
+jak-dc-frustum.elf: render_frustum.o render_frustum_cases.o render_frustum_main.o
+	kos-cc -o $@ $^ -lm
+host: build/render-frustum-check$(HOST_SHARED) build/render-frustum-cases$(HOST_EXE)
+build/render-frustum-check$(HOST_SHARED): render_frustum.c render_frustum.h scene_clip.h
+	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -pedantic -fPIC -shared render_frustum.c -o $@ -lm
+build/render-frustum-cases$(HOST_EXE): host_render_frustum.c render_frustum.c render_frustum_cases.c build/frustum_fixture.h
+	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -pedantic host_render_frustum.c render_frustum.c render_frustum_cases.c -o $@ -lm
 jak-dc-clip-scene.elf: clip_scene_main.o training_layer.o scene_clip.o scene_projection_sh4zam.o scene_projection_gate.o
 	kos-cc -o $@ $^ -lsh4zam -lm
 host: build/scene-clip-check$(HOST_EXE)

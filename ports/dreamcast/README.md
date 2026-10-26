@@ -1,5 +1,12 @@
 # Jak 1 on Dreamcast: experimental port workbench
 
+**2026-10-25 (AI-assisted):** [Cached base rendering](BASE_RENDERING.md) now
+draws an original 3,547-face training window through SH4ZAM, full viewport
+clipping and resident PowerVR colors. Original and procedural frames each pass
+42 native ownership checks; procedural pixels check masks, depth and sidedness.
+The host suite passes 367 tests. Walking-prototype integration, reflections
+and the full game remain unfinished.
+
 **2026-10-25 (AI-assisted):** [Render windows](RENDER_CACHE.md) adds a bounded
 transactional CPU cache with complete replica checks and old-window rollback.
 All 572 original training geometry windows match independent payload oracles;
