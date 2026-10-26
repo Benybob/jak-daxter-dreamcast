@@ -1,0 +1,6 @@
+;; Typed dispatch through original dead-pool methods (AI-assisted), ISC.
+(in-package goal)
+(defun dc-dead-pool-create ((count int) (stack-size int) (name basic))
+  (new 'global 'dead-pool count stack-size name))
+(defun dc-dead-pool-return ((pool dead-pool) (proc process))
+  (return-process pool proc))

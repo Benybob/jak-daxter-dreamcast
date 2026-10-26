@@ -47,6 +47,7 @@ uint32_t dc_runtime_enum_cases(dc_goal_runtime *,dc_runtime_check,void *,unsigne
 uint32_t dc_runtime_mixed_stack_cases(dc_goal_runtime *,dc_runtime_check,void *,unsigned *,dc_goal_cache_sync);
 uint32_t dc_runtime_process_tree_cases(dc_goal_runtime *,dc_runtime_check,void *,unsigned *,dc_goal_cache_sync);
 uint32_t dc_runtime_process_new_cases(dc_goal_runtime *,dc_runtime_check,void *,unsigned *,dc_goal_cache_sync);
+uint32_t dc_runtime_dead_pool_cases(dc_goal_runtime *,dc_runtime_check,void *,unsigned *,dc_goal_cache_sync);
 uint32_t dc_runtime_process_heap_cases(dc_goal_runtime *,dc_runtime_check,void *,unsigned *,dc_goal_cache_sync);
 uint32_t dc_runtime_structured_cases(dc_goal_runtime *,dc_runtime_check,void *,unsigned *,dc_goal_cache_sync);
 uint32_t dc_runtime_process_entry_cases(dc_goal_runtime *,dc_runtime_check,void *,unsigned *,dc_goal_cache_sync);
@@ -197,6 +198,7 @@ uint32_t dc_runtime_goal_cases(void *memory,uint32_t capacity,dc_runtime_check c
   code_bytes+=dc_runtime_mixed_stack_cases(&rt,check,context,&id,sync_code);
   code_bytes+=dc_runtime_process_tree_cases(&rt,check,context,&id,sync_code);
   code_bytes+=dc_runtime_process_new_cases(&rt,check,context,&id,sync_code);
+  code_bytes+=dc_runtime_dead_pool_cases(&rt,check,context,&id,sync_code);
   code_bytes+=dc_runtime_process_heap_cases(&rt,check,context,&id,sync_code);
   code_bytes+=dc_runtime_structured_cases(&rt,check,context,&id,sync_code);
   code_bytes+=dc_runtime_process_entry_cases(&rt,check,context,&id,sync_code);

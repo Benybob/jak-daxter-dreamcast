@@ -309,3 +309,8 @@ See [DECODED_BLOCK_CACHE.md](DECODED_BLOCK_CACHE.md). (AI-assisted).
 
 Roots ending in a slash now work through the decoded terrain cache and training constructor. Grok identified the path-join mismatch; Codex reproduced failures for slash/backslash roots, corrected the joins and independently verified them. 380 host tests,170 native owner/budget/root checks and26 integrated movement/stream checks pass in stock16MiB Flycast. The allocation peak remains6,477,168 bytes with no failed allocations. Full original GOAL gameplay remains unfinished. (AI-assisted)
 See [DECODED_BLOCK_CACHE.md](DECODED_BLOCK_CACHE.md). (AI-assisted).
+
+## Completed: Original fixed-size GOAL process pools
+
+Two unchanged original GOAL methods now construct fixed-size process pools and return members through typed method dispatch. 121 new native checks verify exact allocations, finite member chains, owning-pool links and allocation-free reparenting. 382 host tests and 22,770 runtime checks pass in stock 16 MiB Flycast. Returning a member does not deactivate it or clear its PID; full cleanup, scheduler and original gameplay remain unfinished. (AI-assisted)
+See [ORIGINAL_DEAD_POOLS.md](ORIGINAL_DEAD_POOLS.md). (AI-assisted).

@@ -13,8 +13,9 @@ def main():
     parser.add_argument('--flycast',type=Path,default=work/'flycast/flycast.exe')
     parser.add_argument('--nm',type=Path,default=work/'dc-sdk/sh-elf/bin/sh-elf-nm.exe')
     parser.add_argument('--output',type=Path,default=work/'flycast-runtime-goal')
+    parser.add_argument('--msys',type=Path,default=Path('C:/msys64'),help='Windows SDK runtime/build shell root')
     args=parser.parse_args()
-    compiler=[sys.executable,str(port/'compile_goal_subset.py'),'--frontend',str(args.frontend),'--runtime']
+    compiler=[sys.executable,str(port/'compile_goal_subset.py'),'--frontend',str(args.frontend),'--runtime','--msys',str(args.msys)]
     names=('read','write','false','true','not','empty','call-read','constant')
     command=compiler+['--source',str(port/'runtime_fixture.gc'),'--header',str(port/'build/runtime_fixture.h')]
     for name in names: command+=['--function','dc-runtime-'+name]
@@ -173,6 +174,14 @@ def main():
     subprocess.run(compiler+process_context+['--source',str(port.parents[1]/'goal_src/jak1/kernel/gkernel.gc'),
         '--function','(method new process-tree)','--function','(method new process)',
         '--header',str(port/'build/original_process_new.h')],check=True)
+    subprocess.run([sys.executable,str(port/'make_dead_pool_schema.py'),'--frontend',str(args.frontend),
+                    '--runtime-bin',str(args.msys/'mingw64/bin')],check=True)
+    subprocess.run(compiler+process_context+['--source',str(port.parents[1]/'goal_src/jak1/kernel/gkernel.gc'),
+        '--function','(method new dead-pool)','--function','(method return-process dead-pool)',
+        '--header',str(port/'build/original_dead_pool.h')],check=True)
+    subprocess.run(compiler+process_context+['--source',str(port/'dead_pool_fixture.gc'),
+        '--function','dc-dead-pool-create','--function','dc-dead-pool-return',
+        '--header',str(port/'build/dead_pool_fixture.h')],check=True)
     command=compiler+process_context+['--source',str(port/'process_new_fixture.gc'),
                                      '--header',str(port/'build/process_new_fixture.h')]
     for name in ('tree','process','match'): command+=['--function','dc-new-'+name]
@@ -227,10 +236,10 @@ def main():
         '--function','(method activate process)','--header',str(port/'build/original_process_activate.h')],check=True)
     subprocess.run(compiler+['--source',str(port.parents[1]/'goal_src/jak1/kernel/gcommon.gc'),
         '--select-defuns','--function','mem-set32!','--header',str(port/'build/original_memset32.h')],check=True)
-    subprocess.run([sys.executable,str(port/'build_dreamcast.py'),'--target','jak-dc-runtime-goal.elf'],check=True)
+    subprocess.run([sys.executable,str(port/'build_dreamcast.py'),'--msys',str(args.msys),'--target','jak-dc-runtime-goal.elf'],check=True)
     if args.verify:
         subprocess.run([sys.executable,str(port/'verify_backend.py'),str(args.flycast),
                         str(port/'jak-dc-runtime-goal.elf'),'--nm',str(args.nm),'--output',str(args.output),
-                        '--tests','22649','--suite','runtime-goal'],check=True)
+                        '--tests','22770','--suite','runtime-goal'],check=True)
 
 if __name__=='__main__': main()

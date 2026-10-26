@@ -1,0 +1,50 @@
+{
+  "ai_assisted": true,
+  "scope": "Original fixed-size pool construction and return only; not deactivation or complete gameplay",
+  "host_tests_passed": 382,
+  "runtime_native_checks": 22770,
+  "new_runtime_checks": 121,
+  "system_ram": 16777216,
+  "runtime_elf_sha256": "adaff3729244b25f64c9710fdaa5ed13e6096b277822cfda442c8bc888cba468",
+  "runtime_code_bytes": 144114,
+  "runtime_arena_used": 660064,
+  "runtime_arena_capacity": 1048576,
+  "installed_symbols": 701,
+  "original_type_metadata": {
+    "ai_assisted": true,
+    "scope": "Original frontend type metadata only; whole header startup remains unsupported",
+    "source_sha256": "ec1609d47d116008cb88c180cc008b4f492c60375b8d7f344992f75cd7c39b60",
+    "frontend_sha256": "ec8cd8cf413e31b51168aeffa351d4b0f6104cfc06febbbc54ec34aaf9aeae14",
+    "ir_sha256": "13f215eb5e13651d292ec397b12eb454a42d3dd527b3263f18e4407a319c8127",
+    "schema": {
+      "parent": "process-tree",
+      "flags": 68719476768,
+      "size": 32,
+      "heap_base": 0,
+      "methods": 16
+    }
+  },
+  "original_source_sha256": "ed506903f426eeb97c5309baec29e16ab28aa682bfb45f7e3cdc4ee1dcd589a4",
+  "methods": [
+    {
+      "name": "(method new dead-pool)",
+      "bytes": 1296,
+      "stack_bytes": 104
+    },
+    {
+      "name": "(method return-process dead-pool)",
+      "bytes": 164,
+      "stack_bytes": 40
+    }
+  ],
+  "physical_hardware_tested": false,
+  "goal_complete": false,
+  "remaining": [
+    "Original deactivation and exit callbacks",
+    "Lexical process context with restoration and nonlocal failure handling",
+    "Pool get-process and heap relocation",
+    "Full kernel startup and scheduler",
+    "GC",
+    "Original gameplay, rendering fidelity, audio, progression and saves"
+  ]
+}
