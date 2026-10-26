@@ -1,0 +1,56 @@
+{
+  "ai_assisted": true,
+  "result": "PASS",
+  "integrated_public_base": "97c14995b",
+  "host_tests": 430,
+  "native_runtime": {
+    "magic": 877155143,
+    "version": 1,
+    "state": 2,
+    "total": 23556,
+    "passed": 23556,
+    "failed_case": 0,
+    "system_ram": 16777216,
+    "code_bytes": 157734,
+    "observed_lo": 0,
+    "observed_hi": 0,
+    "expected_lo": 0,
+    "expected_hi": 0,
+    "description": "GOAL=157734 init/lists=pass arena=839776 symbols=763 img=328/448",
+    "elf_sha256": "98e84547b8fa9a070a869426a54d8b27e9f6e7d3ab0a38bcaef577cc93759ce3",
+    "scope": "Native compiled GOAL scalar runtime, original list routines, typed memory, startup and static strings/floats; incomplete kernel/game",
+    "result": "PASS"
+  },
+  "numeric": {
+    "magic": 877155143,
+    "version": 1,
+    "state": 2,
+    "total": 39,
+    "passed": 39,
+    "failed_case": 0,
+    "system_ram": 16777216,
+    "code_bytes": 1886,
+    "observed_lo": 0,
+    "observed_hi": 0,
+    "expected_lo": 0,
+    "expected_hi": 0,
+    "description": "",
+    "elf_sha256": "83ea558f30e866dee335efa57adcd671828ff9ab188f6566ddef394618285b7f",
+    "scope": "Native typed GOAL subset and codegen/ABI bootstrap; not a complete compiler or game runtime",
+    "result": "PASS"
+  },
+  "new_native_checks": 35,
+  "native_fiber_layout": {
+    "bytes": 336,
+    "ownership_offset": 320,
+    "extra_bytes": 16
+  },
+  "verification": [
+    "True native yield, explicit same-address ownership retirement/reclaim, stale resume rejected before stack restore",
+    "Stale reset-and-call and thread-resume registrations preserve complete process/context/working stack bytes",
+    "Current generation and existing original dispatcher/trans/post/state/deactivate behavior still passes",
+    "Late ledger installation, missing ownership, detach and retained-fault host lifecycle checks",
+    "Forced native object rebuild for descriptor layout; frontend rebuilt from imported original kernel exporter"
+  ],
+  "scope": "Kernel dependency, not full kernel boot or gameplay; stock 16 MiB Flycast, no physical hardware validation"
+}

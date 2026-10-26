@@ -1,5 +1,12 @@
 # Jak 1 on Dreamcast: experimental port workbench
 
+**2026-10-26 (AI-assisted):** [Kernel lifetime guards](KERNEL_OWNERSHIP_LIFETIMES.md)
+extend Claude Code's original dispatcher, state and deactivation work. Suspended
+fibers and scheduler hooks now refuse a reclaimed process generation before
+restoring its stack or changing process fields. The integrated suite passes
+430 host tests, 23,556 native runtime checks and 39 numeric checks. Original
+stack objects/catch/throw and complete kernel boot remain unfinished.
+
 **2026-10-26 (AI-assisted):** [Process ownership](PROCESS_OWNERSHIP.md) now
 captures original global process allocations, including original fixed-pool
 members, and supports explicit selection using their known extents. Raw buffers

@@ -4,6 +4,7 @@
 #include "goal_register_snapshot.h"
 #include "goal_thread_stack.h"
 #include "goal_module.h"
+#include "process_spans.h"
 enum dc_goal_fiber_phase {DC_FIBER_EMPTY,DC_FIBER_NEW,DC_FIBER_RUNNING,DC_FIBER_SUSPENDED,DC_FIBER_DONE,DC_FIBER_FAULT};
 enum dc_goal_fiber_event {DC_FIBER_FAIL,DC_FIBER_YIELDED,DC_FIBER_COMPLETED};
 typedef struct {
@@ -25,6 +26,9 @@ typedef struct {
   * the reset working stack; dead_on_return deactivates the process when the
   * new entry returns (original return-from-thread-dead). */
  uint32_t restart_pending,dead_on_return;
+ /* Captured physical lifetime when a ledger is configured at init. Changed
+  * or newly installed ownership rejects before guest reads/stack restoration. */
+ dc_goal_process_span ownership;
 } dc_goal_fiber;
 /* Metadata is stable caller-owned C storage OUTSIDE rt's arena/working stack;
  * keep it live until clear. Code/stack/metadata pinned and quiescent. Default init
@@ -62,6 +66,9 @@ int dc_goal_fiber_abandon(dc_goal_runtime *,uint64_t value);
  * deactivate method. Never returns on success. */
 int dc_goal_fiber_restart(dc_goal_runtime *,uint32_t entry,unsigned argument_count,const uint64_t *arguments);
 int dc_goal_fiber_clear(dc_goal_fiber *);
+/* C ownership witness only; does not bind/activate execution. Scheduler hooks
+ * call this before process writes or using a suspended fiber's working stack. */
+int dc_goal_fiber_ownership_check(const dc_goal_fiber *,dc_goal_runtime *);
 /* Internal main-completion C witness: no GOAL writes. Requires an original-main
  * import, DONE, a live matching PID, quiescent storage and the native OS owner.
  * goal_main_start adds the canonical original header/argument checks. */

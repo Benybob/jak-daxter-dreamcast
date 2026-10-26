@@ -20,9 +20,12 @@ static uint32_t byte_difference(const unsigned char *actual,const unsigned char 
 static dc_goal_runtime *body_rt;
 static uint32_t body_process,body_previous;
 static unsigned body_lookup,body_enter,body_identity,body_retire,body_leave,body_clear;
+static unsigned body_mode,body_resumed;
+static int filled(const unsigned char *p,unsigned bytes,unsigned char value){unsigned i;for(i=0;i<bytes;++i)if(p[i]!=value)return 0;return 1;}
 static uint64_t native_body(void){
  dc_goal_process_span span;
  zero_fn get=(zero_fn)(uintptr_t)entry(body_rt,"dc-c-current-process");
+ if(body_mode){dc_goal_fiber_yield(body_rt,0x55);body_resumed=1;return 77;}
  body_lookup=dc_goal_process_span_lookup(body_rt,body_process,&span)&&span.bytes==240;
  body_enter=dc_goal_enter_known_scope(body_rt,body_process);
  body_identity=get()==body_process;
@@ -35,7 +38,7 @@ static uint64_t native_body(void){
 uint32_t dc_runtime_process_spans_cases(dc_goal_runtime *rt,dc_runtime_check check,void *context,
  unsigned *id,dc_goal_cache_sync sync){
  dc_goal_process_spans table;dc_goal_process_span rows[8],a_span,b_span,old_span,out_span;
- dc_goal_pp_scope_stack scopes;dc_goal_fiber fiber;dc_goal_module_result module={0};
+ dc_goal_pp_scope_stack scopes;dc_goal_fiber fiber;dc_goal_module_result module={0},transfer={0};
  unsigned i,intact;uint32_t a,b,c,d,raw,type=entry(rt,"process"),name=dc_goal_intern(rt,"dc-owned-process");
  uint32_t ctx=entry(rt,"*kernel-context*"),used,prior,count,frame_type=entry(rt,"stack-frame");
  uint32_t old_object=dc_goal_get_method(rt,rt->object_type,0),old_process=dc_goal_get_method(rt,type,0);
@@ -43,7 +46,10 @@ uint32_t dc_runtime_process_spans_cases(dc_goal_runtime *rt,dc_runtime_check che
  uint32_t old_tree=dc_goal_get_method(rt,tree_type,0),old_pool=dc_goal_get_method(rt,pool_type,0),old_return=dc_goal_get_method(rt,pool_type,15);
  uint32_t owner,stack,thread,fn,value;uint64_t result;
  unsigned char expected[272],code[12]={1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0};
+ unsigned char owner_before[1136],context_before[48];
  const unsigned false_offsets[]={8,12,16,28,40,44,48,52,56,60,64,72,88};
+ const char *transfer_names[]={"dc-c-return-from-thread","dc-c-suspend","dc-c-enter-state-code","dc-c-thread-resume","dc-c-reset-and-call"};
+ uint32_t old_transfer[5]={0};
  dc_goal_code_export exported={"dc-owned-span-body",code,12,NULL,0};
  two_fn create=(two_fn)(uintptr_t)entry(rt,"dc-new-process");
  three_fn alloc=(three_fn)(uintptr_t)entry(rt,"dc-c-object-new");
@@ -137,7 +143,44 @@ uint32_t dc_runtime_process_spans_cases(dc_goal_runtime *rt,dc_runtime_check che
  CHECK(body_lookup,1,"lookup output on actual current working stack accepted");CHECK(body_enter,1,"known-byte lookup selects B from actual native fiber");
  CHECK(body_identity,1,"compiled getter authenticates owned B in real fiber");CHECK(body_retire,1,"fiber cannot retire borrowed physical ownership");
  CHECK(body_leave,1,"real fiber restores saved scheduler domain");CHECK(body_clear,1,"core teardown refuses current fiber even with no lexical scope");
- CHECK(dc_goal_fiber_clear(&fiber),1,"completed ownership test fiber clears");body_rt=NULL;dc_goal_clear_process_context(rt);
+ CHECK(dc_goal_fiber_clear(&fiber),1,"completed ownership test fiber clears");dc_goal_clear_process_context(rt);
+ for(i=0;i<5;++i){uint32_t symbol=dc_goal_find(rt,transfer_names[i]);old_transfer[i]=symbol?dc_goal_symbol_value(rt,symbol):0;}
+ CHECK(dc_goal_install_transfer_bridge(rt,sync,&transfer)&&transfer.functions==5,1,"explicit native scheduler hook imports installed for ownership regression");
+ if(transfer.functions!=5)goto scope_detach;
+ body_mode=1;body_resumed=0;
+ CHECK(dc_goal_fiber_init(&fiber,rt,owner,1136,thread,stack,16384,entry(rt,"dc-owned-span-body")),1,"owned process fiber initializes before physical lifetime reuse");
+ CHECK(dc_goal_bind_process_context(rt,owner,1136),1,"owned process explicitly bound before yield");
+ CHECK(dc_goal_register_thread_fiber(rt,&fiber),1,"owned native continuation registered with scheduler hooks");
+ result=1234;CHECK(dc_runtime_fiber_checked_step(&fiber,0,&result,&intact),DC_FIBER_YIELDED,"real native fiber suspends with process memory still owned");
+ CHECK(result,0x55,"native ownership suspension returns expected value");CHECK(intact,1,"yield preserves root integer/FP state");
+ dc_goal_clear_process_context(rt);
+ CHECK(dc_goal_process_span_lookup(rt,owner,&old_span),1,"root can identify suspended process physical generation");
+ CHECK(dc_goal_process_span_retire(rt,&old_span),1,"root explicitly retires authority after clearing execution binding");
+ CHECK(dc_goal_note_process_span(rt,owner,1136,&out_span),1,"same physical address acquires new ownership generation");
+ CHECK(out_span.generation!=old_span.generation,1,"suspended process address reuse is a distinct lifetime");
+ put(rt,ctx,20,owner);put(rt,owner,32,dc_goal_find(rt,"suspended"));
+ memcpy(owner_before,dc_goal_resolve(rt,owner-4,1136),1136);memcpy(context_before,dc_goal_resolve(rt,ctx-4,48),48);
+ memset(dc_goal_resolve(rt,stack,16384),0x5a,16384);rt->error=DC_GOAL_OK;
+ CHECK(((zero_fn)(uintptr_t)entry(rt,"dc-c-current-process"))(),0,"scheduler field alone remains distinct from explicit execution binding");rt->error=DC_GOAL_OK;
+ CHECK(((two_fn)(uintptr_t)entry(rt,"dc-c-reset-and-call"))(thread,entry(rt,"dc-owned-span-body")),0,"stale registered fiber cannot supply a temporary hook stack");
+ CHECK(memcmp(owner_before,dc_goal_resolve(rt,owner-4,1136),1136),0,"stale hook refuses before any process stores");
+ CHECK(memcmp(context_before,dc_goal_resolve(rt,ctx-4,48),48),0,"stale hook preserves complete scheduler context");
+ CHECK(body_resumed,0,"stale hook never enters native callback");CHECK(filled(dc_goal_resolve(rt,stack,16384),16384,0x5a),1,"stale hook preserves complete working stack");
+ rt->error=DC_GOAL_OK;
+ CHECK(((uint64_t (*)(uint64_t))(uintptr_t)entry(rt,"dc-c-thread-resume"))(thread),0,"stale registered scheduler resume refuses");
+ CHECK(memcmp(owner_before,dc_goal_resolve(rt,owner-4,1136),1136),0,"stale scheduler resume refuses before process stores");
+ CHECK(memcmp(context_before,dc_goal_resolve(rt,ctx-4,48),48),0,"stale scheduler resume preserves complete context");
+ CHECK(fiber.phase,DC_FIBER_SUSPENDED,"stale scheduler hook does not mutate fiber phase");
+ CHECK(dc_goal_unregister_thread_fiber(rt,&fiber),1,"stale scheduler registration can be explicitly removed");
+ put(rt,ctx,20,rt->s7);
+ memset(dc_goal_resolve(rt,stack,16384),0x5a,16384);result=1234;rt->error=DC_GOAL_OK;
+ CHECK(dc_runtime_fiber_checked_step(&fiber,0,&result,&intact),DC_FIBER_FAIL,"stale physical lifetime refuses before suspended stack restoration");
+ CHECK(intact,1,"stale lifetime refusal preserves root integer/FP state");CHECK(result,1234,"stale lifetime refusal preserves output");
+ CHECK(body_resumed,0,"stale suspended continuation never executes");
+ CHECK(filled(dc_goal_resolve(rt,stack,16384),16384,0x5a),1,"stale lifetime refusal leaves complete working stack untouched");
+ CHECK(rt->error,DC_GOAL_BAD_ARGUMENT,"stale native ownership generation has explicit fault");
+ CHECK(dc_goal_fiber_clear(&fiber),1,"stale native context can be explicitly discarded");
+ body_mode=0;body_rt=NULL;rt->error=DC_GOAL_OK;
  while(table.count<8){d=(uint32_t)alloc(rt->s7+DC_FIX_SYM_GLOBAL_HEAP,type,112);CHECK(d!=0,1,"physical capture can fill caller-sized ownership capacity");if(!d)break;}
  used=rt->used;count=table.count;
  CHECK(alloc(rt->s7+DC_FIX_SYM_GLOBAL_HEAP,type,112),0,"full ownership table refuses before original allocator commits memory");
@@ -152,6 +195,7 @@ detach:
  CHECK(dc_goal_process_spans_detach(rt),1,"quiescent ownership metadata detaches without dangling caller storage");
  CHECK(dc_goal_process_spans_registered(rt),0,"detached ledger leaves no registered owner");
 restore:
+ if(transfer.functions)for(i=0;i<5;++i)CHECK(dc_goal_set_symbol(rt,dc_goal_find(rt,transfer_names[i]),old_transfer[i]),1,"previous native transfer binding restored after ownership regression");
  CHECK(dc_goal_set_method(rt,rt->object_type,0,old_object),1,"previous original object allocation method restored");
  CHECK(dc_goal_set_method(rt,type,0,old_process),1,"previous original process constructor method restored");
  CHECK(dc_goal_set_method(rt,tree_type,0,old_tree),1,"previous original tree constructor method restored");
@@ -159,5 +203,5 @@ restore:
  CHECK(dc_goal_set_method(rt,pool_type,15,old_return),1,"previous original pool return method restored");
  rt->error=DC_GOAL_OK;
 #undef CHECK
- return module.code_bytes;
+ return module.code_bytes+transfer.code_bytes;
 }

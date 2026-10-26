@@ -429,6 +429,7 @@ int dc_goal_register_thread_fiber(dc_goal_runtime *rt,dc_goal_fiber *fiber) {
     if(rt && rt->error==DC_GOAL_OK)rt->error=DC_GOAL_BAD_ARGUMENT;
     return 0;
   }
+  if(!dc_goal_fiber_ownership_check(fiber,rt))return 0;
   for(i=0;i<DC_THREAD_FIBERS;++i) {
     if(thread_fibers[i] && (thread_fibers[i]==fiber || thread_fibers[i]->thread==fiber->thread)) {
       if(rt->error==DC_GOAL_OK)rt->error=DC_GOAL_BAD_ARGUMENT;
@@ -456,6 +457,7 @@ static uint64_t thread_resume(uint64_t thread) {
   if(!rt)return 0;
   for(i=0;i<DC_THREAD_FIBERS;++i)if(thread_fibers[i] && thread_fibers[i]->thread==thread)fiber=thread_fibers[i];
   if(!fiber || fiber->runtime!=rt || dc_goal_fiber_current() || execution_context)goto unsupported;
+  if(!dc_goal_fiber_ownership_check(fiber,rt))return 0;
   symbol=dc_goal_find(rt,"*kernel-context*");context=symbol?dc_goal_symbol_value(rt,symbol):0;
   if(!context || !(fields=context_fields(rt,context)))goto unsupported;
   memcpy(&current,fields+20,4);
@@ -518,6 +520,7 @@ static uint64_t reset_and_call(uint64_t thread,uint64_t func) {
   memcpy(&process,p,4);
   for(i=0;i<DC_THREAD_FIBERS;++i)if(thread_fibers[i] && thread_fibers[i]->process==process)fiber=thread_fibers[i];
   if(!fiber || fiber->runtime!=rt || (fiber->phase!=DC_FIBER_SUSPENDED && fiber->phase!=DC_FIBER_NEW))goto unsupported;
+  if(!dc_goal_fiber_ownership_check(fiber,rt))return 0;
   if(!(p=dc_goal_resolve(rt,(uint32_t)thread+28,4)))goto unsupported;
   memcpy(&top,p,4);
   /* Trans threads use the main stack; post threads the registered DRAM stack. */

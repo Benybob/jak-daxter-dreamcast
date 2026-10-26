@@ -167,7 +167,8 @@ uint32_t dc_runtime_thread_resize_cases(dc_goal_runtime *rt,dc_runtime_check che
   CHECK(word(rt,owners[0],32),dc_goal_find(rt,"ready"),"measured profile does not invent scheduler transition");
   CHECK(dc_goal_fiber_clear(&fiber),1,"completed profile metadata released");
  }
- CHECK(sizeof(dc_goal_fiber),320,"native context retains register offsets, main import receipt and enter-state restart state");
+ CHECK(sizeof(dc_goal_fiber),336,"native context retains register offsets, restart state and physical ownership witness");
+ CHECK(offsetof(dc_goal_fiber,ownership),320,"physical lifetime witness follows original native context layout");
  CHECK(dc_goal_resize_main_backup(rt,owners[0],reservation[0],threads[0],stack,8192,8192),1,"restore prior capacity for independent active-resize oracle");
  memcpy(cpu_before,dc_goal_resolve(rt,threads[0]-4,128),128);
  probe_target=(uint32_t)(uintptr_t)active_probe;memcpy(code[0]+8,&probe_target,4);

@@ -3,12 +3,14 @@ import argparse
 import ctypes
 from pathlib import Path
 import subprocess
+import sys
 
 parser=argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--workspace',type=Path,default=Path(__file__).resolve().parents[3])
 parser.add_argument('--msys',type=Path,default=Path('C:/msys64'))
 parser.add_argument('--target',default='all')
 parser.add_argument('--jobs',type=int,default=1)
+parser.add_argument('--force',action='store_true',help='Force rebuilding target prerequisites, including objects after shared layout changes')
 parser.add_argument('--training-assets',type=Path)
 parser.add_argument('--training-stream-assets',type=Path)
 parser.add_argument('--training-owner-assets',type=Path)
@@ -33,6 +35,8 @@ if not args.target.replace('-','').replace('.','').isalnum():
     parser.error('invalid make target')
 if not 1<=args.jobs<=4: parser.error('--jobs must be 1..4')
 assets=(' TRAINING_ASSET_DIR='+short_posix(args.training_assets.resolve())) if args.training_assets else ''
+force=' -B' if args.force else ''
+python=short_posix(Path(sys.executable).resolve())
 if args.training_stream_assets: assets+=' TRAINING_STREAM_ASSET_DIR='+short_posix(args.training_stream_assets.resolve())
 if args.training_owner_assets: assets+=' TRAINING_OWNER_ASSET_DIR='+short_posix(args.training_owner_assets.resolve())
 if args.camera_assets: assets+=' CAMERA_ASSET_DIR='+short_posix(args.camera_assets.resolve())
@@ -45,8 +49,8 @@ script=f'''#!/usr/bin/bash
 set -eo pipefail
 source {short_posix(work)}/kos-source/environ.sh
 cd {short_posix(port)}
-make PYTHON=python fixture
-make -j{args.jobs} CFLAGS='-std=c99 -Wall -Wextra -Werror'{assets} {args.target}
+make PYTHON='{python}' fixture
+make{force} PYTHON='{python}' -j{args.jobs} CFLAGS='-std=c99 -Wall -Wextra -Werror'{assets} {args.target}
 '''
 script_path=work/'build-port-current.sh'
 script_path.write_text(script,newline='\n')

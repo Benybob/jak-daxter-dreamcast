@@ -355,8 +355,8 @@ runtime_fiber_cases.o: runtime_fiber_cases.c goal_fiber.h goal_bridge.h runtime_
 goal_bridge.o: goal_fiber.h
 
 host: build/fiber-check$(HOST_EXE)
-build/fiber-check$(HOST_EXE): host_fiber.c goal_fiber.c pp_scope.c goal_fiber.h goal_thread_stack.c goal_process_heap.c goal_module.c goal_kernel_types.c goal_runtime.c
-	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -pedantic host_fiber.c goal_fiber.c pp_scope.c goal_thread_stack.c goal_process_heap.c goal_module.c goal_kernel_types.c goal_runtime.c -o $@
+build/fiber-check$(HOST_EXE): host_fiber.c goal_fiber.c process_spans.c pp_scope.c goal_fiber.h goal_thread_stack.c goal_process_heap.c goal_module.c goal_kernel_types.c goal_runtime.c
+	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -pedantic host_fiber.c goal_fiber.c process_spans.c pp_scope.c goal_thread_stack.c goal_process_heap.c goal_module.c goal_kernel_types.c goal_runtime.c -o $@
 
 goal_fiber.o: fiber_bounds.h
 runtime_fiber_cases.o: fiber_bounds.h fiber_bounds_cases.h
@@ -411,8 +411,8 @@ build/main-thread-check$(HOST_EXE): host_main_thread.c main_thread_cases.c main_
 
 # Original-main completion receipt oracle; bridge liveness modeled on host only.
 host: build/main-completion-check$(HOST_EXE)
-build/main-completion-check$(HOST_EXE): host_main_completion.c goal_main_start.c goal_main_thread.c goal_fiber.c pp_scope.c goal_scalar_call.c goal_thread_stack.c goal_process_heap.c goal_module.c goal_kernel_types.c goal_runtime.c goal_fiber.h goal_main_start.h
-	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -pedantic host_main_completion.c goal_main_start.c goal_main_thread.c goal_fiber.c pp_scope.c goal_scalar_call.c goal_thread_stack.c goal_process_heap.c goal_module.c goal_kernel_types.c goal_runtime.c -o $@
+build/main-completion-check$(HOST_EXE): host_main_completion.c goal_main_start.c goal_main_thread.c goal_fiber.c process_spans.c pp_scope.c goal_scalar_call.c goal_thread_stack.c goal_process_heap.c goal_module.c goal_kernel_types.c goal_runtime.c goal_fiber.h goal_main_start.h
+	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -pedantic host_main_completion.c goal_main_start.c goal_main_thread.c goal_fiber.c process_spans.c pp_scope.c goal_scalar_call.c goal_thread_stack.c goal_process_heap.c goal_module.c goal_kernel_types.c goal_runtime.c -o $@
 
 host: build/player-motion-check$(HOST_EXE) build/player-anim-check$(HOST_EXE)
 build/player-motion-check$(HOST_EXE): host_player_motion.c player_motion.c player_motion_cases.c player_motion.h
@@ -692,3 +692,4 @@ runtime_enter_state_cases.o: runtime_enter_state_cases.c process_spans.h goal_br
 jak-dc-runtime-goal.elf: runtime_dispatcher_cases.o
 runtime_dispatcher_cases.o: runtime_dispatcher_cases.c process_spans.h goal_bridge.h pp_scope.h runtime_cases.h goal_fiber.h build/original_dispatcher.h
 	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -I. -c runtime_dispatcher_cases.c -o $@
+goal_fiber.o: process_spans.h

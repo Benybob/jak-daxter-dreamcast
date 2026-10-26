@@ -9,6 +9,7 @@ static unsigned total,passed;
 #define CHECK(x) do {++total;if(x)++passed;else fprintf(stderr,"FAIL%u line%u\n",total,(unsigned)__LINE__);}while(0)
 static void put(dc_goal_runtime *rt,uint32_t p,unsigned off,uint32_t value){memcpy(dc_goal_resolve(rt,p+off,4),&value,4);}
 static void boundary_check(uint64_t a,uint64_t b,unsigned id,const char *label,void *context){(void)id;(void)label;(void)context;CHECK(a==b);}
+static int ownership_quiescent(const dc_goal_runtime *r){return r&&!dc_goal_fiber_current();}
 int main(void) {
  unsigned boundary_id=0;dc_fiber_bounds_cases(boundary_check,NULL,&boundary_id);
  const uint32_t capacity=512u*1024u;
@@ -82,6 +83,35 @@ int main(void) {
   CHECK(dc_goal_fiber_init(&fiber,&rt,process,12400,thread,stack,16384,entry));
   CHECK(fiber.argument_count==0);CHECK(memcmp(fiber.arguments,zero,sizeof zero)==0);
   CHECK(dc_goal_fiber_clear(&fiber));
+ }
+ {
+  dc_goal_process_spans spans;dc_goal_process_span rows[2],old,now;
+  const dc_goal_process_span_hooks hooks={NULL,ownership_quiescent};
+  /* Installing ownership after a context was created must not grandfather it. */
+  CHECK(dc_goal_fiber_init(&fiber,&rt,process,12400,thread,stack,16384,entry));
+  CHECK(dc_goal_process_spans_init(&spans,&rt,rows,2,&hooks));
+  CHECK(dc_goal_process_span_note(&rt,process,12400,&old));
+  CHECK(!dc_goal_fiber_step(&fiber,0,&value));CHECK(fiber.phase==DC_FIBER_FAULT);
+  CHECK(value==0x1122334455667788ull&&memcmp(before,memory,used)==0);
+  CHECK(dc_goal_fiber_clear(&fiber));rt.error=DC_GOAL_OK;
+  CHECK(dc_goal_fiber_init(&fiber,&rt,process,12400,thread,stack,16384,entry));
+  CHECK(fiber.ownership.generation==old.generation&&fiber.ownership.bytes==12400);
+  CHECK(dc_goal_fiber_ownership_check(&fiber,&rt));
+  CHECK(!dc_goal_fiber_step(&fiber,0,&value));CHECK(fiber.phase==DC_FIBER_NEW); /* host refuses machine execution */
+  CHECK(dc_goal_process_span_retire(&rt,&old));CHECK(dc_goal_process_span_note(&rt,process,12400,&now));
+  CHECK(now.generation!=old.generation);rt.error=DC_GOAL_DIVIDE_BY_ZERO;
+  CHECK(!dc_goal_fiber_ownership_check(&fiber,&rt)&&rt.error==DC_GOAL_DIVIDE_BY_ZERO);
+  fiber.phase=DC_FIBER_SUSPENDED;CHECK(!dc_goal_fiber_step(&fiber,0,&value));
+  CHECK(fiber.phase==DC_FIBER_FAULT&&rt.error==DC_GOAL_DIVIDE_BY_ZERO);
+  CHECK(value==0x1122334455667788ull&&memcmp(before,memory,used)==0);
+  CHECK(dc_goal_fiber_clear(&fiber));rt.error=DC_GOAL_OK;
+  CHECK(dc_goal_fiber_init(&fiber,&rt,process,12400,thread,stack,16384,entry));
+  CHECK(dc_goal_process_spans_detach(&rt));CHECK(!dc_goal_fiber_step(&fiber,0,&value));
+  CHECK(fiber.phase==DC_FIBER_FAULT);CHECK(dc_goal_fiber_clear(&fiber));rt.error=DC_GOAL_OK;
+  CHECK(dc_goal_process_spans_init(&spans,&rt,rows,2,&hooks));
+  CHECK(!dc_goal_fiber_init(&fiber,&rt,process,12400,thread,stack,16384,entry));
+  CHECK(fiber.phase==DC_FIBER_EMPTY&&!fiber.image.valid);
+  CHECK(dc_goal_process_spans_detach(&rt));
  }
  free(allocation);free(before);printf("{\"tests\":%u,\"passed\":%u}\n",total,passed);return total!=passed;
 }

@@ -37,6 +37,16 @@ static int view_ok(const dc_goal_fiber *f) {
   f->image.heap.allocation_bytes==f->reservation && f->image.thread==f->thread &&
   f->image.stack_base==f->stack_base && f->image.stack_bytes==f->stack_bytes;
 }
+static int ownership_ok(const dc_goal_fiber *f) {
+ int configured=dc_goal_process_spans_registered(f->runtime);
+ if(configured<0)return 0;
+ if(!f->ownership.generation && configured==0)return 1;
+ if(!f->ownership.generation || configured!=1 || f->ownership.process!=f->process || f->ownership.bytes!=f->reservation){
+  if(f->runtime->error==DC_GOAL_OK)f->runtime->error=DC_GOAL_BAD_ARGUMENT;
+  return 0;
+ }
+ return dc_goal_process_span_check(f->runtime,&f->ownership);
+}
 static int main_receipt_ok(const dc_goal_fiber *f) {
  uint32_t pid;const void *p;
  if(!f->main_import_self)return f->main_import_pid?bad(f->runtime):1;
@@ -104,6 +114,13 @@ int dc_goal_fiber_init_words(dc_goal_fiber *f,dc_goal_runtime *rt,uint32_t proce
  f->platform_owner=dc_goal_kos_stack_owner();if(!f->platform_owner)return bad(rt);
 #endif
  if(stack_bytes<4096 || (stack_base&15u) || (stack_bytes&15u) || stack_bytes>UINT32_MAX-stack_base)return bad(rt);
+ {
+  int configured=dc_goal_process_spans_registered(rt);
+  if(configured<0)return 0;
+  if(configured && (!dc_goal_process_span_lookup(rt,process,&f->ownership) || f->ownership.bytes!=reservation)){
+   memset(f,0,sizeof *f);return bad(rt);
+  }
+ }
  if(!dc_goal_code_entry(rt,entry,&code))return 0;
  if(overlap(entry,code.bytes,stack_base,stack_bytes))return bad(rt);
  if(!dc_goal_thread_stack_open(&f->image,rt,process,reservation,thread,stack_base,stack_bytes))return 0;
@@ -126,6 +143,10 @@ int dc_goal_fiber_clear(dc_goal_fiber *f) {
  memset(f,0,sizeof *f);return 1;
 }
 dc_goal_fiber *dc_goal_fiber_current(void) {return current;}
+int dc_goal_fiber_ownership_check(const dc_goal_fiber *f,dc_goal_runtime *rt) {
+ if(!rt || !f || !storage_ok(rt,f,sizeof *f) || f->magic!=FIBER_MAGIC || f->runtime!=rt)return bad(rt);
+ return ownership_ok(f);
+}
 int dc_goal_fiber_main_completed(dc_goal_fiber *f,dc_goal_runtime *rt) {
  if(!rt)return 0;
  if(rt->error!=DC_GOAL_OK)return 0;
@@ -134,7 +155,7 @@ int dc_goal_fiber_main_completed(dc_goal_fiber *f,dc_goal_runtime *rt) {
  if(f->magic!=FIBER_MAGIC || f->runtime!=rt || f->phase!=DC_FIBER_DONE ||
     f->root_live || f->argument_count!=6 || !f->main_import_self ||
     !view_ok(f) || f->image.saved!=0)return bad(rt);
- if(!main_receipt_ok(f))return 0;
+ if(!ownership_ok(f) || !main_receipt_ok(f))return 0;
 #ifdef __DREAMCAST__
  if(!f->platform_owner || dc_goal_kos_stack_owner()!=f->platform_owner)return bad(rt);
 #endif
@@ -150,7 +171,7 @@ int dc_goal_fiber_step(dc_goal_fiber *f,uint64_t resume_value,uint64_t *out) {
  if(!storage_ok(rt,f,sizeof *f) || !storage_ok(rt,out,sizeof *out) ||
     overlap(address(out),sizeof *out,address(f),sizeof *f))return bad(rt);
  if(f->argument_count>8)return fault(f,DC_GOAL_BAD_ARGUMENT);
- if(!main_receipt_ok(f))return fault(f,rt->error);
+ if(!ownership_ok(f) || !main_receipt_ok(f))return fault(f,rt->error);
  if(f->stack_bytes<4096 || (f->stack_base&15u) || (f->stack_bytes&15u) ||
     f->stack_bytes>UINT32_MAX-f->stack_base)return fault(f,DC_GOAL_BAD_ARGUMENT);
  working=dc_goal_resolve(rt,f->stack_base,f->stack_bytes);
