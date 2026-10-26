@@ -1,0 +1,4883 @@
+{
+  "ai_assisted": true,
+  "scope": "Static GAME.CGO vector/platform inventory, not lowering coverage (AI-assisted).\n\nCounts syntactic forms in all conditional branches and quoted macro templates;\ndoes not expand macros. Comments and string contents never count as operations.\nFeature counts are indicators, not a claim that every occurrence blocks lowering.\nSource hashes normalize CRLF to LF to match Git text across host platforms.",
+  "manifest_sha256_lf": "b950bc8f74fbdb8460cc0c6ee65e8b432eeb9289b5e02636a8031f3c7ba22ba0",
+  "file_count": 346,
+  "source_file_count": 326,
+  "rlet_vf_blocks": 222,
+  "first_40": [
+    {
+      "object": "types-h.o",
+      "source": "goal_src/jak1/engine/util/types-h.gc",
+      "sha256_lf": "1e3a4960bdda7214d744d5227abc2cbfbc5d4db17b11a8c9aa9bc679c545712b",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "vu1-macros.o",
+      "source": "goal_src/jak1/engine/ps2/vu1-macros.gc",
+      "sha256_lf": "75cae2a8c4fe9248ad6fe75156a71edcdee1ff2c9746ecfef1bc41d3b2deafb6",
+      "rlet_vf_blocks": 7,
+      "asm_ops": {
+        ".ftoi.vf": 3,
+        ".itof.vf": 3,
+        ".lvf": 1,
+        ".mul.x.vf": 6,
+        ".svf": 2
+      },
+      "features": {}
+    },
+    {
+      "object": "math.o",
+      "source": "goal_src/jak1/engine/math/math.gc",
+      "sha256_lf": "62eaef8f76f03a649d70312fe63b214bc842f046ce9c027928a53b8005396725",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "fmax": 1,
+        "fmin": 1
+      }
+    },
+    {
+      "object": "vector-h.o",
+      "source": "goal_src/jak1/engine/math/vector-h.gc",
+      "sha256_lf": "1aab595bf2625cea834aad659e5313a87dbb733347adb13f7db5582afe4e99f2",
+      "rlet_vf_blocks": 6,
+      "asm_ops": {
+        ".add.mul.w.vf.x": 1,
+        ".add.mul.y.vf.x": 1,
+        ".add.mul.z.vf.x": 1,
+        ".add.vf": 1,
+        ".add.w.vf.x": 1,
+        ".add.y.vf.x": 1,
+        ".add.z.vf.x": 1,
+        ".blend.vf.w": 2,
+        ".lvf": 11,
+        ".mov": 2,
+        ".mul.vf": 2,
+        ".mul.x.vf.x": 1,
+        ".sub.vf": 1,
+        ".svf": 7,
+        ".xor.vf": 2
+      },
+      "features": {}
+    },
+    {
+      "object": "gravity-h.o",
+      "source": "goal_src/jak1/engine/physics/gravity-h.gc",
+      "sha256_lf": "ddde0736cb13eb03e663d5d2c0eb1c4c1edd54bf9c101b82c74e491c328be466",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "bounding-box-h.o",
+      "source": "goal_src/jak1/engine/geometry/bounding-box-h.gc",
+      "sha256_lf": "a516aec30cc936d9a4456a7cf4d8f2373b0d1ef29ffbd9f78e3ace713e0d486f",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "matrix-h.o",
+      "source": "goal_src/jak1/engine/math/matrix-h.gc",
+      "sha256_lf": "8ed1fe5d7257a907f5e664cb01a2e33c6a5a8c92fbc368bca1f9ec6728ed3f35",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "quaternion-h.o",
+      "source": "goal_src/jak1/engine/math/quaternion-h.gc",
+      "sha256_lf": "5553a6a77b9a6c7a8e7569dfed71b27f60d5a123dd77dfb13289f8ee819928e1",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "euler-h.o",
+      "source": "goal_src/jak1/engine/math/euler-h.gc",
+      "sha256_lf": "6b28456fc4d6c152ab8f1f2b4bc6e5fe7554c9af99f9ba0cc0ed45ff103dfba5",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "transform-h.o",
+      "source": "goal_src/jak1/engine/math/transform-h.gc",
+      "sha256_lf": "ad53c6b0c4175e6b3ecbecab944c9451533d3240c10e5f058ad1ea4b0d4e9f7c",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "geometry-h.o",
+      "source": "goal_src/jak1/engine/geometry/geometry-h.gc",
+      "sha256_lf": "3977ad567f1f7bf9f846f1182bcdd3245f96bcc8489f53da874e17b62288f2a6",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "trigonometry-h.o",
+      "source": "goal_src/jak1/engine/math/trigonometry-h.gc",
+      "sha256_lf": "07823adddc229ef55183c0afff62da145428b5a29b9272d62841cdc559c9ac68",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "transformq-h.o",
+      "source": "goal_src/jak1/engine/math/transformq-h.gc",
+      "sha256_lf": "1555fe7c8d61ebcfd2bcc0b5937fb58e34f9da7288e13aff1848844e13e7b21b",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "bounding-box.o",
+      "source": "goal_src/jak1/engine/geometry/bounding-box.gc",
+      "sha256_lf": "46086886376a2b07848085a1dae12290575f803121eabc283ebc705ae734f442",
+      "rlet_vf_blocks": 7,
+      "asm_ops": {
+        ".add.vf": 2,
+        ".add.w.vf.xyz": 3,
+        ".add.x.vf.xyz": 1,
+        ".lvf": 16,
+        ".max.vf": 4,
+        ".max.vf.xyz": 2,
+        ".min.vf": 4,
+        ".min.vf.xyz": 2,
+        ".mov": 1,
+        ".mov.vf.w": 6,
+        ".sub.w.vf.xyz": 3,
+        ".sub.x.vf.xyz": 1,
+        ".svf": 14
+      },
+      "features": {}
+    },
+    {
+      "object": "matrix.o",
+      "source": "goal_src/jak1/engine/math/matrix.gc",
+      "sha256_lf": "6cc2062abe28bdc17df29eb0c80f5709bdd0756da11f430a48d8c0b639d71086",
+      "rlet_vf_blocks": 12,
+      "asm_ops": {
+        ".add.mul.w.vf": 9,
+        ".add.mul.x.vf": 4,
+        ".add.mul.y.vf": 16,
+        ".add.mul.z.vf": 11,
+        ".add.mul.z.vf.xyz": 5,
+        ".add.vf": 4,
+        ".add.vf.x": 2,
+        ".add.vf.xyz": 3,
+        ".add.x.vf.x": 1,
+        ".add.x.vf.xyz": 1,
+        ".add.x.vf.y": 2,
+        ".add.y.vf.x": 4,
+        ".add.y.vf.y": 1,
+        ".add.y.vf.z": 2,
+        ".add.z.vf.x": 3,
+        ".div.vf": 2,
+        ".lvf": 60,
+        ".mov": 5,
+        ".mov.vf.w": 2,
+        ".mul.vf": 7,
+        ".mul.vf.xyz": 2,
+        ".mul.w.vf": 5,
+        ".mul.w.vf.xyz": 1,
+        ".mul.x.vf": 20,
+        ".mul.x.vf.x": 1,
+        ".mul.x.vf.xyz": 2,
+        ".mul.x.vf.y": 1,
+        ".mul.x.vf.z": 1,
+        ".mul.y.vf": 4,
+        ".mul.y.vf.x": 2,
+        ".mul.y.vf.xyz": 1,
+        ".mul.y.vf.y": 1,
+        ".mul.y.vf.z": 2,
+        ".mul.z.vf": 4,
+        ".mul.z.vf.x": 4,
+        ".mul.z.vf.xyz": 1,
+        ".mul.z.vf.y": 2,
+        ".mul.z.vf.z": 1,
+        ".nop.vf": 9,
+        ".outer.product.a.vf": 4,
+        ".outer.product.b.vf": 4,
+        ".pceqw": 1,
+        ".pcpyld": 2,
+        ".pcpyud": 2,
+        ".pextlw": 2,
+        ".pextuw": 2,
+        ".ppach": 1,
+        ".sub.vf": 6,
+        ".sub.vf.w": 3,
+        ".sub.vf.x": 1,
+        ".sub.x.vf.w": 1,
+        ".sub.x.vf.y": 2,
+        ".sub.x.vf.z": 2,
+        ".sub.y.vf.x": 2,
+        ".sub.y.vf.z": 2,
+        ".sub.z.vf.x": 3,
+        ".sub.z.vf.y": 2,
+        ".svf": 37,
+        ".vf.vec": 5,
+        ".vf.vec<-arg": 12,
+        ".vf.w": 8,
+        ".vf.x": 12,
+        ".vf.y": 8,
+        ".vf.z": 8,
+        ".wait.vf": 2,
+        ".xor.p": 1,
+        ".xor.vf": 23
+      },
+      "features": {
+        "mmi": 10,
+        "rlet_i128": 1
+      }
+    },
+    {
+      "object": "transform.o",
+      "source": "goal_src/jak1/engine/math/transform.gc",
+      "sha256_lf": "a9f5ba12171e6c695f3b081fe5847e5849bc47a66249c919d7a3a4295a289cf2",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "quaternion.o",
+      "source": "goal_src/jak1/engine/math/quaternion.gc",
+      "sha256_lf": "ca9060f4975632de0c45fed9fd2db56d21478f891d3800e00dabbdd1a563b83f",
+      "rlet_vf_blocks": 16,
+      "asm_ops": {
+        ".add.mul.vf": 1,
+        ".add.mul.w.vf": 2,
+        ".add.mul.x.vf": 2,
+        ".add.mul.x.vf.w": 5,
+        ".add.mul.y.vf": 1,
+        ".add.mul.y.vf.w": 5,
+        ".add.vf": 2,
+        ".add.vf.w": 2,
+        ".add.vf.xyz": 2,
+        ".add.w.vf": 3,
+        ".add.w.vf.x": 2,
+        ".add.w.vf.y": 2,
+        ".add.w.vf.z": 2,
+        ".add.x.vf.z": 1,
+        ".add.y.vf.x": 1,
+        ".add.z.vf.w": 5,
+        ".add.z.vf.y": 1,
+        ".div.vf": 1,
+        ".isqrt.vf": 1,
+        ".lvf": 30,
+        ".mov": 13,
+        ".mul.vf": 9,
+        ".mul.w.vf": 1,
+        ".mul.x.vf": 8,
+        ".mul.x.vf.w": 4,
+        ".nop.vf": 2,
+        ".outer.product.a.vf": 6,
+        ".outer.product.b.vf": 6,
+        ".sub.mul.w.vf.w": 1,
+        ".sub.mul.x.vf.w": 1,
+        ".sub.mul.y.vf.w": 1,
+        ".sub.mul.z.vf.w": 1,
+        ".sub.vf": 2,
+        ".sub.vf.w": 1,
+        ".sub.vf.xyz": 2,
+        ".sub.vf.yz": 1,
+        ".sub.w.vf.w": 3,
+        ".sub.x.vf.y": 1,
+        ".sub.y.vf.z": 1,
+        ".sub.z.vf.x": 1,
+        ".svf": 21,
+        ".wait.vf": 1,
+        ".xor.vf": 3
+      },
+      "features": {}
+    },
+    {
+      "object": "euler.o",
+      "source": "goal_src/jak1/engine/math/euler.gc",
+      "sha256_lf": "23985688542f396563107f02ed46f3f7f69360bffd90e7b4130e1888557efb7c",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "geometry.o",
+      "source": "goal_src/jak1/engine/geometry/geometry.gc",
+      "sha256_lf": "7553829e3f2979f69b3f0f1530345c283e7e8a4f208b1eb23f2f3875921ac82e",
+      "rlet_vf_blocks": 13,
+      "asm_ops": {
+        ".add.mul.w.vf.xyz": 1,
+        ".add.mul.x.vf": 1,
+        ".add.mul.y.vf": 1,
+        ".add.mul.y.vf.w": 2,
+        ".add.mul.y.vf.xyz": 1,
+        ".add.mul.z.vf": 1,
+        ".add.mul.z.vf.w": 2,
+        ".add.mul.z.vf.xyz": 1,
+        ".add.vf": 2,
+        ".add.vf.x": 2,
+        ".add.vf.xyz": 4,
+        ".add.w.vf.x": 2,
+        ".add.w.vf.y": 2,
+        ".add.w.vf.z": 2,
+        ".add.x.vf.w": 2,
+        ".add.x.vf.y": 6,
+        ".add.x.vf.z": 1,
+        ".add.y.vf.x": 3,
+        ".add.z.vf.x": 3,
+        ".add.z.vf.y": 7,
+        ".div.vf": 1,
+        ".isqrt.vf": 1,
+        ".lvf": 38,
+        ".mov": 12,
+        ".mov.vf.w": 8,
+        ".mul.vf": 11,
+        ".mul.vf.w": 1,
+        ".mul.vf.xyz": 1,
+        ".mul.vf.xz": 1,
+        ".mul.w.vf": 1,
+        ".mul.x.vf": 4,
+        ".mul.x.vf.w": 2,
+        ".nop.vf": 10,
+        ".outer.product.a.vf": 23,
+        ".outer.product.b.vf": 23,
+        ".sqrt.vf": 3,
+        ".sub.mul.w.vf.xyz": 1,
+        ".sub.vf": 19,
+        ".sub.w.vf.w": 3,
+        ".sub.x.vf.y": 1,
+        ".sub.y.vf.z": 1,
+        ".sub.z.vf.x": 1,
+        ".svf": 12,
+        ".wait.vf": 5
+      },
+      "features": {
+        "fmax": 2,
+        "fmin": 3
+      }
+    },
+    {
+      "object": "trigonometry.o",
+      "source": "goal_src/jak1/engine/math/trigonometry.gc",
+      "sha256_lf": "60544ea58a13f2a50c865d7b48de3147116afcba143eba988720e24fd0600c90",
+      "rlet_vf_blocks": 5,
+      "asm_ops": {
+        ".add.mul.w.vf": 4,
+        ".add.mul.x.vf": 4,
+        ".add.mul.y.vf": 4,
+        ".add.mul.z.vf": 4,
+        ".add.w.vf": 2,
+        ".adda.s": 1,
+        ".ftoi.vf": 2,
+        ".itof.vf": 2,
+        ".lvf": 11,
+        ".madd.s": 1,
+        ".madda.s": 6,
+        ".mov": 3,
+        ".mul.vf": 18,
+        ".mul.x.vf": 5,
+        ".pw.sll": 2,
+        ".pw.sra": 2,
+        ".svf": 6,
+        ".xor.vf": 2
+      },
+      "features": {}
+    },
+    {
+      "object": "gsound-h.o",
+      "source": "goal_src/jak1/engine/sound/gsound-h.gc",
+      "sha256_lf": "f54b68c2c47dc4cd2e01f6d5afa71f22f6e055af803999b1e1b3d078b5fcf640",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "timer-h.o",
+      "source": "goal_src/jak1/engine/ps2/timer-h.gc",
+      "sha256_lf": "918c8e7a485c6a617357502a6a9229bd8c0be5dbd1361aefe1fdba2c496ea0c4",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 2
+      }
+    },
+    {
+      "object": "timer.o",
+      "source": "goal_src/jak1/engine/ps2/timer.gc",
+      "sha256_lf": "748f0c5e5c4f26b50661bc628ebd00709e36fc2e20a08c5e6cd4d05f468fac6b",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {
+        ".mfc0": 8,
+        ".mtc0": 2,
+        ".sync.l": 4,
+        ".sync.p": 2
+      },
+      "features": {}
+    },
+    {
+      "object": "vif-h.o",
+      "source": "goal_src/jak1/engine/ps2/vif-h.gc",
+      "sha256_lf": "af9ef9f165009c4d762c9a79bd0f2a5127055ab3770f4e233056b34ecab7d4e7",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "vif": 7
+      }
+    },
+    {
+      "object": "dma-h.o",
+      "source": "goal_src/jak1/engine/dma/dma-h.gc",
+      "sha256_lf": "430e9331709d0d1dd1658a69752541f145b20bffe5e0b39ed7d11cf1124cca7a",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {
+        ".sync.l": 2
+      },
+      "features": {
+        "dma": 38,
+        "vif": 12
+      }
+    },
+    {
+      "object": "video-h.o",
+      "source": "goal_src/jak1/engine/gfx/hw/video-h.gc",
+      "sha256_lf": "30dfaefcce99385c96634b11cee411b51b76ac7dcb26f4da485742dda99b39f3",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "vu1-user-h.o",
+      "source": "goal_src/jak1/engine/gfx/vu1-user-h.gc",
+      "sha256_lf": "50dbccad4e860c20260863e6bddd6bf3f5a7c0ceadc277fb48de2ac65dda6017",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 7,
+        "vu1": 7
+      }
+    },
+    {
+      "object": "dma.o",
+      "source": "goal_src/jak1/engine/dma/dma.gc",
+      "sha256_lf": "8b3739d61868598980358c8d9c59e18bec43b791327174e47779bb2718bda7ee",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {
+        ".sync.l": 29
+      },
+      "features": {
+        "dma": 51,
+        "vif": 5,
+        "vu1": 3
+      }
+    },
+    {
+      "object": "dma-buffer.o",
+      "source": "goal_src/jak1/engine/dma/dma-buffer.gc",
+      "sha256_lf": "5bb408f44cef4b19991b8ee065dc374d9849777d6c600b1255d1d0fecfaeb572",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 92,
+        "vif": 55
+      }
+    },
+    {
+      "object": "dma-bucket.o",
+      "source": "goal_src/jak1/engine/dma/dma-bucket.gc",
+      "sha256_lf": "2354cecac8cd5ba2e9f734e3833e82c038372ff996d70e9ad95919239992d525",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 18
+      }
+    },
+    {
+      "object": "dma-disasm.o",
+      "source": "goal_src/jak1/engine/dma/dma-disasm.gc",
+      "sha256_lf": "86e1d4108664cbf9413db7bcf63cbea2f73d51886e967e7276e1ae8842a74804",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 25,
+        "vif": 119
+      }
+    },
+    {
+      "object": "pc-cheats.o",
+      "source": "goal_src/jak1/pc/pc-cheats.gc",
+      "sha256_lf": "d0edc2731a0900725e2c66ee35f45c98cd855cbb6ee9ebae7bef95c80e53118f",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "pckernel-h.o",
+      "source": "goal_src/jak1/pc/pckernel-h.gc",
+      "sha256_lf": "e6d8e66e03239fbcbaa1f39fb89f0c3e07af1ca172f89a0d40b7ca45dbee3204",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 2
+      }
+    },
+    {
+      "object": "pckernel-impl.o",
+      "source": "goal_src/jak1/pc/pckernel-impl.gc",
+      "sha256_lf": "934f0602a66403b6186e04e21f7b30957566c986002dc4caab50644087a2bede",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "pc-debug-common.o",
+      "source": "goal_src/jak1/pc/debug/pc-debug-common.gc",
+      "sha256_lf": "f0537028cb46774d253cf719986c6830f862197fe1948f409bfcb82f72beb61c",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "pc-debug-methods.o",
+      "source": "goal_src/jak1/pc/debug/pc-debug-methods.gc",
+      "sha256_lf": "8cef6c5ba271c8b7ea9de1e980e17731e3286dcc22181ee0c6a1024501af218b",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 3
+      }
+    },
+    {
+      "object": "pad.o",
+      "source": "goal_src/jak1/engine/ps2/pad.gc",
+      "sha256_lf": "5ea80d0a140b482b5381e903e1cd78ce3cac85a0be8eb2ac74ecf864d760b046",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "fmin": 1
+      }
+    },
+    {
+      "object": "gs.o",
+      "source": "goal_src/jak1/engine/gfx/hw/gs.gc",
+      "sha256_lf": "a387111e69484defaa69b67ca27e20c0324e6bd0a904d7a51f9d9fecb7207f79",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 12,
+        "vif": 10
+      }
+    },
+    {
+      "object": "display-h.o",
+      "source": "goal_src/jak1/engine/gfx/hw/display-h.gc",
+      "sha256_lf": "5b005638a56bd00fdcfff95d67070549120a775e3a6e241c2165f36fc3377e05",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 12,
+        "vu1": 1
+      }
+    },
+    {
+      "object": "vector.o",
+      "source": "goal_src/jak1/engine/math/vector.gc",
+      "sha256_lf": "c93f5a1b677d29f1b7269b5c26142f4dc748074c61f58d630956e1fb5a50990c",
+      "rlet_vf_blocks": 34,
+      "asm_ops": {
+        ".abs.vf": 1,
+        ".add.mul.w.vf.xyz": 2,
+        ".add.mul.x.vf.xyz": 1,
+        ".add.mul.y.vf.w": 3,
+        ".add.mul.y.vf.x": 1,
+        ".add.mul.z.vf.w": 4,
+        ".add.mul.z.vf.x": 1,
+        ".add.vf": 2,
+        ".add.vf.xyz": 3,
+        ".add.w.vf.w": 1,
+        ".add.w.vf.x": 6,
+        ".add.x.vf.w": 14,
+        ".add.x.vf.x": 1,
+        ".add.x.vf.xyz": 1,
+        ".add.y.vf.x": 2,
+        ".add.z.vf.x": 3,
+        ".div.vf": 3,
+        ".ftoi.vf": 5,
+        ".itof.vf": 4,
+        ".lvf": 53,
+        ".max.x.vf.xyz": 1,
+        ".min.x.vf.xyz": 1,
+        ".mov": 35,
+        ".mov.vf.w": 2,
+        ".mul.vf": 6,
+        ".mul.vf.x": 3,
+        ".mul.vf.xyz": 3,
+        ".mul.vf.y": 1,
+        ".mul.vf.z": 1,
+        ".mul.w.vf": 1,
+        ".mul.w.vf.w": 1,
+        ".mul.w.vf.xyz": 1,
+        ".mul.x.vf": 6,
+        ".mul.x.vf.w": 4,
+        ".mul.x.vf.x": 1,
+        ".mul.x.vf.xyz": 4,
+        ".nop.vf": 12,
+        ".outer.product.a.vf": 1,
+        ".outer.product.b.vf": 1,
+        ".pceqw": 1,
+        ".ppach": 1,
+        ".psubw": 1,
+        ".pw.sll": 4,
+        ".pw.sra": 3,
+        ".sqrt.vf": 3,
+        ".sub.mul.x.vf.xyz": 2,
+        ".sub.vf": 9,
+        ".sub.vf.xyz": 4,
+        ".sub.x.vf.x": 1,
+        ".svf": 25,
+        ".wait.vf": 6
+      },
+      "features": {
+        "mmi": 3,
+        "the_uint128": 2
+      }
+    }
+  ],
+  "files": [
+    {
+      "object": "types-h.o",
+      "source": "goal_src/jak1/engine/util/types-h.gc",
+      "sha256_lf": "1e3a4960bdda7214d744d5227abc2cbfbc5d4db17b11a8c9aa9bc679c545712b",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "vu1-macros.o",
+      "source": "goal_src/jak1/engine/ps2/vu1-macros.gc",
+      "sha256_lf": "75cae2a8c4fe9248ad6fe75156a71edcdee1ff2c9746ecfef1bc41d3b2deafb6",
+      "rlet_vf_blocks": 7,
+      "asm_ops": {
+        ".ftoi.vf": 3,
+        ".itof.vf": 3,
+        ".lvf": 1,
+        ".mul.x.vf": 6,
+        ".svf": 2
+      },
+      "features": {}
+    },
+    {
+      "object": "math.o",
+      "source": "goal_src/jak1/engine/math/math.gc",
+      "sha256_lf": "62eaef8f76f03a649d70312fe63b214bc842f046ce9c027928a53b8005396725",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "fmax": 1,
+        "fmin": 1
+      }
+    },
+    {
+      "object": "vector-h.o",
+      "source": "goal_src/jak1/engine/math/vector-h.gc",
+      "sha256_lf": "1aab595bf2625cea834aad659e5313a87dbb733347adb13f7db5582afe4e99f2",
+      "rlet_vf_blocks": 6,
+      "asm_ops": {
+        ".add.mul.w.vf.x": 1,
+        ".add.mul.y.vf.x": 1,
+        ".add.mul.z.vf.x": 1,
+        ".add.vf": 1,
+        ".add.w.vf.x": 1,
+        ".add.y.vf.x": 1,
+        ".add.z.vf.x": 1,
+        ".blend.vf.w": 2,
+        ".lvf": 11,
+        ".mov": 2,
+        ".mul.vf": 2,
+        ".mul.x.vf.x": 1,
+        ".sub.vf": 1,
+        ".svf": 7,
+        ".xor.vf": 2
+      },
+      "features": {}
+    },
+    {
+      "object": "gravity-h.o",
+      "source": "goal_src/jak1/engine/physics/gravity-h.gc",
+      "sha256_lf": "ddde0736cb13eb03e663d5d2c0eb1c4c1edd54bf9c101b82c74e491c328be466",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "bounding-box-h.o",
+      "source": "goal_src/jak1/engine/geometry/bounding-box-h.gc",
+      "sha256_lf": "a516aec30cc936d9a4456a7cf4d8f2373b0d1ef29ffbd9f78e3ace713e0d486f",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "matrix-h.o",
+      "source": "goal_src/jak1/engine/math/matrix-h.gc",
+      "sha256_lf": "8ed1fe5d7257a907f5e664cb01a2e33c6a5a8c92fbc368bca1f9ec6728ed3f35",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "quaternion-h.o",
+      "source": "goal_src/jak1/engine/math/quaternion-h.gc",
+      "sha256_lf": "5553a6a77b9a6c7a8e7569dfed71b27f60d5a123dd77dfb13289f8ee819928e1",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "euler-h.o",
+      "source": "goal_src/jak1/engine/math/euler-h.gc",
+      "sha256_lf": "6b28456fc4d6c152ab8f1f2b4bc6e5fe7554c9af99f9ba0cc0ed45ff103dfba5",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "transform-h.o",
+      "source": "goal_src/jak1/engine/math/transform-h.gc",
+      "sha256_lf": "ad53c6b0c4175e6b3ecbecab944c9451533d3240c10e5f058ad1ea4b0d4e9f7c",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "geometry-h.o",
+      "source": "goal_src/jak1/engine/geometry/geometry-h.gc",
+      "sha256_lf": "3977ad567f1f7bf9f846f1182bcdd3245f96bcc8489f53da874e17b62288f2a6",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "trigonometry-h.o",
+      "source": "goal_src/jak1/engine/math/trigonometry-h.gc",
+      "sha256_lf": "07823adddc229ef55183c0afff62da145428b5a29b9272d62841cdc559c9ac68",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "transformq-h.o",
+      "source": "goal_src/jak1/engine/math/transformq-h.gc",
+      "sha256_lf": "1555fe7c8d61ebcfd2bcc0b5937fb58e34f9da7288e13aff1848844e13e7b21b",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "bounding-box.o",
+      "source": "goal_src/jak1/engine/geometry/bounding-box.gc",
+      "sha256_lf": "46086886376a2b07848085a1dae12290575f803121eabc283ebc705ae734f442",
+      "rlet_vf_blocks": 7,
+      "asm_ops": {
+        ".add.vf": 2,
+        ".add.w.vf.xyz": 3,
+        ".add.x.vf.xyz": 1,
+        ".lvf": 16,
+        ".max.vf": 4,
+        ".max.vf.xyz": 2,
+        ".min.vf": 4,
+        ".min.vf.xyz": 2,
+        ".mov": 1,
+        ".mov.vf.w": 6,
+        ".sub.w.vf.xyz": 3,
+        ".sub.x.vf.xyz": 1,
+        ".svf": 14
+      },
+      "features": {}
+    },
+    {
+      "object": "matrix.o",
+      "source": "goal_src/jak1/engine/math/matrix.gc",
+      "sha256_lf": "6cc2062abe28bdc17df29eb0c80f5709bdd0756da11f430a48d8c0b639d71086",
+      "rlet_vf_blocks": 12,
+      "asm_ops": {
+        ".add.mul.w.vf": 9,
+        ".add.mul.x.vf": 4,
+        ".add.mul.y.vf": 16,
+        ".add.mul.z.vf": 11,
+        ".add.mul.z.vf.xyz": 5,
+        ".add.vf": 4,
+        ".add.vf.x": 2,
+        ".add.vf.xyz": 3,
+        ".add.x.vf.x": 1,
+        ".add.x.vf.xyz": 1,
+        ".add.x.vf.y": 2,
+        ".add.y.vf.x": 4,
+        ".add.y.vf.y": 1,
+        ".add.y.vf.z": 2,
+        ".add.z.vf.x": 3,
+        ".div.vf": 2,
+        ".lvf": 60,
+        ".mov": 5,
+        ".mov.vf.w": 2,
+        ".mul.vf": 7,
+        ".mul.vf.xyz": 2,
+        ".mul.w.vf": 5,
+        ".mul.w.vf.xyz": 1,
+        ".mul.x.vf": 20,
+        ".mul.x.vf.x": 1,
+        ".mul.x.vf.xyz": 2,
+        ".mul.x.vf.y": 1,
+        ".mul.x.vf.z": 1,
+        ".mul.y.vf": 4,
+        ".mul.y.vf.x": 2,
+        ".mul.y.vf.xyz": 1,
+        ".mul.y.vf.y": 1,
+        ".mul.y.vf.z": 2,
+        ".mul.z.vf": 4,
+        ".mul.z.vf.x": 4,
+        ".mul.z.vf.xyz": 1,
+        ".mul.z.vf.y": 2,
+        ".mul.z.vf.z": 1,
+        ".nop.vf": 9,
+        ".outer.product.a.vf": 4,
+        ".outer.product.b.vf": 4,
+        ".pceqw": 1,
+        ".pcpyld": 2,
+        ".pcpyud": 2,
+        ".pextlw": 2,
+        ".pextuw": 2,
+        ".ppach": 1,
+        ".sub.vf": 6,
+        ".sub.vf.w": 3,
+        ".sub.vf.x": 1,
+        ".sub.x.vf.w": 1,
+        ".sub.x.vf.y": 2,
+        ".sub.x.vf.z": 2,
+        ".sub.y.vf.x": 2,
+        ".sub.y.vf.z": 2,
+        ".sub.z.vf.x": 3,
+        ".sub.z.vf.y": 2,
+        ".svf": 37,
+        ".vf.vec": 5,
+        ".vf.vec<-arg": 12,
+        ".vf.w": 8,
+        ".vf.x": 12,
+        ".vf.y": 8,
+        ".vf.z": 8,
+        ".wait.vf": 2,
+        ".xor.p": 1,
+        ".xor.vf": 23
+      },
+      "features": {
+        "mmi": 10,
+        "rlet_i128": 1
+      }
+    },
+    {
+      "object": "transform.o",
+      "source": "goal_src/jak1/engine/math/transform.gc",
+      "sha256_lf": "a9f5ba12171e6c695f3b081fe5847e5849bc47a66249c919d7a3a4295a289cf2",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "quaternion.o",
+      "source": "goal_src/jak1/engine/math/quaternion.gc",
+      "sha256_lf": "ca9060f4975632de0c45fed9fd2db56d21478f891d3800e00dabbdd1a563b83f",
+      "rlet_vf_blocks": 16,
+      "asm_ops": {
+        ".add.mul.vf": 1,
+        ".add.mul.w.vf": 2,
+        ".add.mul.x.vf": 2,
+        ".add.mul.x.vf.w": 5,
+        ".add.mul.y.vf": 1,
+        ".add.mul.y.vf.w": 5,
+        ".add.vf": 2,
+        ".add.vf.w": 2,
+        ".add.vf.xyz": 2,
+        ".add.w.vf": 3,
+        ".add.w.vf.x": 2,
+        ".add.w.vf.y": 2,
+        ".add.w.vf.z": 2,
+        ".add.x.vf.z": 1,
+        ".add.y.vf.x": 1,
+        ".add.z.vf.w": 5,
+        ".add.z.vf.y": 1,
+        ".div.vf": 1,
+        ".isqrt.vf": 1,
+        ".lvf": 30,
+        ".mov": 13,
+        ".mul.vf": 9,
+        ".mul.w.vf": 1,
+        ".mul.x.vf": 8,
+        ".mul.x.vf.w": 4,
+        ".nop.vf": 2,
+        ".outer.product.a.vf": 6,
+        ".outer.product.b.vf": 6,
+        ".sub.mul.w.vf.w": 1,
+        ".sub.mul.x.vf.w": 1,
+        ".sub.mul.y.vf.w": 1,
+        ".sub.mul.z.vf.w": 1,
+        ".sub.vf": 2,
+        ".sub.vf.w": 1,
+        ".sub.vf.xyz": 2,
+        ".sub.vf.yz": 1,
+        ".sub.w.vf.w": 3,
+        ".sub.x.vf.y": 1,
+        ".sub.y.vf.z": 1,
+        ".sub.z.vf.x": 1,
+        ".svf": 21,
+        ".wait.vf": 1,
+        ".xor.vf": 3
+      },
+      "features": {}
+    },
+    {
+      "object": "euler.o",
+      "source": "goal_src/jak1/engine/math/euler.gc",
+      "sha256_lf": "23985688542f396563107f02ed46f3f7f69360bffd90e7b4130e1888557efb7c",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "geometry.o",
+      "source": "goal_src/jak1/engine/geometry/geometry.gc",
+      "sha256_lf": "7553829e3f2979f69b3f0f1530345c283e7e8a4f208b1eb23f2f3875921ac82e",
+      "rlet_vf_blocks": 13,
+      "asm_ops": {
+        ".add.mul.w.vf.xyz": 1,
+        ".add.mul.x.vf": 1,
+        ".add.mul.y.vf": 1,
+        ".add.mul.y.vf.w": 2,
+        ".add.mul.y.vf.xyz": 1,
+        ".add.mul.z.vf": 1,
+        ".add.mul.z.vf.w": 2,
+        ".add.mul.z.vf.xyz": 1,
+        ".add.vf": 2,
+        ".add.vf.x": 2,
+        ".add.vf.xyz": 4,
+        ".add.w.vf.x": 2,
+        ".add.w.vf.y": 2,
+        ".add.w.vf.z": 2,
+        ".add.x.vf.w": 2,
+        ".add.x.vf.y": 6,
+        ".add.x.vf.z": 1,
+        ".add.y.vf.x": 3,
+        ".add.z.vf.x": 3,
+        ".add.z.vf.y": 7,
+        ".div.vf": 1,
+        ".isqrt.vf": 1,
+        ".lvf": 38,
+        ".mov": 12,
+        ".mov.vf.w": 8,
+        ".mul.vf": 11,
+        ".mul.vf.w": 1,
+        ".mul.vf.xyz": 1,
+        ".mul.vf.xz": 1,
+        ".mul.w.vf": 1,
+        ".mul.x.vf": 4,
+        ".mul.x.vf.w": 2,
+        ".nop.vf": 10,
+        ".outer.product.a.vf": 23,
+        ".outer.product.b.vf": 23,
+        ".sqrt.vf": 3,
+        ".sub.mul.w.vf.xyz": 1,
+        ".sub.vf": 19,
+        ".sub.w.vf.w": 3,
+        ".sub.x.vf.y": 1,
+        ".sub.y.vf.z": 1,
+        ".sub.z.vf.x": 1,
+        ".svf": 12,
+        ".wait.vf": 5
+      },
+      "features": {
+        "fmax": 2,
+        "fmin": 3
+      }
+    },
+    {
+      "object": "trigonometry.o",
+      "source": "goal_src/jak1/engine/math/trigonometry.gc",
+      "sha256_lf": "60544ea58a13f2a50c865d7b48de3147116afcba143eba988720e24fd0600c90",
+      "rlet_vf_blocks": 5,
+      "asm_ops": {
+        ".add.mul.w.vf": 4,
+        ".add.mul.x.vf": 4,
+        ".add.mul.y.vf": 4,
+        ".add.mul.z.vf": 4,
+        ".add.w.vf": 2,
+        ".adda.s": 1,
+        ".ftoi.vf": 2,
+        ".itof.vf": 2,
+        ".lvf": 11,
+        ".madd.s": 1,
+        ".madda.s": 6,
+        ".mov": 3,
+        ".mul.vf": 18,
+        ".mul.x.vf": 5,
+        ".pw.sll": 2,
+        ".pw.sra": 2,
+        ".svf": 6,
+        ".xor.vf": 2
+      },
+      "features": {}
+    },
+    {
+      "object": "gsound-h.o",
+      "source": "goal_src/jak1/engine/sound/gsound-h.gc",
+      "sha256_lf": "f54b68c2c47dc4cd2e01f6d5afa71f22f6e055af803999b1e1b3d078b5fcf640",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "timer-h.o",
+      "source": "goal_src/jak1/engine/ps2/timer-h.gc",
+      "sha256_lf": "918c8e7a485c6a617357502a6a9229bd8c0be5dbd1361aefe1fdba2c496ea0c4",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 2
+      }
+    },
+    {
+      "object": "timer.o",
+      "source": "goal_src/jak1/engine/ps2/timer.gc",
+      "sha256_lf": "748f0c5e5c4f26b50661bc628ebd00709e36fc2e20a08c5e6cd4d05f468fac6b",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {
+        ".mfc0": 8,
+        ".mtc0": 2,
+        ".sync.l": 4,
+        ".sync.p": 2
+      },
+      "features": {}
+    },
+    {
+      "object": "vif-h.o",
+      "source": "goal_src/jak1/engine/ps2/vif-h.gc",
+      "sha256_lf": "af9ef9f165009c4d762c9a79bd0f2a5127055ab3770f4e233056b34ecab7d4e7",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "vif": 7
+      }
+    },
+    {
+      "object": "dma-h.o",
+      "source": "goal_src/jak1/engine/dma/dma-h.gc",
+      "sha256_lf": "430e9331709d0d1dd1658a69752541f145b20bffe5e0b39ed7d11cf1124cca7a",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {
+        ".sync.l": 2
+      },
+      "features": {
+        "dma": 38,
+        "vif": 12
+      }
+    },
+    {
+      "object": "video-h.o",
+      "source": "goal_src/jak1/engine/gfx/hw/video-h.gc",
+      "sha256_lf": "30dfaefcce99385c96634b11cee411b51b76ac7dcb26f4da485742dda99b39f3",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "vu1-user-h.o",
+      "source": "goal_src/jak1/engine/gfx/vu1-user-h.gc",
+      "sha256_lf": "50dbccad4e860c20260863e6bddd6bf3f5a7c0ceadc277fb48de2ac65dda6017",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 7,
+        "vu1": 7
+      }
+    },
+    {
+      "object": "dma.o",
+      "source": "goal_src/jak1/engine/dma/dma.gc",
+      "sha256_lf": "8b3739d61868598980358c8d9c59e18bec43b791327174e47779bb2718bda7ee",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {
+        ".sync.l": 29
+      },
+      "features": {
+        "dma": 51,
+        "vif": 5,
+        "vu1": 3
+      }
+    },
+    {
+      "object": "dma-buffer.o",
+      "source": "goal_src/jak1/engine/dma/dma-buffer.gc",
+      "sha256_lf": "5bb408f44cef4b19991b8ee065dc374d9849777d6c600b1255d1d0fecfaeb572",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 92,
+        "vif": 55
+      }
+    },
+    {
+      "object": "dma-bucket.o",
+      "source": "goal_src/jak1/engine/dma/dma-bucket.gc",
+      "sha256_lf": "2354cecac8cd5ba2e9f734e3833e82c038372ff996d70e9ad95919239992d525",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 18
+      }
+    },
+    {
+      "object": "dma-disasm.o",
+      "source": "goal_src/jak1/engine/dma/dma-disasm.gc",
+      "sha256_lf": "86e1d4108664cbf9413db7bcf63cbea2f73d51886e967e7276e1ae8842a74804",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 25,
+        "vif": 119
+      }
+    },
+    {
+      "object": "pc-cheats.o",
+      "source": "goal_src/jak1/pc/pc-cheats.gc",
+      "sha256_lf": "d0edc2731a0900725e2c66ee35f45c98cd855cbb6ee9ebae7bef95c80e53118f",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "pckernel-h.o",
+      "source": "goal_src/jak1/pc/pckernel-h.gc",
+      "sha256_lf": "e6d8e66e03239fbcbaa1f39fb89f0c3e07af1ca172f89a0d40b7ca45dbee3204",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 2
+      }
+    },
+    {
+      "object": "pckernel-impl.o",
+      "source": "goal_src/jak1/pc/pckernel-impl.gc",
+      "sha256_lf": "934f0602a66403b6186e04e21f7b30957566c986002dc4caab50644087a2bede",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "pc-debug-common.o",
+      "source": "goal_src/jak1/pc/debug/pc-debug-common.gc",
+      "sha256_lf": "f0537028cb46774d253cf719986c6830f862197fe1948f409bfcb82f72beb61c",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "pc-debug-methods.o",
+      "source": "goal_src/jak1/pc/debug/pc-debug-methods.gc",
+      "sha256_lf": "8cef6c5ba271c8b7ea9de1e980e17731e3286dcc22181ee0c6a1024501af218b",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 3
+      }
+    },
+    {
+      "object": "pad.o",
+      "source": "goal_src/jak1/engine/ps2/pad.gc",
+      "sha256_lf": "5ea80d0a140b482b5381e903e1cd78ce3cac85a0be8eb2ac74ecf864d760b046",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "fmin": 1
+      }
+    },
+    {
+      "object": "gs.o",
+      "source": "goal_src/jak1/engine/gfx/hw/gs.gc",
+      "sha256_lf": "a387111e69484defaa69b67ca27e20c0324e6bd0a904d7a51f9d9fecb7207f79",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 12,
+        "vif": 10
+      }
+    },
+    {
+      "object": "display-h.o",
+      "source": "goal_src/jak1/engine/gfx/hw/display-h.gc",
+      "sha256_lf": "5b005638a56bd00fdcfff95d67070549120a775e3a6e241c2165f36fc3377e05",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 12,
+        "vu1": 1
+      }
+    },
+    {
+      "object": "vector.o",
+      "source": "goal_src/jak1/engine/math/vector.gc",
+      "sha256_lf": "c93f5a1b677d29f1b7269b5c26142f4dc748074c61f58d630956e1fb5a50990c",
+      "rlet_vf_blocks": 34,
+      "asm_ops": {
+        ".abs.vf": 1,
+        ".add.mul.w.vf.xyz": 2,
+        ".add.mul.x.vf.xyz": 1,
+        ".add.mul.y.vf.w": 3,
+        ".add.mul.y.vf.x": 1,
+        ".add.mul.z.vf.w": 4,
+        ".add.mul.z.vf.x": 1,
+        ".add.vf": 2,
+        ".add.vf.xyz": 3,
+        ".add.w.vf.w": 1,
+        ".add.w.vf.x": 6,
+        ".add.x.vf.w": 14,
+        ".add.x.vf.x": 1,
+        ".add.x.vf.xyz": 1,
+        ".add.y.vf.x": 2,
+        ".add.z.vf.x": 3,
+        ".div.vf": 3,
+        ".ftoi.vf": 5,
+        ".itof.vf": 4,
+        ".lvf": 53,
+        ".max.x.vf.xyz": 1,
+        ".min.x.vf.xyz": 1,
+        ".mov": 35,
+        ".mov.vf.w": 2,
+        ".mul.vf": 6,
+        ".mul.vf.x": 3,
+        ".mul.vf.xyz": 3,
+        ".mul.vf.y": 1,
+        ".mul.vf.z": 1,
+        ".mul.w.vf": 1,
+        ".mul.w.vf.w": 1,
+        ".mul.w.vf.xyz": 1,
+        ".mul.x.vf": 6,
+        ".mul.x.vf.w": 4,
+        ".mul.x.vf.x": 1,
+        ".mul.x.vf.xyz": 4,
+        ".nop.vf": 12,
+        ".outer.product.a.vf": 1,
+        ".outer.product.b.vf": 1,
+        ".pceqw": 1,
+        ".ppach": 1,
+        ".psubw": 1,
+        ".pw.sll": 4,
+        ".pw.sra": 3,
+        ".sqrt.vf": 3,
+        ".sub.mul.x.vf.xyz": 2,
+        ".sub.vf": 9,
+        ".sub.vf.xyz": 4,
+        ".sub.x.vf.x": 1,
+        ".svf": 25,
+        ".wait.vf": 6
+      },
+      "features": {
+        "mmi": 3,
+        "the_uint128": 2
+      }
+    },
+    {
+      "object": "file-io.o",
+      "source": "goal_src/jak1/engine/load/file-io.gc",
+      "sha256_lf": "2b85111f7d842c080ff2bd276a8ada5292caf8652efd1ec205383c907755d192",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "loader-h.o",
+      "source": "goal_src/jak1/engine/load/loader-h.gc",
+      "sha256_lf": "b2a2cd70c37e5907aed93463cc8ea2ac6f009aa67453f896675233b10bfc9646",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "texture-h.o",
+      "source": "goal_src/jak1/engine/gfx/texture/texture-h.gc",
+      "sha256_lf": "fc4344ae283c9e739be9fffb7092c47d3202aa00303a4209647d3615335d6dee",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 2
+      }
+    },
+    {
+      "object": "level-h.o",
+      "source": "goal_src/jak1/engine/level/level-h.gc",
+      "sha256_lf": "a94a9fb19930768e5fda56a0fb7ab19e6401c302a5d5aa821c5d61db5a02679d",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 40
+      }
+    },
+    {
+      "object": "math-camera-h.o",
+      "source": "goal_src/jak1/engine/gfx/math-camera-h.gc",
+      "sha256_lf": "a5de110faec79ecf4ab1a97851351595b26fbad225ae21524634539e5732f9cd",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "math-camera.o",
+      "source": "goal_src/jak1/engine/gfx/math-camera.gc",
+      "sha256_lf": "1e89314c14d53996523252e7022386943eb3b3b8362f41607ccd635512a8584f",
+      "rlet_vf_blocks": 4,
+      "asm_ops": {
+        ".add.mul.w.vf": 3,
+        ".add.mul.y.vf": 3,
+        ".add.mul.z.vf": 3,
+        ".add.vf": 3,
+        ".add.w.vf": 3,
+        ".div.vf": 3,
+        ".itof.vf": 1,
+        ".lvf": 24,
+        ".max.x.vf.w": 3,
+        ".mov": 2,
+        ".mul.vf": 6,
+        ".mul.vf.xyz": 3,
+        ".mul.x.vf": 3,
+        ".svf": 7,
+        ".wait.vf": 3
+      },
+      "features": {}
+    },
+    {
+      "object": "font-h.o",
+      "source": "goal_src/jak1/engine/gfx/font-h.gc",
+      "sha256_lf": "3c0ffde7f80fe3de04f5993e74b83a0b8daf3864ab30cd7782f0cf1486a7665c",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 16,
+        "vif": 8
+      }
+    },
+    {
+      "object": "decomp-h.o",
+      "source": "goal_src/jak1/engine/load/decomp-h.gc",
+      "sha256_lf": "092c37ee8804dd396ceccd431487e3ccdc4ffb8ac362c6672f30f3cabc5fb174",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "display.o",
+      "source": "goal_src/jak1/engine/gfx/hw/display.gc",
+      "sha256_lf": "8294872196d60afb36b3f263b76395a36185591696d8409a4259a3b0c740ca67",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 36,
+        "fmin": 1,
+        "vif": 9
+      }
+    },
+    {
+      "object": "connect.o",
+      "source": "goal_src/jak1/engine/engine/connect.gc",
+      "sha256_lf": "5ff66b94eab79109ae9c94918bc38dd7a3cd4367498f621e6011db9bb315dba3",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "text-h.o",
+      "source": "goal_src/jak1/engine/ui/text-h.gc",
+      "sha256_lf": "87ec075e2994c4f436a0683273900136dae89b9b592ee2e6f3bc83b99754aefb",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "settings-h.o",
+      "source": "goal_src/jak1/engine/game/settings-h.gc",
+      "sha256_lf": "720877393bb4727563d658839c1511190c5e1910405284701c18c3a435ef249f",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "knuth-rand.o",
+      "source": "goal_src/jak1/pc/util/knuth-rand.gc",
+      "sha256_lf": "2dc9f43e20fbcf775642b1546857f2fd60ae4411b804b2705413f0519afc38c7",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "capture.o",
+      "source": "goal_src/jak1/engine/util/capture.gc",
+      "sha256_lf": "ad99169610b9910a68126fb431e9c7df83e13ce836640f804a7fdba9f551006a",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {
+        ".sync.l": 1
+      },
+      "features": {
+        "vif": 9
+      }
+    },
+    {
+      "object": "memory-usage-h.o",
+      "source": "goal_src/jak1/engine/debug/memory-usage-h.gc",
+      "sha256_lf": "060185d658b29a8cfac02d1fc3761e3732a6b250cb822a5b6c32632ac8f7090d",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 3
+      }
+    },
+    {
+      "object": "texture.o",
+      "source": "goal_src/jak1/engine/gfx/texture/texture.gc",
+      "sha256_lf": "cd41d617d17cf15f6e0e4ec4c31c2e07e2e79e0323bea2dadee556b3c56ec779",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 98,
+        "fmin": 2,
+        "vif": 68
+      }
+    },
+    {
+      "object": "main-h.o",
+      "source": "goal_src/jak1/engine/game/main-h.gc",
+      "sha256_lf": "7094485cf54f73c781035d0628dd6f6ae6c05c1979d9249f73a20a586d653bf5",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 3
+      }
+    },
+    {
+      "object": "mspace-h.o",
+      "source": "goal_src/jak1/engine/anim/mspace-h.gc",
+      "sha256_lf": "40bc33139964bd7eb3f882e5940e92bcd6d2836df011a51421a23108381b229e",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "drawable-h.o",
+      "source": "goal_src/jak1/engine/draw/drawable-h.gc",
+      "sha256_lf": "59a9b81186e64efa618c770c8405eea52a34656f6ae6bb2b8b1f026f311da051",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 5
+      }
+    },
+    {
+      "object": "drawable-group-h.o",
+      "source": "goal_src/jak1/engine/draw/drawable-group-h.gc",
+      "sha256_lf": "9719858a5ae14717765b109cef9c5cb26b5ba0b0c6a1980b0a10ea980d5ebef8",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "drawable-inline-array-h.o",
+      "source": "goal_src/jak1/engine/draw/drawable-inline-array-h.gc",
+      "sha256_lf": "e63822c09f58e5327906b1a91b804ce14811af1a58a09c1ed0b27565192988d5",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "draw-node-h.o",
+      "source": "goal_src/jak1/engine/draw/draw-node-h.gc",
+      "sha256_lf": "437b8a4f40bd8c0dfba162fdc370331a912d73eebd53e32e3dd8c3ee12c6c953",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 1
+      }
+    },
+    {
+      "object": "drawable-tree-h.o",
+      "source": "goal_src/jak1/engine/draw/drawable-tree-h.gc",
+      "sha256_lf": "eef9eb271d47ba113c7b72c651c28023c7d93968bdfb4e59d9f9502609485e8e",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "drawable-actor-h.o",
+      "source": "goal_src/jak1/engine/draw/drawable-actor-h.gc",
+      "sha256_lf": "6d4dd47994771917117460ce476eb646ca0054eeddd7bbe9cd9644322f7fe189",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "drawable-ambient-h.o",
+      "source": "goal_src/jak1/engine/draw/drawable-ambient-h.gc",
+      "sha256_lf": "905cf67a6d40772414305931f406342cb56e3ea77916ce8cd820702d1533b98b",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "game-task-h.o",
+      "source": "goal_src/jak1/engine/game/task/game-task-h.gc",
+      "sha256_lf": "4be22f848e931550c5e92d4750aea1ee9c8833e6510abefcbfc02aa24a22c44a",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "hint-control-h.o",
+      "source": "goal_src/jak1/engine/game/task/hint-control-h.gc",
+      "sha256_lf": "9c553b2b99e374c4eeeac5cf51ef2a6d9791cad0c1ce7af08c604f1b45fb6aab",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "generic-h.o",
+      "source": "goal_src/jak1/engine/gfx/generic/generic-h.gc",
+      "sha256_lf": "888023da078ac2d6d73e1afa67d163ba479a44a84fd2296c92d31318d7f23032",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 8,
+        "vif": 1
+      }
+    },
+    {
+      "object": "lights-h.o",
+      "source": "goal_src/jak1/engine/gfx/lights-h.gc",
+      "sha256_lf": "a670aacc4d6518ea39f5036d2c2a2b50d073ce78a64ce4de5941babfa0e333f4",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "ocean-h.o",
+      "source": "goal_src/jak1/engine/gfx/ocean/ocean-h.gc",
+      "sha256_lf": "1377c55d26c15fc95e57c91ef1be42cd199a9c6b8453f1d3f35a013876637418",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 7
+      }
+    },
+    {
+      "object": "ocean-trans-tables.o",
+      "source": "goal_src/jak1/engine/gfx/ocean/ocean-trans-tables.gc",
+      "sha256_lf": "6d3d2fc7ffb4b71bd2a2706957f6d8572d4e19c28caa2384e22bb6ae3f28cc67",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "ocean-tables.o",
+      "source": "goal_src/jak1/engine/gfx/ocean/ocean-tables.gc",
+      "sha256_lf": "4223ed3ffead421dc0658d91b2099d21988c762e7641a2a14296717864369731",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "ocean-frames.o",
+      "source": "goal_src/jak1/engine/gfx/ocean/ocean-frames.gc",
+      "sha256_lf": "487964e02bfad63052b05d630d75b83c5c7199d57b52c4d09edab2e5f890f8a2",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "sky-h.o",
+      "source": "goal_src/jak1/engine/gfx/sky/sky-h.gc",
+      "sha256_lf": "86c8b8e7204dc742e1d909c9412cf4555b4d03a243f9fd58ef158bf531787497",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 3
+      }
+    },
+    {
+      "object": "mood-h.o",
+      "source": "goal_src/jak1/engine/gfx/mood/mood-h.gc",
+      "sha256_lf": "1e85398324a030b9766330991faadbcfeec55b66aad240b72088a8e04ee7fcc5",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "time-of-day-h.o",
+      "source": "goal_src/jak1/engine/gfx/mood/time-of-day-h.gc",
+      "sha256_lf": "24e1d79909c9159b95b1e1f1a39d78fc11e073f8b71053f8530c3bf5c8a05a6c",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 1
+      }
+    },
+    {
+      "object": "art-h.o",
+      "source": "goal_src/jak1/engine/data/art-h.gc",
+      "sha256_lf": "fd3ce84b5b11635af95a406dd81f3ba77845c002de7acf3bcff016ed8e3ef919",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 2
+      }
+    },
+    {
+      "object": "generic-vu1-h.o",
+      "source": "goal_src/jak1/engine/gfx/generic/generic-vu1-h.gc",
+      "sha256_lf": "53f9f3aa99bf6b20ed530bd9d5b435768aa51a00bd31c49b77483ddad1ec8d71",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 1
+      }
+    },
+    {
+      "object": "merc-h.o",
+      "source": "goal_src/jak1/engine/gfx/merc/merc-h.gc",
+      "sha256_lf": "acc081f351372b26d48a8c86a786547de3c2a8c1894507c9df34f8746ea88f2e",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "vif": 1,
+        "vu1": 1
+      }
+    },
+    {
+      "object": "generic-merc-h.o",
+      "source": "goal_src/jak1/engine/gfx/merc/generic-merc-h.gc",
+      "sha256_lf": "4a37e999c60655762a880d1a1af88e50db8b4ddabf62396a32a8fbb06a47b7e5",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 3,
+        "vif": 2
+      }
+    },
+    {
+      "object": "generic-tie-h.o",
+      "source": "goal_src/jak1/engine/gfx/tie/generic-tie-h.gc",
+      "sha256_lf": "6f8666556226a149d90590cc6259f1807ea7ac3f2dbf588418011691fdd169b9",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 11
+      }
+    },
+    {
+      "object": "generic-work-h.o",
+      "source": "goal_src/jak1/engine/gfx/generic/generic-work-h.gc",
+      "sha256_lf": "18bfcfaff781e5ebca4a63fc7fecbdd48b8953830cd938c99c8104b3ed95d31c",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 1,
+        "vu1": 4
+      }
+    },
+    {
+      "object": "shadow-cpu-h.o",
+      "source": "goal_src/jak1/engine/gfx/shadow/shadow-cpu-h.gc",
+      "sha256_lf": "7af67017985b64e3693db115aa6927ff70dc939abdd6d179a97af59810f5c56e",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 6,
+        "vif": 4
+      }
+    },
+    {
+      "object": "shadow-vu1-h.o",
+      "source": "goal_src/jak1/engine/gfx/shadow/shadow-vu1-h.gc",
+      "sha256_lf": "913434c7066d963c1a11925f41459995bed251832e0dc56fa8e517e15cdc782f",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 1,
+        "vu1": 1
+      }
+    },
+    {
+      "object": "memcard-h.o",
+      "source": "goal_src/jak1/engine/ps2/memcard-h.gc",
+      "sha256_lf": "c0b0ded5b4124479a8aeed5fea8e5bb7ffd23c451b3cc49c3c846aa694af2c03",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 3
+      }
+    },
+    {
+      "object": "game-info-h.o",
+      "source": "goal_src/jak1/engine/game/game-info-h.gc",
+      "sha256_lf": "bce064f44234c5d812ae1d337a84b9f69ac1a4ce7b5112084a639b64368da4d8",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "wind-h.o",
+      "source": "goal_src/jak1/engine/gfx/background/wind-h.gc",
+      "sha256_lf": "697bedaf6b2212bde834aa6a4ed2ae5bfa8cb7dc06755f33c772047759c6ea1f",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "prototype-h.o",
+      "source": "goal_src/jak1/engine/gfx/background/prototype-h.gc",
+      "sha256_lf": "5a1d2b6a8ac3deb3b10bfdda9be5a4e6dba6b670ebbaea15ebfbd690deff3ea8",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 1
+      }
+    },
+    {
+      "object": "joint-h.o",
+      "source": "goal_src/jak1/engine/anim/joint-h.gc",
+      "sha256_lf": "bb8d1dbd0de68830dae6226d73ab637dbe076553fe373621ab68880ae1b2e8f8",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "bones-h.o",
+      "source": "goal_src/jak1/engine/gfx/foreground/bones-h.gc",
+      "sha256_lf": "db23eca6af139dd1bf8e0e492df2c8b988a2baca5205b80db347a93fea021085",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {
+        ".cache": 2,
+        ".sync.l": 3
+      },
+      "features": {
+        "dma": 13
+      }
+    },
+    {
+      "object": "engines.o",
+      "source": "goal_src/jak1/engine/engine/engines.gc",
+      "sha256_lf": "6a715edd3925f0522873d29cbfa62286efb79139f4e0e3a068f601b8f01cc032",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "res-h.o",
+      "source": "goal_src/jak1/engine/entity/res-h.gc",
+      "sha256_lf": "ef85dc4243fc69611a3ddf04c4be4d4dc62c3f6fbb08d6c949e0341923949571",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "res.o",
+      "source": "goal_src/jak1/engine/entity/res.gc",
+      "sha256_lf": "02f08bdb28076275f97326a13f5f9dd6f92dc657530a26409f80182bf413f5e7",
+      "rlet_vf_blocks": 1,
+      "asm_ops": {
+        ".add.vf": 1,
+        ".lvf": 2,
+        ".mov": 2,
+        ".mul.x.vf": 2,
+        ".svf": 1
+      },
+      "features": {}
+    },
+    {
+      "object": "lights.o",
+      "source": "goal_src/jak1/engine/gfx/lights.gc",
+      "sha256_lf": "7ea12a3edef9112ed9a325e64eaa118a525f52924c7e074981d085ee824fc10e",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "fmax": 1,
+        "fmin": 1
+      }
+    },
+    {
+      "object": "dynamics-h.o",
+      "source": "goal_src/jak1/engine/physics/dynamics-h.gc",
+      "sha256_lf": "fa955586624b41820046d04f87228c6cc39868055514a0fb738fb7198b8274be",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "surface-h.o",
+      "source": "goal_src/jak1/engine/collide/surface-h.gc",
+      "sha256_lf": "5687fe1bbc56360c8856ba5952f556bd8170affef61537025a053812802425c3",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "fmin": 2
+      }
+    },
+    {
+      "object": "pat-h.o",
+      "source": "goal_src/jak1/engine/collide/pat-h.gc",
+      "sha256_lf": "f422c615e580aa901c6813a8de0a7b19c729b2980faf9b54dccf42bebf328190",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "fact-h.o",
+      "source": "goal_src/jak1/engine/game/fact-h.gc",
+      "sha256_lf": "66273c43dc8be93fcbb1171a99a00d7bda895965cdb0ccc9b2f4c1abdcba8807",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "aligner-h.o",
+      "source": "goal_src/jak1/engine/anim/aligner-h.gc",
+      "sha256_lf": "e88bda41ecf0b0440febd109274d24561e61e945382f5f5bd8ad4715fc8baca3",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "game-h.o",
+      "source": "goal_src/jak1/engine/game/game-h.gc",
+      "sha256_lf": "81e8b9cc689f51adfcb0ea579b0a3970559271d15b70f890790b6d2acbb31fac",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "generic-obs-h.o",
+      "source": "goal_src/jak1/engine/common-obs/generic-obs-h.gc",
+      "sha256_lf": "b7caa15d84ef82956bc7625e840b2f121817c9a8fa4a26cb7ed1b5e39468b250",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "pov-camera-h.o",
+      "source": "goal_src/jak1/engine/camera/pov-camera-h.gc",
+      "sha256_lf": "c3a9a2230036e18e6549f8435db70822ef7bb8ba8a185d39024e7e55b0ddae03",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "sync-info-h.o",
+      "source": "goal_src/jak1/engine/util/sync-info-h.gc",
+      "sha256_lf": "b7656b3d9a730a6565723a2e5a785834e0d3e0244c441aa8332eabc5404069ad",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "smush-control-h.o",
+      "source": "goal_src/jak1/engine/util/smush-control-h.gc",
+      "sha256_lf": "795dd2f113f8da92730fbcc053dc4d2453b09c100487322828551f69e196cf9f",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "trajectory-h.o",
+      "source": "goal_src/jak1/engine/physics/trajectory-h.gc",
+      "sha256_lf": "6169b3e7f05da282b0908d90af60fd25077d2264b6e45aefa0e307e9dca09b31",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "debug-h.o",
+      "source": "goal_src/jak1/engine/debug/debug-h.gc",
+      "sha256_lf": "7aeb153a9412aafa6b77808e81f944b29cc90c0b1e9fb88242351cd740c293db",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "joint-mod-h.o",
+      "source": "goal_src/jak1/engine/anim/joint-mod-h.gc",
+      "sha256_lf": "400bbc61d2a3cbfffd0b3f275873da2eaeb3757378967d1ea75253fbfda0ff8a",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "fmax": 6,
+        "fmin": 4
+      }
+    },
+    {
+      "object": "collide-func-h.o",
+      "source": "goal_src/jak1/engine/collide/collide-func-h.gc",
+      "sha256_lf": "c120e4d0bc539553f608250aadcfc859f881f84347c71e211926021d95eb18a2",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "collide-mesh-h.o",
+      "source": "goal_src/jak1/engine/collide/collide-mesh-h.gc",
+      "sha256_lf": "33caa541a34e25fe28595b6a502111bae122f259e77d943dabc5557a5298bdee",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "collide-shape-h.o",
+      "source": "goal_src/jak1/engine/collide/collide-shape-h.gc",
+      "sha256_lf": "ee6eac0198a2afa9309575be079ed3e61db67946c28f6c6d9065f5bc9ab69481",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "collide-target-h.o",
+      "source": "goal_src/jak1/engine/collide/collide-target-h.gc",
+      "sha256_lf": "fdc5ce8487e86ae1f91c1e46da38ff0071f557135b8784099a3b71fe6ffba9e4",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "collide-touch-h.o",
+      "source": "goal_src/jak1/engine/collide/collide-touch-h.gc",
+      "sha256_lf": "284b9dcfe71a306900f2574894ad7a32be7fe689cd6fd61ec7a876e20d04ed60",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "collide-edge-grab-h.o",
+      "source": "goal_src/jak1/engine/collide/collide-edge-grab-h.gc",
+      "sha256_lf": "1401edb329dba92177f424c63900f261dcbbbda1271a58bfe7f125659c3d6340",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "process-drawable-h.o",
+      "source": "goal_src/jak1/engine/common-obs/process-drawable-h.gc",
+      "sha256_lf": "5b6b1cf8ccb57047fa8551492f7922566c41b2c63a569e46015ca82e0e730ca2",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "effect-control-h.o",
+      "source": "goal_src/jak1/engine/game/effect-control-h.gc",
+      "sha256_lf": "a6a271ae587300626d46b6b90b8939714cbb12d650520d7fe2d1f25523f15ea9",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "collide-frag-h.o",
+      "source": "goal_src/jak1/engine/collide/collide-frag-h.gc",
+      "sha256_lf": "1f08f2f90e5c8d3621f593c0ab179bc8e4cb03f899258fc6d3e17ad57d9eca0b",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "projectiles-h.o",
+      "source": "goal_src/jak1/engine/game/projectiles-h.gc",
+      "sha256_lf": "7be07c638ab717cc2ab021bb5fbf57d301db46af8cccc977b875a7f97d5f9319",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "target-h.o",
+      "source": "goal_src/jak1/engine/target/target-h.gc",
+      "sha256_lf": "1a99ed48759ac4536c6314047e1764af5389f8dbd32ef01ba9c096e804b45458",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "depth-cue-h.o",
+      "source": "goal_src/jak1/engine/gfx/depth-cue-h.gc",
+      "sha256_lf": "3c36c86073daa7f259281689615890cfd06f31adbaa8e098051e4cc3417bc874",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 3
+      }
+    },
+    {
+      "object": "stats-h.o",
+      "source": "goal_src/jak1/engine/debug/stats-h.gc",
+      "sha256_lf": "9b60f890c2277998da12deeb638718278b552746dfdefa0d8b184d0c738c590b",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "bsp-h.o",
+      "source": "goal_src/jak1/engine/level/bsp-h.gc",
+      "sha256_lf": "8f8b9cf88f106e36fd8a53613687b7a7118f43f245356fc00d724d59958d736f",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "collide-cache-h.o",
+      "source": "goal_src/jak1/engine/collide/collide-cache-h.gc",
+      "sha256_lf": "6900cf6d45c93786165570ea0153527141bc71df2f79932ad0bb7e2ca18050d5",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "collide-h.o",
+      "source": "goal_src/jak1/engine/collide/collide-h.gc",
+      "sha256_lf": "e17270eb7556be6f4e60c25531ec4f4fcb1ae0c04f607f07dfa0e5e18943eb56",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "shrubbery-h.o",
+      "source": "goal_src/jak1/engine/gfx/shrub/shrubbery-h.gc",
+      "sha256_lf": "b028e1e442674ae5cb10ba6a472bec38095cfab8bada0f01b4a407a8b29bb900",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 17
+      }
+    },
+    {
+      "object": "tie-h.o",
+      "source": "goal_src/jak1/engine/gfx/tie/tie-h.gc",
+      "sha256_lf": "3212ead55380c5ffba7da70d1c1a7e9936f09994608163db71cd538e70444af6",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 29
+      }
+    },
+    {
+      "object": "tfrag-h.o",
+      "source": "goal_src/jak1/engine/gfx/tfrag/tfrag-h.gc",
+      "sha256_lf": "94a1f736d332259ea5f6184970965ca26783ef4ee71baab440a247e4c37c91eb",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 21,
+        "vif": 1,
+        "vu1": 2
+      }
+    },
+    {
+      "object": "background-h.o",
+      "source": "goal_src/jak1/engine/gfx/background/background-h.gc",
+      "sha256_lf": "b3e57bdef1d76735788ab29aae1aa86e91194db2f689f4375d36eca70b3a3720",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 1
+      }
+    },
+    {
+      "object": "subdivide-h.o",
+      "source": "goal_src/jak1/engine/gfx/background/subdivide-h.gc",
+      "sha256_lf": "b8730818942b86316f727b8d70119d6e8648df0b4221aac490de0524da793ad3",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 15
+      }
+    },
+    {
+      "object": "entity-h.o",
+      "source": "goal_src/jak1/engine/entity/entity-h.gc",
+      "sha256_lf": "d7972a98a715eb35afc32ad45a7e2d546627163640018094ea6362743312edde",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "sprite-h.o",
+      "source": "goal_src/jak1/engine/gfx/sprite/sprite-h.gc",
+      "sha256_lf": "e4e5b286a78032008e43a17d5292a29a84b2a2c366e5cb6c75b2a8dc4ab125c0",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 2,
+        "vu1": 1
+      }
+    },
+    {
+      "object": "shadow-h.o",
+      "source": "goal_src/jak1/engine/gfx/shadow/shadow-h.gc",
+      "sha256_lf": "27d81122d01244325c4151984342662b482b1b713bd92528649d17a7719c2e0a",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "eye-h.o",
+      "source": "goal_src/jak1/engine/gfx/foreground/eye-h.gc",
+      "sha256_lf": "916c9d450a352b2650914b98f5b65602d855679085b2613b034bf339ec97fa90",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 3
+      }
+    },
+    {
+      "object": "sparticle-launcher-h.o",
+      "source": "goal_src/jak1/engine/gfx/sprite/sparticle/sparticle-launcher-h.gc",
+      "sha256_lf": "486398031dfa131042b48cf38cb7d21fdbb9b5f1701145f7d8ffc908d52e2817",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "sparticle-h.o",
+      "source": "goal_src/jak1/engine/gfx/sprite/sparticle/sparticle-h.gc",
+      "sha256_lf": "20f44cdb37232d9fce91097f6a02a7daf2682b19995467e97c1586a327cac4de",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "actor-link-h.o",
+      "source": "goal_src/jak1/engine/entity/actor-link-h.gc",
+      "sha256_lf": "1ec7ab2964470c159d19e8bd4af42a8809bc4a6ab171ce405cf12de28f7bf12f",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "camera-h.o",
+      "source": "goal_src/jak1/engine/camera/camera-h.gc",
+      "sha256_lf": "3823cc4dd1397e3813f75de29b7d3d647a3a694fb00d65111c6fedd8d811198a",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "fmin": 2
+      }
+    },
+    {
+      "object": "cam-debug-h.o",
+      "source": "goal_src/jak1/engine/camera/cam-debug-h.gc",
+      "sha256_lf": "6cbf3088e64c3d3f8edfa08154042b688023f12f684bfa1004040ecadd2427a3",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "cam-interface-h.o",
+      "source": "goal_src/jak1/engine/camera/cam-interface-h.gc",
+      "sha256_lf": "0816ccbf4da72be7604695376efa84ce5f69da29e474d79687fb89e1a3b7aced",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "cam-update-h.o",
+      "source": "goal_src/jak1/engine/camera/cam-update-h.gc",
+      "sha256_lf": "5eeddf26d25e0666b7b50a68c29867124aff0b4c2fa7cbb18e9f9feb7239d78b",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "assert-h.o",
+      "source": "goal_src/jak1/engine/debug/assert-h.gc",
+      "sha256_lf": "027a08aae6e09d7a7ee8a3758b8dcad7fb34fc2e9e414814463c5ddc71556e21",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "hud-h.o",
+      "source": "goal_src/jak1/engine/ui/hud-h.gc",
+      "sha256_lf": "b37506266ac830130aaae33bb56dbe6c06e7f3ad816c97b23a9ab52cda5e94bf",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "progress-h.o",
+      "source": "goal_src/jak1/engine/ui/progress/progress-h.gc",
+      "sha256_lf": "14284c69ed8894eba3e436c4ac390762e99aebbc9896faa22c6772c53733f377",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "rpc-h.o",
+      "source": "goal_src/jak1/engine/ps2/rpc-h.gc",
+      "sha256_lf": "8052a0afd8e16b6cffb0f411179f2b0ffe200039a46fcf419304ffdfa1f24f4c",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "path-h.o",
+      "source": "goal_src/jak1/engine/geometry/path-h.gc",
+      "sha256_lf": "51e7b2c4144d2a3c26473aa1116527cbde766b1912f087cd843ddcbd656f9ba3",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "navigate-h.o",
+      "source": "goal_src/jak1/engine/nav/navigate-h.gc",
+      "sha256_lf": "d6c1a580c48c18fbb2868f1c943961c3038b0a0063d525e1cae4f73a9d674b04",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "load-dgo.o",
+      "source": "goal_src/jak1/engine/load/load-dgo.gc",
+      "sha256_lf": "f439b6212321a1391d5d1a62102831c8f5e87a3afc77b6787ab5d3aeaae192f8",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 2
+      }
+    },
+    {
+      "object": "ramdisk.o",
+      "source": "goal_src/jak1/engine/load/ramdisk.gc",
+      "sha256_lf": "21e9c3421550e9a2eecd7672a75333a2ad8321ba5c4a126e1604f7b977232d47",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "gsound.o",
+      "source": "goal_src/jak1/engine/sound/gsound.gc",
+      "sha256_lf": "c18367358895d15b4c67f4df36abbe1d126eb4d6935cc1d040c05025a30fda36",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 2
+      }
+    },
+    {
+      "object": "transformq.o",
+      "source": "goal_src/jak1/engine/math/transformq.gc",
+      "sha256_lf": "e8989085c553366506176d986495bdab8efd67fc211dd8d7eb3fae027dd63c73",
+      "rlet_vf_blocks": 5,
+      "asm_ops": {
+        ".add.mul.w.vf.xyz": 1,
+        ".add.mul.y.vf": 1,
+        ".add.mul.z.vf": 1,
+        ".add.vf.xyz": 1,
+        ".lvf": 27,
+        ".mov": 2,
+        ".mov.vf": 1,
+        ".mov.vf.w": 4,
+        ".mul.vf": 3,
+        ".mul.x.vf": 6,
+        ".mul.y.vf": 5,
+        ".mul.z.vf": 5,
+        ".svf": 20
+      },
+      "features": {
+        "fmax": 1,
+        "fmin": 2
+      }
+    },
+    {
+      "object": "collide-func.o",
+      "source": "goal_src/jak1/engine/collide/collide-func.gc",
+      "sha256_lf": "d3a136d975e20583302a731c606c76bfbb14da8e1cd1234a1ef2af5138f912bb",
+      "rlet_vf_blocks": 6,
+      "asm_ops": {
+        ".add.mul.w.vf.xyz": 1,
+        ".add.vf": 2,
+        ".add.vf.xyz": 1,
+        ".add.w.vf.y": 2,
+        ".add.x.vf": 2,
+        ".add.x.vf.y": 6,
+        ".add.y.vf.x": 5,
+        ".add.z.vf.x": 5,
+        ".add.z.vf.y": 6,
+        ".div.vf": 2,
+        ".isqrt.vf": 1,
+        ".lvf": 17,
+        ".mov": 28,
+        ".mov.vf.w": 1,
+        ".mov.vf.y": 3,
+        ".mul.vf": 17,
+        ".mul.vf.w": 4,
+        ".mul.vf.xyz": 1,
+        ".mul.w.vf.y": 2,
+        ".mul.x.vf": 4,
+        ".mul.y.vf": 3,
+        ".outer.product.a.vf": 1,
+        ".outer.product.b.vf": 1,
+        ".sqrt.vf": 2,
+        ".sub.vf": 12,
+        ".sub.x.vf": 3,
+        ".sub.x.vf.z": 2,
+        ".sub.y.vf": 2,
+        ".svf": 5,
+        ".wait.vf": 1
+      },
+      "features": {}
+    },
+    {
+      "object": "joint.o",
+      "source": "goal_src/jak1/engine/anim/joint.gc",
+      "sha256_lf": "90a2bc38886a7c089e6e283286fd575c584273b5ca8d0165afaa24a521491d9f",
+      "rlet_vf_blocks": 4,
+      "asm_ops": {
+        ".add.vf": 7,
+        ".lvf": 21,
+        ".mov": 6,
+        ".mul.x.vf": 21,
+        ".svf": 15,
+        ".xor.vf": 1
+      },
+      "features": {
+        "fmax": 1,
+        "fmin": 1
+      }
+    },
+    {
+      "object": "cylinder.o",
+      "source": "goal_src/jak1/engine/geometry/cylinder.gc",
+      "sha256_lf": "6eb96293023679bbfb58759b591ec738a429620fa64fdeebdd9a25d92defb7b1",
+      "rlet_vf_blocks": 2,
+      "asm_ops": {
+        ".lvf": 4,
+        ".mov.vf.w": 2,
+        ".sub.vf.xyz": 2,
+        ".svf": 2
+      },
+      "features": {}
+    },
+    {
+      "object": "wind.o",
+      "source": "goal_src/jak1/engine/gfx/background/wind.gc",
+      "sha256_lf": "47624c9f7dd5a0525fb8690075f7c9bb71d89966be5c1eb14ee9f0b333e3c062",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "bsp.o",
+      "source": "goal_src/jak1/engine/level/bsp.gc",
+      "sha256_lf": "3226a88d30fcac36055e76e0bd77c862e5ab7ea93f73695ce50cc023dbd47ed1",
+      "rlet_vf_blocks": 1,
+      "asm_ops": {
+        ".add.x.vf.y": 1,
+        ".add.z.vf.y": 1,
+        ".lvf": 50,
+        ".mov": 1,
+        ".mul.vf.xyz": 1,
+        ".pand": 1,
+        ".pnor": 1,
+        ".sub.w.vf.y": 1
+      },
+      "features": {
+        "dma": 3,
+        "mmi": 2
+      }
+    },
+    {
+      "object": "subdivide.o",
+      "source": "goal_src/jak1/engine/gfx/background/subdivide.gc",
+      "sha256_lf": "d603b0b7e594d60e8bb4a021c771118a8461f22ba11d3cdd14ca7f3bedf4c054",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {
+        ".sync.l": 2,
+        ".sync.p": 2
+      },
+      "features": {}
+    },
+    {
+      "object": "sprite.o",
+      "source": "goal_src/jak1/engine/gfx/sprite/sprite.gc",
+      "sha256_lf": "df1a27105371ca23c560c5c6d8720830cce187eba82610d7a61327809fbeec52",
+      "rlet_vf_blocks": 1,
+      "asm_ops": {
+        ".add.vf.xyz": 1,
+        ".lvf": 4,
+        ".mov": 2,
+        ".sub.vf.xyz": 1,
+        ".svf": 2
+      },
+      "features": {
+        "dma": 118,
+        "vif": 107,
+        "vu1": 2
+      }
+    },
+    {
+      "object": "sprite-distort.o",
+      "source": "goal_src/jak1/engine/gfx/sprite/sprite-distort.gc",
+      "sha256_lf": "f62767d8dfe52d660e00e1b5866632fa8bcb4e20e34b8b397fc1542ccbab2a9d",
+      "rlet_vf_blocks": 1,
+      "asm_ops": {
+        ".add.mul.x.vf": 1,
+        ".add.mul.y.vf": 1,
+        ".add.mul.z.vf": 1,
+        ".add.vf": 1,
+        ".div.vf": 1,
+        ".lvf": 13,
+        ".max.x.vf.w": 1,
+        ".mov": 1,
+        ".mul.vf": 1,
+        ".mul.vf.xyz": 2,
+        ".mul.w.vf": 1,
+        ".mul.x.vf": 1,
+        ".svf": 3,
+        ".wait.vf": 1
+      },
+      "features": {
+        "dma": 53,
+        "vif": 42,
+        "vu1": 2
+      }
+    },
+    {
+      "object": "debug-sphere.o",
+      "source": "goal_src/jak1/engine/debug/debug-sphere.gc",
+      "sha256_lf": "87b4267d849c620d9dfcb19220ea57a40b323e899ec10e02d9e92a1c1a576452",
+      "rlet_vf_blocks": 1,
+      "asm_ops": {
+        ".add.vf": 3,
+        ".lvf": 4,
+        ".mov": 1,
+        ".mul.x.vf": 3,
+        ".svf": 3
+      },
+      "features": {}
+    },
+    {
+      "object": "debug.o",
+      "source": "goal_src/jak1/engine/debug/debug.gc",
+      "sha256_lf": "a778fa244cf2a61c41e46305c50d9e5d96053fbc85e4ba241c96afc5a6a9d1ff",
+      "rlet_vf_blocks": 2,
+      "asm_ops": {
+        ".add.mul.x.vf": 2,
+        ".add.mul.y.vf": 2,
+        ".add.mul.z.vf": 2,
+        ".add.vf": 1,
+        ".div.vf": 1,
+        ".lvf": 6,
+        ".max.x.vf.w": 1,
+        ".min.x.vf.w": 1,
+        ".mul.vf.xyz": 1,
+        ".mul.w.vf": 2,
+        ".svf": 2,
+        ".wait.vf": 1
+      },
+      "features": {
+        "dma": 25,
+        "vif": 8
+      }
+    },
+    {
+      "object": "merc-vu1.o",
+      "source": "goal_src/jak1/engine/gfx/merc/merc-vu1.gc",
+      "sha256_lf": "ed2de50d22e3f85f994b8bd3f9aa989d3e25a33f425228415c7b16c4c2d30d0f",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "vu1": 1
+      }
+    },
+    {
+      "object": "merc-blend-shape.o",
+      "source": "goal_src/jak1/engine/gfx/merc/merc-blend-shape.gc",
+      "sha256_lf": "3f8ce145ca7ecac8b16e62c050ab20229ef7eec98766e600fdc7de1ba74168ef",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 2
+      }
+    },
+    {
+      "object": "merc.o",
+      "source": "goal_src/jak1/engine/gfx/merc/merc.gc",
+      "sha256_lf": "7708d0063b82ffa8923535ae10fbbc37a65d4b8cf74c7169f09048baec94eff0",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 51,
+        "vif": 39,
+        "vu1": 18
+      }
+    },
+    {
+      "object": "ripple.o",
+      "source": "goal_src/jak1/engine/gfx/foreground/ripple.gc",
+      "sha256_lf": "89138d5f2522d2595973582b798fca2a3230c9c2759c16ff9a33d846452a3b27",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "fmax": 1,
+        "fmin": 1
+      }
+    },
+    {
+      "object": "bones.o",
+      "source": "goal_src/jak1/engine/gfx/foreground/bones.gc",
+      "sha256_lf": "8222b89e7aaa6b78811a4226d783cf1e47473c532613ed29f1c9c999735b656b",
+      "rlet_vf_blocks": 4,
+      "asm_ops": {
+        ".add.mul.w.vf": 8,
+        ".add.mul.y.vf": 14,
+        ".add.mul.z.vf": 14,
+        ".add.y.vf.x": 1,
+        ".add.z.vf.x": 1,
+        ".cross.vf": 3,
+        ".div.vf": 1,
+        ".lvf": 37,
+        ".max.w.vf.w": 1,
+        ".min.x.vf.w": 3,
+        ".mov": 4,
+        ".mul.vf": 1,
+        ".mul.x.vf": 25,
+        ".outer.product.a.vf": 1,
+        ".outer.product.b.vf": 1,
+        ".pcpyud": 1,
+        ".pextlw": 2,
+        ".pextuw": 2,
+        ".sub.vf": 1,
+        ".svf": 18,
+        ".sync.l": 1
+      },
+      "features": {
+        "dma": 133,
+        "fmax": 2,
+        "fmin": 2,
+        "mmi": 5,
+        "the_uint128": 3,
+        "vif": 64,
+        "vu1": 8
+      }
+    },
+    {
+      "object": "generic-vu0.o",
+      "source": "goal_src/jak1/engine/gfx/generic/generic-vu0.gc",
+      "sha256_lf": "87642549a22070e0177a0b47fe7f80c8304ec5baea13646c1cfdb73ca86a7b11",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "generic.o",
+      "source": "goal_src/jak1/engine/gfx/generic/generic.gc",
+      "sha256_lf": "53c4d929932241bacde36d93d014827a184c0e1314b473a87a0618df62acb72e",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 6
+      }
+    },
+    {
+      "object": "generic-vu1.o",
+      "source": "goal_src/jak1/engine/gfx/generic/generic-vu1.gc",
+      "sha256_lf": "d1336b33593a4ce62f0f304efc2537667c11d041a59dd5202ca8b8ae82470ea0",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 15,
+        "vif": 28,
+        "vu1": 4
+      }
+    },
+    {
+      "object": "generic-effect.o",
+      "source": "goal_src/jak1/engine/gfx/generic/generic-effect.gc",
+      "sha256_lf": "0a92c2ab5011583fdbacc50f7deeb2f2b40528343c96ed1016731ddee76806d2",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 21,
+        "vif": 7
+      }
+    },
+    {
+      "object": "generic-merc.o",
+      "source": "goal_src/jak1/engine/gfx/generic/generic-merc.gc",
+      "sha256_lf": "0b2c813a4f7889160d2c8878f2844955c73ad430a466304f358de21c30a89adb",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 11,
+        "vif": 4
+      }
+    },
+    {
+      "object": "generic-tie.o",
+      "source": "goal_src/jak1/engine/gfx/generic/generic-tie.gc",
+      "sha256_lf": "5516c25acc006d8bfa98e342f3785df37f372d86e3fc6a872672c58424175f0c",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 7,
+        "vu1": 2
+      }
+    },
+    {
+      "object": "shadow-cpu.o",
+      "source": "goal_src/jak1/engine/gfx/shadow/shadow-cpu.gc",
+      "sha256_lf": "54ea6e3af3c166c31bbf709d54f430b35d0ccf011aa5cd629a66d3f7c42c0449",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {
+        ".mov": 1,
+        ".sync.l": 1
+      },
+      "features": {
+        "dma": 53,
+        "vif": 35,
+        "vu1": 3
+      }
+    },
+    {
+      "object": "shadow-vu1.o",
+      "source": "goal_src/jak1/engine/gfx/shadow/shadow-vu1.gc",
+      "sha256_lf": "65e484e098662c69f9c4f408b41645827d37589860013b49f03afb853fe7e488",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 29,
+        "vif": 24,
+        "vu1": 33
+      }
+    },
+    {
+      "object": "depth-cue.o",
+      "source": "goal_src/jak1/engine/gfx/depth-cue.gc",
+      "sha256_lf": "4d081af4780f2a843cb9c9a7be26e4b6da95da772d257f11b5f60e3ee5954b85",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 76,
+        "vif": 37,
+        "vu1": 2
+      }
+    },
+    {
+      "object": "font.o",
+      "source": "goal_src/jak1/engine/gfx/font.gc",
+      "sha256_lf": "0aa7abc2ca7adbfb7419b03b450aa3fc600b68f5bd703fdc692733c64097260e",
+      "rlet_vf_blocks": 2,
+      "asm_ops": {
+        ".add.mul.x.vf": 8,
+        ".add.mul.y.vf": 8,
+        ".add.mul.z.vf": 8,
+        ".add.vf": 8,
+        ".add.vf.xyz": 19,
+        ".add.w.vf.x": 8,
+        ".add.w.vf.y": 3,
+        ".add.x.vf.x": 13,
+        ".add.x.vf.y": 6,
+        ".addu": 3,
+        ".div.vf": 8,
+        ".itof.vf": 7,
+        ".lvf": 92,
+        ".mov": 12,
+        ".mov.vf": 5,
+        ".movn-128": 2,
+        ".movz": 6,
+        ".mul.vf": 4,
+        ".mul.vf.xy": 6,
+        ".mul.vf.xyz": 16,
+        ".mul.w.vf": 8,
+        ".mul.w.vf.x": 2,
+        ".nop.vf": 12,
+        ".pextlb": 8,
+        ".pextlh": 8,
+        ".sll": 14,
+        ".sra": 3,
+        ".sub.vf": 10,
+        ".sub.vf.x": 4,
+        ".sub.x.vf.x": 4,
+        ".sub.x.vf.y": 3,
+        ".svf": 62
+      },
+      "features": {
+        "dma": 43,
+        "mmi": 16,
+        "the_uint128": 1,
+        "vif": 2
+      }
+    },
+    {
+      "object": "decomp.o",
+      "source": "goal_src/jak1/engine/load/decomp.gc",
+      "sha256_lf": "9050c05602cd64a6098cf503a394b279e62b57effb602f8ac5f58dd627494fda",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {
+        ".pand": 1,
+        ".sra": 2
+      },
+      "features": {
+        "mmi": 1
+      }
+    },
+    {
+      "object": "background.o",
+      "source": "goal_src/jak1/engine/gfx/background/background.gc",
+      "sha256_lf": "76b44c804a851faa7d81f30268d1d2cfcabe25b01cd77a5408329b22656a91b0",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {
+        ".lvf": 33
+      },
+      "features": {
+        "dma": 40,
+        "fmin": 3,
+        "the_uint128": 1,
+        "vif": 18
+      }
+    },
+    {
+      "object": "draw-node.o",
+      "source": "goal_src/jak1/engine/draw/draw-node.gc",
+      "sha256_lf": "cafa41b7147872927e6fdef6d3fa2e05b4f49ba166bd0a341ae43cbf12dc2113",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "shrubbery.o",
+      "source": "goal_src/jak1/engine/gfx/shrub/shrubbery.gc",
+      "sha256_lf": "a011a40be09132b656df58f5c6f45ebcb107c1ea36dac4fb2c0868e0f5217eb8",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 56,
+        "vif": 50,
+        "vu1": 16
+      }
+    },
+    {
+      "object": "shrub-work.o",
+      "source": "goal_src/jak1/engine/gfx/shrub/shrub-work.gc",
+      "sha256_lf": "d33c6d7fff0e849b1959cc4586f8e11020b1dd7c742b740979b74b974a36adce",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 235,
+        "vif": 247
+      }
+    },
+    {
+      "object": "tfrag-near.o",
+      "source": "goal_src/jak1/engine/gfx/tfrag/tfrag-near.gc",
+      "sha256_lf": "c44dd691c624ec24f4610d2f4f226f880d6f6be2aaae552a11fb6feb5ada0634",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 7,
+        "vif": 8,
+        "vu1": 1
+      }
+    },
+    {
+      "object": "tfrag.o",
+      "source": "goal_src/jak1/engine/gfx/tfrag/tfrag.gc",
+      "sha256_lf": "ccbd4a5544b375d1da0b61de1de8324466e393cd98ce931fbdbbeede3c323068",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 104,
+        "vif": 102,
+        "vu1": 3
+      }
+    },
+    {
+      "object": "tfrag-methods.o",
+      "source": "goal_src/jak1/engine/gfx/tfrag/tfrag-methods.gc",
+      "sha256_lf": "0b307e70541c1276a06da81b17f3552218c69874017cc4198dba485251690eaf",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 33,
+        "vif": 16,
+        "vu1": 64
+      }
+    },
+    {
+      "object": "tfrag-work.o",
+      "source": "goal_src/jak1/engine/gfx/tfrag/tfrag-work.gc",
+      "sha256_lf": "1fc534c6ea772878ec457b41c6a6527aabef8d30de292a22972d670e2618c671",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 20,
+        "vif": 18
+      }
+    },
+    {
+      "object": "tie.o",
+      "source": "goal_src/jak1/engine/gfx/tie/tie.gc",
+      "sha256_lf": "7caa40bee7ec3f228ff0e962c17b52e899d1e9cfc4fd66704213f838c65c0663",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 39,
+        "vif": 64,
+        "vu1": 6
+      }
+    },
+    {
+      "object": "tie-near.o",
+      "source": "goal_src/jak1/engine/gfx/tie/tie-near.gc",
+      "sha256_lf": "d360e4cddf91159b9cced82e8d752f75a94f2bf877b1ce5da7fe73b851864a01",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "vu1": 1
+      }
+    },
+    {
+      "object": "tie-work.o",
+      "source": "goal_src/jak1/engine/gfx/tie/tie-work.gc",
+      "sha256_lf": "c397abce1ba81105214b342165094356abcc844e7fa2e43e01ca158132f6a128",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 96,
+        "vif": 77
+      }
+    },
+    {
+      "object": "tie-methods.o",
+      "source": "goal_src/jak1/engine/gfx/tie/tie-methods.gc",
+      "sha256_lf": "f5fe51f97e1c2517b0342a0d235ce8fe5499ab3311f46466664b46943891115b",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 61,
+        "the_uint128": 1,
+        "vif": 30,
+        "vu1": 16
+      }
+    },
+    {
+      "object": "sync-info.o",
+      "source": "goal_src/jak1/engine/util/sync-info.gc",
+      "sha256_lf": "19208cd7517e671b4c9671d60df6fd75eddfa784d9d4b256043a1174d422fae1",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "fmax": 1,
+        "fmin": 2
+      }
+    },
+    {
+      "object": "trajectory.o",
+      "source": "goal_src/jak1/engine/physics/trajectory.gc",
+      "sha256_lf": "bf6d8875f3878290aeaf89a1a357c6cea467b2d8428f525a08b5c2c3c27de76a",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "fmax": 2
+      }
+    },
+    {
+      "object": "sparticle-launcher.o",
+      "source": "goal_src/jak1/engine/gfx/sprite/sparticle/sparticle-launcher.gc",
+      "sha256_lf": "3ff16ef3b52af5c4c3a7ff2f7883b5a6d46cf538fdd38da11704930416c572d5",
+      "rlet_vf_blocks": 5,
+      "asm_ops": {
+        ".add.vf.xyz": 5,
+        ".lvf": 25,
+        ".min.x.vf.xyz": 1,
+        ".mov": 5,
+        ".mul.vf.xyz": 2,
+        ".sub.vf.xyz": 4,
+        ".sub.w.vf.w": 1,
+        ".svf": 15
+      },
+      "features": {}
+    },
+    {
+      "object": "sparticle.o",
+      "source": "goal_src/jak1/engine/gfx/sprite/sparticle/sparticle.gc",
+      "sha256_lf": "110dbb9c3f776cd61c529a9a180d1f9489a969f5b6f1dac453c684cf01bfe9b6",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "entity-table.o",
+      "source": "goal_src/jak1/engine/entity/entity-table.gc",
+      "sha256_lf": "681dd3368e3167616f7a441c890cf48d2279030232f358100a570dc01e8e3efc",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "loader.o",
+      "source": "goal_src/jak1/engine/load/loader.gc",
+      "sha256_lf": "b2ca314d905f0bfd8943bf27641afbee3bcbc1c3705b9889a92e49b68bab211b",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "task-control-h.o",
+      "source": "goal_src/jak1/engine/game/task/task-control-h.gc",
+      "sha256_lf": "53c7d8a54a6669fc1d3852655fb70beccd78af0282fadbcf0235cefdee6fa600",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "speedruns-h.o",
+      "source": "goal_src/jak1/pc/features/speedruns-h.gc",
+      "sha256_lf": "3ef9f3a0eeaed8aa082646a56563222247cdf72805b8dc6194bb0099e9f0ee02",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "game-info.o",
+      "source": "goal_src/jak1/engine/game/game-info.gc",
+      "sha256_lf": "b8a05a9bd4e81a3983c97ed411b0dbae63d4eee3fa203a165b6b8e12da643924",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "game-save.o",
+      "source": "goal_src/jak1/engine/game/game-save.gc",
+      "sha256_lf": "5c6e5314c83e858e1d4bd3b460fb648e36efb3350edb0c3156dfe844a53f2e5e",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "settings.o",
+      "source": "goal_src/jak1/engine/game/settings.gc",
+      "sha256_lf": "fc3bd5524bfe1d9591c54f6820c77b581915e47782d20d0e73b578fd61b33665",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "pc-anim-util.o",
+      "source": "goal_src/jak1/pc/util/pc-anim-util.gc",
+      "sha256_lf": "afcef9e805bfdb96bfe309999ccf5ff430f4671385cd85b9a3bc7f5982b9b5ff",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "autosplit-h.o",
+      "source": "goal_src/jak1/pc/features/autosplit-h.gc",
+      "sha256_lf": "e457e3fd3e34bd8ac2c3d91323eaa01f1997c8d64685b758c436dc6dd56f3ea0",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "autosplit.o",
+      "source": "goal_src/jak1/pc/features/autosplit.gc",
+      "sha256_lf": "8340faebaa0c788b9aa8328f0d690f91230d590634e4f2451934721a9858dc7e",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "speedruns.o",
+      "source": "goal_src/jak1/pc/features/speedruns.gc",
+      "sha256_lf": "a17d6a5a2de9af0f920184e24dcd3767935c171d337ddf36974c7350f134056b",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 1
+      }
+    },
+    {
+      "object": "pckernel-common.o",
+      "source": "goal_src/jak1/pc/pckernel-common.gc",
+      "sha256_lf": "6d6e10c2775a9a3cca9fda487e2a0f38c410358d64c8ae74cce543bc05f45268",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 1,
+        "fmax": 1
+      }
+    },
+    {
+      "object": "pckernel.o",
+      "source": "goal_src/jak1/pc/pckernel.gc",
+      "sha256_lf": "0977c978c4bc5a8c24d3e70b507e1018661eadce9ebcbf468e74b6a4d464f630",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 1
+      }
+    },
+    {
+      "object": "mood-tables.o",
+      "source": "goal_src/jak1/engine/gfx/mood/mood-tables.gc",
+      "sha256_lf": "60e048527f5a49a22c5f09b0a3e7e870d5d952d68b9964625ad4a12385be8241",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "mood.o",
+      "source": "goal_src/jak1/engine/gfx/mood/mood.gc",
+      "sha256_lf": "129fe7762ba29b6c779970cf98bb71d8f5767aec829008c5d2846e6fdbdddbaa",
+      "rlet_vf_blocks": 1,
+      "asm_ops": {
+        ".lvf": 8,
+        ".mov": 8,
+        ".mul.w.vf.xyz": 8,
+        ".ppach": 4,
+        ".pw.sra": 8
+      },
+      "features": {
+        "fmax": 39,
+        "fmin": 39,
+        "mmi": 4
+      }
+    },
+    {
+      "object": "weather-part.o",
+      "source": "goal_src/jak1/engine/gfx/mood/weather-part.gc",
+      "sha256_lf": "5743efebf1a764502764ba93d37fcb389f66bf7e0720ac06cabdea936195bad0",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "time-of-day.o",
+      "source": "goal_src/jak1/engine/gfx/mood/time-of-day.gc",
+      "sha256_lf": "5f899e86082733ff58be70b11f532e4501c6d7a42c090a9b2a85be65a892b859",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "fmax": 1,
+        "fmin": 1
+      }
+    },
+    {
+      "object": "sky-utils.o",
+      "source": "goal_src/jak1/engine/gfx/sky/sky-utils.gc",
+      "sha256_lf": "81111f76894ad837168c6de858d482dcdb54c33747507a6169639f5bb9014ada",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "sky.o",
+      "source": "goal_src/jak1/engine/gfx/sky/sky.gc",
+      "sha256_lf": "b853900ea6d1baafa4d550fb55d476b95fbbe2f586e03c38d8d36fafc0ece6f5",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "vu1": 1
+      }
+    },
+    {
+      "object": "sky-tng.o",
+      "source": "goal_src/jak1/engine/gfx/sky/sky-tng.gc",
+      "sha256_lf": "e0a62d086ecb7e679d6ba11fb9659c3e144209a6edfbd99b0899a0985fa75cac",
+      "rlet_vf_blocks": 1,
+      "asm_ops": {},
+      "features": {
+        "dma": 82,
+        "vif": 56
+      }
+    },
+    {
+      "object": "load-boundary-h.o",
+      "source": "goal_src/jak1/engine/level/load-boundary-h.gc",
+      "sha256_lf": "3f24be8c4b20a35a9d56401c5094569345d9f36e48f9182f487390ffdbd94ef7",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "load-boundary.o",
+      "source": "goal_src/jak1/engine/level/load-boundary.gc",
+      "sha256_lf": "06933429d953e8d199c507f1556e87d238323cebd6a57fb7e35cfc406ce05bc1",
+      "rlet_vf_blocks": 2,
+      "asm_ops": {},
+      "features": {
+        "dma": 7,
+        "vif": 1
+      }
+    },
+    {
+      "object": "load-boundary-data.o",
+      "source": "goal_src/jak1/engine/level/load-boundary-data.gc",
+      "sha256_lf": "76d6fcb5ff1896af96ed2fda69385305da9e982a5d8685610267a62ec3e714af",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "level-info.o",
+      "source": "goal_src/jak1/engine/level/level-info.gc",
+      "sha256_lf": "96bc9d50e0454ba56afcfcad254e575307f9b139c2e69ed609046c84330cae26",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "level.o",
+      "source": "goal_src/jak1/engine/level/level.gc",
+      "sha256_lf": "a3df3abdb1e535a3ba7533626218652ffe0e0c1157ecb0272392d6ad95503707",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "text.o",
+      "source": "goal_src/jak1/engine/ui/text.gc",
+      "sha256_lf": "915e8a218100b53dd67d3606a635b6fcce12d723443f37a6a6046b9877e03660",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 8,
+        "vif": 4
+      }
+    },
+    {
+      "object": "collide-probe.o",
+      "source": "goal_src/jak1/engine/collide/collide-probe.gc",
+      "sha256_lf": "d1bf36de3956a2d928f3491c4589418a01c6928ad63daa41daa18314cc91f2cd",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {
+        ".sync.l": 1
+      },
+      "features": {
+        "dma": 8
+      }
+    },
+    {
+      "object": "collide-frag.o",
+      "source": "goal_src/jak1/engine/collide/collide-frag.gc",
+      "sha256_lf": "2d3b7041ee351f5a2731dbd42563d7d6b0574aedbc89537d7c1f0a51a16ba940",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "collide-mesh.o",
+      "source": "goal_src/jak1/engine/collide/collide-mesh.gc",
+      "sha256_lf": "39e128f5405acce3e947694016435dad3d667edd0a17fd9491761713f83cf4a7",
+      "rlet_vf_blocks": 3,
+      "asm_ops": {
+        ".add.mul.x.vf": 7,
+        ".add.mul.y.vf": 7,
+        ".add.mul.y.vf.w": 2,
+        ".add.mul.z.vf": 7,
+        ".add.mul.z.vf.w": 2,
+        ".add.w.vf": 1,
+        ".add.w.vf.y": 1,
+        ".ftoi.vf": 4,
+        ".isqrt.vf": 1,
+        ".lvf": 25,
+        ".max.vf": 2,
+        ".min.vf": 2,
+        ".mov": 3,
+        ".mul.vf": 2,
+        ".mul.vf.xyz": 1,
+        ".mul.w.vf": 7,
+        ".mul.w.vf.w": 1,
+        ".mul.x.vf.w": 2,
+        ".outer.product.a.vf": 1,
+        ".outer.product.b.vf": 1,
+        ".pcgtw": 2,
+        ".por": 1,
+        ".ppach": 1,
+        ".sub.vf": 3,
+        ".sub.w.vf": 1,
+        ".sub.w.vf.w": 1,
+        ".svf": 15,
+        ".wait.vf": 1
+      },
+      "features": {
+        "mmi": 4
+      }
+    },
+    {
+      "object": "collide-touch.o",
+      "source": "goal_src/jak1/engine/collide/collide-touch.gc",
+      "sha256_lf": "754b68cc15ae490f24dd1113182518ad3946d8df6975976f6c129eb74b7da970",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "collide-edge-grab.o",
+      "source": "goal_src/jak1/engine/collide/collide-edge-grab.gc",
+      "sha256_lf": "3977e2f3228af329a85dbc9ffa40647c4bc51a1c39863b1af1d6737cdd9dfdb2",
+      "rlet_vf_blocks": 4,
+      "asm_ops": {
+        ".add.mul.y.vf.w": 1,
+        ".add.mul.z.vf.w": 1,
+        ".add.vf": 1,
+        ".add.vf.x": 2,
+        ".add.vf.xyz": 5,
+        ".add.z.vf.x": 6,
+        ".div.vf": 1,
+        ".ftoi.vf": 3,
+        ".isqrt.vf": 2,
+        ".lvf": 17,
+        ".mov": 10,
+        ".mov.vf": 1,
+        ".mul.vf": 7,
+        ".mul.vf.xyz": 1,
+        ".mul.vf.xz": 1,
+        ".mul.x.vf": 2,
+        ".mul.x.vf.w": 1,
+        ".mul.x.vf.xyz": 1,
+        ".nop.vf": 1,
+        ".outer.product.a.vf": 1,
+        ".outer.product.b.vf": 1,
+        ".pcgtw": 2,
+        ".por": 1,
+        ".ppach": 1,
+        ".sqrt.vf": 1,
+        ".sub.vf": 7,
+        ".svf": 9,
+        ".wait.vf": 4
+      },
+      "features": {
+        "mmi": 4
+      }
+    },
+    {
+      "object": "collide-shape.o",
+      "source": "goal_src/jak1/engine/collide/collide-shape.gc",
+      "sha256_lf": "d675a131b18e57c0bae13b90b63176f97b89b1899b1032783d155023c427045d",
+      "rlet_vf_blocks": 18,
+      "asm_ops": {
+        ".add.mul.x.vf": 1,
+        ".add.mul.y.vf": 1,
+        ".add.mul.y.vf.w": 10,
+        ".add.mul.z.vf.w": 10,
+        ".add.mul.z.vf.xyz": 1,
+        ".add.vf.x": 1,
+        ".add.vf.xyz": 2,
+        ".add.w.vf.w": 10,
+        ".add.w.vf.x": 14,
+        ".add.x.vf.x": 1,
+        ".add.x.vf.xyz": 4,
+        ".add.x.vf.y": 4,
+        ".add.z.vf.y": 4,
+        ".div.vf": 1,
+        ".lvf": 73,
+        ".max.vf": 2,
+        ".min.vf": 2,
+        ".mov": 35,
+        ".mov.vf.w": 10,
+        ".mul.vf": 4,
+        ".mul.vf.xyz": 11,
+        ".mul.w.vf": 1,
+        ".mul.w.vf.w": 9,
+        ".mul.x.vf.w": 10,
+        ".mul.x.vf.xyz": 8,
+        ".sqrt.vf": 1,
+        ".sub.vf": 17,
+        ".sub.vf.xyz": 1,
+        ".sub.w.vf.w": 9,
+        ".sub.x.vf.x": 1,
+        ".sub.x.vf.xyz": 4,
+        ".svf": 31,
+        ".wait.vf": 1
+      },
+      "features": {
+        "fmax": 4,
+        "fmin": 1
+      }
+    },
+    {
+      "object": "collide-shape-rider.o",
+      "source": "goal_src/jak1/engine/collide/collide-shape-rider.gc",
+      "sha256_lf": "130ec37a5f3d3c1c0229979f0a6061f8487601e573265238662c47065193edf1",
+      "rlet_vf_blocks": 1,
+      "asm_ops": {
+        ".lvf": 1,
+        ".mov": 2,
+        ".mov.vf.w": 1,
+        ".mul.x.vf.xyz": 1,
+        ".svf": 1
+      },
+      "features": {}
+    },
+    {
+      "object": "collide.o",
+      "source": "goal_src/jak1/engine/collide/collide.gc",
+      "sha256_lf": "c1a357cf8d618e693faab865bd371a7574b07e97405d122e8c75a7198ce8bdf7",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "vif": 1
+      }
+    },
+    {
+      "object": "merc-death.o",
+      "source": "goal_src/jak1/engine/gfx/merc/merc-death.gc",
+      "sha256_lf": "417fe476ea64cc00394f8fbb784c34a9d77069eedf1cc138ec5f3f0c87b98bec",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "water-h.o",
+      "source": "goal_src/jak1/engine/common-obs/water-h.gc",
+      "sha256_lf": "61470fe31d634fac28448678f904a419b2c1e268631acf5ce99af0ebfdefce7d",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "camera.o",
+      "source": "goal_src/jak1/engine/camera/camera.gc",
+      "sha256_lf": "eeacfca1bed5520e909626a4df76ee38a58eb40dd47edf5320ccdae9a3932bfe",
+      "rlet_vf_blocks": 2,
+      "asm_ops": {
+        ".add.vf.xyz": 1,
+        ".add.x.vf.w": 2,
+        ".lvf": 4,
+        ".mov": 2,
+        ".mov.vf.w": 1,
+        ".mul.x.vf.xyz": 2,
+        ".svf": 3
+      },
+      "features": {
+        "fmax": 12,
+        "fmin": 9
+      }
+    },
+    {
+      "object": "cam-interface.o",
+      "source": "goal_src/jak1/engine/camera/cam-interface.gc",
+      "sha256_lf": "0081e90a4dbac27d8b43d1b0ed6e24c8cb96b7b2ff4e4bccf02e79d4d7dc2d9d",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "cam-master.o",
+      "source": "goal_src/jak1/engine/camera/cam-master.gc",
+      "sha256_lf": "464c80b268d62ea9f006c05d951d1ebf99224a78274bffa26fa592ade94ce5d1",
+      "rlet_vf_blocks": 1,
+      "asm_ops": {
+        ".svf": 1
+      },
+      "features": {
+        "fmax": 9,
+        "fmin": 3
+      }
+    },
+    {
+      "object": "cam-states.o",
+      "source": "goal_src/jak1/engine/camera/cam-states.gc",
+      "sha256_lf": "76cb0a69c050285cfd3ce398a6bafc955e0c5283575208800a6aa0c7cfb53e58",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "fmax": 22,
+        "fmin": 25
+      }
+    },
+    {
+      "object": "cam-states-dbg.o",
+      "source": "goal_src/jak1/engine/camera/cam-states-dbg.gc",
+      "sha256_lf": "ea4be9dd0151e49d89d1d08b5206a9d9d0d7525687cfb4db3e824dfa27e29fa9",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "cam-combiner.o",
+      "source": "goal_src/jak1/engine/camera/cam-combiner.gc",
+      "sha256_lf": "d790754a3f5327d84020ec6e6e3d42a8f24e39788ed8e5193c01626ca848601b",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "cam-update.o",
+      "source": "goal_src/jak1/engine/camera/cam-update.gc",
+      "sha256_lf": "7599598a86de5393a310d6e4fc504186b56d274d678a5323bd73a5239f5aa06a",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "fmax": 1,
+        "fmin": 1
+      }
+    },
+    {
+      "object": "vol-h.o",
+      "source": "goal_src/jak1/engine/geometry/vol-h.gc",
+      "sha256_lf": "c7f5b69cc98b1096d093613c0c28071fa65a6b910001ef46b26120a6e574d77e",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "cam-layout.o",
+      "source": "goal_src/jak1/engine/camera/cam-layout.gc",
+      "sha256_lf": "a5c368c76a46bc3351d850d0dde2ff75c85dd68d025c257209719e0485bb245c",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 8,
+        "vif": 4
+      }
+    },
+    {
+      "object": "cam-debug.o",
+      "source": "goal_src/jak1/engine/camera/cam-debug.gc",
+      "sha256_lf": "9965351e43588a127cb711b4923100b455745840ebbcadfb9d656038db603211",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 19,
+        "fmax": 2,
+        "vif": 9
+      }
+    },
+    {
+      "object": "cam-start.o",
+      "source": "goal_src/jak1/engine/camera/cam-start.gc",
+      "sha256_lf": "e71baabcae18530ba9b691f41d80deb72b6539cf30abad548a961f88635c124a",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "process-drawable.o",
+      "source": "goal_src/jak1/engine/common-obs/process-drawable.gc",
+      "sha256_lf": "62305e2dc42d29e05ac7bbf35cbb284061bf40f2a7967c029e45ecb9251f4590",
+      "rlet_vf_blocks": 1,
+      "asm_ops": {
+        ".div.vf": 1,
+        ".lvf": 1,
+        ".mov.vf.w": 1,
+        ".mul.vf.xyz": 1,
+        ".nop.vf": 2,
+        ".svf": 2,
+        ".sync.l": 3,
+        ".wait.vf": 1
+      },
+      "features": {
+        "dma": 4,
+        "fmax": 2,
+        "fmin": 2
+      }
+    },
+    {
+      "object": "hint-control.o",
+      "source": "goal_src/jak1/engine/game/task/hint-control.gc",
+      "sha256_lf": "300d2bbb8c054b39c1604773eaa268c45b1e9545a1b677f783ed1a69ef013b46",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "ambient.o",
+      "source": "goal_src/jak1/engine/entity/ambient.gc",
+      "sha256_lf": "87a118ebce2a731ab7d20f8cb1ea8e557e5844f36cdb78afb6710faf7c08deb1",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "assert.o",
+      "source": "goal_src/jak1/engine/debug/assert.gc",
+      "sha256_lf": "47d04b4bd1d266790a1a888b17d05e8ac7697a5170d350e72d67015cdbc31ff4",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "generic-obs.o",
+      "source": "goal_src/jak1/engine/common-obs/generic-obs.gc",
+      "sha256_lf": "82d8f7d3c24f9dc75dc308e4c91daa2d19c69c9aa71a7f6ca521e15f02372cce",
+      "rlet_vf_blocks": 2,
+      "asm_ops": {
+        ".add.vf": 1,
+        ".add.vf.xyz": 1,
+        ".lvf": 6,
+        ".mov": 3,
+        ".mul.x.vf.w": 1,
+        ".sub.vf.xyz": 1,
+        ".svf": 3
+      },
+      "features": {
+        "fmax": 2,
+        "fmin": 2
+      }
+    },
+    {
+      "object": "target-util.o",
+      "source": "goal_src/jak1/engine/target/target-util.gc",
+      "sha256_lf": "12cb9877b0820d8ed998926f8cb88416bb21cef3fea4c3154353c6d8c6afb83d",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "fmax": 5,
+        "fmin": 4
+      }
+    },
+    {
+      "object": "target-part.o",
+      "source": "goal_src/jak1/engine/target/target-part.gc",
+      "sha256_lf": "0decb2d05ea180df5aa509ba04273eb9b26276638ff56300f67a567fd0138cf8",
+      "rlet_vf_blocks": 3,
+      "asm_ops": {
+        ".add.vf.xyz": 3,
+        ".lvf": 12,
+        ".mov": 6,
+        ".sub.vf.xyz": 3,
+        ".svf": 6
+      },
+      "features": {}
+    },
+    {
+      "object": "collide-reaction-target.o",
+      "source": "goal_src/jak1/engine/target/collide-reaction-target.gc",
+      "sha256_lf": "541937d3be6a3f979d7c855231f95a09f1359190a8a6a36b31741a73df90ae64",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "fmax": 1
+      }
+    },
+    {
+      "object": "logic-target.o",
+      "source": "goal_src/jak1/engine/target/logic-target.gc",
+      "sha256_lf": "fa2b84ec012735935c3454955b1995cd4b7dd80de269ede9997576aecd1b4f72",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "fmax": 7,
+        "fmin": 7
+      }
+    },
+    {
+      "object": "sidekick.o",
+      "source": "goal_src/jak1/engine/target/sidekick.gc",
+      "sha256_lf": "83d2f427d03553796d39836f3f0cb32919e78b44375f057b701ccaa0ee61ace2",
+      "rlet_vf_blocks": 1,
+      "asm_ops": {
+        ".div.vf": 1,
+        ".lvf": 5,
+        ".mov.vf.w": 1,
+        ".mul.vf.xyz": 1,
+        ".mul.x.vf": 1,
+        ".mul.y.vf": 1,
+        ".mul.z.vf": 1,
+        ".svf": 4,
+        ".wait.vf": 1
+      },
+      "features": {}
+    },
+    {
+      "object": "voicebox.o",
+      "source": "goal_src/jak1/engine/common-obs/voicebox.gc",
+      "sha256_lf": "e2aeaa2b0fef4ee81e709ee33262129807510199136f6104a40e487cdfd0190d",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "target-handler.o",
+      "source": "goal_src/jak1/engine/target/target-handler.gc",
+      "sha256_lf": "0e5197e4895650917a225095b9f9b2d26136ea88d2ef2f758d835d07ff6ea451",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "fmax": 1
+      }
+    },
+    {
+      "object": "target.o",
+      "source": "goal_src/jak1/engine/target/target.gc",
+      "sha256_lf": "f16ebca1632357fafb7da2db0bf23a00a2053646fe7bb12189638ade8f10fc35",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "fmax": 18,
+        "fmin": 24
+      }
+    },
+    {
+      "object": "target2.o",
+      "source": "goal_src/jak1/engine/target/target2.gc",
+      "sha256_lf": "6b384c2434c3e8fe5658834af2df7a69d3a3771c6d19c753eb2e54c0c3bc6e7d",
+      "rlet_vf_blocks": 2,
+      "asm_ops": {
+        ".add.vf.xyz": 2,
+        ".lvf": 4,
+        ".mov.vf.w": 2,
+        ".svf": 2
+      },
+      "features": {
+        "fmax": 10,
+        "fmin": 9
+      }
+    },
+    {
+      "object": "target-death.o",
+      "source": "goal_src/jak1/engine/target/target-death.gc",
+      "sha256_lf": "a2f1bc07c30bbad214193ef819ca0ae655ec4607510912a2a1d24d03a1a7d51f",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "fmin": 1
+      }
+    },
+    {
+      "object": "menu.o",
+      "source": "goal_src/jak1/engine/debug/menu.gc",
+      "sha256_lf": "71ce28219a97b8c5bc3a9c0c490bfbe05e180e373715f2312f986d1faca85c3a",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 6,
+        "fmax": 1,
+        "fmin": 1
+      }
+    },
+    {
+      "object": "drawable.o",
+      "source": "goal_src/jak1/engine/draw/drawable.gc",
+      "sha256_lf": "552e91151139b6c432b973c2ba5a559e9693ac766476963af84f27227ad9fe66",
+      "rlet_vf_blocks": 4,
+      "asm_ops": {
+        ".add.mul.x.vf": 1,
+        ".add.mul.y.vf": 5,
+        ".add.mul.z.vf": 4,
+        ".add.mul.z.vf.x": 1,
+        ".add.mul.z.vf.xyz": 1,
+        ".add.vf": 2,
+        ".add.vf.w": 1,
+        ".add.w.vf": 1,
+        ".add.y.vf": 1,
+        ".lvf": 37,
+        ".max.w.vf": 1,
+        ".mov": 5,
+        ".mul.vf": 5,
+        ".mul.w.vf": 1,
+        ".mul.x.vf": 4,
+        ".mul.x.vf.w": 1,
+        ".pcgtw": 4,
+        ".ppach": 4,
+        ".sqrt.vf": 1,
+        ".sub.mul.w.vf": 4,
+        ".sub.w.vf": 1,
+        ".sub.w.vf.w": 1,
+        ".svf": 6,
+        ".wait.vf": 1
+      },
+      "features": {
+        "dma": 84,
+        "mmi": 8,
+        "the_uint128": 1,
+        "vif": 26,
+        "vu1": 11
+      }
+    },
+    {
+      "object": "drawable-group.o",
+      "source": "goal_src/jak1/engine/draw/drawable-group.gc",
+      "sha256_lf": "bcdb048b81adc9d225624180d00931206d7f390db64f07e8bcf9c92cc6445436",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "drawable-inline-array.o",
+      "source": "goal_src/jak1/engine/draw/drawable-inline-array.gc",
+      "sha256_lf": "820c381d4bf73cbf2bd879d1fe118c46589d97ac2b27ce27b1a54b8e1d581f54",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "drawable-tree.o",
+      "source": "goal_src/jak1/engine/draw/drawable-tree.gc",
+      "sha256_lf": "fd18caf31e0389963f0d6add28862712e8c278183ae025eef1b43e5985bafa51",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {
+        ".sra": 1
+      },
+      "features": {}
+    },
+    {
+      "object": "prototype.o",
+      "source": "goal_src/jak1/engine/gfx/background/prototype.gc",
+      "sha256_lf": "944b4cdb417108d00c1686ed63a594f34cc9b293085833a45cd29a9c5997672b",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "main-collide.o",
+      "source": "goal_src/jak1/engine/collide/main-collide.gc",
+      "sha256_lf": "64ab1741b6d927fb25f8572767cbb25cf164d6441179701da3269d39f2738439",
+      "rlet_vf_blocks": 3,
+      "asm_ops": {
+        ".add.mul.w.vf": 1,
+        ".add.mul.y.vf": 1,
+        ".add.mul.z.vf": 1,
+        ".add.vf.xyz": 3,
+        ".add.w.vf.x": 1,
+        ".add.w.vf.xyz": 1,
+        ".add.x.vf.xyz": 1,
+        ".ftoi.vf": 4,
+        ".itof.vf": 2,
+        ".lvf": 5,
+        ".mov": 15,
+        ".mul.w.vf.x": 1,
+        ".mul.x.vf": 1,
+        ".pcgtw": 4,
+        ".pextlh": 5,
+        ".por": 2,
+        ".ppach": 2,
+        ".pw.sra": 5,
+        ".sub.w.vf.xyz": 1,
+        ".sub.x.vf.xyz": 1,
+        ".svf": 1
+      },
+      "features": {
+        "mmi": 13
+      }
+    },
+    {
+      "object": "video.o",
+      "source": "goal_src/jak1/engine/gfx/hw/video.gc",
+      "sha256_lf": "f096f0c128e2a544ff0d610a71c39e2ebe8b083e36a8178bb9318973cad9d388",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "main.o",
+      "source": "goal_src/jak1/engine/game/main.gc",
+      "sha256_lf": "647845ca34a200f9230f5015e8be8536b9cf93269724d74d254a4106e74badf2",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 22,
+        "vif": 1
+      }
+    },
+    {
+      "object": "collide-cache.o",
+      "source": "goal_src/jak1/engine/collide/collide-cache.gc",
+      "sha256_lf": "e0d16f18a88fe773013f2d602ab208f12e80b9a3d4d07c3f6835879966168275",
+      "rlet_vf_blocks": 17,
+      "asm_ops": {
+        ".abs.vf": 1,
+        ".add.mul.w.vf": 2,
+        ".add.mul.x.vf": 6,
+        ".add.mul.y.vf": 10,
+        ".add.mul.z.vf": 10,
+        ".add.vf": 1,
+        ".add.vf.x": 2,
+        ".add.vf.xyz": 2,
+        ".add.w.vf": 10,
+        ".add.w.vf.xyz": 9,
+        ".add.x.vf.x": 2,
+        ".add.x.vf.xyz": 3,
+        ".add.x.vf.y": 5,
+        ".add.x.vf.z": 1,
+        ".add.y.vf.x": 4,
+        ".add.y.vf.z": 1,
+        ".add.z.vf.x": 4,
+        ".add.z.vf.y": 1,
+        ".add.z.vf.z": 1,
+        ".div.vf": 1,
+        ".ftoi.vf": 51,
+        ".isqrt.vf": 2,
+        ".itof.vf": 1,
+        ".lvf": 50,
+        ".max.vf": 1,
+        ".max.vf.xyz": 1,
+        ".max.w.vf": 1,
+        ".min.vf": 1,
+        ".min.vf.xyz": 1,
+        ".mov": 54,
+        ".mov.vf": 7,
+        ".mov.vf.w": 2,
+        ".mov.vf.xyw": 1,
+        ".mov.vf.xzw": 2,
+        ".mov.vf.yzw": 1,
+        ".mul.vf": 3,
+        ".mul.vf.xy": 1,
+        ".mul.vf.xyz": 1,
+        ".mul.w.vf": 6,
+        ".mul.w.vf.x": 1,
+        ".mul.x.vf": 5,
+        ".mul.x.vf.w": 1,
+        ".mul.x.vf.xyz": 1,
+        ".outer.product.a.vf": 1,
+        ".outer.product.b.vf": 1,
+        ".pand": 27,
+        ".pcgtw": 37,
+        ".pextlh": 4,
+        ".por": 18,
+        ".ppach": 19,
+        ".pw.sra": 4,
+        ".sqrt.vf": 1,
+        ".sub.mul.w.vf": 1,
+        ".sub.vf": 2,
+        ".sub.vf.w": 2,
+        ".sub.vf.xyz": 1,
+        ".sub.w.vf": 10,
+        ".sub.w.vf.xyz": 9,
+        ".sub.x.vf.xyz": 3,
+        ".sub.x.vf.y": 2,
+        ".sub.y.vf.x": 1,
+        ".svf": 45,
+        ".wait.vf": 3
+      },
+      "features": {
+        "mmi": 105,
+        "the_uint128": 5
+      }
+    },
+    {
+      "object": "relocate.o",
+      "source": "goal_src/jak1/engine/entity/relocate.gc",
+      "sha256_lf": "65af2d890c0f13ff6e9b8b64aa734d49591c70fc1bbafe354591830a300d4908",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "memory-usage.o",
+      "source": "goal_src/jak1/engine/debug/memory-usage.gc",
+      "sha256_lf": "222e0724fe691a647aa852bf6b39f7eacbe0792870bea3fef110e9ee5d4a4e38",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 18
+      }
+    },
+    {
+      "object": "entity.o",
+      "source": "goal_src/jak1/engine/entity/entity.gc",
+      "sha256_lf": "8f85831b82f38b78b375eb61cb08bf87c45a51f4a2413e3eec3b4f72074ad705",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "fmax": 7,
+        "fmin": 7
+      }
+    },
+    {
+      "object": "path.o",
+      "source": "goal_src/jak1/engine/geometry/path.gc",
+      "sha256_lf": "3bbfa5eb80aac3efd7a9ec7946a5be4183d3aa349a48438dd3b6fdb6a737be07",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "fmin": 1
+      }
+    },
+    {
+      "object": "vol.o",
+      "source": "goal_src/jak1/engine/geometry/vol.gc",
+      "sha256_lf": "9357d5154786048faa0c01dc80d9ae991a445d790e888044d54974750e28f6e5",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "navigate.o",
+      "source": "goal_src/jak1/engine/nav/navigate.gc",
+      "sha256_lf": "07b1aa56fdef311deeb3efc58e5496531458a9a9998123ff96b49fda0fbdd5e7",
+      "rlet_vf_blocks": 3,
+      "asm_ops": {
+        ".add.y.vf.y": 1,
+        ".lvf": 12,
+        ".max.vf.xyz": 2,
+        ".min.vf.xyz": 2,
+        ".mov": 8,
+        ".mul.x.vf.y": 1,
+        ".outer.product.a.vf": 6,
+        ".outer.product.b.vf": 6,
+        ".pceqw": 1,
+        ".ppach": 1,
+        ".sub.vf": 12,
+        ".sub.vf.yw": 6,
+        ".sub.y.vf.y": 1,
+        ".svf": 5
+      },
+      "features": {
+        "fmax": 9,
+        "fmin": 6,
+        "mmi": 2
+      }
+    },
+    {
+      "object": "aligner.o",
+      "source": "goal_src/jak1/engine/anim/aligner.gc",
+      "sha256_lf": "5956bdb65d131b1d56208928aaaad84bacb52ac82d51856890944bc20ff0d444",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "fmin": 2
+      }
+    },
+    {
+      "object": "effect-control.o",
+      "source": "goal_src/jak1/engine/game/effect-control.gc",
+      "sha256_lf": "7c750e682ec232d90439118d4c7dd3d43be8566d16b7905879d05b801b5af2f1",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "water.o",
+      "source": "goal_src/jak1/engine/common-obs/water.gc",
+      "sha256_lf": "7328aa716f6836b3289e3ff972eb2acb6781b00994d3dd39118cfd279879e686",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "fmax": 3,
+        "fmin": 1
+      }
+    },
+    {
+      "object": "collectables-part.o",
+      "source": "goal_src/jak1/engine/common-obs/collectables-part.gc",
+      "sha256_lf": "206d8eb6150186ac47bc30ae1f5d2fcef54f0c5d904025fe4173e846a02475e6",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "collectables.o",
+      "source": "goal_src/jak1/engine/common-obs/collectables.gc",
+      "sha256_lf": "5f7b65695dca3d6db393de28d5192232a14802954194d24e0cdad91c99ae3799",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "fmax": 1,
+        "fmin": 2
+      }
+    },
+    {
+      "object": "task-control.o",
+      "source": "goal_src/jak1/engine/game/task/task-control.gc",
+      "sha256_lf": "68508179f81349758084c9d2700450cb26cbccde59cf8582a169dc7876b9e033",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "process-taskable.o",
+      "source": "goal_src/jak1/engine/common-obs/process-taskable.gc",
+      "sha256_lf": "6fcd7becf33dd26838d3b5685a4395d2a8d3c02d89e9efc934238e42ac12b687",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "pov-camera.o",
+      "source": "goal_src/jak1/engine/camera/pov-camera.gc",
+      "sha256_lf": "c6d59d7bd04467c15aa6e4b2dd6a21e1a2fea4e5d92a0eecce33fc40cc709b60",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "powerups.o",
+      "source": "goal_src/jak1/engine/game/powerups.gc",
+      "sha256_lf": "24404745ab7a79a00a29555be4d10d7a1e2664a3e73addf1d922b68c7394a860",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "fmax": 1,
+        "fmin": 1
+      }
+    },
+    {
+      "object": "crates.o",
+      "source": "goal_src/jak1/engine/common-obs/crates.gc",
+      "sha256_lf": "45ca98fe08506a76b4b56978bf80f6882cc744844547e82c485247229b760c7d",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "fmax": 1
+      }
+    },
+    {
+      "object": "hud.o",
+      "source": "goal_src/jak1/engine/ui/hud.gc",
+      "sha256_lf": "d22a501f89c6b3592c0a5edfdd8cbef4ef2346a98e8189367aca260a76608f1f",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "hud-classes.o",
+      "source": "goal_src/jak1/engine/ui/hud-classes.gc",
+      "sha256_lf": "cbb0ddb3fef03f33d0eee183df0a2d3fc6861c235fcf70df26f90255a346c34d",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 21,
+        "vif": 8
+      }
+    },
+    {
+      "object": "progress-static.o",
+      "source": "goal_src/jak1/engine/ui/progress/progress-static.gc",
+      "sha256_lf": "63074e6183d5cc024ce2d1f622cfcf1063de9f422162948e035b7012de20ee99",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "progress-part.o",
+      "source": "goal_src/jak1/engine/ui/progress/progress-part.gc",
+      "sha256_lf": "5a0646a8986d755df53aa59d00163afadc642b8a1e344def7d18ca53088e0817",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "progress-draw.o",
+      "source": "goal_src/jak1/engine/ui/progress/progress-draw.gc",
+      "sha256_lf": "55556a3869b757b8309d755df6fe8ca171ac3e8f077f7a33a51533dbf3865019",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 17,
+        "vif": 8
+      }
+    },
+    {
+      "object": "progress.o",
+      "source": "goal_src/jak1/engine/ui/progress/progress.gc",
+      "sha256_lf": "9042fffd0fb139080c8750eee6b3a42e088c3600849c3d2962127b10be6d9c80",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 29,
+        "vif": 16
+      }
+    },
+    {
+      "object": "progress-pc.o",
+      "source": "goal_src/jak1/pc/progress-pc.gc",
+      "sha256_lf": "fb5021a9d34b37229109af240b815fdeea79b51dd3ccde2bf4e958fc62d3878e",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 16,
+        "vif": 8
+      }
+    },
+    {
+      "object": "credits.o",
+      "source": "goal_src/jak1/engine/ui/credits.gc",
+      "sha256_lf": "ba2dbb0409d253623adf89054a5aa1bb35b8792616ca7999ba16eeee8f364d85",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "projectiles.o",
+      "source": "goal_src/jak1/engine/game/projectiles.gc",
+      "sha256_lf": "969569c7b5b4d104a2924f9b44e401e564240245b95d825c0796841f7bc2b830",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "ocean.o",
+      "source": "goal_src/jak1/engine/gfx/ocean/ocean.gc",
+      "sha256_lf": "a4d0600dd50d704c877e5d109d42647b9bae7c43fae7c7df8a76ca0cd8816ff1",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 41,
+        "vif": 23,
+        "vu1": 2
+      }
+    },
+    {
+      "object": "ocean-vu0.o",
+      "source": "goal_src/jak1/engine/gfx/ocean/ocean-vu0.gc",
+      "sha256_lf": "27ea5942f25bf2cc8f3f5b630c2b40320c9e0b053d1a5ef67861110de9c3ec28",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "ocean-texture.o",
+      "source": "goal_src/jak1/engine/gfx/ocean/ocean-texture.gc",
+      "sha256_lf": "bd1ace7e1cfebd0e076c021fcf44d755c25fcd14fd03c42f6ec2036ab137b9fe",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 76,
+        "vif": 61,
+        "vu1": 2
+      }
+    },
+    {
+      "object": "ocean-mid.o",
+      "source": "goal_src/jak1/engine/gfx/ocean/ocean-mid.gc",
+      "sha256_lf": "da888f5e527e2e4d4832f11cc074a16c8ef822148c6655322dd27a334c0e25d1",
+      "rlet_vf_blocks": 6,
+      "asm_ops": {
+        ".add.mul.w.vf": 5,
+        ".add.mul.y.vf": 6,
+        ".add.mul.z.vf": 6,
+        ".add.w.vf": 1,
+        ".add.y.vf.x": 4,
+        ".add.z.vf.x": 4,
+        ".itof.vf": 4,
+        ".lvf": 34,
+        ".mov": 10,
+        ".mul.vf": 4,
+        ".mul.x.vf": 6,
+        ".pcgtw": 1,
+        ".pextlb": 4,
+        ".pextlh": 4,
+        ".ppach": 1,
+        ".sub.mul.w.vf": 1,
+        ".sub.vf": 4,
+        ".svf": 9
+      },
+      "features": {
+        "dma": 73,
+        "mmi": 10,
+        "vif": 60
+      }
+    },
+    {
+      "object": "ocean-transition.o",
+      "source": "goal_src/jak1/engine/gfx/ocean/ocean-transition.gc",
+      "sha256_lf": "d57262ba65d861ce56a854cc4fbe1f6d2e95b841ae7bd6bd3e8ac49b63d9531e",
+      "rlet_vf_blocks": 3,
+      "asm_ops": {
+        ".add.mul.w.vf": 8,
+        ".add.mul.y.vf": 8,
+        ".add.mul.z.vf": 8,
+        ".add.y.vf.x": 4,
+        ".add.z.vf.x": 4,
+        ".itof.vf": 8,
+        ".lvf": 16,
+        ".mov": 15,
+        ".mul.vf": 4,
+        ".mul.x.vf": 8,
+        ".pextlb": 8,
+        ".pextlh": 8,
+        ".sub.vf": 4,
+        ".svf": 12
+      },
+      "features": {
+        "dma": 36,
+        "mmi": 16,
+        "vif": 30
+      }
+    },
+    {
+      "object": "ocean-near.o",
+      "source": "goal_src/jak1/engine/gfx/ocean/ocean-near.gc",
+      "sha256_lf": "e9e346ead424878b33c001c7fa318daa39083f08cb99bb9d7e3fe07103125263",
+      "rlet_vf_blocks": 1,
+      "asm_ops": {
+        ".add.mul.w.vf": 4,
+        ".add.mul.y.vf": 4,
+        ".add.mul.z.vf": 4,
+        ".itof.vf": 4,
+        ".lvf": 4,
+        ".mov": 11,
+        ".mul.x.vf": 4,
+        ".pextlb": 4,
+        ".pextlh": 4,
+        ".svf": 4
+      },
+      "features": {
+        "dma": 68,
+        "mmi": 8,
+        "vif": 53
+      }
+    },
+    {
+      "object": "shadow.o",
+      "source": "goal_src/jak1/engine/gfx/shadow/shadow.gc",
+      "sha256_lf": "8671d5a9b9161093d638e783ccdac07a6bd911ce6b273ca20590dfaa72464bfc",
+      "rlet_vf_blocks": 1,
+      "asm_ops": {
+        ".add.vf.xyz": 1,
+        ".lvf": 4,
+        ".mov": 2,
+        ".sub.vf.xyz": 1,
+        ".svf": 2
+      },
+      "features": {}
+    },
+    {
+      "object": "eye.o",
+      "source": "goal_src/jak1/engine/gfx/foreground/eye.gc",
+      "sha256_lf": "80f57510313b6c44bab09ada9e184996e050218fc087f22b86c1af32083877b8",
+      "rlet_vf_blocks": 1,
+      "asm_ops": {
+        ".mov": 3,
+        ".pextlb": 2,
+        ".pextlh": 1,
+        ".pextuh": 1,
+        ".pw.sll": 1,
+        ".pw.sra": 1,
+        ".svf": 2
+      },
+      "features": {
+        "dma": 190,
+        "mmi": 4,
+        "vif": 131
+      }
+    },
+    {
+      "object": "glist-h.o",
+      "source": "goal_src/jak1/engine/util/glist-h.gc",
+      "sha256_lf": "18b645b7c96c7a7666c1e71dcbc54b77dd8c90dbeff819f3630aacc9a9e98e75",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "glist.o",
+      "source": "goal_src/jak1/engine/util/glist.gc",
+      "sha256_lf": "eea9814af1402ef7005d6b51274d0dc7b62b0dbd82c5ffdadd24581714ad2f3d",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "anim-tester.o",
+      "source": "goal_src/jak1/engine/debug/anim-tester.gc",
+      "sha256_lf": "3d8f2e9cef340f7156e123918fe0a70310dd9963c56f10a666df8ab207818427",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 146,
+        "vif": 72
+      }
+    },
+    {
+      "object": "viewer.o",
+      "source": "goal_src/jak1/engine/debug/viewer.gc",
+      "sha256_lf": "ae28066f1f26625fe2741a697d6bd46eb21fccc189ffd6356bd5b11e432dcd57",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "part-tester.o",
+      "source": "goal_src/jak1/engine/debug/part-tester.gc",
+      "sha256_lf": "f3bbbe3b6e61b4482fb134d578f562ff285447ba3483381980c279a40732dfa6",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "default-menu.o",
+      "source": "goal_src/jak1/engine/debug/default-menu.gc",
+      "sha256_lf": "b6ea0dbaf2a76d40b36afc1286f01f22c4ced65cd3ac7940f0a6cc56d53be4ac",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 1,
+        "vu1": 27
+      }
+    },
+    {
+      "object": "anim-tester-x.o",
+      "source": "goal_src/jak1/pc/debug/anim-tester-x.gc",
+      "sha256_lf": "f261224b94afc283e26f8cb0c6b391d68fba80ab596c51d2f946b3c9c469096d",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 4
+      }
+    },
+    {
+      "object": "entity-debug.o",
+      "source": "goal_src/jak1/pc/debug/entity-debug.gc",
+      "sha256_lf": "c4854c2b5cbc915eeeaf9a8a4eb3fa5640752b79f6e931b5100017d5e8c37b74",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 1
+      }
+    },
+    {
+      "object": "subtitle.o",
+      "source": "goal_src/jak1/pc/subtitle.gc",
+      "sha256_lf": "d377fd041d1f6274c5043aeaea7125e3decad0148d8b8e9f2ee8067a25f99277",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 10,
+        "vif": 4
+      }
+    },
+    {
+      "object": "default-menu-pc.o",
+      "source": "goal_src/jak1/pc/debug/default-menu-pc.gc",
+      "sha256_lf": "bf8ac3ff24ae1ad6ea82179930a05cc8ae0fd5445d7e585288ee4445ead7a922",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "vu1": 4
+      }
+    },
+    {
+      "object": "dir-tpages.go",
+      "source": null,
+      "status": "data object; no GOAL source surveyed",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "tpage-463.go",
+      "source": null,
+      "status": "data object; no GOAL source surveyed",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "tpage-2.go",
+      "source": null,
+      "status": "data object; no GOAL source surveyed",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "tpage-880.go",
+      "source": null,
+      "status": "data object; no GOAL source surveyed",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "tpage-256.go",
+      "source": null,
+      "status": "data object; no GOAL source surveyed",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "tpage-1278.go",
+      "source": null,
+      "status": "data object; no GOAL source surveyed",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "texture-upload.o",
+      "source": "goal_src/jak1/engine/gfx/texture/texture-upload.gc",
+      "sha256_lf": "b9e7f91e76ad660330e3cb0f5431070a6b96eec91bd404df59836291681248a9",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "tpage-1032.go",
+      "source": null,
+      "status": "data object; no GOAL source surveyed",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "tpage-62.go",
+      "source": null,
+      "status": "data object; no GOAL source surveyed",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "tpage-1532.go",
+      "source": null,
+      "status": "data object; no GOAL source surveyed",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "fuel-cell-ag.go",
+      "source": null,
+      "status": "data object; no GOAL source surveyed",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "money-ag.go",
+      "source": null,
+      "status": "data object; no GOAL source surveyed",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "buzzer-ag.go",
+      "source": null,
+      "status": "data object; no GOAL source surveyed",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "ecovalve-ag.go",
+      "source": null,
+      "status": "data object; no GOAL source surveyed",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "crate-ag.go",
+      "source": null,
+      "status": "data object; no GOAL source surveyed",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "speaker-ag.go",
+      "source": null,
+      "status": "data object; no GOAL source surveyed",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "fuelcell-naked-ag.go",
+      "source": null,
+      "status": "data object; no GOAL source surveyed",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "eichar-ag.go",
+      "source": null,
+      "status": "data object; no GOAL source surveyed",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "sidekick-ag.go",
+      "source": null,
+      "status": "data object; no GOAL source surveyed",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "deathcam-ag.go",
+      "source": null,
+      "status": "data object; no GOAL source surveyed",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "game-cnt.go",
+      "source": null,
+      "status": "data object; no GOAL source surveyed",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "rigid-body-h.o",
+      "source": "goal_src/jak1/engine/common-obs/rigid-body-h.gc",
+      "sha256_lf": "c29b8a66a3d5737032b8476eec782c6a264df66ae44d71c8fdd2b0d1d0504c8f",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "water-anim.o",
+      "source": "goal_src/jak1/engine/common-obs/water-anim.gc",
+      "sha256_lf": "b802c6f357f7130cf0f451e6c15bf9bb99556741c9294d14c6327e4f3bbb41b7",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "dark-eco-pool.o",
+      "source": "goal_src/jak1/engine/common-obs/dark-eco-pool.gc",
+      "sha256_lf": "eb7efa0cf33cbd31fb64703461830f713aa2a0b76b52e6d509ff0c2d64138978",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "rigid-body.o",
+      "source": "goal_src/jak1/engine/common-obs/rigid-body.gc",
+      "sha256_lf": "5c017329df7bb003f0a770e4db90ef144d616423bacfc44942e88772128636b1",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "fmax": 1,
+        "fmin": 5
+      }
+    },
+    {
+      "object": "nav-enemy-h.o",
+      "source": "goal_src/jak1/engine/common-obs/nav-enemy-h.gc",
+      "sha256_lf": "d58f307a760f4140458df4b68afa69fd133983dfc363abfcc90d3c67093aa1d7",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "nav-enemy.o",
+      "source": "goal_src/jak1/engine/common-obs/nav-enemy.gc",
+      "sha256_lf": "031a9a91cbc7f6799ab2db199cb333ef5ed709d89ebe3e58b1940a8988f31f38",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "fmax": 2,
+        "fmin": 4
+      }
+    },
+    {
+      "object": "baseplat.o",
+      "source": "goal_src/jak1/engine/common-obs/baseplat.gc",
+      "sha256_lf": "bc1a572057c89b6abe2615d12e9b8ab5a57c4a9ede1b1e5e91e8b79b3e2d8cdf",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "basebutton.o",
+      "source": "goal_src/jak1/engine/common-obs/basebutton.gc",
+      "sha256_lf": "2aacd711225d22134ea801f92afe4b0252a5b84924a5f4d107a494aea8c2cfe3",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "tippy.o",
+      "source": "goal_src/jak1/engine/common-obs/tippy.gc",
+      "sha256_lf": "864a1def2641cf2aec8dd0bc9e8c9644025bd33373dbfd193cc9b4c175184adc",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "joint-exploder.o",
+      "source": "goal_src/jak1/engine/anim/joint-exploder.gc",
+      "sha256_lf": "fe961f6bedf23077f26852bf36527a167d0c1449636cfa3a87229f8dcc054666",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "babak.o",
+      "source": "goal_src/jak1/engine/common-obs/babak.gc",
+      "sha256_lf": "725a0a1656884cfed3328ebbc8e8a7e7151875cf9aba3f6d81f593d1ead8290f",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "sharkey.o",
+      "source": "goal_src/jak1/engine/common-obs/sharkey.gc",
+      "sha256_lf": "59b58ffc53915bc6ce02093b42f897598265d7d1c1fdddadee8bc024837d7f75",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "fmax": 2,
+        "fmin": 5
+      }
+    },
+    {
+      "object": "orb-cache.o",
+      "source": "goal_src/jak1/engine/common-obs/orb-cache.gc",
+      "sha256_lf": "9416db0d0ab3658f6ea272408f1943f8c08cbed86393fd5f8eacc0065db33e9a",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "plat.o",
+      "source": "goal_src/jak1/engine/common-obs/plat.gc",
+      "sha256_lf": "bd73b9d262089c374d502c517f1c8c2d97c433f076e0428b5b5527386a53a6e3",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "plat-button.o",
+      "source": "goal_src/jak1/engine/common-obs/plat-button.gc",
+      "sha256_lf": "ee009618f869b31d7d7b7f95d507c20e3650da951dcc15cc52ee57f2711f352e",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "plat-eco.o",
+      "source": "goal_src/jak1/engine/common-obs/plat-eco.gc",
+      "sha256_lf": "7978e4681556888d9ac2a6d861608c1bdf799c9e579c9b5c5a0d4e10ab103682",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {}
+    },
+    {
+      "object": "ropebridge.o",
+      "source": "goal_src/jak1/engine/common-obs/ropebridge.gc",
+      "sha256_lf": "1981fcf4f9b01cab9e8272932a4e20d64466cb4bffdc21d8d7ef0059f5bf13f0",
+      "rlet_vf_blocks": 2,
+      "asm_ops": {
+        ".add.vf.xyz": 6,
+        ".add.x.vf": 1,
+        ".add.x.vf.y": 4,
+        ".add.x.vf.z": 3,
+        ".add.y.vf.x": 2,
+        ".add.z.vf.x": 2,
+        ".div.vf": 2,
+        ".lvf": 7,
+        ".mov": 9,
+        ".mov.vf": 3,
+        ".mov.vf.xyw": 1,
+        ".mov.vf.xzw": 1,
+        ".mul.vf": 2,
+        ".mul.vf.xyz": 5,
+        ".mul.x.vf.xyz": 2,
+        ".sub.vf": 2,
+        ".svf": 8,
+        ".wait.vf": 2
+      },
+      "features": {}
+    },
+    {
+      "object": "ticky.o",
+      "source": "goal_src/jak1/engine/common-obs/ticky.gc",
+      "sha256_lf": "b457b0d0c51c81431a2cb11d080b56b0db5b57e74909edb5006e640801ce0796",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "fmin": 1
+      }
+    },
+    {
+      "object": "hud-classes-pc.o",
+      "source": "goal_src/jak1/pc/hud-classes-pc.gc",
+      "sha256_lf": "64a12a508e512801a6d78466c5751cdfaf7deb87b4838c02a9f9de345739e08c",
+      "rlet_vf_blocks": 0,
+      "asm_ops": {},
+      "features": {
+        "dma": 9,
+        "fmax": 1
+      }
+    }
+  ],
+  "asm_op_frequency": {
+    ".lvf": 904,
+    ".svf": 450,
+    ".mov": 339,
+    ".mul.x.vf": 145,
+    ".mul.vf": 116,
+    ".sub.vf": 111,
+    ".add.mul.y.vf": 93,
+    ".add.mul.z.vf": 85,
+    ".ftoi.vf": 72,
+    ".add.vf.xyz": 65,
+    ".mul.vf.xyz": 53,
+    ".pcgtw": 50,
+    ".nop.vf": 48,
+    ".sync.l": 47,
+    ".add.mul.w.vf": 46,
+    ".outer.product.a.vf": 45,
+    ".outer.product.b.vf": 45,
+    ".add.vf": 44,
+    ".mov.vf.w": 43,
+    ".add.mul.x.vf": 37,
+    ".add.z.vf.x": 36,
+    ".itof.vf": 36,
+    ".ppach": 35,
+    ".add.w.vf.x": 34,
+    ".add.x.vf.y": 34,
+    ".mul.w.vf": 34,
+    ".pextlh": 34,
+    ".wait.vf": 34,
+    ".add.y.vf.x": 31,
+    ".xor.vf": 31,
+    ".div.vf": 30,
+    ".pand": 29,
+    ".mul.x.vf.w": 26,
+    ".pextlb": 26,
+    ".add.mul.y.vf.w": 23,
+    ".pw.sra": 23,
+    ".por": 22,
+    ".add.w.vf": 21,
+    ".mul.x.vf.xyz": 21,
+    ".add.z.vf.y": 20,
+    ".sub.vf.xyz": 20,
+    ".add.mul.z.vf.w": 19,
+    ".add.x.vf.w": 18,
+    ".add.x.vf.x": 18,
+    ".sub.w.vf.w": 18,
+    ".mov.vf": 17,
+    ".sll": 14,
+    ".add.w.vf.xyz": 13,
+    ".mul.y.vf": 13,
+    ".sub.w.vf.xyz": 13,
+    ".sqrt.vf": 12,
+    ".sub.w.vf": 12,
+    ".vf.vec<-arg": 12,
+    ".vf.x": 12,
+    ".add.w.vf.w": 11,
+    ".add.x.vf.xyz": 11,
+    ".mul.w.vf.w": 11,
+    ".add.w.vf.y": 10,
+    ".mul.w.vf.xyz": 10,
+    ".mul.z.vf": 10,
+    ".add.vf.x": 9,
+    ".max.vf": 9,
+    ".min.vf": 9,
+    ".sub.x.vf.xyz": 9,
+    ".sub.x.vf.y": 9,
+    ".add.mul.z.vf.xyz": 8,
+    ".isqrt.vf": 8,
+    ".mfc0": 8,
+    ".vf.w": 8,
+    ".vf.y": 8,
+    ".vf.z": 8,
+    ".mul.vf.xy": 7,
+    ".pw.sll": 7,
+    ".add.x.vf.z": 6,
+    ".madda.s": 6,
+    ".movz": 6,
+    ".sra": 6,
+    ".sub.mul.w.vf": 6,
+    ".sub.vf.w": 6,
+    ".sub.vf.yw": 6,
+    ".sub.x.vf.x": 6,
+    ".add.mul.w.vf.xyz": 5,
+    ".add.mul.x.vf.w": 5,
+    ".add.z.vf.w": 5,
+    ".max.vf.xyz": 5,
+    ".max.x.vf.w": 5,
+    ".min.vf.xyz": 5,
+    ".mul.vf.w": 5,
+    ".sub.vf.x": 5,
+    ".sub.z.vf.x": 5,
+    ".vf.vec": 5,
+    ".add.w.vf.z": 4,
+    ".min.x.vf.w": 4,
+    ".mul.w.vf.x": 4,
+    ".mul.z.vf.x": 4,
+    ".pextlw": 4,
+    ".pextuw": 4,
+    ".sub.x.vf.z": 4,
+    ".sub.y.vf.z": 4,
+    ".sync.p": 4,
+    ".add.mul.z.vf.x": 3,
+    ".add.vf.w": 3,
+    ".add.x.vf": 3,
+    ".add.y.vf.z": 3,
+    ".addu": 3,
+    ".cross.vf": 3,
+    ".mov.vf.xzw": 3,
+    ".mov.vf.y": 3,
+    ".mul.vf.x": 3,
+    ".mul.x.vf.x": 3,
+    ".pceqw": 3,
+    ".pcpyud": 3,
+    ".sub.x.vf": 3,
+    ".sub.y.vf.x": 3,
+    ".abs.vf": 2,
+    ".add.mul.y.vf.x": 2,
+    ".add.y.vf.y": 2,
+    ".blend.vf.w": 2,
+    ".cache": 2,
+    ".max.w.vf": 2,
+    ".min.x.vf.xyz": 2,
+    ".mov.vf.xyw": 2,
+    ".movn-128": 2,
+    ".mtc0": 2,
+    ".mul.vf.xz": 2,
+    ".mul.w.vf.y": 2,
+    ".mul.x.vf.y": 2,
+    ".mul.y.vf.x": 2,
+    ".mul.y.vf.z": 2,
+    ".mul.z.vf.y": 2,
+    ".pcpyld": 2,
+    ".sub.mul.x.vf.xyz": 2,
+    ".sub.y.vf": 2,
+    ".sub.z.vf.y": 2,
+    ".add.mul.vf": 1,
+    ".add.mul.w.vf.x": 1,
+    ".add.mul.x.vf.xyz": 1,
+    ".add.mul.y.vf.xyz": 1,
+    ".add.y.vf": 1,
+    ".add.z.vf.z": 1,
+    ".adda.s": 1,
+    ".madd.s": 1,
+    ".max.w.vf.w": 1,
+    ".max.x.vf.xyz": 1,
+    ".mov.vf.yzw": 1,
+    ".mul.vf.y": 1,
+    ".mul.vf.z": 1,
+    ".mul.x.vf.z": 1,
+    ".mul.y.vf.xyz": 1,
+    ".mul.y.vf.y": 1,
+    ".mul.z.vf.xyz": 1,
+    ".mul.z.vf.z": 1,
+    ".pextuh": 1,
+    ".pnor": 1,
+    ".psubw": 1,
+    ".sub.mul.w.vf.w": 1,
+    ".sub.mul.w.vf.xyz": 1,
+    ".sub.mul.x.vf.w": 1,
+    ".sub.mul.y.vf.w": 1,
+    ".sub.mul.z.vf.w": 1,
+    ".sub.vf.yz": 1,
+    ".sub.w.vf.y": 1,
+    ".sub.x.vf.w": 1,
+    ".sub.y.vf.y": 1,
+    ".xor.p": 1
+  },
+  "features": {
+    "dma": 2966,
+    "fmax": 184,
+    "fmin": 192,
+    "mmi": 215,
+    "rlet_i128": 1,
+    "the_uint128": 14,
+    "vif": 1914,
+    "vu1": 249
+  }
+}

@@ -1,8 +1,9 @@
 # Jak 1 on Dreamcast: experimental port workbench
 
-**Open handoff for ChatGPT/Codex (AI-assisted):** [CODEX_VU0_HANDOFF.md](CODEX_VU0_HANDOFF.md):
-a VU0 reference oracle and a GAME.CGO vector-usage survey. Claude Code owns the vf lowering in
-lower_sh4_ir.py; please leave that file alone.
+**Codex support handoff completed (AI-assisted):** [VU0_REFERENCE.md](VU0_REFERENCE.md)
+documents the independent finite-input desktop vector oracle, SSE comparison tests
+and inventory of all 346 GAME.CGO entries. Claude Code owns vf lowering in
+lower_sh4_ir.py; this support change leaves his lowering/boot files alone.
 
 **2026-10-26 (AI-assisted):** [Original kernel boot](KERNEL_BOOT.md) runs the
 top-level startup of all eight original KERNEL.CGO files natively, unchanged and in

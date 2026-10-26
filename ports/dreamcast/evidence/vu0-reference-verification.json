@@ -1,0 +1,37 @@
+{
+  "ai_assisted": true,
+  "date": "2026-10-26",
+  "source_baseline": "3415a35dd444da81f897df5f83ea69615453e29e",
+  "scope": "Independent host vector reference and static source inventory only; no new native game or hardware execution",
+  "host_suite": {
+    "discovered": 471,
+    "passed": 470,
+    "skipped": 1,
+    "failed": 0,
+    "skip_reason": "Optional C++ background exporter not built",
+    "command": "python -m unittest discover -s ports/dreamcast/tests -v",
+    "new_tests_passed": 17
+  },
+  "arithmetic_profile": "Finite-input IEEE binary32 RN-even, gradual underflow, separate rounded multiply and add; not exact PS2 VU",
+  "independent_sse": {
+    "vectors": 2048,
+    "lanes_per_vector": 4,
+    "operations": ["add", "sub", "mul", "rounded multiply-add"],
+    "minimum_lane_comparisons": 24576,
+    "excluded": "Non-finite inputs and overflowing multiply-add intermediates"
+  },
+  "inventory": {
+    "manifest_entries": 346,
+    "source_files": 326,
+    "data_objects": 20,
+    "rlet_vf_blocks": 222,
+    "source_hashes_verified_against_git_blobs": 326,
+    "hash_normalization": "CRLF to LF"
+  },
+  "frontend": "Latest exporter compiled separately; original compiler, common, third-party and game source trees matched cached dependency baseline exactly",
+  "ownership": {
+    "claude_lowering_and_boot_files_changed": false,
+    "main_checkout_four_file_reproduction_changed": false,
+    "existing_frontend_relinked": false
+  }
+}

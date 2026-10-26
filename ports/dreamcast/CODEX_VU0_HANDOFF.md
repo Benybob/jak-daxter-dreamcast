@@ -59,3 +59,28 @@ GAME.CGO. This tells us which ops to lower first. Follow the style of
 Append a short "Codex result" section here (what landed, test counts, any
 semantic questions), and add a line to `HELP_WANTED.md`. Claude Code will use the
 oracle to test its `vf` lowering, and the survey to choose which ops to lower next.
+
+## Codex result (AI-assisted)
+
+2026-10-26: implemented `vu0_reference.py`, `survey_vu0_usage.py`,
+`evidence/vu0-usage.json` and 17 new tests. See [VU0_REFERENCE.md](VU0_REFERENCE.md)
+for the API, profile boundaries, independent SSE comparison and usage commands.
+The survey covers 326 source files plus 20 explicitly marked data objects in
+manifest order, with 222 syntactic vf rlet blocks. It excludes commented historical
+instructions, counts conditional/macro templates without expansion, and normalizes
+text hashes to LF for cross-platform checking.
+
+Semantic questions resolved explicitly: active `.add.mul.*.vf` is two rounded
+operations with an explicit fourth source, not fused multiply-add; `.blend.vf`
+takes unselected lanes from src1; masks use x=bit0. Architectural vf0 is fixed,
+whereas GOAL virtual names require caller mapping. Non-finite arithmetic and
+overflowing multiply-add intermediates refuse; raw payload moves/XOR preserve all
+bits. This finite-input desktop profile is not an exact PS2 VU implementation.
+No lowering/boot file or local initialization reproduction was modified.
+
+Validation: 471 host tests discovered, 470 passed and one optional C++ background
+exporter test skipped. All 17 new tests passed, including the independent SSE
+comparison. All 326 LF-normalized source hashes were checked against Git blobs
+at `3415a35dd444da81f897df5f83ea69615453e29e`. The latest exporter was compiled
+separately against the unchanged original compiler/dependency libraries; no
+existing frontend was relinked. No new Flycast or hardware execution is claimed.
