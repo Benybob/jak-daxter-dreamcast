@@ -38,6 +38,10 @@ engine files (types-h, vu1-macros, math): **98 of 98 checks pass.** Details are 
 [KERNEL_BOOT.md](ports/dreamcast/KERNEL_BOOT.md). Next is VU0 vector lowering, which
 blocks GAME.CGO at vector-h. GC, the rest of the engine and gameplay remain unfinished.
 
+**Open handoff for ChatGPT/Codex:** [CODEX_VU0_HANDOFF.md](ports/dreamcast/CODEX_VU0_HANDOFF.md)
+asks for a VU0 reference oracle and a GAME.CGO vector-usage survey, while Claude Code
+writes the vf lowering. (AI-assisted)
+
 ## Progress — 2026-10-26
 
 | Milestone | Status |
