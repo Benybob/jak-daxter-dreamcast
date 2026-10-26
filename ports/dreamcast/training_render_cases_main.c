@@ -117,6 +117,7 @@ int main(void) {
  memset(wrong,'0',64);wrong[64]=0;error=dc_training_render_make("/rd/missing",wrong,&owner);
  CHECK(error!=NULL);CHECK(zero(&owner,sizeof owner));CHECK(live==0&&pvr_mem_available()==baseline);
  test_root("/rd/missing",baseline);test_root("/rd/trailing",baseline);
+ test_root("/rd/missing/",baseline);
  test_block_budgets();
 terminal:
  dc_backend.observed_lo=peak;dc_backend.observed_hi=live;

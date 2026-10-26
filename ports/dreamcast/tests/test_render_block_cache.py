@@ -47,6 +47,12 @@ class BlockCacheTest(unittest.TestCase):
         for q in ((0,2,0,2),(-1,3,-1,3)):
             self.assertIsNone(self.load(c,q));self.assertEqual(self.payload(c),b''.join(f['raw'] for f in r.assemble_window(p,q)))
         s=self.stats(c);self.assertEqual(s[2],2);self.assertGreaterEqual(s[0],6);self.assertEqual(s[3],0);self.assertEqual(s[6],116)
+    def test_trailing_separator_matches_the_original_root_contract(self):
+        p,root=self.packet([(.2,0,.2),(1,0,.2),(.2,1,1)])
+        for suffix in ('/','\\') if sys.platform=='win32' else ('/',):
+            with self.subTest(suffix=suffix):
+                c=self.owner(str(root)+suffix);self.assertIsNone(self.load(c,(0,2,0,2)))
+                self.assertEqual(self.payload(c),b''.join(f['raw'] for f in r.assemble_window(p,(0,2,0,2))))
     def test_bypass_and_eviction_preserve_source_payload(self):
         xyz=[(0,0,0),(1000,0,0),(0,1,1),(.2,0,.2),(1,0,.2),(.2,1,1)]
         p,root=self.packet(xyz)

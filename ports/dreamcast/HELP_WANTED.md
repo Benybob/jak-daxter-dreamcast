@@ -304,3 +304,8 @@ See [TRAINING_STREAM.md](TRAINING_STREAM.md). (AI-assisted).
 
 The native training target now retains validated immutable terrain blocks under a 2 MiB raw-byte cap. The same scripted stock-16-MiB Flycast route performs 10 block reads/decodes instead of 200, with matching source windows and payload CRCs. 379 host tests,126 native owner/budget checks and26 integrated movement/stream checks pass. Independent allocation instrumentation observes a 6,477,168-byte live peak without failed allocations. The explicit sampled live-heap gate is now6MiB; the earlier target keeps its4MiB default. Original GOAL/full gameplay, reflection/TOD and physical validation remain unfinished. (AI-assisted)
 See [DECODED_BLOCK_CACHE.md](DECODED_BLOCK_CACHE.md). (AI-assisted).
+
+## Completed: Consistent decoded terrain root paths
+
+Roots ending in a slash now work through the decoded terrain cache and training constructor. Grok identified the path-join mismatch; Codex reproduced failures for slash/backslash roots, corrected the joins and independently verified them. 380 host tests,170 native owner/budget/root checks and26 integrated movement/stream checks pass in stock16MiB Flycast. The allocation peak remains6,477,168 bytes with no failed allocations. Full original GOAL gameplay remains unfinished. (AI-assisted)
+See [DECODED_BLOCK_CACHE.md](DECODED_BLOCK_CACHE.md). (AI-assisted).

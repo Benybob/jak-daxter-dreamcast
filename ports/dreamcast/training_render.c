@@ -26,7 +26,8 @@ const char *dc_training_render_make(const char *root,const char *sha,dc_training
  if(out->initialized||out->catalog.storage||out->gpu.slots||out->blocks.state||out->bank.headers||out->bank.materials||out->frame.vertices||out->frame.order||
     out->frame.valid||out->window.faces||out->window.root||out->window.source_sha||out->window.valid)return "training render owned";
  memcpy(made.root,root,(unsigned)length+1u);memcpy(made.source_sha,sha,65);
- if(snprintf(path,sizeof path,"%s/manifest.drm",root)<0)return "training render path";
+ if(snprintf(path,sizeof path,"%s%smanifest.drm",root,
+    (root[length-1]=='/'||root[length-1]=='\\')?"":"/")<0)return "training render path";
  file=fopen(path,"rb");if(!file)return "training render catalog open";
  error=dc_render_catalog_load(file,&made.catalog);closed=fclose(file);
  if(!error&&closed)error="training render catalog close";

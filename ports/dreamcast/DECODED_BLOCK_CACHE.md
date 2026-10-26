@@ -15,12 +15,14 @@ camera and boundary captures were visually reviewed; the idle framebuffer is
 byte-identical to the previous checkpoint. This is a reduction in measured load
 work, not a claim about physical Dreamcast speed or full-game frame rate.
 
-The owner suite passes **126 native checks**, retaining its earlier 93 and adding
+The owner suite passes **170 native checks**, retaining its earlier 93 and adding
 explicit small-budget/bypass/eviction checks, invalid-source refusal, exact payload
-comparison and missing-file rollback. All **379 host tests** pass. New host cases
+comparison and missing-file rollback. All **380 host tests** pass. New host cases
 include 140-cell pressure against 128 slots, both cache passes, adjacent windows,
 all existing replica/role/filter/multibatch fixtures, open/close failures,
-metadata allocation failure, malformed files and nested-borrow refusal. The older
+metadata allocation failure, malformed files, nested-borrow refusal and roots
+with trailing separators. Windows hosts cover slash/backslash; the native suite
+repeats the complete ownership sequence on a trailing-slash ROMdisk root. The older
 fixed-terrain target still passes 20 checks with its default 4 MiB live-heap gate.
 
 ## Explicit ownership
@@ -66,7 +68,7 @@ sites while running the same 26 checks. It reports:
 | Observation | Bytes |
 | --- | ---: |
 | Highest observed live allocation total, including staging | 6,477,168 |
-| Allocator arena high-water | 7,306,536 |
+| Allocator arena high-water | 7,306,408 |
 | Space above highest observed program break to 16 MiB RAM top | 5,591,040 |
 
 No nonzero allocation request failed. The linked executable/ROMdisk end lies
@@ -84,7 +86,7 @@ The cached playable verifier explicitly requests its revised steady-state gate:
 python verify_training.py /path/to/flycast jak-dc-training-stream.elf --nm /path/to/sh-elf-nm --output /private/check --stream-bundle /private/stream/STREAM_BUNDLE.json --heap-budget 6291456
 ```
 
-The original-free owner target now requires `--suite training-render --tests 126`.
+The original-free owner target now requires `--suite training-render --tests 170`.
 Host tests build through the normal host target/Windows helper. No game files or
 embedding ELF binaries are distributed with source.
 

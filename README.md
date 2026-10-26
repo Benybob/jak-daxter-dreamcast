@@ -57,7 +57,7 @@ world-view/clip/base-pass diagnostic.
 [TRAINING_STREAM.md](ports/dreamcast/TRAINING_STREAM.md) covers the new bounded
 playable integration and 26 movement/stream checks.
 [DECODED_BLOCK_CACHE.md](ports/dreamcast/DECODED_BLOCK_CACHE.md) covers the bounded
-immutable-file cache, 126 owner/budget checks, revised live-heap gate and allocation peak.
+immutable-file cache, 170 owner/budget/root checks, revised live-heap gate and allocation peak.
 
 ## Current verification
 
@@ -67,7 +67,7 @@ and checkpoints, not a percentage of game completion or a single full-game run.
 
 | Area | Locally verified scope |
 | --- | --- |
-| Host | 379 tests pass with the complete local SDK/oracle setup |
+| Host | 380 tests pass with the complete local SDK/oracle setup |
 | GOAL runtime | 22,649 native checks at its latest verified checkpoint |
 | Numeric regression | 39 native checks |
 | Prototype movement | 318 native checks; visible test-map controller and platform paths pass |
@@ -85,7 +85,7 @@ and checkpoints, not a percentage of game completion or a single full-game run.
 | Collision camera | 1,205 native query/rig checks; 454 WLD2/3 manifest checks; 11 original-terrain orbit checks |
 | Decoded block workload | Same scripted route: 10 full reads/decodes versus 200; exact window CRCs retained, stock 16 MiB RAM |
 | Cached playable terrain | 26 integrated movement/stream checks; exact-source windows, resident texture reuse and cleanup; captured idle/air/camera/boundary frames reviewed |
-| Combined render owner | 126 original-free native source/failure/rollback/reuse/known-empty/cleanup and block-budget/bypass/eviction checks |
+| Combined render owner | 170 original-free native source/failure/rollback/reuse/known-empty/cleanup and block-budget/bypass/eviction checks |
 | Original-terrain prototype | 20 integrated checks: movement, jump edges, landing, camera, boundary respawn, memory and exit; captured idle/air frames visually reviewed |
 
 The earlier fixed-patch original-LOD training prototype renders 3,593 character triangles and
@@ -108,7 +108,7 @@ not executed by these native tests; runtime and renderer are separate programs.
 
 ## Latest completed contributor task
 
-The native training target now retains validated immutable terrain blocks under a 2 MiB raw-byte cap. The same scripted stock-16-MiB Flycast route performs 10 block reads/decodes instead of 200, with matching source windows and payload CRCs. 379 host tests,126 native owner/budget checks and26 integrated movement/stream checks pass. Independent allocation instrumentation observes a 6,477,168-byte live peak without failed allocations. The explicit sampled live-heap gate is now6MiB; the earlier target keeps its4MiB default. Original GOAL/full gameplay, reflection/TOD and physical validation remain unfinished. (AI-assisted)
+Roots ending in a slash now work through the decoded terrain cache and training constructor. Grok identified the path-join mismatch; Codex reproduced failures for slash/backslash roots, corrected the joins and independently verified them. 380 host tests,170 native owner/budget/root checks and26 integrated movement/stream checks pass in stock16MiB Flycast. The allocation peak remains6,477,168 bytes with no failed allocations. Full original GOAL gameplay remains unfinished. (AI-assisted)
 
 See [DECODED_BLOCK_CACHE.md](ports/dreamcast/DECODED_BLOCK_CACHE.md). Full kernel/gameplay remains unfinished.
 
@@ -117,7 +117,7 @@ See [DECODED_BLOCK_CACHE.md](ports/dreamcast/DECODED_BLOCK_CACHE.md). Full kerne
 Source is in `ports/dreamcast/`. Follow [BUILDING.md](ports/dreamcast/BUILDING.md).
 The verified baseline is OpenGOAL `6076aab5a95955443a9e1ed8f72a25bc0e2fcf9d`;
 the latest locally verified port source checkpoint is
-`0f0a41f574ed695f91be93e07de3757c2f8ff011`.
+`750c1351d19a0612e5728520f7dea406e7f985ab`.
 
 No ISO, BIOS, extracted textures/models, converted game scenes or ELF binaries
 embedding game assets are uploaded. Prepare assets locally from your own game

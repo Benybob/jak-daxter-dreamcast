@@ -23,7 +23,7 @@ heap was 3,591,936 bytes, excluding
 embedded assets, executable/static storage, KOS and stacks. The TA vertex buffer
 is 1 MiB. These are emulator observations, not physical hardware performance.
 
-A separate original-free native oracle now passes 126 checks, including its
+A separate original-free native oracle now passes 170 checks, including its
 earlier 93: wrong source binding,
 owned-output refusal, view reuse, invalid-camera readiness refusal, both frame
 allocation failures, missing/trailing selected files, preservation of active CPU
@@ -83,7 +83,7 @@ Original-free owner checks need no game files:
 ```sh
 python make_training_owner_fixture.py /private/owner --header build/training_owner_fixture.h
 make TRAINING_OWNER_ASSET_DIR=/private/owner jak-dc-training-render.elf
-python verify_backend.py /path/to/flycast jak-dc-training-render.elf --nm /path/to/sh-elf-nm --output /private/owner-check --suite training-render --tests 126
+python verify_backend.py /path/to/flycast jak-dc-training-render.elf --nm /path/to/sh-elf-nm --output /private/owner-check --suite training-render --tests 170
 ```
 
 Reflection, time-of-day shading, original normal/prototype tint fidelity, broader

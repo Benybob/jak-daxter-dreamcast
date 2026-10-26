@@ -63,11 +63,12 @@ static unsigned oldest(const state *s) {
 static const char *load(void *user,const dc_render_catalog *catalog,const dc_render_entry *entry,
  int global,const char *path,dc_render_block *out) {
  dc_render_block_cache *owner=user;state *s=owner?owner->state:NULL;
- dc_render_block block={0};char expected[DC_RENDER_CACHE_PATH_MAX];FILE *file;const char *error;int n,closed;unsigned i;
+ dc_render_block block={0};char expected[DC_RENDER_CACHE_PATH_MAX];FILE *file;const char *error,*sep;int n,closed;unsigned i;size_t root_bytes;
  if(!s||!catalog||!entry||!path||!out||out->records||out->count||s->pinned)return "block cache arguments";
  if((global!=0&&global!=1)||!catalog_equal(catalog,&s->catalog))return "block cache identity";
- n=global?snprintf(expected,sizeof expected,"%s/global.drs",s->root):
-  snprintf(expected,sizeof expected,"%s/sectors/%" PRId32 "_%" PRId32 ".drs",s->root,entry->ix,entry->iz);
+ root_bytes=strlen(s->root);sep=(s->root[root_bytes-1]=='/'||s->root[root_bytes-1]=='\\')?"":"/";
+ n=global?snprintf(expected,sizeof expected,"%s%sglobal.drs",s->root,sep):
+  snprintf(expected,sizeof expected,"%s%ssectors/%" PRId32 "_%" PRId32 ".drs",s->root,sep,entry->ix,entry->iz);
  if(n<0||(unsigned)n>=sizeof expected||strcmp(expected,path))return "block cache path";
  for(i=0;i<DC_RENDER_BLOCK_CACHE_SLOTS;++i)if(s->slots[i].valid&&s->slots[i].global==global&&
      !memcmp(&s->slots[i].entry,entry,sizeof(*entry))) {
