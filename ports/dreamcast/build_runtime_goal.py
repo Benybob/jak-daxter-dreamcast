@@ -201,7 +201,10 @@ def main():
         '--from-global','*kernel-context*','--prefix-through-global','*kernel-context*',
         '--initializer','dc-original-context-init','--header',str(port/'build/original_kernel_context.h')],check=True)
     subprocess.run(compiler+process_context+['--source',str(port.parents[1]/'goal_src/jak1/kernel/gkernel.gc'),
-        '--function','remove-exit','--header',str(port/'build/original_process_entry.h')],check=True)
+        '--function','remove-exit','--function','(method new protect-frame)',
+        '--header',str(port/'build/original_process_entry.h')],check=True)
+    subprocess.run(compiler+process_context+['--source',str(port/'context_read_fixture.gc'),
+        '--function','dc-context-read-loop','--header',str(port/'build/context_read_fixture.h')],check=True)
     command=compiler+process_context+['--source',str(port.parents[1]/'goal_src/jak1/kernel/gkernel.gc'),
         '--header',str(port/'build/original_process_query.h')]
     for name in ('process-by-name','process-not-name','process-count','anon-function-0','anon-function-1','anon-function-2'):
@@ -240,6 +243,6 @@ def main():
     if args.verify:
         subprocess.run([sys.executable,str(port/'verify_backend.py'),str(args.flycast),
                         str(port/'jak-dc-runtime-goal.elf'),'--nm',str(args.nm),'--output',str(args.output),
-                        '--tests','22770','--suite','runtime-goal'],check=True)
+                        '--tests','22849','--suite','runtime-goal'],check=True)
 
 if __name__=='__main__': main()

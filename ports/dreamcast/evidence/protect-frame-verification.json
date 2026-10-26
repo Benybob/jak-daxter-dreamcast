@@ -1,0 +1,38 @@
+{
+  "ai_assisted": true,
+  "goal_complete": false,
+  "scope": "Original protect-frame construction with additive read-only context entry; incomplete cleanup and gameplay",
+  "host_tests_passed": 390,
+  "runtime_native_checks": 22849,
+  "new_runtime_checks": 79,
+  "numeric_native_checks": 39,
+  "system_ram": 16777216,
+  "runtime_elf_sha256": "9b8f5e8a327755e490bcf6fde29cd9dff7924048b9883bd24c10dff3588bfdf5",
+  "numeric_elf_sha256": "83ea558f30e866dee335efa57adcd671828ff9ab188f6566ddef394618285b7f",
+  "runtime_code_bytes": 144770,
+  "runtime_arena_used": 661024,
+  "runtime_arena_capacity": 1048576,
+  "installed_symbols": 704,
+  "original_source_sha256": "ed506903f426eeb97c5309baec29e16ab28aa682bfb45f7e3cdc4ee1dcd589a4",
+  "frontend_sha256": "e1e2111fb3274dec655d4386c5b171e3ef6a74bf2acb2dbefe49f20781d9621d",
+  "methods": [
+    {
+      "name": "remove-exit",
+      "bytes": 260,
+      "stack_bytes": 40
+    },
+    {
+      "name": "(method new protect-frame)",
+      "bytes": 328,
+      "stack_bytes": 56
+    }
+  ],
+  "physical_hardware_tested": false,
+  "remaining": [
+    "Mutable lexical pp and nested process allocation semantics",
+    "Original deactivation and exit execution",
+    "Current-process abandonment and initialization throws",
+    "Full startup/scheduler/GC",
+    "Original gameplay, rendering fidelity, audio, progression and saves"
+  ]
+}

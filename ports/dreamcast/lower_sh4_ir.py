@@ -186,6 +186,7 @@ def allocate_slots(function):
     return {value:color*8 for value,color in colors.items()}
 
 def compile_function(function,module=None,runtime=False,optimize=True,statics=None):
+    semantic_types={r['id']:r['type'] for r in function['registers']}
     if runtime:
         # Preserve semantic types in exported IR, use original-type-system ABI
         # classifications locally rather than guessing from user type names.
@@ -211,21 +212,31 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
             raise ValueError('return value does not match function return type')
     registers={r['id']:r for r in function['registers']}
     if len(registers)!=len(function['registers']): raise ValueError('duplicate virtual register')
-    fixed={}
+    fixed={}; context_reads=[]
     for binding in function.get('fixed_registers',[]):
         index=binding['register']
         if index in fixed or index not in registers: raise ValueError('invalid fixed register metadata')
         if not runtime: raise ValueError('fixed runtime register requires native runtime profile')
         process_self=(binding.get('frontend_register')=='r13' and binding.get('role')=='process_self' and
                       implicit and implicit[0]['register']==index)
-        if not process_self and (binding.get('frontend_register')!='r14' or binding.get('role')!='symbol_table'):
+        context_read=(runtime and binding.get('frontend_register')=='r13' and
+                      binding.get('role')=='process_context_read' and not implicit)
+        if not process_self and not context_read and (binding.get('frontend_register')!='r14' or binding.get('role')!='symbol_table'):
             raise ValueError('fixed runtime register role not implemented')
-        if process_self:
+        if context_read:
+            if semantic_types[index]!='process' or registers[index]['class']!='gpr64' or registers[index]['type']!='object':
+                raise ValueError('read-only process context requires an exact process container')
+            if index in {p['register'] for p in function['parameters']} or not any(index in op['reads'] for op in function['instructions']):
+                raise ValueError('read-only process context must be a separate read input')
+            context_reads.append(index)
+        elif process_self:
             if registers[index]['class']!='gpr64' or registers[index]['type']!='object':
                 raise ValueError('implicit self requires a process reference container')
         elif registers[index]['class']!='gpr64' or registers[index]['type'] not in ('uint','int','integer'):
             raise ValueError('fixed symbol-table register requires an integer container')
         fixed[index]=binding
+    if len(context_reads)>1:
+        raise ValueError('ambiguous read-only process context')
     if implicit and (implicit[0]['register'] not in fixed or
                      fixed[implicit[0]['register']].get('role')!='process_self'):
         raise ValueError('implicit self is missing its fixed entry declaration')
@@ -238,6 +249,8 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
             index=op['writes'][0]
             if index not in fixed or op['bindings'][0]!=fixed[index]:
                 raise ValueError('fixed register reset does not match its declaration')
+            if index in context_reads:
+                raise ValueError('read-only process context must not reset')
             if fixed[index]['role']=='process_self':
                 if position!=0: raise ValueError('implicit self reset must be at function entry')
                 op=dict(op,kind='current_process')
@@ -245,6 +258,16 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
         elif set(op['writes'])&fixed.keys():
             raise ValueError('fixed runtime register mutation is unsupported')
         translated.append(op)
+    if context_reads:
+        # Internal entry definition is visible to definite assignment/liveness.
+        # Original CFG edges must continue to name the same original operation,
+        # including back edges to original IR zero; they must not rerun the guard.
+        for op in translated:
+            if op['kind'] in ('branch','goto') and (not isinstance(op['target'],int) or not 0<=op['target']<len(translated)):
+                raise ValueError('invalid IR branch target')
+        translated=[dict(op,target=op['target']+1) if op['kind'] in ('branch','goto') else op
+                    for op in translated]
+        translated.insert(0,dict(kind='current_process',reads=[],writes=context_reads))
     function=dict(function,instructions=translated)
     if implicit and (not translated or translated[0]['kind']!='current_process'):
         raise ValueError('implicit self requires an explicit entry reset')
@@ -603,7 +626,7 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
         except (ValueError,KeyError,IndexError) as error:
             raise ValueError(f'{function["name"]} IR {position} ({op.get("text",kind)}): {error}') from error
     e.label('ir_'+str(len(instructions)))
-    if implicit or guarded_calls:
+    if implicit or context_reads or guarded_calls:
         e.branch('bra','epilogue')
     if guarded_calls:
         e.label('call_failure'); e.literal(0,('symbol','function:dc-c-call-error'))
@@ -612,8 +635,9 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
         # explicitly define FR0; void callers promise no result register.
         if function['return_type']=='float': e.word(0xf08d)  # FLDI0 FR0
         e.branch('bra','epilogue')
-    if implicit:
+    if implicit or context_reads:
         e.label('process_entry_failure'); e.immediate(0,0); e.immediate(1,0)
+        if function['return_type']=='float': e.word(0xf08d)  # defined zero on refusal
     e.label('epilogue'); e.mov(15,14); adjust_stack(frame)
     for reg in (9,8,14): e.rr(0x6006,reg,15)
     e.word(0x4f26); e.ret()

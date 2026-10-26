@@ -9,8 +9,13 @@ The original reader/macro/typechecker exports the exact `self:process` fixed
 entry on desktop r13 as `process_self`. Only one implicit self, zero explicit
 arguments, object return, and an initial matching reset are currently supported.
 This is a semantic mapping, not use of physical SH-4 R13. Other r13 roles,
-resetless entries, assembly, ambiguous entries and fixed-register writes reject.
+resetless `process_self` entries, assembly, ambiguous entries and fixed-register writes reject.
 The self register is read-only; the original body can update process fields.
+
+An additive explicit-argument, read-only typed `process_context_read` entry is
+described in [PROTECT_FRAME_ENTRY.md](PROTECT_FRAME_ENTRY.md). It authenticates
+the same deliberately bound process before the original constructor body. It
+does not enable mutable lexical pp or arbitrary resetless register roles.
 
 The normal framed entry calls the strict `function:dc-c-current-process` import,
 tests its return, and either stores the real self value or exits through the

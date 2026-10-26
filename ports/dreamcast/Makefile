@@ -183,7 +183,7 @@ runtime_process_heap_cases.o: runtime_process_heap_cases.c runtime_cases.h goal_
 	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -I. -c runtime_process_heap_cases.c -o $@
 runtime_structured_cases.o: runtime_structured_cases.c runtime_cases.h goal_module.h goal_runtime.h build/structured_static_fixture.h build/original_kernel_context.h
 	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -I. -c runtime_structured_cases.c -o $@
-runtime_process_entry_cases.o: runtime_process_entry_cases.c runtime_cases.h goal_bridge.h goal_runtime.h build/original_process_entry.h
+runtime_process_entry_cases.o: runtime_process_entry_cases.c runtime_cases.h goal_bridge.h goal_runtime.h build/original_process_entry.h build/context_read_fixture.h
 	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -I. -c runtime_process_entry_cases.c -o $@
 runtime_process_query_cases.o: runtime_process_query_cases.c runtime_cases.h goal_bridge.h goal_runtime.h build/original_process_query.h build/original_name_compare.h build/original_null_context.h build/original_query_globals.h
 	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -I. -c runtime_process_query_cases.c -o $@

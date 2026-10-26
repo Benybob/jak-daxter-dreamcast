@@ -1,0 +1,7 @@
+;; Explicit-argument read-only process context CFG oracle (AI-assisted), ISC.
+(in-package goal)
+(defun dc-context-read-loop ((count int))
+  (rlet ((pp :reg r13 :type process))
+    (let ((sum 0))
+      (dotimes (i count) (+! sum (-> pp pid)))
+      (+ sum count))))

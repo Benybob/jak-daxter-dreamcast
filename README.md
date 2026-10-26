@@ -67,8 +67,8 @@ and checkpoints, not a percentage of game completion or a single full-game run.
 
 | Area | Locally verified scope |
 | --- | --- |
-| Host | 382 tests pass with the complete local SDK/oracle setup |
-| GOAL runtime | 22,770 native checks at its latest verified checkpoint |
+| Host | 390 tests pass with the complete local SDK/oracle setup |
+| GOAL runtime | 22,849 native checks at its latest verified checkpoint |
 | Numeric regression | 39 native checks |
 | Prototype movement | 318 native checks; visible test-map controller and platform paths pass |
 | Original collision | 789 synthetic native checks; 2,063 combined checks including the original 576-triangle patch |
@@ -108,16 +108,16 @@ not executed by these native tests; runtime and renderer are separate programs.
 
 ## Latest completed contributor task
 
-Two unchanged original GOAL methods now construct fixed-size process pools and return members through typed method dispatch. 121 new native checks verify exact allocations, finite member chains, owning-pool links and allocation-free reparenting. 382 host tests and 22,770 runtime checks pass in stock 16 MiB Flycast. Returning a member does not deactivate it or clear its PID; full cleanup, scheduler and original gameplay remain unfinished. (AI-assisted)
+The unchanged original protect-frame constructor now runs with its three explicit arguments and an authenticated read-only process context. 79 new native checks cover exact frame/process bytes, fences, stacked arguments, caller preservation, context refusal and original frame-chain popping. 390 host tests,22,849 runtime checks and39 freshly rerun numeric checks pass in stock16MiB Flycast. Mutable lexical pp, original deactivation, nonlocal unwind and full gameplay remain unfinished. (AI-assisted)
 
-See [ORIGINAL_DEAD_POOLS.md](ports/dreamcast/ORIGINAL_DEAD_POOLS.md). Full kernel/gameplay remains unfinished.
+See [PROTECT_FRAME_ENTRY.md](ports/dreamcast/PROTECT_FRAME_ENTRY.md). Full kernel/gameplay remains unfinished.
 
 ## Build and orientation
 
 Source is in `ports/dreamcast/`. Follow [BUILDING.md](ports/dreamcast/BUILDING.md).
 The verified baseline is OpenGOAL `6076aab5a95955443a9e1ed8f72a25bc0e2fcf9d`;
 the latest locally verified port source checkpoint is
-`b11125ad0787da17ea6e5c5c728c53d20fa9b265`.
+`a62745b4e432f6c70895cd4fd2ee2a5a2d43eb05`.
 
 No ISO, BIOS, extracted textures/models, converted game scenes or ELF binaries
 embedding game assets are uploaded. Prepare assets locally from your own game

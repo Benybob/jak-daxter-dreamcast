@@ -314,3 +314,8 @@ See [DECODED_BLOCK_CACHE.md](DECODED_BLOCK_CACHE.md). (AI-assisted).
 
 Two unchanged original GOAL methods now construct fixed-size process pools and return members through typed method dispatch. 121 new native checks verify exact allocations, finite member chains, owning-pool links and allocation-free reparenting. 382 host tests and 22,770 runtime checks pass in stock 16 MiB Flycast. Returning a member does not deactivate it or clear its PID; full cleanup, scheduler and original gameplay remain unfinished. (AI-assisted)
 See [ORIGINAL_DEAD_POOLS.md](ORIGINAL_DEAD_POOLS.md). (AI-assisted).
+
+## Completed: Original protect-frame construction
+
+The unchanged original protect-frame constructor now runs with its three explicit arguments and an authenticated read-only process context. 79 new native checks cover exact frame/process bytes, fences, stacked arguments, caller preservation, context refusal and original frame-chain popping. 390 host tests,22,849 runtime checks and39 freshly rerun numeric checks pass in stock16MiB Flycast. Mutable lexical pp, original deactivation, nonlocal unwind and full gameplay remain unfinished. (AI-assisted)
+See [PROTECT_FRAME_ENTRY.md](PROTECT_FRAME_ENTRY.md). (AI-assisted).
