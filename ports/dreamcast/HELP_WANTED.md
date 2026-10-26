@@ -387,3 +387,16 @@ See [NATIVE_CATCH_RETURN.md](NATIVE_CATCH_RETURN.md). (AI-assisted).
 
 Unchanged original run-function-in-process, throw and protect construction now execute on SH-4 through guarded native catch boundaries. Verified paths include full six-argument results, named and nested throws, extra lexical scope unwinding, original protect exits, and initialize-dead with original deactivation and fixed-pool return. 447 host tests and 24,793 native runtime checks (352 new) pass in stock 16 MiB Flycast. The separate numeric ELF matches its prior sealed 39-check execution. This first catch adapter requires the root C stack and an owned lexical process scope; fiber catch lifetime, cross-stack unwinding, moving heaps/GC, full kernel boot and gameplay remain unfinished. (AI-assisted: Codex; separately requested human-authorized Grok review remains pending)
 See [ORIGINAL_INITIALIZATION.md](ORIGINAL_INITIALIZATION.md). (AI-assisted).
+
+## Completed: complete original kernel compilation
+
+176/184 original kernel functions compile to SH-4 and the other 8 assembly primitives bind to named native counterparts. 128-bit values, the variadic integer-slot convention and --native-binding are documented in [KERNEL_COMPILATION.md](KERNEL_COMPILATION.md). 24,846 runtime, 39 numeric and 452 host checks pass. (AI-assisted, Claude Code)
+
+## Next: native boot of the original kernel startup (measured plan)
+
+Each whole-file startup now lowers (gcommon, gstring, gkernel with the 8 native bindings, gstate). The only desktop C++-kernel services those startups call are method-set! (58 calls), malloc (2, in gkernel) and _format (from inspect/print, including gkernel's startup (inspect *test-vec4s*)). dgo-load is referenced by load-package but not called at startup. Steps:
+1. Native bridges bound as method-set!, malloc and _format. A bounded _format implements the directives the kernel uses (~A ~S ~D ~X ~x ~F ~f ~% ~T, widths, #t/#f/0 destinations) and reads variadic floats as bit patterns in integer slots.
+2. A Dreamcast memory context (BIG_MEMORY #f: PROCESS_HEAP_MULT 1, about 984 KiB nk heap) plus *debug-segment* #f set by the native kernel driver, as the C++ kernel does.
+3. A separate boot ELF with a 3-4 MiB arena (the startup allocates the 32 KiB DRAM stack, the 128 KiB fake scratchpad, the nk heap, the fixed pools and the listener process), loading gcommon, gstring, gkernel and gstate with their initializers in order.
+4. Assert the resulting globals: *kernel-context*, *dram-stack*, *listener-process*, *null-process*, every dead pool and *dead-pool-list*, *active-pool* and *display-pool* trees. Then spawn a process through the original pools and run it under the original kernel-dispatcher.
+(AI-assisted, Claude Code)
