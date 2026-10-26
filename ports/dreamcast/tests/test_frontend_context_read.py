@@ -102,7 +102,7 @@ class ContextReadTest(unittest.TestCase):
         symbols={r['symbol'] for r in report['relocations']}
         self.assertLessEqual({'function:dc-c-return-from-thread','function:dc-c-enter-process-scope',
                               'function:dc-c-leave-process-scope','cell:throw'},symbols)
-        # Any other r15 use keeps refusing.
+        # A read-only r15 is the native zero offset; a write keeps refusing.
         bad=copy.deepcopy(fn);offset=[b['register'] for b in bad['fixed_registers'] if b['frontend_register']=='r15'][0]
-        bad['instructions'].insert(1,dict(kind='nop',reads=[offset],writes=[]))
+        bad['instructions'].append(dict(kind='constant',value=5,reads=[],writes=[offset]))
         with self.assertRaisesRegex(ValueError,'role not implemented'):compile_function(bad,runtime=True)

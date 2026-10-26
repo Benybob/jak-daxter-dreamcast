@@ -397,14 +397,30 @@ static uint64_t return_from_thread(void) {
   if(rt->error==DC_GOAL_OK)rt->error=DC_GOAL_UNSUPPORTED_TRANSFER;
   return 0;
 }
+/* Original (suspend): the thread saves itself and returns to the kernel, which
+ * resumes it next frame. Natively the bound scheduler process's running fiber
+ * yields; live lexical scopes and foreign contexts refuse inside the engine. */
+static uint64_t suspend_current(void) {
+  dc_goal_runtime *rt=active_runtime;
+  dc_goal_fiber *fiber=dc_goal_fiber_current();
+  if(!rt)return 0;
+  if(!fiber || fiber->runtime!=rt || !execution_context || execution_heap.runtime!=rt ||
+     fiber->process!=execution_heap.process) {
+    if(rt->error==DC_GOAL_OK)rt->error=DC_GOAL_UNSUPPORTED_TRANSFER;
+    return 0;
+  }
+  dc_goal_fiber_yield(rt,0);
+  return rt->error==DC_GOAL_OK;
+}
 int dc_goal_install_transfer_bridge(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_goal_module_result *result) {
-  unsigned char code[12]={1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0};
-  uint32_t target=(uint32_t)(uintptr_t)return_from_thread;
-  dc_goal_code_export function={"dc-c-return-from-thread",code,12,NULL,0};
+  unsigned char code[2][12]={{1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0},{1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0}};
+  uint32_t targets[2]={(uint32_t)(uintptr_t)return_from_thread,(uint32_t)(uintptr_t)suspend_current};
+  dc_goal_code_export functions[2]={{"dc-c-return-from-thread",code[0],12,NULL,0},
+                                    {"dc-c-suspend",code[1],12,NULL,0}};
   if(!rt || !result) return 0;
   if(active_runtime!=rt) { rt->error=DC_GOAL_BAD_ARGUMENT; return 0; }
-  memcpy(code+8,&target,4);
-  return dc_goal_load_module(rt,&function,1,sync,NULL,result);
+  memcpy(code[0]+8,&targets[0],4); memcpy(code[1]+8,&targets[1],4);
+  return dc_goal_load_module(rt,functions,2,sync,NULL,result);
 }
 
 int dc_goal_install_process_bridge(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_goal_module_result *result) {

@@ -244,10 +244,13 @@ def main():
         '--header',str(port/'build/original_send_event.h')],check=True)
     subprocess.run(compiler+process_context+['--source',str(port.parents[1]/'goal_src/jak1/kernel/gkernel.gc'),
         '--function','(method deactivate process)','--header',str(port/'build/original_deactivate.h')],check=True)
+    subprocess.run(compiler+process_context+['--preload',str(port.parents[1]/'goal_src/jak1/kernel/gkernel.gc'),
+        '--source',str(port.parents[1]/'goal_src/jak1/kernel/gstate.gc'),'--function','looping-code',
+        '--header',str(port/'build/original_looping_code.h')],check=True)
     subprocess.run([sys.executable,str(port/'build_dreamcast.py'),'--msys',str(args.msys),'--target','jak-dc-runtime-goal.elf'],check=True)
     if args.verify:
         subprocess.run([sys.executable,str(port/'verify_backend.py'),str(args.flycast),
                         str(port/'jak-dc-runtime-goal.elf'),'--nm',str(args.nm),'--output',str(args.output),
-                        '--tests','23293','--suite','runtime-goal'],check=True)
+                        '--tests','23359','--suite','runtime-goal'],check=True)
 
 if __name__=='__main__': main()

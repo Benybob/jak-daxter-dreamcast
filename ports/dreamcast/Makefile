@@ -319,7 +319,7 @@ clean:
 	rm -f runtime_static_cases.o
 	rm -f goal_runtime_dc.o
 	rm -f runtime_memory_cases.o
-	rm -f runtime_goal_main.o runtime_goal_cases.o runtime_lexical_pp_cases.o runtime_deactivate_cases.o goal_module.o jak-dc-runtime-goal.elf
+	rm -f runtime_goal_main.o runtime_goal_cases.o runtime_lexical_pp_cases.o runtime_deactivate_cases.o runtime_suspend_cases.o goal_module.o jak-dc-runtime-goal.elf
 	rm -f $(TARGET) $(SCENE_TARGET) $(TEXTURED_TARGET) $(BACKEND_TARGET) $(RUNTIME_TARGET) $(OBJS) $(SCENE_OBJS) $(TEXTURED_OBJS) backend_main.o runtime_main.o runtime_cases.o goal_runtime.o goal_main.o goal_leaf_main.o jak-dc-goal.elf jak-dc-goal-leaf.elf romdisk.img romdisk_tmp.c romdisk_tmp.o romdisk/probe.dgo romdisk/fixture.dcm
 	rm -rf build
 
@@ -683,3 +683,6 @@ runtime_lexical_pp_cases.o: runtime_lexical_pp_cases.c process_spans.h goal_brid
 jak-dc-runtime-goal.elf: runtime_deactivate_cases.o
 runtime_deactivate_cases.o: runtime_deactivate_cases.c process_spans.h goal_bridge.h pp_scope.h runtime_cases.h fiber_test_support.h goal_fiber.h build/original_deactivate.h
 	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -I. -c runtime_deactivate_cases.c -o $@
+jak-dc-runtime-goal.elf: runtime_suspend_cases.o
+runtime_suspend_cases.o: runtime_suspend_cases.c process_spans.h goal_bridge.h pp_scope.h runtime_cases.h fiber_test_support.h goal_fiber.h build/original_looping_code.h
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -I. -c runtime_suspend_cases.c -o $@

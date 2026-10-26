@@ -275,6 +275,107 @@ def lexical_process_bracket(function,index,binding):
     ops[leave]=dict(ops[leave],kind='process_scope_leave')
     return dict(function,instructions=ops,lexical_saved=saved)
 
+SUSPEND_TOP_THREAD=44  # process top-thread
+SUSPEND_HOOK=12        # thread suspend-hook
+
+def native_machine_registers(function):
+    """Give the desktop rsp/r15 roles their exact native meaning (AI-assisted).
+
+    r15 is the x86 GOAL memory base; native SH-4 GOAL pointers are absolute, so a
+    read-only r15 is the constant 0. A reset rsp reads the native stack pointer.
+    Both must be integer containers; r15 must never be written, rsp only reset.
+    """
+    keep=[];ops=[dict(op) for op in function['instructions']];entry=[]
+    registers={r['id']:r for r in function['registers']}
+    for binding in function.get('fixed_registers',[]):
+        index,name=binding['register'],binding.get('frontend_register')
+        if binding.get('role')!='unsupported' or name not in ('r15','rsp') or \
+           registers.get(index,{}).get('class')!='gpr64' or registers[index].get('abi_type',registers[index]['type']) not in ('int','uint'):
+            keep.append(binding);continue
+        writers=[p for p,op in enumerate(ops) if index in op['writes']]
+        if name=='r15':
+            if writers:keep.append(binding);continue
+            entry.append(dict(kind='constant',value=0,reads=[],writes=[index],text='native r15 memory offset is zero'))
+        else:
+            if not all(ops[p]['kind']=='fixed_register_reset' and ops[p]['writes']==[index] and not ops[p]['reads']
+                       for p in writers):
+                keep.append(binding);continue
+            for p in writers:ops[p]=dict(kind='stack_pointer',reads=[],writes=[index],text='native stack pointer')
+    if not entry and len(keep)==len(function.get('fixed_registers',[])):return function
+    if entry:
+        ops=[dict(op,target=op['target']+len(entry)) if op['kind'] in ('branch','goto') and isinstance(op.get('target'),int) else op
+             for op in ops]
+        ops=entry+ops
+        shared=function.get('shared_exit')
+        if shared:function=dict(function,shared_exit=dict(shared,exit_ir=shared['exit_ir']+len(entry)))
+    return dict(function,instructions=ops,fixed_registers=keep)
+
+def suspend_idiom(function):
+    """Recognize original (suspend): pp=top-thread; (suspend-hook 0) (AI-assisted).
+
+    The original saves the thread and returns to the kernel, which restores pp
+    on resume. Natively the current fiber yields, and pp keeps the authenticated
+    process, so the thread-typed write and hook load disappear. Each pp reset
+    re-reads the authenticated process. Anything else keeps refusing.
+    """
+    bindings=[b for b in function.get('fixed_registers',[])
+              if b.get('frontend_register')=='r13' and b.get('role')=='unsupported']
+    if len(bindings)!=1:return function
+    index=bindings[0]['register'];ops=[dict(op) for op in function['instructions']]
+    reads={};writes={}
+    for p,op in enumerate(ops):
+        for v in op['reads']:reads.setdefault(v,[]).append(p)
+        for v in op['writes']:writes.setdefault(v,[]).append(p)
+    def only(value,at):return reads.get(value,[])==[at] and len(writes.get(value,[]))==1
+    rewritten=0
+    for p,op in enumerate(ops):
+        if index not in op['writes'] or op['kind']=='fixed_register_reset':continue
+        # pp = (-> pp top-thread)
+        if op['kind']!='move' or len(writes.get(op['reads'][0],[]))!=1:return function
+        load=ops[writes[op['reads'][0]][0]]
+        if load['kind']!='load_memory' or load.get('offset')!=SUSPEND_TOP_THREAD or load.get('size')!=4:return function
+        calls=[q for q in range(p+1,len(ops)) if ops[q]['kind'] not in ('nop','constant','move','load_memory')]
+        if not calls or ops[calls[0]]['kind']!='call':return function
+        c=calls[0];call=ops[c]
+        if len(call['reads'])!=2 or call['writes'] or call.get('abi',{}).get('parameters')!=['cpu-thread'] or \
+           call['abi'].get('return_type')!='none':return function
+        def chain(value):
+            """Single-writer move chain inside (p,c) back to its defining op."""
+            path=[]
+            while True:
+                sites=writes.get(value,[])
+                if len(sites)!=1 or not p<sites[0]<c:return None,path
+                path.append(sites[0])
+                if ops[sites[0]]['kind']!='move':return sites[0],path
+                value=ops[sites[0]]['reads'][0]
+        hook,hook_path=chain(call['reads'][0])
+        if hook is None or ops[hook]['kind']!='load_memory' or ops[hook].get('offset')!=SUSPEND_HOOK:return function
+        base,base_path=chain(ops[hook]['reads'][0])
+        if base_path!=[] and (base is not None or ops[base_path[-1]]['reads']!=[index]):return function
+        if not base_path:return function
+        zero,zero_path=chain(call['reads'][1])
+        if zero is None or ops[zero]['kind']!='constant' or ops[zero].get('value')!=0:return function
+        local=set(hook_path)|set(base_path)|set(zero_path)
+        # Every value defined in the window is consumed only inside it.
+        for q in range(p+1,c):
+            if ops[q]['kind']=='nop':continue
+            if q not in local or index in ops[q]['writes']:return function
+            for v in ops[q]['writes']:
+                if any(not p<r<=c for r in reads.get(v,[])):return function
+        targets={o['target'] for o in ops if o['kind'] in ('branch','goto')}
+        if any(p<t<=c for t in targets):return function
+        for q in [p]+sorted(local):ops[q]=dict(kind='nop',reads=[],writes=[],text=ops[q].get('text',''))
+        ops[c]=dict(kind='suspend',reads=[],writes=[],text=call.get('text',''))
+        rewritten+=1
+    if not rewritten:return function
+    for p,op in enumerate(ops):
+        if index in op['writes']:
+            if op['kind']!='fixed_register_reset' or op['writes']!=[index] or op['reads']:return function
+            ops[p]=dict(kind='process_reread',reads=[],writes=[index],text='pp restored after resume')
+    return dict(function,instructions=ops,
+                fixed_registers=[b for b in function['fixed_registers'] if b['register']!=index],
+                suspend_process=index)
+
 def compile_function(function,module=None,runtime=False,optimize=True,statics=None):
     semantic_types={r['id']:r['type'] for r in function['registers']}
     if runtime:
@@ -285,8 +386,11 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
             registers=[dict(r,type=r.get('abi_type',r['type'])) for r in function['registers']],
             parameters=[dict(p,type=p.get('abi_type',p['type'])) for p in function['parameters']])
     if function.get('asm'): raise ValueError('inline/assembly functions unsupported')
-    if runtime: function=return_from_thread_idiom(function)
-    transfers=any(op['kind']=='return_from_thread' for op in function['instructions'])
+    if runtime:
+        function=return_from_thread_idiom(function)
+        function=native_machine_registers(function)
+        function=suspend_idiom(function)
+    transfers=any(op['kind'] in ('return_from_thread','suspend','process_reread') for op in function['instructions'])
     implicit=function.get('implicit_parameters',[])
     if implicit and (not runtime or len(implicit)!=1 or function['parameters'] or
                      implicit[0].get('kind')!='fixed_entry' or implicit[0].get('name')!='self' or
@@ -552,6 +656,19 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
                 e.rr(0x2008,0,0)  # TST R0,R0: missing context must exit before body memory access.
                 e.branch('bt','process_entry_failure')
                 store64(writes[0]); continue
+            if kind=='process_reread':
+                # Original pp reset after resume: re-authenticate before any use.
+                e.literal(0,('symbol','function:dc-c-current-process'))
+                e.word(0x400b); e.nop()
+                e.rr(0x2008,0,0); e.branch('bt','process_entry_failure')
+                store64(writes[0]); continue
+            if kind=='suspend':
+                # Original thread suspension: yield the current native fiber.
+                e.literal(0,('symbol','function:dc-c-suspend'))
+                e.word(0x400b); e.nop()
+                e.rr(0x2008,0,0); e.branch('bt','process_entry_failure'); continue
+            if kind=='stack_pointer':
+                e.mov(0,15); e.immediate(1,0); store64(writes[0]); continue
             if kind=='return_from_thread':
                 # The original abandons the running thread to the kernel. The
                 # native bridge owns that transfer; until a verified continuation
