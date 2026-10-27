@@ -1,0 +1,23 @@
+<!-- Port terminology distilled from the existing documentation (AI-assisted). -->
+# Port glossary (AI-assisted)
+
+These definitions describe this port's terminology. Target validation described
+here is in Flycast only; no physical Dreamcast validation is claimed.
+
+| Term | Meaning and source |
+| --- | --- |
+| **DCSH** | The port's native SH-4 module format, carrying compiled code and private data into the transactional linker. It is separate from the original PS2 object parser. [NATIVE_MODULES.md](NATIVE_MODULES.md) |
+| **DGO / CGO** | Archive containers with an object-count/name header and a size/name header for each payload, padded to 16 bytes. This port packs DCSH objects into that original container layout. [KERNEL_BOOT.md](KERNEL_BOOT.md) |
+| **KERNEL.CGO / GAME.CGO** | KERNEL.CGO contains the original kernel files whose startups establish the runtime; GAME.CGO supplies engine files loaded afterwards. Compile dependency order can differ from their archive load order. [KERNEL_BOOT.md](KERNEL_BOOT.md), [GAME_CGO.md](GAME_CGO.md) |
+| **Typed IR** | The intermediate representation exported after the original GOAL reader, macro expansion and typechecker, with typed virtual registers. It precedes desktop register allocation and code generation. [GOAL_SH4.md](GOAL_SH4.md) |
+| **Lowering** | Translating the exported IR into native SH-4 machine code for the supported operations. GAME.CGO lowering proceeds in archive order after frontend export. [GOAL_SH4.md](GOAL_SH4.md), [GAME_CGO.md](GAME_CGO.md) |
+| **vf / VU0** | `vf` denotes the 128-bit vector register values used by GOAL's VU0 vector operations. The frontend expands vector macros into desktop IR operations that the port then lowers to SH-4. [VU0_LOWERING.md](VU0_LOWERING.md) |
+| **MMI** | PS2 packed 128-bit integer operations, including lane extraction, comparisons, shifts and shuffles. The port's native helpers follow the desktop backend's instruction semantics and operand order. [GAME_CGO.md](GAME_CGO.md) |
+| **int128** | The IR class for 128-bit integer values, distinct from the floating vector class `vf`. Copies and bitwise operations can work on either class, with values stored in dedicated frame slots. [GAME_CGO.md](GAME_CGO.md), [VU0_LOWERING.md](VU0_LOWERING.md) |
+| **mips2c** | The PC port's C++ translations of original MIPS assembly. The documented Dreamcast lookup currently provides faulting stubs for functions without SH-4 implementations; syntax-checking those translations does not establish execution. [MEMORY_BUDGET.md](MEMORY_BUDGET.md) |
+| **Romdisk** | The embedded disk image carrying files such as the native KERNEL.CGO archive to the runtime's `/rd` path. In the documented boot tests it sits inside the ELF and consumes memory alongside the arena. [KERNEL_BOOT.md](KERNEL_BOOT.md), [MEMORY_BUDGET.md](MEMORY_BUDGET.md) |
+| **Arena** | A bounded memory region supplied to the native runtime for allocations, including loaded module code and private data. Its measured use excludes other consumers such as the executable, romdisk and KOS allocations. [RUNTIME.md](RUNTIME.md), [NATIVE_MODULES.md](NATIVE_MODULES.md), [MEMORY_BUDGET.md](MEMORY_BUDGET.md) |
+| **kheap** | An original kernel heap structure/type, distinct from merely supplying a native arena. The documented `kmalloc` bridge supports the global heap and refuses other kheaps. [MEMORY_BUDGET.md](MEMORY_BUDGET.md), [RUNTIME.md](RUNTIME.md) |
+| **Flycast** | The emulator used for the port's target execution and diagnostics. The documented tests use stock 16 MiB configuration and do not establish physical hardware performance. [MILESTONE_2.md](MILESTONE_2.md), [SH4ZAM.md](SH4ZAM.md) |
+| **KOS** | KallistiOS, the target SDK/runtime used with the SH-4 cross toolchain to build the port. Its ports SDK also provides the installed sh4zam library. [MILESTONE_2.md](MILESTONE_2.md), [SH4ZAM.md](SH4ZAM.md) |
+| **sh4zam** | Falco Girgis and contributors' SH-4 math library, linked from the KOS ports SDK. The viewer uses its FTRV matrix-transform API for batched camera transforms, with caller matrix state preserved. [SH4ZAM.md](SH4ZAM.md) |
