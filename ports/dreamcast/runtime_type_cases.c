@@ -20,9 +20,11 @@ uint32_t dc_runtime_compiled_type_cases(dc_goal_runtime *rt,dc_runtime_check che
   if (!dc_goal_install_type_bridges(rt,sync,&bridges)) {
     CHECK(rt->error,0,"type bridges install"); return 0;
   }
-  CHECK(bridges.functions==4 &&
-        dc_goal_get_method(rt,rt->structure_type,0)==dc_goal_symbol_value(rt,dc_goal_find(rt,"dc-c-structure-new")),1,
-        "four native type/allocation bridges, structure new installed");
+  CHECK(bridges.functions==8 &&
+        dc_goal_get_method(rt,rt->structure_type,0)==dc_goal_symbol_value(rt,dc_goal_find(rt,"dc-c-structure-new")) &&
+        dc_goal_get_method(rt,rt->basic_type,6)==dc_goal_symbol_value(rt,dc_goal_find(rt,"dc-c-basic-copy")) &&
+        dc_goal_get_method(rt,rt->structure_type,6)==dc_goal_symbol_value(rt,dc_goal_find(rt,"dc-c-copy-fixed")),1,
+        "eight native type/allocation bridges: structure new, kscheme asize-of/copy defaults");
   if (!dc_goal_load_module(rt,goal_type_fixture_exports,GOAL_TYPE_FIXTURE_EXPORT_COUNT,sync,NULL,&module)) {
     CHECK(rt->error,0,"type fixture load"); return 0;
   }

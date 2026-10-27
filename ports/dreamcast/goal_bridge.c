@@ -199,6 +199,46 @@ static uint64_t new_structure(uint64_t heap,uint64_t type) {
   if(!fields || !fields->allocated_size){if(rt->error==DC_GOAL_OK)rt->error=DC_GOAL_BAD_ARGUMENT;return 0;}
   return dc_goal_alloc(rt,fields->allocated_size);
 }
+/* Native counterparts of the kscheme default asize-of/copy methods (AI-assisted):
+ * object asize-of is the zero function and copy is copy_fixed (identity);
+ * basic asize-of is asize_of_basic and copy is copy_basic. */
+static uint64_t asize_zero(uint64_t object){(void)object;return 0;}
+static uint64_t copy_fixed(uint64_t object){return object;}
+static uint64_t asize_of_basic(uint64_t object) {
+  dc_goal_runtime *rt=active_runtime;
+  dc_goal_type_fields *fields;
+  uint32_t type;
+  if(!rt)return 0;
+  type=dc_goal_type_of(rt,(uint32_t)object);
+  if(!type || !dc_goal_is_subtype(rt,type,rt->basic_type)){if(rt->error==DC_GOAL_OK)rt->error=DC_GOAL_BAD_ARGUMENT;return 0;}
+  fields=dc_goal_resolve(rt,type,sizeof(*fields));
+  return fields?fields->allocated_size:0;
+}
+/* copy_basic: a new basic on the named heap holding the original's bytes after
+ * the type tag. Desktop asks the type's asize-of method for the size; calling a
+ * GOAL method from C is not verified yet, so a type that overrides asize-of
+ * refuses. So does desktop's "DANGER COPY BASIC" raw-address destination. */
+static uint64_t copy_basic(uint64_t object,uint64_t heap) {
+  dc_goal_runtime *rt=active_runtime;
+  uint32_t type,bytes,result;
+  unsigned char *from,*to;
+  if(!rt)return 0;
+  if(dc_goal_pp_scope_blocks_transfer(rt) && rt->error!=DC_GOAL_OK)return 0;
+  type=dc_goal_type_of(rt,(uint32_t)object);
+  if(!type || !dc_goal_is_subtype(rt,type,rt->basic_type)){if(rt->error==DC_GOAL_OK)rt->error=DC_GOAL_BAD_ARGUMENT;return 0;}
+  if(dc_goal_get_method(rt,type,4)!=dc_goal_symbol_value(rt,dc_goal_find(rt,"dc-c-basic-asize-of"))){
+    rt->error=DC_GOAL_UNSUPPORTED_TRANSFER;return 0;
+  }
+  bytes=(uint32_t)asize_of_basic(object);
+  if(bytes<4){if(rt->error==DC_GOAL_OK)rt->error=DC_GOAL_BAD_ARGUMENT;return 0;}
+  result=(uint32_t)new_basic(heap,type);
+  if(!result)return 0;
+  from=dc_goal_resolve(rt,(uint32_t)object,bytes-4);
+  to=dc_goal_resolve(rt,result,bytes-4);
+  if(!from || !to)return 0;
+  memcpy(to,from,bytes-4);
+  return result;
+}
 static uint64_t new_object(uint64_t heap,uint64_t type,uint64_t size) {
   dc_goal_runtime *rt=active_runtime;
   if (!rt) return 0;
@@ -278,18 +318,32 @@ int dc_goal_core_bridges_active(const dc_goal_runtime *rt) {
 }
 int dc_goal_install_type_bridges(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_goal_module_result *result) {
   const unsigned char stub[12]={1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0};
-  unsigned char code[4][12];
-  dc_goal_code_export functions[4]={{"dc-c-type-new",code[0],12,NULL,0},
+  unsigned char code[8][12];
+  dc_goal_code_export functions[8]={{"dc-c-type-new",code[0],12,NULL,0},
                                     {"method-set!",code[1],12,NULL,0},
                                     {"dc-c-basic-new",code[2],12,NULL,0},
-                                    {"dc-c-structure-new",code[3],12,NULL,0}};
-  uint32_t targets[4]={(uint32_t)(uintptr_t)new_type,(uint32_t)(uintptr_t)method_set,
-                       (uint32_t)(uintptr_t)new_basic,(uint32_t)(uintptr_t)new_structure};
+                                    {"dc-c-structure-new",code[3],12,NULL,0},
+                                    {"dc-c-zero-func",code[4],12,NULL,0},
+                                    {"dc-c-copy-fixed",code[5],12,NULL,0},
+                                    {"dc-c-basic-asize-of",code[6],12,NULL,0},
+                                    {"dc-c-basic-copy",code[7],12,NULL,0}};
+  uint32_t targets[8]={(uint32_t)(uintptr_t)new_type,(uint32_t)(uintptr_t)method_set,
+                       (uint32_t)(uintptr_t)new_basic,(uint32_t)(uintptr_t)new_structure,
+                       (uint32_t)(uintptr_t)asize_zero,(uint32_t)(uintptr_t)copy_fixed,
+                       (uint32_t)(uintptr_t)asize_of_basic,(uint32_t)(uintptr_t)copy_basic};
   unsigned i;
   if (!rt || !result) return 0;
   if (active_runtime!=rt) { rt->error=DC_GOAL_BAD_ARGUMENT; return 0; }
-  for (i=0;i<4;++i) { memcpy(code[i],stub,12); memcpy(code[i]+8,&targets[i],4); }
-  if (!dc_goal_load_module(rt,functions,4,sync,NULL,result)) return 0;
+  for (i=0;i<8;++i) { memcpy(code[i],stub,12); memcpy(code[i]+8,&targets[i],4); }
+  if (!dc_goal_load_module(rt,functions,8,sync,NULL,result)) return 0;
+#define BRIDGE(name) dc_goal_symbol_value(rt,dc_goal_find(rt,name))
+  /* kscheme defaults: object asize-of 4 / copy 6, then basic's, both propagated
+   * to fixed kernel types made before this, like structure new below. */
+  if (!dc_goal_method_set(rt,rt->object_type,4,BRIDGE("dc-c-zero-func"),1) ||
+      !dc_goal_method_set(rt,rt->object_type,6,BRIDGE("dc-c-copy-fixed"),1) ||
+      !dc_goal_method_set(rt,rt->basic_type,4,BRIDGE("dc-c-basic-asize-of"),1) ||
+      !dc_goal_method_set(rt,rt->basic_type,6,BRIDGE("dc-c-basic-copy"),1)) return 0;
+#undef BRIDGE
   return dc_goal_set_method(rt,rt->type_type,0,dc_goal_symbol_value(rt,dc_goal_find(rt,"dc-c-type-new"))) &&
          dc_goal_set_method(rt,rt->basic_type,0,dc_goal_symbol_value(rt,dc_goal_find(rt,"dc-c-basic-new"))) &&
          /* Propagate like method-set!: fixed kernel types such as kheap were made

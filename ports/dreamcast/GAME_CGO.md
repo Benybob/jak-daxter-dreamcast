@@ -3,12 +3,12 @@
 2026-10-27, Claude Code. The original engine is being compiled file by file in
 GAME.CGO order:
 
-- **92 of GAME.CGO's 326 code files** compile to native SH-4 (through res-h).
-- **All 92 load and run their original top-level startup** after KERNEL.CGO in
+- **97 of GAME.CGO's 326 code files** compile to native SH-4 (through pat-h).
+- **All 97 load and run their original top-level startup** after KERNEL.CGO in
   stock 16 MiB Flycast, with the Dreamcast memory budget ([MEMORY_BUDGET.md](MEMORY_BUDGET.md)). This includes the 141 lane-exact
   vector cases ([VU0_LOWERING.md](VU0_LOWERING.md)) and the original process
   spawn and dispatch.
-- **192 of 192 boot checks pass.**
+- **197 of 197 boot checks pass.**
 
 ```bash
 python ports/dreamcast/build_kernel_boot.py --msys C:/msys64 --verify
@@ -49,6 +49,13 @@ Lowering (`lower_sh4_ir.py`):
 - **xor/blend/swizzle/splat on int128**: bit copies, valid on either 128-bit class.
 - **float ↔ int128 moves**: `movss`, lane 0, as for vf.
 - **`.nop.vf` and `.wait.vf`**: x87 FNOP/FWAIT on desktop, with no state; they lower to nothing.
+- **`(& var)` of a register variable** (res): desktop `IR_RegValAddr` forces the
+  variable onto the stack and yields its home's address; its `to_rai()` leaves
+  the variable out of the reads. The exporter emits a typed `register_address`
+  op naming the source register. Every virtual register already has a stack slot
+  on SH-4, so the lowerer pins the addressed one outside slot reuse (like desktop
+  `force_on_stack`), roots its writes for dead-code removal, and stores the
+  slot's native address.
 - **`(inline-array T)`** parameters are addresses, like `(pointer T)`.
 - **none-typed values carry nothing**: copies of a discarded `method-set!` result
   are dropped.
@@ -72,6 +79,15 @@ Runtime:
 - **`structure` new**: the native counterpart of kscheme `new_structure`.
   `(new 'global 'matrix)` failed until it existed. It allocates `allocated_size`
   bytes, 16-byte rounded and zeroed, from the global heap.
+- **kscheme default methods**: `object` asize-of (the zero function) and copy
+  (`copy_fixed`), `basic` asize-of (`asize_of_basic`) and copy (`copy_basic`),
+  propagated to the fixed kernel types like structure new. surface-h's
+  `(copy *walk-mods* 'global)` needed them. Desktop `copy_basic` asks the type's
+  asize-of method for the size; calling a GOAL method from C is not verified yet,
+  so a type that overrides asize-of refuses with `UNSUPPORTED_TRANSFER`, as does
+  desktop's raw-address ("DANGER COPY BASIC") destination. The runtime suite's
+  find-parent zero-slot check moved to slot 7 (relocate), since slot 6 is now
+  filled, as on desktop.
 - **Type references before their deftype**: a static array's element type, as
   in dma-disasm.
   - The lowerer finds the types a module's own top level defines: calls of
@@ -111,12 +127,15 @@ Runtime:
 
 ## Where it stops
 
-- **Loading:** all 92 compiled files now load and start (192 of 192 boot checks),
+- **Loading:** all 97 compiled files now load and start (197 of 197 boot checks),
   after the memory budget in [MEMORY_BUDGET.md](MEMORY_BUDGET.md): the corrected
   `PROCESS_HEAP_MULT`, PS2-sized DMA buffers, native `kmalloc`/`scf-get-time`, and
   a faulting `__pc-get-mips2c` stub. The arena then holds 7.8 of its 8 MiB.
-- **Lowering stops at res (object 92).** `mov igpr-11, &igpr-6` takes the
-  address of a register-held local, which needs a stack home for that variable.
+- **Lowering stops at fact-h (object 97).** `(method new fact-info)` runs
+  `(go process-drawable-art-error "memory")` on a branch. That `go` resets the
+  process register mid-function, and the lowerer only proves an entry-time reset
+  ("lexical process reset must precede every process use and control transfer").
+  `go` from a non-behavior method is the next feature.
 - **Exporter refusals.** 56 of the 331 dependency-graph files refuse; 54 of them
   for one reason, "conflicting or non-fixed virtual register alias". That is one
   exporter feature (rlet register aliasing) to add next.

@@ -90,7 +90,9 @@ uint32_t dc_runtime_early_cases(dc_goal_runtime *rt,dc_runtime_check check,void 
   CHECK(find(grand,5),method_a,"original find-parent skips equal inherited methods");
   CHECK(find(child,5),method_a,"original find-parent returns different immediate method");
   CHECK(find(rt->object_type,5),nothing,"original find-parent exits at object root");
-  CHECK(find(grand,6),nothing,"original find-parent exits at zero parent slot");
+  /* Slot 7 (relocate) has no kscheme default; 6 (copy) does, as on desktop. */
+  CHECK(find(grand,7),nothing,"original find-parent exits at zero parent slot");
+  CHECK(find(grand,6),dc_goal_get_method(rt,rt->structure_type,6),"original find-parent reaches structure copy below basic copy");
   CHECK(rt->error,DC_GOAL_OK,"early return and original traversal leave runtime error clear");
 #undef CHECK
   return fixture.code_bytes+original.code_bytes;

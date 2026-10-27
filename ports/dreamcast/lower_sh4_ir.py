@@ -320,6 +320,8 @@ def remove_dead_pure_ops(function):
     if any(not isinstance(op.get('reads'),list) or not isinstance(op.get('writes'),list) for op in ops):
         return function  # malformed: leave it for the shape checks to refuse
     needed_regs={b['register'] for b in function.get('fixed_registers',[])}
+    # An addressed variable is observable through its pointer at any later op.
+    needed_regs.update(op['source'] for op in ops if op['kind']=='register_address')
     if function.get('shared_exit'): needed_regs.add(function['shared_exit']['register'])
     needed=[op['kind'] not in PURE_KINDS for op in ops]
     changed=True
@@ -815,6 +817,19 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
         raise ValueError('vector returns are not part of the native ABI')
     wide={index for index,r in registers.items() if r['class']=='int128'}
     quads=wide|vectors
+    addressed=set()
+    for op in function['instructions']:
+        if op['kind']!='register_address': continue
+        if op.get('reads')!=[] or not isinstance(op.get('writes'),list) or len(op['writes'])!=1:
+            raise ValueError('register address operation must write one register and read none')
+        source,dest=op.get('source'),op['writes'][0]
+        if type(source) is not int or source not in registers:
+            raise ValueError('register address of an unknown virtual register')
+        if dest not in registers or registers[dest]['class']!='gpr64' or dest in vectors:
+            raise ValueError('register address destination requires a scalar register')
+        if source in vectors: raise ValueError('register address of a vf value is unsupported')
+        if not runtime: raise ValueError('register addresses require the native runtime profile')
+        addressed.add(source)
     if wide and not runtime: raise ValueError('128-bit values require the native runtime profile')
     parameter_types=[scalar_kind(p['type'],runtime) for p in function['parameters']]
     if len(parameter_types)>8: raise ValueError('more than eight arguments unsupported')
@@ -832,7 +847,7 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
                      'relocations':relocations,'optimization':'empty_void_return',
                      'instruction_stream_bytes':len(data),'literal_pool_and_alignment_bytes':0,
                      'minimum_32_byte_cache_lines':1}
-    if optimize and not stack_objects:
+    if optimize and not stack_objects and not addressed:
         leaf=argument_return_leaf(function)
         if leaf is None: leaf=shift_return_leaf(function)
         if leaf is not None: return leaf
@@ -841,6 +856,10 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
     # Each 128-bit value owns a dedicated 16-byte slot outside slot reuse.
     for index in sorted(quads):
         slots[index]=frame; frame+=16
+    # (& var): the variable's home is its slot, which a pointer may reach at any
+    # later op, so it is pinned outside liveness reuse like desktop force_on_stack.
+    for index in sorted(addressed-quads):
+        slots[index]=frame; frame+=8
     # A dedicated slot, outside liveness reuse, records an entered lexical
     # scope so the call-fault exit can restore the saved process first.
     scope_flag=None
@@ -1413,6 +1432,8 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
                 e.branch('bra','epilogue')
             elif kind=='stack_address':
                 stack_object_address(op['slot'],writes[0])
+            elif kind=='register_address':
+                address(op['source']); e.mov(0,8); e.immediate(1,0); store64(writes[0])
             else: raise ValueError('unsupported typed IR operation '+kind)
         except (ValueError,KeyError,IndexError) as error:
             raise ValueError(f'{function["name"]} IR {position} ({op.get("text",kind)}): {error}') from error

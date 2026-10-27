@@ -211,6 +211,12 @@ static json instruction(IR* ir,const StaticNames& statics,const TypeSystem& type
     if(slot<0 || !output["reads"].empty() || output["writes"].size()!=1)
       throw std::runtime_error("invalid stack address operation");
     output["kind"]="stack_address"; output["slot"]=slot;
+  } else if(auto* reg_addr=dynamic_cast<IR_RegValAddr*>(ir)) {
+    // (& var) of a register variable forced onto the stack: the address of its
+    // home. Desktop to_rai() leaves the variable out of the reads.
+    if(!output["reads"].empty() || output["writes"].size()!=1)
+      throw std::runtime_error("invalid register address operation");
+    output["kind"]="register_address"; output["source"]=reg_addr->src()->ireg().id;
   } else if(dynamic_cast<IR_Null*>(ir)||dynamic_cast<IR_Nop*>(ir)||dynamic_cast<IR_ValueReset*>(ir)) {
     output["kind"]="nop";
   }

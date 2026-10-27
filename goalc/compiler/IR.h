@@ -177,6 +177,8 @@ class IR_RegValAddr : public IR {
                         const AllocationResult& allocs,
                         emitter::IR_Record irec) override;
 
+  const RegVal* src() const { return m_src; }
+
  protected:
   const RegVal* m_dest = nullptr;
   const RegVal* m_src = nullptr;
