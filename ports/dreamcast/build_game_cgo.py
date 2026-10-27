@@ -93,6 +93,8 @@ def main():
     report['target_constants'] = status.get('target_constants', {})
     if status.get('unused_target_constants'):
         report['unused_target_constants'] = status['unused_target_constants']
+    reviewed_locals = port / 'dreamcast_unassigned_locals.json'
+    used_locals = set()
     exported = {Path(s).resolve() for s in status['exported']}
     export_errors = {Path(e['source']).resolve(): e['error'] for e in status.get('export_errors', [])}
     for name in sources:
@@ -111,15 +113,22 @@ def main():
                                  '--header', str(build / f'game_{stem}.h'),
                                  '--manifest', str(build / f'game_{stem}.manifest.json'),
                                  '--runtime', '--all-functions', '--initializer', f'dc-game-{name}',
-                                 '--native-module', str(dcsh / f'{name}.dcsh')], capture_output=True, text=True)
+                                 '--native-module', str(dcsh / f'{name}.dcsh'),
+                                 '--unassigned-locals', str(reviewed_locals)], capture_output=True, text=True)
         if result.returncode:
             lines = (result.stdout + result.stderr).splitlines()
             reason = [l for l in lines if 'error' in l.lower()]
             report['failed'] = {'object': name, 'stage': 'lowering', 'source': graph[name][0],
                                 'reason': (reason or lines)[-6:]}
             break
+        for entry in json.loads((build / f'game_{stem}.manifest.json').read_text()):
+            if entry.get('zero_locals'): used_locals.add(entry['name'])
         report['compiled'].append(name)
         print(f'compiled {len(report["compiled"])}: {name}', flush=True)
+    # Reviewed zero locals no compiled file used (stale, or past the stop point).
+    listed = {k for k in json.loads(reviewed_locals.read_text()) if not k.startswith('_')}
+    report['zero_locals'] = sorted(used_locals)
+    if listed - used_locals: report['unused_zero_locals'] = sorted(listed - used_locals)
     if report['compiled']:
         write_dgo(build / 'kernel-dgo/GAME.CGO', 'GAME.CGO', [(n, dcsh / f'{n}.dcsh') for n in report['compiled']])
         names = ','.join(f'"{n}"' for n in report['compiled'])

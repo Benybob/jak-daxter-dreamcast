@@ -220,7 +220,7 @@ void Compiler::compile_static_structure_inline(const goos::Object& form,
             throw_compiler_error(form, "Cannot put a type reference in a field with type {}",
                                  field_info.type.print());
           }
-          structure->add_type_record(sr.symbol_name(), field_offset);
+          structure->add_type_record(sr.symbol_name(), field_offset, sr.method_count());
         } else if (sr.is_func()) {
           structure->add_function_record(sr.function(), field_offset);
         } else {
@@ -916,7 +916,7 @@ void Compiler::fill_static_array_inline(const goos::Object& form,
       }
     } else if (sr.is_type()) {
       ASSERT(deref_info.stride == 4);
-      structure->add_type_record(sr.symbol_name(), elt_offset);
+      structure->add_type_record(sr.symbol_name(), elt_offset, sr.method_count());
     } else if (sr.is_func()) {
       ASSERT(deref_info.stride == 4);
       structure->add_function_record(sr.function(), elt_offset);

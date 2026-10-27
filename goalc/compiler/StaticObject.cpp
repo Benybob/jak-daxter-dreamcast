@@ -141,10 +141,11 @@ void StaticStructure::add_pointer_record(int offset_in_this,
   pointers.push_back(prec);
 }
 
-void StaticStructure::add_type_record(std::string name, int offset) {
+void StaticStructure::add_type_record(std::string name, int offset, int method_count) {
   SymbolRecord srec;
   srec.name = std::move(name);
   srec.offset = offset;
+  srec.method_count = method_count;
   types.push_back(srec);
 }
 

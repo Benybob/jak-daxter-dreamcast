@@ -12,7 +12,7 @@ import sys
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from lower_sh4_ir import compile_function, mmi_asm  # noqa: E402
+from lower_sh4_ir import compile_function, mmi_asm, module_data  # noqa: E402
 
 SELF = {'frontend_register': 'r13', 'register': 2, 'role': 'process_self'}
 
@@ -84,6 +84,59 @@ class EntryRuleTest(unittest.TestCase):
         fn['instructions'][2] = {'kind': 'nop', 'reads': [], 'writes': []}
         with self.assertRaisesRegex(ValueError, 'uninitialized'):
             compile_function(fn, runtime=True)
+
+
+def never_assigned_local():
+    """process-particles' shape: (- v1-29 gp-0) of locals the PC port never sets."""
+    fn = partly_assigned()
+    fn['name'] = 'dc-timing'
+    fn['locals'] = [{'name': 'v1-29', 'register': 1, 'type': 'int', 'abi_type': 'int'}]
+    fn['instructions'] = [fn['instructions'][3], fn['instructions'][4]]  # store v1-29; return
+    return fn
+
+
+class ReviewedZeroLocalTest(unittest.TestCase):
+    def test_unlisted_never_assigned_local_refuses(self):
+        with self.assertRaisesRegex(ValueError, 'uninitialized'):
+            compile_function(never_assigned_local(), runtime=True)
+
+    def test_listed_local_is_zero_filled_and_recorded(self):
+        fn = dict(never_assigned_local(), zero_locals=['v1-29'])
+        _, report = compile_function(fn, runtime=True)
+        self.assertEqual(report['zero_locals'], ['v1-29'])
+
+    def test_stale_or_assigned_entries_refuse(self):
+        with self.assertRaisesRegex(ValueError, 'not a local'):
+            compile_function(dict(never_assigned_local(), zero_locals=['nope']), runtime=True)
+        fn = dict(partly_assigned(), zero_locals=['v'],
+                  locals=[{'name': 'v', 'register': 1, 'type': 'int', 'abi_type': 'int'}])
+        with self.assertRaisesRegex(ValueError, 'is assigned'):
+            compile_function(fn, runtime=True)
+
+    def test_reviewed_file_entries_have_reasons(self):
+        import json
+        reviewed = json.loads((Path(__file__).resolve().parents[1] / 'dreamcast_unassigned_locals.json').read_text())
+        for name, entry in reviewed.items():
+            if name.startswith('_'): continue
+            self.assertTrue(entry['locals'] and entry['reason'], name)
+
+
+class TypeReferenceImportTest(unittest.TestCase):
+    def doc(self, relocation):
+        data = {'id': 'static_0', 'kind': 'structure', 'data_bytes': [0] * 8, 'address_offset': 0,
+                'relocations': [relocation]}
+        return {'functions': [], 'statics': [data]}
+
+    def imports(self, relocation):
+        objects = {'f': (b'', {'name': 'f', 'relocations': [{'symbol': 'data:static_0'}]})}
+        return [r['symbol'] for r in module_data(self.doc(relocation), objects)[0]['relocations']]
+
+    def test_explicit_type_ref_count_interns_like_desktop(self):
+        self.assertEqual(self.imports({'offset': 4, 'symbol': 'type:sage-finalboss', 'method_count': 53}),
+                         ['deftype:sage-finalboss:53'])
+
+    def test_plain_type_pointer_stays_strict(self):
+        self.assertEqual(self.imports({'offset': 0, 'symbol': 'type:entity-info'}), ['type:entity-info'])
 
 
 if __name__ == '__main__':

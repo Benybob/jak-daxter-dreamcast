@@ -296,8 +296,15 @@ static void write_export(Compiler& compiler,FileEnv* file,const std::vector<std:
         entry["kind"]="structure"; entry["data_bytes"]=structure->data;
         entry["address_offset"]=structure->get_addr_offset();
         entry["relocations"]=json::array();
-        for(const auto& type:structure->types)
-          entry["relocations"].push_back({{"offset",type.offset},{"symbol","type:"+type.name}});
+        for(const auto& type:structure->types) {
+          // An explicit type reference such as (type-ref sage-finalboss
+          // :method-count 53) carries its count: desktop links it through
+          // intern_type_from_c, so a forward type gets a placeholder. Other type
+          // pointers (a basic's own tag) stay strict type: imports.
+          json reloc={{"offset",type.offset},{"symbol","type:"+type.name}};
+          if(type.method_count>1) reloc["method_count"]=type.method_count;
+          entry["relocations"].push_back(std::move(reloc));
+        }
         for(const auto& symbol:structure->symbols)
           entry["relocations"].push_back({{"offset",symbol.offset},{"symbol","pointer:"+symbol.name}});
         for(const auto& function:structure->functions)

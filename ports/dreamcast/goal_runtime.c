@@ -32,6 +32,7 @@ static int write32(dc_goal_runtime *rt,uint32_t at,uint32_t value) {
   if (!p) return 0;
   memcpy(p,&value,4); return 1;
 }
+enum dc_goal_error dc_goal_sticky_error=DC_GOAL_OK;
 uint32_t dc_goal_last_failed_alloc;
 uint32_t dc_goal_alloc(dc_goal_runtime *rt,uint32_t bytes) {
   uint32_t size,address;

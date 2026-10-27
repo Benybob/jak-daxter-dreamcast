@@ -1,0 +1,7 @@
+{
+  "_comment": "Reviewed original local-vars that no op assigns on the PC port, zero-filled at entry on Dreamcast (AI-assisted). Each entry names the function, its locals and why. Anything not listed still refuses as an uninitialized read. lower_sh4_ir.py --unassigned-locals checks every listed local exists and is never assigned; build_game_cgo.py reports entries no file used.",
+  "process-particles": {
+    "locals": ["v1-29", "gp-0"],
+    "reason": "sparticle.gc: the PC port comments out the original (.mfc0 gp-0 Count) / (.mfc0 v1-29 Count) cycle-counter reads; their difference only feeds a profiling stat. Desktop reads garbage; Dreamcast reads 0."
+  }
+}

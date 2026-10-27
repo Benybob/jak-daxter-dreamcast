@@ -95,7 +95,12 @@ class RuleTest(unittest.TestCase):
                {'kind': 'symbol_pointer', 'reads': [], 'writes': [9], 'symbol': 'not-a-type'},
                {'kind': 'call', 'reads': [8, 9], 'writes': [10]}]
         doc = {'functions': [{'top_level': True, 'instructions': ops}]}
-        self.assertEqual(module_defined_types(doc), {'my-elt'})
+        # no constant flags argument: the count is unknown (0, the kscheme default)
+        self.assertEqual(module_defined_types(doc), {'my-elt': 0})
+        # level-h's (deftype level ...) passes flags whose bits 32-47 are 29 methods
+        ops[5] = {'kind': 'call', 'reads': [2, 5, 4, 11], 'writes': [6]}
+        ops.append({'kind': 'constant', 'reads': [], 'writes': [11], 'value': (29 << 32) | 2608})
+        self.assertEqual(module_defined_types(doc), {'my-elt': 29})
 
     def test_none_copy_is_dropped(self):
         ops = [{'kind': 'move', 'reads': [1], 'writes': [0], 'text': 'mov'},

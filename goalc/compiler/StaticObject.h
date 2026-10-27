@@ -56,6 +56,7 @@ class StaticStructure : public StaticObject {
   struct SymbolRecord {
     int offset = -1;
     std::string name;
+    int method_count = -1;  // an explicit type reference's method count, else -1
   };
 
   struct PointerRecord {
@@ -76,7 +77,7 @@ class StaticStructure : public StaticObject {
 
   void add_symbol_record(std::string name, int offset);
   void add_pointer_record(int offset_in_this, StaticStructure* dest, int offset_in_dest);
-  void add_type_record(std::string name, int offset);
+  void add_type_record(std::string name, int offset, int method_count = -1);
   void add_function_record(const FunctionEnv* function, int offset);
 
  private:

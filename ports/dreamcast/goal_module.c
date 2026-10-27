@@ -105,10 +105,27 @@ static uint32_t resolve_import(dc_goal_runtime *rt,const char *reference,
     /* A type this module's own top level deftypes, referenced by its static data
      * before that deftype runs (e.g. a static array's element type). Like the
      * desktop linker's intern_type_from_c it gets a placeholder that the deftype
-     * fills. DCSH carries no method count, so the placeholder has the kscheme
-     * default of 12; a deftype needing more fails, never shrinks. A plain type:
-     * import of a missing type still refuses. */
-    address=dc_goal_intern_type(rt,name,0);
+     * fills. deftype:NAME:COUNT carries the deftype's method count, as a
+     * desktop link table does; without a count the placeholder has the kscheme
+     * default of 12, and a deftype needing more fails, never shrinks. A plain
+     * type: import of a missing type still refuses. */
+    {
+      char base[64];const char *colon=strrchr(name,':');unsigned long count=0;
+      size_t length=colon?(size_t)(colon-name):strlen(name);
+      if (colon) {
+        char *end;
+        if (colon[1]<'0' || colon[1]>'9') goto invalid;
+        count=strtoul(colon+1,&end,10);
+        if (*end || count<2 || count>=127) goto invalid;
+      }
+      if (!length || length>=sizeof base) goto invalid;
+      memcpy(base,name,length);base[length]=0;
+      /* An existing type is linked as it is: a real shortfall surfaces at its
+       * deftype (new_type, sticky for the loader), where desktop would assert. */
+      address=dc_goal_find(rt,base);
+      address=address?dc_goal_symbol_value(rt,address):0;
+      if (!address) address=dc_goal_intern_type(rt,base,(uint16_t)count);
+    }
     if (!address) {
       if (rt->error!=DC_GOAL_OK) return 0;
       goto invalid;

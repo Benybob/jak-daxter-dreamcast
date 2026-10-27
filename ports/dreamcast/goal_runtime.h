@@ -36,6 +36,10 @@ void *dc_goal_resolve(dc_goal_runtime *rt,uint32_t address,uint32_t size);
 uint32_t dc_goal_alloc(dc_goal_runtime *rt,uint32_t bytes);
 /* Size of the most recent arena request that did not fit (diagnostics only). */
 extern uint32_t dc_goal_last_failed_alloc;
+/* First failure of a GOAL-called type bridge (type new, method-set!) since the
+ * loader last cleared it. Every runtime call resets rt->error, so without this a
+ * failed deftype inside a startup would be hidden by the next call. */
+extern enum dc_goal_error dc_goal_sticky_error;
 uint32_t dc_goal_hash(const char *name);
 uint32_t dc_goal_find(dc_goal_runtime *rt,const char *name);
 uint32_t dc_goal_intern(dc_goal_runtime *rt,const char *name);

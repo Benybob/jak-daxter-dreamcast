@@ -3,12 +3,12 @@
 2026-10-27, Claude Code. The original engine is being compiled file by file in
 GAME.CGO order:
 
-- **173 of GAME.CGO's 326 code files** compile to native SH-4 (through depth-cue).
-- **All 173 load and run their original top-level startup** after KERNEL.CGO in
+- **192 of GAME.CGO's 326 code files** compile to native SH-4 (through entity-table).
+- **All 192 load and run their original top-level startup** after KERNEL.CGO in
   stock 16 MiB Flycast, with the Dreamcast memory budget ([MEMORY_BUDGET.md](MEMORY_BUDGET.md)). This includes the 141 lane-exact
   vector cases ([VU0_LOWERING.md](VU0_LOWERING.md)) and the original process
   spawn and dispatch.
-- **273 of 273 boot checks pass.**
+- **292 of 292 boot checks pass.**
 
 ```bash
 python ports/dreamcast/build_kernel_boot.py --msys C:/msys64 --verify
@@ -78,6 +78,21 @@ Lowering (`lower_sh4_ir.py`):
   a register assigned on another path and read only as a store's value is
   zero-filled at entry in a pinned slot, like vf. Returns, branches and
   arithmetic on unassigned registers still refuse.
+- **Shared 128-bit slots** (font's draw-string has 287 128-bit values): int128
+  and vf values now share 16-byte slots by the same liveness as desktop xmm
+  allocation, colored apart from 8-byte values. vf values read before any write
+  stay live from entry, where every vf slot is zero-filled; addressed and
+  zero-filled ones stay pinned.
+- **Constant branches**: an eq/ne branch on two values that each have exactly one
+  writer, a constant or symbol pointer (through copies), has one possible edge
+  (the `loop` macro's `#t != #f` test, `(b! #t ...)`). Definite assignment skips
+  the impossible edge (decomp).
+- **Reviewed never-assigned locals** (`dreamcast_unassigned_locals.json`): the PC
+  port comments out some original asm, leaving `local-vars` no op assigns
+  (sparticle's `.mfc0 ... Count` cycle-counter reads). Each listed function and
+  local has a reason; those are zero-filled at entry and recorded in the
+  manifest. A listed local that is assigned or missing fails, unused entries are
+  reported, and anything unlisted still refuses, as the host tests assert.
 - **`(inline-array T)`** parameters are addresses, like `(pointer T)`.
 - **none-typed values carry nothing**: copies of a discarded `method-set!` result
   are dropped.
@@ -116,6 +131,15 @@ Runtime:
   desktop's raw-address ("DANGER COPY BASIC") destination. The runtime suite's
   find-parent zero-slot check moved to slot 7 (relocate), since slot 6 is now
   filled, as on desktop.
+- **Sized type placeholders**: level-h's static data referenced `level` before its
+  deftype, so the placeholder got the default 12 methods and the 29-method
+  deftype failed. That failure was invisible: the next runtime call reset
+  `rt->error`. Now `deftype:NAME:COUNT` carries the module's own deftype method
+  count, an explicit `(type-ref NAME :method-count N)` carries its count (goalc
+  records it on the static type record; desktop links these through
+  `intern_type_from_c`), and a failed type bridge is sticky
+  (`dc_goal_sticky_error`) so the DGO loader reports it. A basic's own type tag
+  and other plain type pointers stay strict `type:` imports.
 - **Type references before their deftype**: a static array's element type, as
   in dma-disasm.
   - The lowerer finds the types a module's own top level defines: calls of
@@ -155,15 +179,15 @@ Runtime:
 
 ## Where it stops
 
-- **Loading:** all 173 compiled files now load and start (273 of 273 boot checks),
+- **Loading:** all 192 compiled files now load and start (292 of 292 boot checks),
   after the memory budget in [MEMORY_BUDGET.md](MEMORY_BUDGET.md): the corrected
   `PROCESS_HEAP_MULT`, PS2-sized DMA buffers, native `kmalloc`/`scf-get-time`, and
   a faulting `__pc-get-mips2c` stub. The test ELF now carries GAME.CGO as zstd
   (4.9 MB → 0.66 MB, 128 KiB window), streamed object by object through the
   vendored zstd decompressor (`goal_dgo_zst.c`), so the ELF fell from 6.2 to
-  2.0 MB and the boot arena is 12 MiB; 173 files use 10.55 MB of it.
-- **Lowering stops at font (object 173)**: "bootstrap stack frame too large"
-  (over 4 KiB of virtual-register slots).
+  2.0 MB and the boot arena is 12 MiB; 192 files use 11.45 MB of it.
+- **Stops at loader (object 192)**: the exporter refuses `ja-play-spooled-anim`
+  ("conflicting or non-fixed virtual register alias").
 - **Exporter refusals**: 56, 54 of them "conflicting or non-fixed virtual
   register alias", mostly event handlers and state code (`refusal_report.py`).
 - **Exporter refusals.** 56 of the 331 dependency-graph files refuse; 54 of them

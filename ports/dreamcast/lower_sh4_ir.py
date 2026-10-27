@@ -106,6 +106,22 @@ def validate_definitions(function,registers,entry_defined=()):
     entry_defined registers count as assigned at entry (zero-filled vf slots)."""
     ops=function['instructions']; count=len(ops)
     if not count: return  # the original frontend can emit an empty (none) body
+    # A value with exactly one writer that is a constant or a symbol pointer holds
+    # that value wherever it is defined. An eq/ne branch on two such values (the
+    # loop macro's (#t != #f) test) has one possible edge; the other is never
+    # taken, so definitions are not required along it.
+    writers={}
+    for op in ops:
+        if op['kind']!='nop':
+            for value in op['writes']: writers.setdefault(value,[]).append(op)
+    def fixed_value(value,seen=()):
+        found=writers.get(value,[])
+        if len(found)!=1 or found[0]['writes']!=[value] or value in seen: return None
+        if found[0]['kind']=='constant' and isinstance(found[0].get('value'),int): return ('constant',found[0]['value'])
+        if found[0]['kind']=='symbol_pointer' and isinstance(found[0].get('symbol'),str): return ('symbol',found[0]['symbol'])
+        if found[0]['kind']=='move' and len(found[0]['reads'])==1:  # (b! #t ...) copies its #t once
+            return fixed_value(found[0]['reads'][0],seen+(value,))
+        return None
     successors=[]
     for index,op in enumerate(ops):
         ids=set(op['reads'])|set(op['writes'])
@@ -115,6 +131,11 @@ def validate_definitions(function,registers,entry_defined=()):
             target=op['target']
             if not isinstance(target,int) or not 0<=target<count: raise ValueError('invalid IR branch target')
             edges=[target] if op['kind']=='goto' else edges+[target]
+            if op['kind']=='branch' and op.get('condition') in ('eq','ne') and not op.get('float') and len(op['reads'])==2:
+                a,b=(fixed_value(value) for value in op['reads'])
+                if a is not None and b is not None and a[0]==b[0]:
+                    taken=(a==b)==(op['condition']=='eq')
+                    edges=[target] if taken else [e for e in edges if e!=target or index+1==target]
         successors.append(edges)
     reachable=set(); pending=[0]
     while pending:
@@ -146,8 +167,11 @@ def validate_definitions(function,registers,entry_defined=()):
         missing=set(ops[node]['reads'])-inputs[node]
         if missing: raise UninitializedRead(node,missing)
 
-def allocate_slots(function):
-    """Reuse eight-byte slots using CFG liveness, including loop/call edges."""
+def allocate_slots(function,quads=None):
+    """Reuse eight-byte slots using CFG liveness, including loop/call edges.
+
+    With quads (a set of 128-bit values), those are colored apart from the
+    eight-byte values and a second {value: index*16} map is returned too."""
     ops=function['instructions']; count=len(ops)
     successors=[]
     for i,op in enumerate(ops):
@@ -184,13 +208,18 @@ def allocate_slots(function):
         clique(op['reads']); clique(writes)
         for value in writes:
             for live in after[i]: edge(value,live)
-    colors={}
-    for value in sorted(graph,key=lambda r:(-len(graph[r]),r)):
-        occupied={colors[n] for n in graph[value] if n in colors}
-        color=0
-        while color in occupied: color+=1
-        colors[value]=color
-    return {value:color*8 for value,color in colors.items()}
+    def color(values):
+        colors={}
+        for value in sorted(values,key=lambda r:(-len(graph[r]),r)):
+            occupied={colors[n] for n in graph[value] if n in colors}
+            c=0
+            while c in occupied: c+=1
+            colors[value]=c
+        return colors
+    if quads is None:
+        return {value:c*8 for value,c in color(graph).items()}
+    return ({value:c*8 for value,c in color(set(graph)-quads).items()},
+            {value:c*16 for value,c in color(set(graph)&quads).items()})
 
 def stack_object_reservation(function,registers,fixed,runtime):
     """Validate original FunctionEnv capacity, never infer it from addresses."""
@@ -808,6 +837,14 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
     # like vf. A register no op assigns still refuses.
     zero_entry=set()
     assigned={index for op in function['instructions'] if op['kind']!='nop' for index in op['writes']}
+    # Reviewed never-assigned original local-vars (dreamcast_unassigned_locals.json).
+    if function.get('zero_locals'):
+        if not runtime: raise ValueError('reviewed zero locals require the native runtime profile')
+        named={local['name']:local['register'] for local in function.get('locals',[])}
+        for name in function['zero_locals']:
+            if name not in named: raise ValueError('reviewed zero local '+name+' is not a local of this function')
+            if named[name] in assigned: raise ValueError('reviewed zero local '+name+' is assigned; remove it from the list')
+            zero_entry.add(named[name])
     arguments={p['register'] for p in function['parameters']}
     while runtime:
         try:
@@ -896,10 +933,20 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
         leaf=argument_return_leaf(function)
         if leaf is None: leaf=shift_return_leaf(function)
         if leaf is not None: return leaf
-    slots=allocate_slots(function) if optimize else {index:i*8 for i,index in enumerate(sorted(registers))}
+    # 128-bit values share 16-byte slots by the same liveness as desktop xmm
+    # allocation (a masked vf write that keeps lanes lists its destination as a
+    # read). vf values read before any write stay live from entry, where every
+    # vf slot is zero-filled. Addressed or zero-filled ones stay pinned.
+    pinned_quads=quads&(addressed|zero_entry)
+    if optimize:
+        slots,quad_slots=allocate_slots(function,quads)
+        for index in pinned_quads: quad_slots.pop(index,None)
+    else:
+        slots={index:i*8 for i,index in enumerate(sorted(set(registers)-quads))}; quad_slots={}
     frame=max(slots.values(),default=-8)+8
-    # Each 128-bit value owns a dedicated 16-byte slot outside slot reuse.
-    for index in sorted(quads):
+    for index,offset in quad_slots.items(): slots[index]=frame+offset
+    frame+=max(quad_slots.values(),default=-16)+16
+    for index in sorted(quads-set(quad_slots)):
         slots[index]=frame; frame+=16
     # (& var): the variable's home is its slot, which a pointer may reach at any
     # later op, so it is pinned outside liveness reuse like desktop force_on_stack.
@@ -1519,6 +1566,7 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
     return data,{'name':function['name'],'bytes':len(data),'stack_bytes':frame+16,'relocations':relocations,
                 'optimization':'stack_slot_reuse' if optimize else 'stack_baseline','instruction_stream_bytes':instruction_bytes,
                 'stack_slot_count':frame//8,'virtual_register_count':len(registers),
+                **({'zero_locals':list(function['zero_locals'])} if function.get('zero_locals') else {}),
                 'baseline_stack_bytes':len(registers)*8+16+(8 if lexical and stack_objects else 0)+(16+stack_objects*8 if stack_objects else 0),
                 'coalesced_stack_moves':coalesced_moves,
                 **({'stack_object_slots':stack_objects,'stack_object_region':stack_region} if stack_objects else {}),
@@ -1603,8 +1651,10 @@ def structured_static_data(item):
 
 def module_defined_types(doc):
     """Types the module's own top level defines: calls of type's method 0 (new,
-    offset 16) whose first argument is a quoted symbol (AI-assisted)."""
-    defined=set()
+    offset 16) whose first argument is a quoted symbol (AI-assisted). Maps each
+    to its declared method count (flags bits 32-47, as kscheme new_type reads
+    them; 0 when the flags are not a constant)."""
+    defined={}
     for f in doc.get('functions',[]):
         if not f.get('top_level'): continue
         ops=f['instructions']; writer={}
@@ -1624,7 +1674,10 @@ def module_defined_types(doc):
             base=origin(target['reads'][0])
             if base and base['kind']=='symbol_value' and base['symbol']=='type' and \
                first and first['kind']=='symbol_pointer':
-                defined.add(first['symbol'])
+                flags=origin(op['reads'][3]) if len(op['reads'])>3 else None
+                constant=flags is not None and flags['kind']=='constant' and isinstance(flags.get('value'),int)
+                methods=(flags['value']>>32)&0xffff if constant else 0
+                defined[first['symbol']]=max(methods,defined.get(first['symbol'],0))
     return defined
 
 def module_data(doc,objects):
@@ -1673,8 +1726,19 @@ def module_data(doc,objects):
             data=bytes(data)
         else: raise ValueError('unsupported static object '+item['id'])
         # Static data may reference a type its own module deftypes later at startup.
-        relocations=[dict(r,symbol='deftype:'+r['symbol'][5:]) if r['symbol'].startswith('type:') and
-                     r['symbol'][5:] in defined else r for r in relocations]
+        # Like a desktop link table, the import carries the declared method count
+        # so the placeholder is created at the size the deftype then fills.
+        # A relocation with the frontend's method_count interns the way desktop
+        # links every static type pointer (forward (type-ref NAME :method-count N)).
+        def deftype_import(name,count):
+            return 'deftype:'+name+(':'+str(count) if count>1 else '')
+        def type_import(r):
+            name=r['symbol'][5:]; count=r.get('method_count')
+            if type(count) is int and 1<count<127: return dict(r,symbol=deftype_import(name,max(count,defined.get(name,0))))
+            if name in defined: return dict(r,symbol=deftype_import(name,defined[name]))
+            return r
+        relocations=[type_import(r) if r['symbol'].startswith('type:') else r for r in relocations]
+        for r in relocations: r.pop('method_count',None)
         output.append({'name':item['id'],'data':data,'address_offset':offset,'relocations':relocations})
     if referenced!={d['name'] for d in output}: raise ValueError('missing referenced static object')
     return output
@@ -1691,6 +1755,8 @@ if __name__=='__main__':
     parser.add_argument('--initializer',help='Export the original top-level code with this unique name')
     parser.add_argument('--native-binding',action='append',default=[],metavar='ORIGINAL=NATIVE',
                         help='Use a loaded native counterpart for an uncompilable original function')
+    parser.add_argument('--unassigned-locals',type=Path,
+                        help='Reviewed never-assigned local-vars to zero-fill (dreamcast_unassigned_locals.json)')
     parser.add_argument('--all-functions',action='store_true',
                         help='Compile every non-top-level function of the IR except natively bound ones')
     args=parser.parse_args()
@@ -1703,6 +1769,13 @@ if __name__=='__main__':
         bindings[original]=native
     try:
         doc=json.loads(args.input.read_text())
+        if args.unassigned_locals:
+            reviewed={k:v for k,v in json.loads(args.unassigned_locals.read_text()).items() if not k.startswith('_')}
+            for f in doc['functions']:
+                if f['name'] in reviewed:
+                    entry=reviewed[f['name']]
+                    if not entry.get('reason') or not entry.get('locals'): raise ValueError('reviewed zero local entry needs locals and a reason')
+                    f['zero_locals']=list(entry['locals'])
         if args.all_functions:
             if args.function: parser.error('--all-functions cannot be combined with --function')
             args.function=[f['name'] for f in doc['functions'] if not f.get('top_level') and f['name'] not in bindings]

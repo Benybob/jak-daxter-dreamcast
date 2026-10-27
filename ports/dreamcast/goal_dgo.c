@@ -24,6 +24,7 @@ int dc_goal_load_dgo(dc_goal_runtime *rt,FILE *file,dc_goal_cache_sync sync,void
   if(result)memset(result,0,sizeof *result);
   if(!rt || !file || !result){if(rt)rt->error=DC_GOAL_BAD_ARGUMENT;return 0;}
   result->failed_object=UINT32_MAX;rt->error=DC_GOAL_OK;result->arena_before=rt->used;
+  dc_goal_sticky_error=DC_GOAL_OK;
   if(fread(header,1,64,file)!=64 || !memcmp(header,"oZlB",4) || !valid_name(header+4))
     return fail(rt,result,UINT32_MAX,DC_GOAL_BAD_MODULE);
   memcpy(result->name,header+4,60);
@@ -49,6 +50,7 @@ int dc_goal_load_dgo(dc_goal_runtime *rt,FILE *file,dc_goal_cache_sync sync,void
       ++result->initializers;
     }
     if(rt->error!=DC_GOAL_OK)return fail(rt,result,i,rt->error);
+    if(dc_goal_sticky_error!=DC_GOAL_OK)return fail(rt,result,i,dc_goal_sticky_error);
     result->arena_after[i]=rt->used;
     ++result->completed;
   }

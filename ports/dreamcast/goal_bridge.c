@@ -122,7 +122,12 @@ static uint64_t type_of(uint64_t object) {
   return active_runtime?dc_goal_type_of(active_runtime,(uint32_t)object):0;
 }
 static uint64_t new_type(uint64_t symbol,uint64_t parent,uint64_t flags) {
-  return active_runtime?dc_goal_new_type(active_runtime,(uint32_t)symbol,(uint32_t)parent,flags):0;
+  uint32_t type;
+  if(!active_runtime)return 0;
+  type=dc_goal_new_type(active_runtime,(uint32_t)symbol,(uint32_t)parent,flags);
+  if(!type && dc_goal_sticky_error==DC_GOAL_OK)
+    dc_goal_sticky_error=active_runtime->error!=DC_GOAL_OK?active_runtime->error:DC_GOAL_BAD_TYPE;
+  return type;
 }
 static uint64_t method_set(uint64_t type,uint64_t index,uint64_t method) {
   dc_goal_runtime *rt=active_runtime;
