@@ -56,7 +56,9 @@ pieces:
 
 A Dreamcast memory budget ([MEMORY_BUDGET.md](ports/dreamcast/MEMORY_BUDGET.md)) fixed the
 kernel's PC-sized actor heap (the target context never took effect before) and gives
-display PS2-sized DMA buffers. mips2c functions are fault-on-call stubs for now.
+display PS2-sized DMA buffers. mips2c functions are fault-on-call stubs for now, but all
+25 jak1 mips2c C++ files already pass an SH-4 syntax check (`probe_mips2c_sh4.py`), so
+compiling them natively looks viable.
 Details are in [GAME_CGO.md](ports/dreamcast/GAME_CGO.md).
 GC, the rest of the engine and gameplay remain unfinished.
 

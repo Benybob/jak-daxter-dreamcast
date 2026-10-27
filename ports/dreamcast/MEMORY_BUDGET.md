@@ -86,8 +86,12 @@ of the desktop C++ kernel:
 - **The 8 MiB arena** is nearly full after 92 files. Raising it trades against
   the romdisk/ELF in these tests and against VRAM-side and audio-side buffers
   later.
-- **mips2c functions** need real SH-4 implementations before gameplay. The C++
-  sources in `game/mips2c` might compile for SH-4, which is worth testing first.
+- **mips2c functions** need real SH-4 implementations before gameplay. A first
+  probe is encouraging: `probe_mips2c_sh4.py` syntax-checks all **25 of 25** jak1
+  `game/mips2c` C++ files with `sh-elf-g++`. It needs only two adaptations: a
+  scalar stand-in for the 8 SSE intrinsics they use, and vu.h's `REALLY_INLINE`
+  on a non-Linux platform. That is parsing only: nothing is linked or run, and
+  their memory model (GOAL addresses, the scratchpad) is still to be checked.
 
 `tests/test_memory_budget.py` runs the real frontend on a small file to check that
 the memory context gives `PROCESS_HEAP_MULT` 1. It also checks that a budget entry
