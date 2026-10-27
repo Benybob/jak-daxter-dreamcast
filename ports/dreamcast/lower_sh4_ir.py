@@ -45,8 +45,8 @@ def scalar_kind(name,runtime):
     # Function signatures describe tagged native addresses, not a wider value.
     if runtime and name and name.startswith('(function ') and name.endswith(')'):
         return 'function'
-    if runtime and name and name.startswith('(pointer ') and name.endswith(')'):
-        return 'pointer'
+    if runtime and name and name.startswith(('(pointer ','(inline-array ')) and name.endswith(')'):
+        return 'pointer'  # an inline-array is the address of its first element
     return name
 
 def argument_return_leaf(function):
@@ -95,6 +95,11 @@ def argument_return_leaf(function):
                  'instruction_stream_bytes':len(e.code),'literal_pool_and_alignment_bytes':0,
                  'minimum_32_byte_cache_lines':(len(data)+31)//32}
 
+class UninitializedRead(ValueError):
+    def __init__(self,node,missing):
+        super().__init__(f'IR {node} reads uninitialized virtual registers {sorted(missing)}')
+        self.node=node
+
 def validate_definitions(function,registers,entry_defined=()):
     """Check definite assignment along reachable paths, including loop edges.
 
@@ -139,7 +144,7 @@ def validate_definitions(function,registers,entry_defined=()):
         if not successors[node] and ops[node]['kind']!='return' and function.get('return_type')!='none':
             raise ValueError('value-returning function has a reachable fallthrough without a return')
         missing=set(ops[node]['reads'])-inputs[node]
-        if missing: raise ValueError(f'IR {node} reads uninitialized virtual registers {sorted(missing)}')
+        if missing: raise UninitializedRead(node,missing)
 
 def allocate_slots(function):
     """Reuse eight-byte slots using CFG liveness, including loop/call edges."""
@@ -218,6 +223,36 @@ LEXICAL_SCOPE_KINDS=('process_scope_enter','process_scope_leave')
 VF3_OPS={'.xor.vf':'xor','.sub.vf':'sub','.add.vf':'add','.mul.vf':'mul','.max.vf':'max',
          '.min.vf':'min','.div.vf':'div'}
 VF_OPERAND=re.compile(r'ivf-(\d+)$')
+# PS2 MMI ops: codes shared with goal_mmi.h (three-operand from 1, immediate from 32).
+MMI3_OPS={name:1+i for i,name in enumerate(['pextlb', 'pextlh', 'pextlw', 'pextub', 'pextuh', 'pextuw', 'pceqb', 'pceqh', 'pceqw', 'pcgtb', 'pcgth', 'pcgtw', 'psubw', 'por', 'pxor', 'pand', 'packuswb', 'paddb'])}
+MMI2_OPS={name:32+i for i,name in enumerate(['pw.sll', 'pw.srl', 'pw.sra', 'ph.sll', 'ph.srl', 'VPSRLDQ', 'VPSLLDQ', 'VPSHUFLW', 'VPSHUFHW'])}
+QUAD_OPERAND=re.compile(r'i(?:i128|vf)-(\d+)$')
+
+def mmi_asm(op):
+    """Structured PS2 MMI 128-bit integer asm op, or None (AI-assisted).
+
+    pcpyld/pcpyud stay inline; these go to the dc-c-mmi helper (goal_mmi.c),
+    which follows the desktop x86 instruction and operand order for each kind."""
+    text=op.get('text','').strip()
+    if op['kind']!='unsupported' or ':no-color' in text: return None
+    name,_,rest=text.partition(' ')
+    fields=[f.strip() for f in rest.split(',')]
+    def ids(names):
+        out=[]
+        for f in names:
+            m=QUAD_OPERAND.match(f)
+            if not m: return None
+            out.append(int(m.group(1)))
+        return out
+    if name[1:] in MMI3_OPS and len(fields)==3:
+        regs=ids(fields)
+        if regs and op['writes']==[regs[0]] and set(op['reads'])==set(regs[1:]) and len(op['reads'])<=2:
+            return dict(op,kind='mmi',code=MMI3_OPS[name[1:]],dst=regs[0],srcs=regs[1:])
+    elif name[1:] in MMI2_OPS and len(fields)==3 and fields[2].isdigit() and int(fields[2])<256:
+        regs=ids(fields[:2])
+        if regs and op['writes']==[regs[0]] and op['reads']==[regs[1]]:
+            return dict(op,kind='mmi',code=MMI2_OPS[name[1:]]|int(fields[2])<<8,dst=regs[0],srcs=regs[1:])
+    return None
 
 def vector_asm(op):
     """Structured form of a desktop vector asm IR op, or None (AI-assisted).
@@ -233,10 +268,12 @@ def vector_asm(op):
     if op['kind']!='unsupported' or ':no-color' in text: return None
     name,_,rest=text.partition(' ')
     fields=[f.strip() for f in rest.split(',')]
+    # xor/blend/swizzle/splat are bit copies, valid on either 128-bit class.
+    bitwise=name in ('.xor.vf','.blend.vf','.swizzle.vf','.splat.vf')
     def ids(names):
         out=[]
         for f in names:
-            m=VF_OPERAND.match(f)
+            m=(QUAD_OPERAND if bitwise else VF_OPERAND).match(f)
             if not m: return None
             out.append(int(m.group(1)))
         return out
@@ -267,6 +304,36 @@ def vector_asm(op):
             return dict(op,kind='vfswizzle',dst=regs[0],src=regs[1],control=value)
     return None
 
+PURE_KINDS=('move','constant','add64','sub64','and64','or64','xor64','not64')
+
+def remove_dead_pure_ops(function):
+    """Drop pure register-only ops whose results nothing needs (AI-assisted).
+
+    E.g. original disable-irq/enable-irq: on PC .mfc0/.mtc0 expand to nothing,
+    leaving a cycle of arithmetic on an unassigned rlet register whose result is
+    unused. Roots are every non-pure op (memory, calls, returns, branches, asm)
+    plus fixed machine registers and the shared exit value; a pure op is needed
+    only if it writes a register a needed op reads. Flow-insensitive, so it only
+    removes ops no path can observe. Every other op is untouched.
+    """
+    ops=list(function['instructions'])
+    if any(not isinstance(op.get('reads'),list) or not isinstance(op.get('writes'),list) for op in ops):
+        return function  # malformed: leave it for the shape checks to refuse
+    needed_regs={b['register'] for b in function.get('fixed_registers',[])}
+    if function.get('shared_exit'): needed_regs.add(function['shared_exit']['register'])
+    needed=[op['kind'] not in PURE_KINDS for op in ops]
+    changed=True
+    while changed:
+        changed=False
+        for i,op in enumerate(ops):
+            if needed[i]: needed_regs.update(op['reads'])
+        for i,op in enumerate(ops):
+            if not needed[i] and set(op['writes'])&needed_regs:
+                needed[i]=True; changed=True
+    for i,op in enumerate(ops):
+        if not needed[i]: ops[i]=dict(op,kind='nop',reads=[],writes=[],text='dead: '+op.get('text',''))
+    return dict(function,instructions=ops)
+
 def normalize_register_asm(function):
     """Read explicit x86 (.mov a b)/(.add a b) asm ops as plain 64-bit IR (AI-assisted).
 
@@ -278,7 +345,10 @@ def normalize_register_asm(function):
     for op in function['instructions']:
         text=op.get('text','').strip()
         vector=vector_asm(op)
+        if vector is None: vector=mmi_asm(op)
         if vector is not None: op=vector
+        elif op['kind']=='unsupported' and text in ('.nop.vf','.wait.vf') and not op['reads'] and not op['writes']:
+            op=dict(op,kind='nop')  # x87 FNOP/FWAIT on desktop: VU pipeline timing, no state
         elif op['kind']=='unsupported' and text.startswith('.mov ') and len(op['reads'])==1 and len(op['writes'])==1:
             op=dict(op,kind='move')
         elif op['kind']=='unsupported' and text.split(' ')[0] in ('.pcpyld','.pcpyud') and \
@@ -573,19 +643,23 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
             registers=[dict(r,type=r.get('abi_type',r['type'])) for r in function['registers']],
             parameters=[dict(p,type=p.get('abi_type',p['type'])) for p in function['parameters']])
     if function.get('asm'): raise ValueError('inline/assembly functions unsupported')
-    if function.get('return_type')=='none':
-        # A (none) function's last form may itself be (none), e.g. a discarded
-        # method-set! result: a return of a none-typed value carries nothing.
-        kinds={r['id']:r['type'] for r in function['registers']}
-        function=dict(function,instructions=[
-            dict(op,reads=[]) if op['kind']=='return' and len(op['reads'])==1 and kinds.get(op['reads'][0])=='none'
-            else op for op in function['instructions']])
+    # A none-typed value (e.g. a discarded method-set! result) carries nothing:
+    # copies of one are dropped, and a (none) function's return of one reads nothing.
+    kinds={r['id']:r['type'] for r in function['registers']}
+    function=dict(function,instructions=[
+        dict(op,kind='nop',reads=[],writes=[],text='none copy: '+op.get('text',''))
+        if op['kind']=='move' and len(op['reads'])==1 and kinds.get(op['reads'][0])=='none' else
+        dict(op,reads=[]) if function.get('return_type')=='none' and op['kind']=='return' and
+                             len(op['reads'])==1 and kinds.get(op['reads'][0])=='none'
+        else op for op in function['instructions']])
     if runtime:
         function=normalize_register_asm(function)
         function=state_code_idiom(function)
         function=return_from_thread_idiom(function)
         function=native_machine_registers(function)
         function=suspend_idiom(function)
+        # After the idiom recognizers: they must match the original op sequence.
+        function=remove_dead_pure_ops(function)
     transfers=any(op['kind'] in ('return_from_thread','suspend','process_reread','state_code_transfer')
                   for op in function['instructions'])
     implicit=function.get('implicit_parameters',[])
@@ -700,8 +774,19 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
     # Original VU0 code leaves unused lanes undefined (an uninitialized acc whose
     # other lanes are don't-care). vf slots are zero-filled at entry instead, so
     # vf reads are defined and deterministic; every other class stays strict.
-    validate_definitions(function,set(registers),
-                         {index for index,r in registers.items() if r['class']=='vector_float'})
+    vf_entry={index for index,r in registers.items() if r['class']=='vector_float'}
+    try:
+        validate_definitions(function,set(registers),vf_entry)
+    except UninitializedRead as error:
+        # A file's top-level value is discarded by every loader. A (declare-file
+        # (debug)) body of only macros/constants returns an unassigned register
+        # on its debug path (garbage on desktop x86); that top level runs as void.
+        # Only a return may be the offender, and only in a top-level function.
+        if not function.get('top_level') or function['instructions'][error.node]['kind']!='return': raise
+        function=dict(function,return_type='none',instructions=[
+            dict(op,reads=[]) if op['kind']=='return' else op for op in function['instructions']])
+        void_return=True
+        validate_definitions(function,set(registers),vf_entry)
     module=module or {}
     statics=statics or {}
     writers={index:[] for index in registers}
@@ -1174,10 +1259,10 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
                 sc,dc=registers[src]['class'],registers[dst]['class']
                 if sc in QUAD and dc in QUAD:
                     load128(src); store128(dst)  # movaps: all 128 bits
-                elif dc=='vector_float' and sc=='float':
+                elif dc in QUAD and sc=='float':
                     load_float(src); store_float(dst)  # movss: lane 0, other lanes kept
-                elif sc=='vector_float' and dc=='float':
-                    load_float(src); store_float(dst)  # lane 0
+                elif sc in QUAD and dc=='float':
+                    load_float(src); store_float(dst)  # movss: lane 0
                 elif dc=='vector_float' and sc=='gpr64':
                     load64(src,4,5); e.immediate(6,0); e.immediate(7,0); store128(dst)  # movq: zero-extends
                 elif sc=='vector_float' and dc=='gpr64':
@@ -1228,6 +1313,15 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
                         e.word(0xf03d|n<<8); e.word(0x005a|(4+n)<<8)  # FTRC FRn,FPUL; STS FPUL,Rn
                         e.branch('bra',done); e.label(invalid); constant(4+n,0x80000000); e.label(done)
                     store128(op['dst'])
+            elif kind=='mmi':
+                # dc-c-mmi(op, dst, a, b) on the 16-byte slots; it copies its inputs first.
+                for reg,index in ((5,op['dst']),(6,op['srcs'][0]),(7,op['srcs'][-1] if len(op['srcs'])>1 else None)):
+                    if index is None: e.immediate(reg,0); continue
+                    if registers[index]['class'] not in QUAD: raise ValueError('MMI operand must be a 128-bit value')
+                    address(index); e.mov(reg,8)
+                constant(4,op['code'])
+                e.literal(0,('symbol','function:dc-c-mmi'))
+                e.word(0x400b); e.nop()
             elif kind=='vfzero':
                 for n in range(4): e.immediate(4+n,0)
                 store128(op['dst'])
@@ -1434,11 +1528,38 @@ def structured_static_data(item):
             raise ValueError('unsupported structured static import')
     return bytes(payload),offset,relocations
 
+def module_defined_types(doc):
+    """Types the module's own top level defines: calls of type's method 0 (new,
+    offset 16) whose first argument is a quoted symbol (AI-assisted)."""
+    defined=set()
+    for f in doc.get('functions',[]):
+        if not f.get('top_level'): continue
+        ops=f['instructions']; writer={}
+        for op in ops:
+            if op['kind']!='nop' and len(op.get('writes',[]))==1: writer.setdefault(op['writes'][0],[]).append(op)
+        def origin(reg):
+            seen=set()
+            while reg not in seen and len(writer.get(reg,[]))==1:
+                seen.add(reg); op=writer[reg][0]
+                if op['kind']!='move': return op
+                reg=op['reads'][0]
+            return None
+        for op in ops:
+            if op['kind']!='call' or len(op['reads'])<2: continue
+            target,first=origin(op['reads'][0]),origin(op['reads'][1])
+            if not target or target['kind']!='load_memory' or target.get('offset')!=16: continue
+            base=origin(target['reads'][0])
+            if base and base['kind']=='symbol_value' and base['symbol']=='type' and \
+               first and first['kind']=='symbol_pointer':
+                defined.add(first['symbol'])
+    return defined
+
 def module_data(doc,objects):
     referenced={r['symbol'][5:] for _,report in objects.values() for r in report['relocations']
                 if r['symbol'].startswith('data:')}
     statics={s['id']:s for s in doc.get('statics',[])}
     functions={report['name'] for _,report in objects.values()}
+    defined=module_defined_types(doc)
     pending=list(referenced); visited=set()
     while pending:
         name=pending.pop()
@@ -1478,6 +1599,9 @@ def module_data(doc,objects):
                 else: raise ValueError('unsupported static pair element')
             data=bytes(data)
         else: raise ValueError('unsupported static object '+item['id'])
+        # Static data may reference a type its own module deftypes later at startup.
+        relocations=[dict(r,symbol='deftype:'+r['symbol'][5:]) if r['symbol'].startswith('type:') and
+                     r['symbol'][5:] in defined else r for r in relocations]
         output.append({'name':item['id'],'data':data,'address_offset':offset,'relocations':relocations})
     if referenced!={d['name'] for d in output}: raise ValueError('missing referenced static object')
     return output
@@ -1494,8 +1618,10 @@ if __name__=='__main__':
     parser.add_argument('--initializer',help='Export the original top-level code with this unique name')
     parser.add_argument('--native-binding',action='append',default=[],metavar='ORIGINAL=NATIVE',
                         help='Use a loaded native counterpart for an uncompilable original function')
+    parser.add_argument('--all-functions',action='store_true',
+                        help='Compile every non-top-level function of the IR except natively bound ones')
     args=parser.parse_args()
-    if not args.function and args.initializer is None:
+    if not args.function and args.initializer is None and not args.all_functions:
         parser.error('select at least one function or an initializer')
     bindings={}
     for item in args.native_binding:
@@ -1504,6 +1630,9 @@ if __name__=='__main__':
         bindings[original]=native
     try:
         doc=json.loads(args.input.read_text())
+        if args.all_functions:
+            if args.function: parser.error('--all-functions cannot be combined with --function')
+            args.function=[f['name'] for f in doc['functions'] if not f.get('top_level') and f['name'] not in bindings]
         objects=compile_module(doc,args.function,args.runtime,not args.no_optimize,args.initializer,bindings)
         if args.native_module:
             if not args.runtime: raise ValueError('native module file requires runtime profile')

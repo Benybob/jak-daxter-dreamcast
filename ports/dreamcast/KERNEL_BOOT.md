@@ -114,14 +114,12 @@ top-level startup, compiled after the complete kernel and every earlier engine
 file. They are packed in order into `build/kernel-dgo/GAME.CGO`.
 
 The DGO boot loads it right after KERNEL.CGO, as the original loads GAME.CGO
-after the kernel. The first 13 files, through transformq-h, link and run their
-original startups. The order check reads `build/game_cgo_order.h`, which
+after the kernel. The first 48 files, through decomp-h, link and run their
+original startups ([GAME_CGO.md](GAME_CGO.md)). The order check reads `build/game_cgo_order.h`, which
 `build_game_cgo.py` writes. The process spawn and dispatcher checks still pass
 afterwards. The boot then checks the VU0 vf lowering: 141 cases, lane-exact
-([VU0_LOWERING.md](VU0_LOWERING.md)). **112 of 112 checks pass.**
-
-The 14th file, bounding-box, refuses with "unsupported tagged/scalar parameter".
-After the 13-file prefix the arena is at 97% of its 4 MiB.
+([VU0_LOWERING.md](VU0_LOWERING.md)). **148 of 148 checks pass.** The arena is
+now 8 MiB, of which 5.2 MiB is used after the 48-file prefix.
 ## Fixes this needed
 
 - `export_ir.cpp` now gives scalar bitfield types (for example `handle`) the
@@ -134,6 +132,6 @@ After the 13-file prefix the arena is at 97% of its 4 MiB.
 - The fiber import and span notes are still explicit trusted-C steps; no original
   GOAL caller performs them yet. Trans/post hooks and state `go` are verified only in the
   runtime suite ([ORIGINAL_DISPATCHER.md](ORIGINAL_DISPATCHER.md)), not in this image.
-- GAME.CGO beyond transformq-h, GC, the rest of the engine, level DGOs and
-  gameplay are unfinished.
+- The rest of GAME.CGO (see [GAME_CGO.md](GAME_CGO.md)), a Dreamcast memory
+  budget, GC, level DGOs and gameplay are unfinished.
 - No hardware claims.

@@ -33,8 +33,9 @@ starts at a four-byte relative offset. Relocation ranges must be contiguous and
 exhaust the relocation table. Import resolution and patch alignment use the
 existing shared linker validation; linking failures restore symbols and arena.
 
-Limits: 2 MiB file, 256 functions, 256 data objects, 16,384 total relocations,
-1,024 relocations per object, 64 KiB strings and 1 MiB payload. Header arithmetic
+Limits: 8 MiB file, 4,096 functions, 8,192 data objects, 262,144 total relocations,
+4,096 relocations per object, 1 MiB strings and 4 MiB payload (raised 2026-10-27 for
+whole original engine files such as gs, with 314 static objects). Header arithmetic
 is bounded before allocation. CRC32 detects accidental corruption; it is not
 authentication or a sandbox. Only trusted native compiler output is executable.
 The startup ABI is the compiler/caller contract, not machine-code verification.

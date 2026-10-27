@@ -4,11 +4,11 @@ import zlib
 
 HEADER=64
 ABI=1  # little-endian SH-4, GCC -m4-single, uint64 scalar containers
-MAX_FILE=2*1024*1024
+MAX_FILE=8*1024*1024
 
 def pack_native_module(objects,data,initializer=None,initializer_kind=0):
     functions=list(objects.values())
-    if not 1<=len(functions)<=256 or len(data)>256: raise ValueError('native module export count limit')
+    if not 1<=len(functions)<=4096 or len(data)>8192: raise ValueError('native module export count limit')
     if initializer_kind not in (0,1,2) or bool(initializer)!=(initializer_kind!=0):
         raise ValueError('native module initializer ABI must be absent, uint64 or void')
     if initializer and initializer not in {report['name'] for _,report in functions}:
@@ -23,7 +23,7 @@ def pack_native_module(objects,data,initializer=None,initializer_kind=0):
         payload.extend(b'\0'*((-len(payload))&3)); offset=len(payload); payload.extend(value)
         return offset
     def relocations(values):
-        if len(values)>1024: raise ValueError('native module per-object relocation limit')
+        if len(values)>4096: raise ValueError('native module per-object relocation limit')
         start=len(relocs)
         relocs.extend((r['offset'],string(r['symbol'])) for r in values)
         return start,len(values)
@@ -36,7 +36,7 @@ def pack_native_module(objects,data,initializer=None,initializer_kind=0):
         data_rows.append((string(item['name']),blob(item['data']),len(item['data']),item['address_offset'],start,count))
     init=string(initializer) if initializer else 0xffffffff
     if initializer and len(initializer.encode('utf-8'))>=256: raise ValueError('native initializer name limit')
-    if len(relocs)>16384 or len(strings)>65536 or not 1<=len(payload)<=1048576:
+    if len(relocs)>262144 or len(strings)>1048576 or not 1<=len(payload)<=4*1048576:
         raise ValueError('native module metadata/payload limit')
     body=b''.join(struct.pack('<6I',*row) for row in code_rows+data_rows)
     body+=b''.join(struct.pack('<2I',*r) for r in relocs)+strings+payload

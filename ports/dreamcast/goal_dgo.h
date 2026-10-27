@@ -6,7 +6,7 @@
 #define DC_GOAL_DGO_H
 #include "goal_native_file.h"
 #include <stdio.h>
-#define DC_GOAL_DGO_MAX_OBJECTS 64u
+#define DC_GOAL_DGO_MAX_OBJECTS 512u  /* GAME.CGO has 326 code objects */
 typedef struct {
   char name[60];
   uint32_t objects,completed,failed_object,code_bytes,initializers;

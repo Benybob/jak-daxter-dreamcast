@@ -26,8 +26,8 @@ BINDINGS = {
     'set-to-run-bootstrap': 'set-to-run-bootstrap',
 }
 EXPECTED_CHECKS = 87  # verified in Flycast; never weakened afterwards
-EXPECTED_DGO_CHECKS = 112  # KERNEL.CGO + 13 GAME.CGO files + 141 vf cases, verified in Flycast
-GAME_PREFIX = 13  # original GAME.CGO files that compile so far (through transformq-h)
+EXPECTED_DGO_CHECKS = 148  # KERNEL.CGO + 48 GAME.CGO files + 141 vf cases, verified in Flycast
+GAME_PREFIX = 48  # GAME.CGO files verified to load (through decomp-h); display needs the memory budget
 
 
 def main():

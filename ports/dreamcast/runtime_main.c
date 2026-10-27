@@ -36,8 +36,9 @@ static void check(uint64_t actual,uint64_t expected,unsigned which,const char *n
 }
 int main(void) {
 #ifdef DC_KERNEL_BOOT
-  /* The original kernel startup builds its pools, stacks and listener here. */
-  const uint32_t capacity=4u*1024u*1024u;
+  /* The original kernel startup builds its pools, stacks and listener here;
+   * GAME.CGO's engine files load into the same arena. */
+  const uint32_t capacity=8u*1024u*1024u;
 #else
   const uint32_t capacity=1024u*1024u;
 #endif

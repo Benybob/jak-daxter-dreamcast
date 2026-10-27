@@ -6,6 +6,8 @@
 #ifdef __DREAMCAST__
 #include <kos/dbgio.h>
 #endif
+#include "goal_mmi.h"
+#include "goal_pad.h"
 #include "goal_bridge.h"
 #include "goal_fiber.h"
 #include "goal_stack_call.h"
@@ -180,6 +182,22 @@ static uint64_t new_basic(uint64_t heap,uint64_t type) {
   }
   rt->error=DC_GOAL_BAD_ARGUMENT; return 0;
 }
+/* Native counterpart of kscheme new_structure: allocated_size bytes from the
+ * global heap, 16-byte rounded and zeroed (kmalloc KMALLOC_MEMSET), no type tag.
+ * The C++ kernel never expects a process-heap structure here; that refuses. */
+static uint64_t new_structure(uint64_t heap,uint64_t type) {
+  dc_goal_runtime *rt=active_runtime;
+  dc_goal_type_fields *fields;
+  if (!rt) return 0;
+  if(dc_goal_pp_scope_blocks_transfer(rt) && rt->error!=DC_GOAL_OK)return 0;
+  if (heap!=rt->s7+DC_FIX_SYM_GLOBAL_HEAP || type>UINT32_MAX ||
+      !dc_goal_is_subtype(rt,(uint32_t)type,rt->structure_type) || dc_goal_is_subtype(rt,(uint32_t)type,rt->basic_type)) {
+    rt->error=DC_GOAL_BAD_ARGUMENT; return 0;
+  }
+  fields=dc_goal_resolve(rt,(uint32_t)type,sizeof(*fields));
+  if(!fields || !fields->allocated_size){if(rt->error==DC_GOAL_OK)rt->error=DC_GOAL_BAD_ARGUMENT;return 0;}
+  return dc_goal_alloc(rt,fields->allocated_size);
+}
 static uint64_t new_object(uint64_t heap,uint64_t type,uint64_t size) {
   dc_goal_runtime *rt=active_runtime;
   if (!rt) return 0;
@@ -259,19 +277,21 @@ int dc_goal_core_bridges_active(const dc_goal_runtime *rt) {
 }
 int dc_goal_install_type_bridges(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_goal_module_result *result) {
   const unsigned char stub[12]={1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0};
-  unsigned char code[3][12];
-  dc_goal_code_export functions[3]={{"dc-c-type-new",code[0],12,NULL,0},
+  unsigned char code[4][12];
+  dc_goal_code_export functions[4]={{"dc-c-type-new",code[0],12,NULL,0},
                                     {"method-set!",code[1],12,NULL,0},
-                                    {"dc-c-basic-new",code[2],12,NULL,0}};
-  uint32_t targets[3]={(uint32_t)(uintptr_t)new_type,(uint32_t)(uintptr_t)method_set,
-                       (uint32_t)(uintptr_t)new_basic};
+                                    {"dc-c-basic-new",code[2],12,NULL,0},
+                                    {"dc-c-structure-new",code[3],12,NULL,0}};
+  uint32_t targets[4]={(uint32_t)(uintptr_t)new_type,(uint32_t)(uintptr_t)method_set,
+                       (uint32_t)(uintptr_t)new_basic,(uint32_t)(uintptr_t)new_structure};
   unsigned i;
   if (!rt || !result) return 0;
   if (active_runtime!=rt) { rt->error=DC_GOAL_BAD_ARGUMENT; return 0; }
-  for (i=0;i<3;++i) { memcpy(code[i],stub,12); memcpy(code[i]+8,&targets[i],4); }
-  if (!dc_goal_load_module(rt,functions,3,sync,NULL,result)) return 0;
+  for (i=0;i<4;++i) { memcpy(code[i],stub,12); memcpy(code[i]+8,&targets[i],4); }
+  if (!dc_goal_load_module(rt,functions,4,sync,NULL,result)) return 0;
   return dc_goal_set_method(rt,rt->type_type,0,dc_goal_symbol_value(rt,dc_goal_find(rt,"dc-c-type-new"))) &&
-         dc_goal_set_method(rt,rt->basic_type,0,dc_goal_symbol_value(rt,dc_goal_find(rt,"dc-c-basic-new")));
+         dc_goal_set_method(rt,rt->basic_type,0,dc_goal_symbol_value(rt,dc_goal_find(rt,"dc-c-basic-new"))) &&
+         dc_goal_set_method(rt,rt->structure_type,0,dc_goal_symbol_value(rt,dc_goal_find(rt,"dc-c-structure-new")));
 }
 int dc_goal_install_integer_bridge(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_goal_module_result *result) {
   unsigned char code[12]={1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0};
@@ -684,17 +704,41 @@ static uint64_t malloc_native(uint64_t heap,uint64_t bytes) {
 }
 /* Original kscheme nothing: a function that does nothing. */
 static uint64_t nothing_native(void){return 0;}
+/* Original kernel cpad-open/cpad-get-data on a 132-byte cpad-info; both return it. */
+static uint64_t cpad_open_native(uint64_t info,uint64_t number){
+  dc_goal_runtime *rt=active_runtime;uint8_t *cpad;
+  if(!rt || info>UINT32_MAX || !(cpad=dc_goal_resolve(rt,(uint32_t)info,132))){if(rt)rt->error=DC_GOAL_BAD_ARGUMENT;return 0;}
+  dc_goal_cpad_open(cpad,(int32_t)number);
+  return info;
+}
+static uint64_t cpad_get_data_native(uint64_t info){
+  dc_goal_runtime *rt=active_runtime;uint8_t *cpad;
+  if(!rt || info>UINT32_MAX || !(cpad=dc_goal_resolve(rt,(uint32_t)info,132))){if(rt)rt->error=DC_GOAL_BAD_ARGUMENT;return 0;}
+  dc_goal_cpad_get_data(cpad);
+  return info;
+}
+/* PS2 MMI 128-bit integer ops called by lowered code with frame-slot pointers. */
+static uint64_t mmi_native(uint32_t op,uint32_t dst,uint32_t a,uint32_t b){
+  if(!dc_goal_mmi(op,(void*)(uintptr_t)dst,(const void*)(uintptr_t)a,b?(const void*)(uintptr_t)b:NULL) &&
+     active_runtime)active_runtime->error=DC_GOAL_BAD_ARGUMENT;
+  return 0;
+}
 uint32_t dc_goal_format_capture(const char **text){if(text)*text=format_text;return format_length;}
 void dc_goal_format_capture_clear(void){format_length=0;}
 int dc_goal_install_kernel_services(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_goal_module_result *result) {
-  unsigned char code[3][12]={{1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0},{1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0},{1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0}};
-  uint32_t targets[3]={(uint32_t)(uintptr_t)format_native,(uint32_t)(uintptr_t)malloc_native,(uint32_t)(uintptr_t)nothing_native};
-  dc_goal_code_export functions[3]={{"_format",code[0],12,NULL,0},{"malloc",code[1],12,NULL,0},{"nothing",code[2],12,NULL,0}};
+  const unsigned char stub[12]={1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0};
+  unsigned char code[6][12];
+  uint32_t targets[6]={(uint32_t)(uintptr_t)format_native,(uint32_t)(uintptr_t)malloc_native,
+                       (uint32_t)(uintptr_t)nothing_native,(uint32_t)(uintptr_t)mmi_native,
+                       (uint32_t)(uintptr_t)cpad_open_native,(uint32_t)(uintptr_t)cpad_get_data_native};
+  dc_goal_code_export functions[6]={{"_format",code[0],12,NULL,0},{"malloc",code[1],12,NULL,0},
+                                    {"nothing",code[2],12,NULL,0},{"dc-c-mmi",code[3],12,NULL,0},
+                                    {"cpad-open",code[4],12,NULL,0},{"cpad-get-data",code[5],12,NULL,0}};
   unsigned i;
   if(!rt || !result) return 0;
   if(active_runtime!=rt) { rt->error=DC_GOAL_BAD_ARGUMENT; return 0; }
-  for(i=0;i<3;++i)memcpy(code[i]+8,&targets[i],4);
-  return dc_goal_load_module(rt,functions,3,sync,NULL,result);
+  for(i=0;i<6;++i){memcpy(code[i],stub,12);memcpy(code[i]+8,&targets[i],4);}
+  return dc_goal_load_module(rt,functions,6,sync,NULL,result);
 }
 
 int dc_goal_install_process_bridge(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_goal_module_result *result) {

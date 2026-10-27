@@ -103,6 +103,4 @@ against these same 141 cases.
 
 ## Next
 
-bounding-box, the 14th GAME.CGO file, refuses with "unsupported tagged/scalar
-parameter". The arena is at 97% of 4 MiB after the 13-file prefix, so the boot
-arena needs to grow before many more engine files load.
+Continued in [GAME_CGO.md](GAME_CGO.md): 92 GAME.CGO files now lower, and 48 load.

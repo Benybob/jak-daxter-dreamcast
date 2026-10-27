@@ -36,7 +36,10 @@ class WideValueTest(unittest.TestCase):
             fn=wide_copy()
             fn['instructions'].insert(1,{'kind':'unsupported','reads':[2,2],'writes':[2],'text':op+' ii128-2, ii128-2, ii128-2'})
             with self.subTest(op=op):self.assertGreater(len(compile_function(fn,runtime=True)[0]),0)
+        # pextlw now lowers through the dc-c-mmi helper; an MMI op it lacks still refuses.
         fn=wide_copy();fn['instructions'].insert(1,{'kind':'unsupported','reads':[2,2],'writes':[2],'text':'.pextlw ii128-2, ii128-2, ii128-2'})
+        self.assertGreater(len(compile_function(fn,runtime=True)[0]),0)
+        fn=wide_copy();fn['instructions'].insert(1,{'kind':'unsupported','reads':[2,2],'writes':[2],'text':'.pmulth ii128-2, ii128-2, ii128-2'})
         with self.assertRaisesRegex(ValueError,'unsupported typed IR'):compile_function(fn,runtime=True)
         fn=wide_copy();fn['registers'][2]['class']='vf128'
         with self.assertRaisesRegex(ValueError,'128-bit/vector'):compile_function(fn,runtime=True)

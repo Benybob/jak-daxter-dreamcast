@@ -20,7 +20,9 @@ uint32_t dc_runtime_compiled_type_cases(dc_goal_runtime *rt,dc_runtime_check che
   if (!dc_goal_install_type_bridges(rt,sync,&bridges)) {
     CHECK(rt->error,0,"type bridges install"); return 0;
   }
-  CHECK(bridges.functions,3,"three native type/allocation bridges");
+  CHECK(bridges.functions==4 &&
+        dc_goal_get_method(rt,rt->structure_type,0)==dc_goal_symbol_value(rt,dc_goal_find(rt,"dc-c-structure-new")),1,
+        "four native type/allocation bridges, structure new installed");
   if (!dc_goal_load_module(rt,goal_type_fixture_exports,GOAL_TYPE_FIXTURE_EXPORT_COUNT,sync,NULL,&module)) {
     CHECK(rt->error,0,"type fixture load"); return 0;
   }

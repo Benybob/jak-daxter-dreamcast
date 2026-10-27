@@ -42,8 +42,21 @@ compile. The DGO boot now loads the first **13** original GAME.CGO files (throug
 transformq-h). **141 of 141 vector cases match bit for bit** expectations computed
 without the lowering, by ChatGPT/Codex's independent oracle and IEEE binary32.
 **112 of 112 boot checks pass.** Details are in
-[VU0_LOWERING.md](ports/dreamcast/VU0_LOWERING.md). GC, the rest of the engine
-(bounding-box is next) and gameplay remain unfinished.
+[VU0_LOWERING.md](ports/dreamcast/VU0_LOWERING.md).
+
+**GAME.CGO (2026-10-27, AI-assisted):** files now compile in the original game.gp
+dependency order, in one frontend run covering all 331 files of the GAME.CGO
+dependency graph. **92 of GAME.CGO's 326 code files** lower to SH-4, and **48 load and run
+their original startups** in Flycast: **148 of 148 boot checks pass**. New native
+pieces:
+- PS2 MMI integer ops;
+- `structure` allocation;
+- linker type placeholders;
+- the original `cpad-open`/`cpad-get-data` on the Dreamcast controller.
+
+Loading stops at `display`: its PS2 DMA buffers alone need 5.2 MiB, so a Dreamcast
+memory budget comes next. Details are in [GAME_CGO.md](ports/dreamcast/GAME_CGO.md).
+GC, the rest of the engine and gameplay remain unfinished.
 
 **Codex support handoff completed (AI-assisted):** the independent
 [vector oracle and usage survey](ports/dreamcast/VU0_REFERENCE.md) cover desktop
@@ -68,10 +81,11 @@ Host validation: 470 tests passed, one optional exporter test skipped (471 total
 | Original background LODs | Source published: original LOD selection; reduced training patch passes movement and camera checks |
 | Original kernel process system | Source published: unchanged original `send-event-function`, `deactivate`, `(suspend)`, `enter-state` and `kernel-dispatcher` (including trans/post hooks) run on native SH-4 fibers |
 | Original kernel compilation | Complete: 176 of 184 original kernel functions compile to SH-4, and the other 8 (x86/ARM64 assembly thread primitives) bind to named native counterparts; whole-file startups lower; see [KERNEL_COMPILATION.md](ports/dreamcast/KERNEL_COMPILATION.md) |
-| Original kernel boot | Verified: all 8 KERNEL.CGO startups run natively in original order, and an originally spawned process runs under the original dispatcher (87/87 checks); also boots from a native KERNEL.CGO DGO and loads the first 13 GAME.CGO files (112/112); see [KERNEL_BOOT.md](ports/dreamcast/KERNEL_BOOT.md) |
+| Original kernel boot | Verified: all 8 KERNEL.CGO startups run natively in original order, and an originally spawned process runs under the original dispatcher (87/87 checks); also boots from a native KERNEL.CGO DGO and loads the first 48 GAME.CGO files (148/148); see [KERNEL_BOOT.md](ports/dreamcast/KERNEL_BOOT.md) |
 | Original process initialization | Root C-stack path verified: unchanged initializer, throw, protect exits, native catches and original deactivate/pool return; initialization to a scheduled running state verified end to end; fiber catches pending |
 | VU0 vector registers | Verified: vf ops lower to SH-4; 141/141 lane-exact cases against an independent oracle; see [VU0_LOWERING.md](ports/dreamcast/VU0_LOWERING.md) |
-| Full original game | Unfinished: fiber catch lifetime, cross-stack unwinding, GAME.CGO beyond transformq-h, GC, general gameplay, progression or release build |
+| Original GAME.CGO | In progress: 92/326 code files lower to SH-4, 48 load and start in Flycast; memory budget (display) and `&` locals (res) next; see [GAME_CGO.md](ports/dreamcast/GAME_CGO.md) |
+| Full original game | Unfinished: fiber catch lifetime, cross-stack unwinding, the rest of GAME.CGO, memory budget, GC, general gameplay, progression or release build |
 
 The playable prototypes use a **native C controller**, as a temporary milestone.
 They do not execute original GOAL movement. The real-terrain target and local

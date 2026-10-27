@@ -217,110 +217,14 @@ static json instruction(IR* ir,const StaticNames& statics,const TypeSystem& type
   return output;
 }
 
-int main(int argc,char** argv) {
-  if(argc<4) {
-    std::cerr<<"Usage: goalc-dreamcast-ir PROJECT_ROOT SOURCE.gc OUTPUT.json [--preload CONTEXT.gc] [--prefix-through-global NAME | TOP_LEVEL_DEFUN ...]\n";
-    return 2;
-  }
-  try {
-    lg::initialize();
-    if(!file_util::setup_project_path(fs::path(argv[1])))
-      throw std::runtime_error("project setup failed");
-    Compiler compiler(GameVersion::Jak1,emitter::InstructionSet::X86);
-    std::vector<std::string> preloads,selected_names;
-    std::string prefix_global,from_global;
-    std::unordered_set<std::string> context_paths;
-    const auto main_path=std::filesystem::weakly_canonical(argv[2]).string();
-    for(int i=4;i<argc;++i) {
-      if(std::string(argv[i])=="--preload") {
-        if(++i>=argc) throw std::runtime_error("--preload requires a source path");
-        const auto path=std::filesystem::weakly_canonical(argv[i]);
-        if(!std::filesystem::is_regular_file(path) || !context_paths.insert(path.string()).second)
-          throw std::runtime_error("missing, duplicate or self-referential preload source");
-        preloads.push_back(path.string());
-      } else if(std::string(argv[i])=="--prefix-through-global") {
-        if(++i>=argc || !prefix_global.empty())
-          throw std::runtime_error("--prefix-through-global requires one unique global name");
-        prefix_global=argv[i];
-        if(prefix_global.empty()) throw std::runtime_error("empty prefix boundary global");
-      } else if(std::string(argv[i])=="--from-global") {
-        if(++i>=argc || !from_global.empty()) throw std::runtime_error("--from-global requires one unique global name");
-        from_global=argv[i];
-        if(from_global.empty()) throw std::runtime_error("empty starting global");
-      } else selected_names.push_back(argv[i]);
-    }
-    if(!from_global.empty() && prefix_global.empty())
-      throw std::runtime_error("--from-global requires --prefix-through-global");
-    if(!prefix_global.empty() && !selected_names.empty())
-      throw std::runtime_error("prefix selection and selected defuns are mutually exclusive");
-    const bool selected_source_preloaded=context_paths.count(main_path)!=0;
-    if(selected_source_preloaded && selected_names.empty())
-      throw std::runtime_error("self-referential preload requires selected top-level defuns");
-    for(size_t i=0;i<preloads.size();++i) {
-      const auto context=compiler.get_goos().reader.read_from_file({preloads[i]});
-      compiler.compile_object_file("dreamcast-context-"+std::to_string(i),context,true);
-    }
-    auto source=compiler.get_goos().reader.read_from_file({std::filesystem::absolute(argv[2]).string()});
-    // Select original reader objects without copying or rewriting game bodies.
-    // This is for isolated leaf-function tests; dependencies must be explicit.
-    if(!selected_names.empty()) {
-      std::unordered_set<std::string> missing;
-      for(const auto& name:selected_names)
-        if(!missing.insert(name).second) throw std::runtime_error("duplicate selected defun");
-      std::vector<goos::Object> selected;
-      auto forms=source.as_pair()->cdr;
-      while(forms.is_pair()) {
-        const auto form=forms.as_pair()->car;
-        if(form.is_pair() && form.as_pair()->car.is_symbol("defun")) {
-          const auto tail=form.as_pair()->cdr;
-          if(tail.is_pair() && tail.as_pair()->car.is_symbol() &&
-             missing.erase(tail.as_pair()->car.as_symbol().name_ptr)) selected.push_back(form);
-        }
-        forms=forms.as_pair()->cdr;
-      }
-      if(!missing.empty()) throw std::runtime_error("selected top-level defun not found: "+*missing.begin());
-      auto body=goos::Object::make_empty_list();
-      for(auto it=selected.rbegin();it!=selected.rend();++it) body=goos::PairObject::make_new(*it,body);
-      source=goos::PairObject::make_new(goos::Object::make_symbol(&compiler.get_goos().reader.symbolTable,"top-level"),body);
-    }
-    json source_selection={{"kind",selected_names.empty()?"full_source":"selected_defuns"}};
-    if(!prefix_global.empty()) {
-      std::vector<goos::Object> prefix;
-      bool boundary_found=false,start_found=from_global.empty();
-      size_t start_count=0;
-      auto forms=source.as_pair()->cdr;
-      while(forms.is_pair()) {
-        const auto form=forms.as_pair()->car;
-        bool is_boundary=false,is_start=false;
-        if(form.is_pair() && form.as_pair()->car.is_symbol("define")) {
-          const auto tail=form.as_pair()->cdr;
-          is_boundary=tail.is_pair() && tail.as_pair()->car.is_symbol(prefix_global);
-          is_start=!from_global.empty() && tail.is_pair() && tail.as_pair()->car.is_symbol(from_global);
-        }
-        if(is_boundary && boundary_found) throw std::runtime_error("ambiguous prefix boundary global");
-        if(is_start) {
-          if(++start_count>1) throw std::runtime_error("ambiguous starting global");
-          start_found=true;
-        }
-        if(is_boundary && !start_found) throw std::runtime_error("global range ends before it starts");
-        if(!boundary_found && start_found) prefix.push_back(form);
-        if(is_boundary) boundary_found=true;
-        forms=forms.as_pair()->cdr;
-      }
-      if(!from_global.empty() && !start_count) throw std::runtime_error("starting global not found: "+from_global);
-      if(!boundary_found) throw std::runtime_error("prefix boundary global not found: "+prefix_global);
-      auto body=goos::Object::make_empty_list();
-      for(auto it=prefix.rbegin();it!=prefix.rend();++it) body=goos::PairObject::make_new(*it,body);
-      source=goos::PairObject::make_new(goos::Object::make_symbol(&compiler.get_goos().reader.symbolTable,"top-level"),body);
-      source_selection={{"kind",from_global.empty()?"prefix_through_global":"range_through_global"},
-                        {"global",prefix_global},{"top_level_forms",prefix.size()}};
-      if(!from_global.empty()) source_selection["from_global"]=from_global;
-    }
-    auto* file=compiler.compile_object_file("dreamcast-export",source,true);
+// Export one compiled file's typed IR (AI-assisted).
+static void write_export(Compiler& compiler,FileEnv* file,const std::vector<std::string>& preloads,
+                         bool selected_source_preloaded,const json& source_selection,
+                         const std::string& source_path,const std::string& output_path) {
     json output={{"format_version",1},{"frontend","OpenGOAL original typed frontend"},
                  {"scope","SH-4 lowering input; unsupported IR remains explicit"},
                  {"preloads",preloads},{"selected_source_preloaded",selected_source_preloaded},{"source_selection",source_selection},
-                 {"source",std::filesystem::absolute(argv[2]).string()},{"functions",json::array()}};
+                 {"source",source_path},{"functions",json::array()}};
     StaticNames statics;
     output["statics"]=json::array();
     for(const auto& object:file->statics()) {
@@ -397,9 +301,10 @@ int main(int argc,char** argv) {
            static_cast<size_t>(shared_block->end_label.idx)+1!=function->code().size() ||
            !dynamic_cast<IR_Null*>(function->code().back().get()))
           throw std::runtime_error("unsupported shared function exit layout");
+        // Without a normal value return the function's type stays (none), as the
+        // frontend types it (e.g. timer-reset's PC-only (return (the uint 0)) before
+        // a (.sync.l) tail), so callers cannot observe an early return's value.
         if(normal_return) result_type=compiler.type_system().lowest_common_ancestor(shared_block->return_types);
-        else for(const auto& type:shared_block->return_types)
-          if(type!=TypeSpec("none")) throw std::runtime_error("value early return without a declared normal return is unsupported");
         fn["shared_exit"]={{"register",shared_block->return_value->ireg().id},
                            {"exit_ir",shared_block->end_label.idx}};
       }
@@ -521,10 +426,157 @@ int main(int argc,char** argv) {
       }
       output["functions"].push_back(std::move(fn));
     }
-    std::ofstream stream(std::filesystem::path(argv[3]),std::ios::binary);
+    std::ofstream stream(std::filesystem::path(output_path),std::ios::binary);
     if(!stream) throw std::runtime_error("cannot open IR output");
     stream<<output.dump(2)<<'\n';
     if(!stream) throw std::runtime_error("IR write failed");
+}
+
+// Batch mode (AI-assisted): one compiler instance compiles the listed sources in
+// order, so each file is compiled once. Entries marked "export" write their IR as
+// they are compiled. LIST.json is [{"source":..., "output":... (optional)}, ...].
+// STATUS.json records the exports written and the first failure, which stops.
+static int run_batch(const std::string& list_path,const std::string& status_path) {
+  json status={{"exported",json::array()},{"export_errors",json::array()},{"failed",nullptr}};
+  auto write_status=[&](){
+    std::ofstream out(std::filesystem::path(status_path),std::ios::binary);
+    out<<status.dump(2)<<'\n';
+  };
+  Compiler compiler(GameVersion::Jak1,emitter::InstructionSet::X86);
+  std::ifstream list_stream{std::filesystem::path(list_path)};
+  const json list=json::parse(list_stream);
+  std::vector<std::string> compiled;
+  size_t index=0;
+  for(const auto& entry:list) {
+    const std::string source=std::filesystem::weakly_canonical(entry.at("source").get<std::string>()).string();
+    try {
+      auto object=compiler.get_goos().reader.read_from_file({source});
+      auto* file=compiler.compile_object_file("dreamcast-batch-"+std::to_string(index++),object,true);
+      if(entry.contains("output")) {
+        // An export refusal concerns that file only; it compiled, so later files
+        // still see its definitions and the batch continues.
+        try {
+          write_export(compiler,file,compiled,false,json{{"kind","full_source"}},source,
+                       entry.at("output").get<std::string>());
+          status["exported"].push_back(source);
+        } catch(const std::exception& error) {
+          status["export_errors"].push_back({{"source",source},{"error",error.what()}});
+        }
+      }
+    } catch(const std::exception& error) {
+      status["failed"]={{"source",source},{"error",error.what()}};
+      write_status();
+      return 1;
+    }
+    compiled.push_back(source);
+  }
+  write_status();
+  return 0;
+}
+
+int main(int argc,char** argv) {
+  if(argc<4) {
+    std::cerr<<"Usage: goalc-dreamcast-ir PROJECT_ROOT SOURCE.gc OUTPUT.json [--preload CONTEXT.gc] [--prefix-through-global NAME | TOP_LEVEL_DEFUN ...]\n";
+    return 2;
+  }
+  try {
+    lg::initialize();
+    if(!file_util::setup_project_path(fs::path(argv[1])))
+      throw std::runtime_error("project setup failed");
+    if(std::string(argv[2])=="--batch") return run_batch(argv[3],argc>4?argv[4]:std::string(argv[3])+".status.json");
+    Compiler compiler(GameVersion::Jak1,emitter::InstructionSet::X86);
+    std::vector<std::string> preloads,selected_names;
+    std::string prefix_global,from_global;
+    std::unordered_set<std::string> context_paths;
+    const auto main_path=std::filesystem::weakly_canonical(argv[2]).string();
+    for(int i=4;i<argc;++i) {
+      if(std::string(argv[i])=="--preload") {
+        if(++i>=argc) throw std::runtime_error("--preload requires a source path");
+        const auto path=std::filesystem::weakly_canonical(argv[i]);
+        if(!std::filesystem::is_regular_file(path) || !context_paths.insert(path.string()).second)
+          throw std::runtime_error("missing, duplicate or self-referential preload source");
+        preloads.push_back(path.string());
+      } else if(std::string(argv[i])=="--prefix-through-global") {
+        if(++i>=argc || !prefix_global.empty())
+          throw std::runtime_error("--prefix-through-global requires one unique global name");
+        prefix_global=argv[i];
+        if(prefix_global.empty()) throw std::runtime_error("empty prefix boundary global");
+      } else if(std::string(argv[i])=="--from-global") {
+        if(++i>=argc || !from_global.empty()) throw std::runtime_error("--from-global requires one unique global name");
+        from_global=argv[i];
+        if(from_global.empty()) throw std::runtime_error("empty starting global");
+      } else selected_names.push_back(argv[i]);
+    }
+    if(!from_global.empty() && prefix_global.empty())
+      throw std::runtime_error("--from-global requires --prefix-through-global");
+    if(!prefix_global.empty() && !selected_names.empty())
+      throw std::runtime_error("prefix selection and selected defuns are mutually exclusive");
+    const bool selected_source_preloaded=context_paths.count(main_path)!=0;
+    if(selected_source_preloaded && selected_names.empty())
+      throw std::runtime_error("self-referential preload requires selected top-level defuns");
+    for(size_t i=0;i<preloads.size();++i) {
+      const auto context=compiler.get_goos().reader.read_from_file({preloads[i]});
+      compiler.compile_object_file("dreamcast-context-"+std::to_string(i),context,true);
+    }
+    auto source=compiler.get_goos().reader.read_from_file({std::filesystem::absolute(argv[2]).string()});
+    // Select original reader objects without copying or rewriting game bodies.
+    // This is for isolated leaf-function tests; dependencies must be explicit.
+    if(!selected_names.empty()) {
+      std::unordered_set<std::string> missing;
+      for(const auto& name:selected_names)
+        if(!missing.insert(name).second) throw std::runtime_error("duplicate selected defun");
+      std::vector<goos::Object> selected;
+      auto forms=source.as_pair()->cdr;
+      while(forms.is_pair()) {
+        const auto form=forms.as_pair()->car;
+        if(form.is_pair() && form.as_pair()->car.is_symbol("defun")) {
+          const auto tail=form.as_pair()->cdr;
+          if(tail.is_pair() && tail.as_pair()->car.is_symbol() &&
+             missing.erase(tail.as_pair()->car.as_symbol().name_ptr)) selected.push_back(form);
+        }
+        forms=forms.as_pair()->cdr;
+      }
+      if(!missing.empty()) throw std::runtime_error("selected top-level defun not found: "+*missing.begin());
+      auto body=goos::Object::make_empty_list();
+      for(auto it=selected.rbegin();it!=selected.rend();++it) body=goos::PairObject::make_new(*it,body);
+      source=goos::PairObject::make_new(goos::Object::make_symbol(&compiler.get_goos().reader.symbolTable,"top-level"),body);
+    }
+    json source_selection={{"kind",selected_names.empty()?"full_source":"selected_defuns"}};
+    if(!prefix_global.empty()) {
+      std::vector<goos::Object> prefix;
+      bool boundary_found=false,start_found=from_global.empty();
+      size_t start_count=0;
+      auto forms=source.as_pair()->cdr;
+      while(forms.is_pair()) {
+        const auto form=forms.as_pair()->car;
+        bool is_boundary=false,is_start=false;
+        if(form.is_pair() && form.as_pair()->car.is_symbol("define")) {
+          const auto tail=form.as_pair()->cdr;
+          is_boundary=tail.is_pair() && tail.as_pair()->car.is_symbol(prefix_global);
+          is_start=!from_global.empty() && tail.is_pair() && tail.as_pair()->car.is_symbol(from_global);
+        }
+        if(is_boundary && boundary_found) throw std::runtime_error("ambiguous prefix boundary global");
+        if(is_start) {
+          if(++start_count>1) throw std::runtime_error("ambiguous starting global");
+          start_found=true;
+        }
+        if(is_boundary && !start_found) throw std::runtime_error("global range ends before it starts");
+        if(!boundary_found && start_found) prefix.push_back(form);
+        if(is_boundary) boundary_found=true;
+        forms=forms.as_pair()->cdr;
+      }
+      if(!from_global.empty() && !start_count) throw std::runtime_error("starting global not found: "+from_global);
+      if(!boundary_found) throw std::runtime_error("prefix boundary global not found: "+prefix_global);
+      auto body=goos::Object::make_empty_list();
+      for(auto it=prefix.rbegin();it!=prefix.rend();++it) body=goos::PairObject::make_new(*it,body);
+      source=goos::PairObject::make_new(goos::Object::make_symbol(&compiler.get_goos().reader.symbolTable,"top-level"),body);
+      source_selection={{"kind",from_global.empty()?"prefix_through_global":"range_through_global"},
+                        {"global",prefix_global},{"top_level_forms",prefix.size()}};
+      if(!from_global.empty()) source_selection["from_global"]=from_global;
+    }
+    auto* file=compiler.compile_object_file("dreamcast-export",source,true);
+    write_export(compiler,file,preloads,selected_source_preloaded,source_selection,
+                 std::filesystem::absolute(argv[2]).string(),argv[3]);
     return 0;
   } catch(const std::exception& error) {
     std::cerr<<"Dreamcast frontend export failed: "<<error.what()<<'\n';

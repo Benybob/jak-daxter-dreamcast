@@ -115,7 +115,9 @@ runtime_cases.o: runtime_cases.h goal_runtime.h goal_layout.h
 goal_runtime.o: goal_runtime.h goal_layout.h
 goal_runtime_dc.o: goal_runtime_dc.c goal_runtime.h goal_layout.h
 goal_module.o: goal_module.h goal_runtime.h goal_layout.h
-goal_bridge.o: goal_bridge.c goal_bridge.h goal_module.h goal_runtime.h goal_layout.h goal_process_heap.h
+goal_bridge.o: goal_bridge.c goal_bridge.h goal_module.h goal_runtime.h goal_layout.h goal_process_heap.h goal_mmi.h goal_pad.h
+goal_mmi.o: goal_mmi.c goal_mmi.h
+goal_pad.o: goal_pad.c goal_pad.h
 goal_process_heap.o: goal_process_heap.c goal_process_heap.h goal_runtime.h goal_layout.h
 goal_thread_stack.o: goal_thread_stack.c goal_thread_stack.h goal_process_heap.h goal_runtime.h
 thread_stack_cases.o: thread_stack_cases.c thread_stack_cases.h goal_thread_stack.h goal_kernel_types.h goal_runtime.h
@@ -200,7 +202,7 @@ runtime_native_file_cases.o: runtime_native_file_cases.c runtime_cases.h goal_na
 kernel_types_data.h: generate_kernel_types.py ../../game/kernel/jak1/kscheme.cpp ../../common/symbols.h
 	$(PYTHON) generate_kernel_types.py
 
-jak-dc-runtime-goal.elf: goal_thread_resize.o thread_resize_cases.o runtime_thread_resize_cases.o runtime_fiber_words_cases.o goal_scalar_call.o scalar_call_cases.o runtime_activation_cases.o native_context_swap.o goal_fiber.o pp_scope.o runtime_fiber_cases.o native_stack_call.o goal_stack_call.o runtime_stack_call_cases.o code_entry_cases.o goal_register_snapshot.o register_snapshot_probe.o runtime_register_snapshot_cases.o runtime_goal_main.o runtime_goal_cases.o runtime_memory_cases.o runtime_static_cases.o runtime_float_cases.o runtime_bridge_cases.o runtime_quoted_cases.o runtime_void_cases.o runtime_type_cases.o runtime_shift_cases.o runtime_shift_baseline.o runtime_division_cases.o runtime_native_file_cases.o runtime_locals_cases.o runtime_early_cases.o runtime_sort_cases.o runtime_operator_cases.o runtime_fixed_cases.o runtime_far_cases.o runtime_dependency_cases.o runtime_mixed_cases.o runtime_validation_cases.o runtime_kernel_globals_cases.o runtime_enum_cases.o runtime_mixed_stack_cases.o runtime_process_tree_cases.o runtime_process_new_cases.o runtime_dead_pool_cases.o runtime_process_heap_cases.o runtime_structured_cases.o runtime_process_entry_cases.o runtime_process_query_cases.o runtime_call_guard_cases.o runtime_cpu_thread_cases.o runtime_pp_scope_cases.o goal_native_file.o type_cases.o kernel_type_cases.o goal_kernel_types.o runtime_cases.o goal_runtime.o goal_runtime_dc.o goal_module.o goal_bridge.o goal_process_heap.o process_heap_cases.o goal_thread_stack.o thread_stack_cases.o
+jak-dc-runtime-goal.elf: goal_thread_resize.o thread_resize_cases.o runtime_thread_resize_cases.o runtime_fiber_words_cases.o goal_scalar_call.o scalar_call_cases.o runtime_activation_cases.o native_context_swap.o goal_fiber.o pp_scope.o runtime_fiber_cases.o native_stack_call.o goal_stack_call.o runtime_stack_call_cases.o code_entry_cases.o goal_register_snapshot.o register_snapshot_probe.o runtime_register_snapshot_cases.o runtime_goal_main.o runtime_goal_cases.o runtime_memory_cases.o runtime_static_cases.o runtime_float_cases.o runtime_bridge_cases.o runtime_quoted_cases.o runtime_void_cases.o runtime_type_cases.o runtime_shift_cases.o runtime_shift_baseline.o runtime_division_cases.o runtime_native_file_cases.o runtime_locals_cases.o runtime_early_cases.o runtime_sort_cases.o runtime_operator_cases.o runtime_fixed_cases.o runtime_far_cases.o runtime_dependency_cases.o runtime_mixed_cases.o runtime_validation_cases.o runtime_kernel_globals_cases.o runtime_enum_cases.o runtime_mixed_stack_cases.o runtime_process_tree_cases.o runtime_process_new_cases.o runtime_dead_pool_cases.o runtime_process_heap_cases.o runtime_structured_cases.o runtime_process_entry_cases.o runtime_process_query_cases.o runtime_call_guard_cases.o runtime_cpu_thread_cases.o runtime_pp_scope_cases.o goal_native_file.o type_cases.o kernel_type_cases.o goal_kernel_types.o runtime_cases.o goal_runtime.o goal_runtime_dc.o goal_module.o goal_bridge.o goal_mmi.o goal_pad.o goal_process_heap.o process_heap_cases.o goal_thread_stack.o thread_stack_cases.o
 	kos-cc -o $@ $^
 goal_layout.h: generate_runtime_layout.py ../../common/goal_constants.h ../../common/symbols.h ../../game/kernel/jak1/kscheme.h
 	$(PYTHON) generate_runtime_layout.py
@@ -711,7 +713,7 @@ runtime_stack_objects_baseline.o: runtime_stack_objects_baseline.c build/stack_o
 	kos-cc $(CFLAGS) -I. -c $< -o $@
 
 # Native boot of the unchanged original jak1 kernel startup (AI-assisted).
-KERNEL_BOOT_LIBS=goal_runtime.o goal_runtime_dc.o goal_module.o goal_bridge.o goal_process_heap.o goal_kernel_types.o \
+KERNEL_BOOT_LIBS=goal_runtime.o goal_runtime_dc.o goal_module.o goal_bridge.o goal_mmi.o goal_pad.o goal_process_heap.o goal_kernel_types.o \
  goal_fiber.o native_context_swap.o pp_scope.o process_spans.o goal_kos_stack.o goal_stack_call.o native_stack_call.o \
  goal_scalar_call.o goal_main_start.o goal_main_thread.o goal_thread_stack.o goal_thread_resize.o goal_register_snapshot.o \
  native_catch.o goal_native_file.o

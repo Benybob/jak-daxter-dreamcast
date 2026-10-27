@@ -31,13 +31,13 @@ int dc_goal_load_native_module(dc_goal_runtime *rt,const void *source,uint32_t b
   if (result) memset(result,0,sizeof(*result));
   if (!rt || !source || !result) { if (rt) rt->error=DC_GOAL_BAD_ARGUMENT; return 0; }
   rt->error=DC_GOAL_BAD_MODULE;
-  if (bytes<64 || bytes>2u*1024u*1024u || memcmp(input,"DCSH",4) || word(input+4)!=1 ||
+  if (bytes<64 || bytes>8u*1024u*1024u || memcmp(input,"DCSH",4) || word(input+4)!=1 ||
       word(input+8)!=1 || word(input+12)!=bytes || word(input+48) || word(input+52) || word(input+56) || word(input+60)) return 0;
   count=word(input+16); data_count=word(input+20); reloc_count=word(input+24);
   string_bytes=word(input+28); payload_bytes=word(input+32);
   init_offset=word(input+36); init_kind=word(input+40);
-  if (!count || count>256 || data_count>256 || reloc_count>16384 || !string_bytes || string_bytes>65536 ||
-      !payload_bytes || payload_bytes>1048576 || init_kind>2 ||
+  if (!count || count>4096 || data_count>8192 || reloc_count>262144 || !string_bytes || string_bytes>1048576 ||
+      !payload_bytes || payload_bytes>4u*1048576u || init_kind>2 ||
       ((init_kind==0)!=(init_offset==UINT32_MAX))) return 0;
   expected=64u+(count+data_count)*24u+reloc_count*8u+string_bytes+payload_bytes;
   if (expected!=bytes || word(input+44)!=crc32(input+64,bytes-64)) return 0;
@@ -66,7 +66,7 @@ int dc_goal_load_native_module(dc_goal_runtime *rt,const void *source,uint32_t b
     int code=i<count;
     first=word(r+(code?12:16)); n=word(r+(code?16:20));
     if (!export_name || !length || (offset&3u) || offset>payload_bytes || length>payload_bytes-offset ||
-        first!=next || n>1024 || first>reloc_count || n>reloc_count-first) goto invalid;
+        first!=next || n>4096 || first>reloc_count || n>reloc_count-first) goto invalid;
     next+=n;
     if (code) {
       if (length<2 || (length&1u) || word(r+20)) goto invalid;
@@ -97,7 +97,7 @@ int dc_goal_load_native_stream(dc_goal_runtime *rt,FILE *file,uint32_t bytes,
   if (result) memset(result,0,sizeof(*result));
   if (!rt || !file || !result) { if (rt) rt->error=DC_GOAL_BAD_ARGUMENT; return 0; }
   rt->error=DC_GOAL_BAD_MODULE;
-  if (bytes<64 || bytes>2u*1024u*1024u) return 0;
+  if (bytes<64 || bytes>8u*1024u*1024u) return 0;
   source=malloc(bytes);
   if (!source) { rt->error=DC_GOAL_OUT_OF_MEMORY; return 0; }
   if (fread(source,1,bytes,file)!=bytes) { free(source); return 0; }

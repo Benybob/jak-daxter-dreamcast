@@ -28,8 +28,8 @@ class NativeFileTest(unittest.TestCase):
         self.assertEqual(sample(),sample())
     def test_corrupt_native_headers_and_records_leave_runtime_unchanged(self):
         data=sample()
-        mutations=[(4,2),(8,0),(12,len(data)+1),(16,257),(20,257),(24,16385),(28,65537),
-                   (32,1048577),(36,1),(40,3),(48,1),(64,1),(68,1),(72,1),(76,1),(80,1),(84,1)]
+        mutations=[(4,2),(8,0),(12,len(data)+1),(16,4097),(20,8193),(24,262145),(28,1048577),
+                   (32,4*1048576+1),(36,1),(40,3),(48,1),(64,1),(68,1),(72,1),(76,1),(80,1),(84,1)]
         for offset,value in mutations:
             with self.subTest(offset=offset):
                 p,r=self.scan(changed(data,offset,value)); self.assertNotEqual(p.returncode,0)

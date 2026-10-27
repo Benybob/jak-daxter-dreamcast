@@ -127,6 +127,8 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
     CHECK(file!=NULL,1,"GAME.CGO prefix opens from the romdisk");
     if(file){
       loaded=dc_goal_load_dgo(&rt,file,sync_code,NULL,&game);fclose(file);
+      CHECK(game.failed_object==UINT32_MAX?0u:1000u*game.failed_object+rt.error,0,
+            "no GAME.CGO object fails (observed = 1000 * object index + error)");
       CHECK(loaded?1:100+rt.error,1,"GAME.CGO prefix links and runs each original startup in order");
       CHECK(game.objects,DC_GAME_PREFIX,"GAME.CGO holds the compiled prefix of original engine files");
       CHECK(game.initializers,DC_GAME_PREFIX,"each engine file runs its top-level startup");

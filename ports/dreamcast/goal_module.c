@@ -7,7 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-enum import_kind { IMPORT_CELL,IMPORT_POINTER,IMPORT_FUNCTION,IMPORT_TYPE,IMPORT_DATA };
+enum import_kind { IMPORT_CELL,IMPORT_POINTER,IMPORT_FUNCTION,IMPORT_TYPE,IMPORT_DATA,IMPORT_DEFTYPE };
 typedef struct { uint32_t entry,bytes,symbol,next; } code_record;
 typedef char code_record_size[sizeof(code_record)==16?1:-1];
 static int code_error(dc_goal_runtime *rt,enum dc_goal_error error) {
@@ -47,10 +47,10 @@ int dc_goal_code_entry(dc_goal_runtime *rt,uint32_t entry,dc_goal_code_entry_inf
   rt->error=DC_GOAL_OK;return 1;
 }
 static const char *import_name(const char *symbol,enum import_kind *kind) {
-  static const char *prefixes[]={"cell:","pointer:","function:","type:","data:"};
+  static const char *prefixes[]={"cell:","pointer:","function:","type:","data:","deftype:"};
   unsigned i;
   if (!symbol) return NULL;
-  for (i=0;i<5;++i) {
+  for (i=0;i<6;++i) {
     size_t length=strlen(prefixes[i]);
     if (!strncmp(symbol,prefixes[i],length) && symbol[length]) {
       *kind=(enum import_kind)i; return symbol+length;
@@ -100,6 +100,21 @@ static uint32_t resolve_import(dc_goal_runtime *rt,const char *reference,
   if (kind==IMPORT_DATA) {
     for (i=0;i<count;++i) if (!strcmp(name,data[i].name)) return addresses[i];
     goto invalid;
+  }
+  if (kind==IMPORT_DEFTYPE) {
+    /* A type this module's own top level deftypes, referenced by its static data
+     * before that deftype runs (e.g. a static array's element type). Like the
+     * desktop linker's intern_type_from_c it gets a placeholder that the deftype
+     * fills. DCSH carries no method count, so the placeholder has the kscheme
+     * default of 12; a deftype needing more fails, never shrinks. A plain type:
+     * import of a missing type still refuses. */
+    address=dc_goal_intern_type(rt,name,0);
+    if (!address) {
+      if (rt->error!=DC_GOAL_OK) return 0;
+      goto invalid;
+    }
+    if (dc_goal_type_of(rt,address)!=rt->type_type || !dc_goal_resolve(rt,address,2)) goto invalid;
+    return address;
   }
   address=(kind==IMPORT_CELL || kind==IMPORT_POINTER)?dc_goal_intern(rt,name):dc_goal_find(rt,name);
   if (!address) {
