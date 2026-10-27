@@ -95,8 +95,10 @@ def argument_return_leaf(function):
                  'instruction_stream_bytes':len(e.code),'literal_pool_and_alignment_bytes':0,
                  'minimum_32_byte_cache_lines':(len(data)+31)//32}
 
-def validate_definitions(function,registers):
-    """Check definite assignment along reachable paths, including loop edges."""
+def validate_definitions(function,registers,entry_defined=()):
+    """Check definite assignment along reachable paths, including loop edges.
+
+    entry_defined registers count as assigned at entry (zero-filled vf slots)."""
     ops=function['instructions']; count=len(ops)
     if not count: return  # the original frontend can emit an empty (none) body
     successors=[]
@@ -119,7 +121,7 @@ def validate_definitions(function,registers):
         for target in successors[node]: predecessors[target].append(node)
     inputs={node:set(registers) for node in reachable}
     outputs={node:set(registers) for node in reachable}
-    entry={p['register'] for p in function['parameters']}
+    entry={p['register'] for p in function['parameters']}|set(entry_defined)
     if not entry<=registers: raise ValueError('unknown incoming argument register')
     changed=True
     while changed:
@@ -213,6 +215,58 @@ def stack_object_reservation(function,registers,fixed,runtime):
 
 LEXICAL_SCOPE_KINDS=('process_scope_enter','process_scope_leave')
 
+VF3_OPS={'.xor.vf':'xor','.sub.vf':'sub','.add.vf':'add','.mul.vf':'mul','.max.vf':'max',
+         '.min.vf':'min','.div.vf':'div'}
+VF_OPERAND=re.compile(r'ivf-(\d+)$')
+
+def vector_asm(op):
+    """Structured form of a desktop vector asm IR op, or None (AI-assisted).
+
+    The pinned frontend expands GOAL's VU0 macros into these x86 IR ops, exported
+    only as their printed text. Each is parsed strictly: colored virtual vf
+    operands only (never :no-color physical registers), and operand ids must
+    equal the op's exported read/write lists. Semantics follow the desktop x86
+    encodings (goalc/emitter/IGenX86.cpp): blend takes lane i from src2 when mask
+    bit i is set; swizzle lane i = src[(control >> 2i) & 3]; splat is a swizzle.
+    """
+    text=op.get('text','').strip()
+    if op['kind']!='unsupported' or ':no-color' in text: return None
+    name,_,rest=text.partition(' ')
+    fields=[f.strip() for f in rest.split(',')]
+    def ids(names):
+        out=[]
+        for f in names:
+            m=VF_OPERAND.match(f)
+            if not m: return None
+            out.append(int(m.group(1)))
+        return out
+    def exact(dst,srcs):
+        # The exporter lists a repeated source once per operand position.
+        return op['writes']==[dst] and set(op['reads'])==set(srcs) and len(op['reads'])<=len(srcs)
+    if name in VF3_OPS and len(fields)==3:
+        regs=ids(fields)
+        if regs and exact(regs[0],regs[1:]):
+            if name=='.xor.vf' and regs[1]==regs[2]:
+                # x ^ x is zero whatever x holds: the zeroing idiom reads nothing.
+                return dict(op,kind='vfzero',reads=[],dst=regs[0])
+            return dict(op,kind='vf3',vop=VF3_OPS[name],dst=regs[0],src1=regs[1],src2=regs[2])
+    elif name in ('.itof.vf','.ftoi.vf','.sqrt.vf') and len(fields)==2:
+        regs=ids(fields)
+        if regs and exact(regs[0],regs[1:]):
+            return dict(op,kind='vf2',vop=name[1:-3],dst=regs[0],src=regs[1])
+    elif name=='.blend.vf' and len(fields)==4 and fields[3].isdigit() and int(fields[3])<16:
+        regs=ids(fields[:3])
+        if regs and exact(regs[0],regs[1:]):
+            return dict(op,kind='vfblend',dst=regs[0],src1=regs[1],src2=regs[2],mask=int(fields[3]))
+    elif name in ('.swizzle.vf','.splat.vf') and len(fields)==3 and fields[2].isdigit():
+        value=int(fields[2]); regs=ids(fields[:2])
+        if name=='.splat.vf':
+            if value>3: return None
+            value*=0x55  # X,Y,Z,W = 0..3: every lane selects that element
+        if value<256 and regs and exact(regs[0],regs[1:]):
+            return dict(op,kind='vfswizzle',dst=regs[0],src=regs[1],control=value)
+    return None
+
 def normalize_register_asm(function):
     """Read explicit x86 (.mov a b)/(.add a b) asm ops as plain 64-bit IR (AI-assisted).
 
@@ -223,7 +277,9 @@ def normalize_register_asm(function):
     ops=[]
     for op in function['instructions']:
         text=op.get('text','').strip()
-        if op['kind']=='unsupported' and text.startswith('.mov ') and len(op['reads'])==1 and len(op['writes'])==1:
+        vector=vector_asm(op)
+        if vector is not None: op=vector
+        elif op['kind']=='unsupported' and text.startswith('.mov ') and len(op['reads'])==1 and len(op['writes'])==1:
             op=dict(op,kind='move')
         elif op['kind']=='unsupported' and text.split(' ')[0] in ('.pcpyld','.pcpyud') and \
              len(op['reads'])==2 and len(op['writes'])==1:
@@ -517,6 +573,13 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
             registers=[dict(r,type=r.get('abi_type',r['type'])) for r in function['registers']],
             parameters=[dict(p,type=p.get('abi_type',p['type'])) for p in function['parameters']])
     if function.get('asm'): raise ValueError('inline/assembly functions unsupported')
+    if function.get('return_type')=='none':
+        # A (none) function's last form may itself be (none), e.g. a discarded
+        # method-set! result: a return of a none-typed value carries nothing.
+        kinds={r['id']:r['type'] for r in function['registers']}
+        function=dict(function,instructions=[
+            dict(op,reads=[]) if op['kind']=='return' and len(op['reads'])==1 and kinds.get(op['reads'][0])=='none'
+            else op for op in function['instructions']])
     if runtime:
         function=normalize_register_asm(function)
         function=state_code_idiom(function)
@@ -634,7 +697,11 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
     function=dict(function,instructions=translated)
     if implicit and (not translated or translated[0]['kind']!='current_process'):
         raise ValueError('implicit self requires an explicit entry reset')
-    validate_definitions(function,set(registers))
+    # Original VU0 code leaves unused lanes undefined (an uninitialized acc whose
+    # other lanes are don't-care). vf slots are zero-filled at entry instead, so
+    # vf reads are defined and deterministic; every other class stays strict.
+    validate_definitions(function,set(registers),
+                         {index for index,r in registers.items() if r['class']=='vector_float'})
     module=module or {}
     statics=statics or {}
     writers={index:[] for index in registers}
@@ -651,9 +718,18 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
             return source['function']
         if source['kind']=='move': return function_origin(source['reads'][0],seen)
         raise ValueError('call requires an immutable linked function symbol')
-    if any(r['class'] not in ('gpr64','float','int128') for r in registers.values()):
-        raise ValueError('128-bit/vector register lowering not implemented')
+    if any(r['class'] not in ('gpr64','float','int128','vector_float') for r in registers.values()):
+        raise ValueError('unsupported 128-bit/vector register class')
+    QUAD=('int128','vector_float')
+    # vf values live in 16-byte slots like int128, but never cross the call ABI.
+    vectors={index for index,r in registers.items() if r['class']=='vector_float'}
+    if vectors and not runtime: raise ValueError('vector values require the native runtime profile')
+    if any(p['register'] in vectors for p in function['parameters']):
+        raise ValueError('vector parameters are not part of the native ABI')
+    if any(op['kind']=='return' and op['reads'] and op['reads'][0] in vectors for op in function['instructions']):
+        raise ValueError('vector returns are not part of the native ABI')
     wide={index for index,r in registers.items() if r['class']=='int128'}
+    quads=wide|vectors
     if wide and not runtime: raise ValueError('128-bit values require the native runtime profile')
     parameter_types=[scalar_kind(p['type'],runtime) for p in function['parameters']]
     if len(parameter_types)>8: raise ValueError('more than eight arguments unsupported')
@@ -678,7 +754,7 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
     slots=allocate_slots(function) if optimize else {index:i*8 for i,index in enumerate(sorted(registers))}
     frame=max(slots.values(),default=-8)+8
     # Each 128-bit value owns a dedicated 16-byte slot outside slot reuse.
-    for index in sorted(wide):
+    for index in sorted(quads):
         slots[index]=frame; frame+=16
     # A dedicated slot, outside liveness reuse, records an entered lexical
     # scope so the call-fault exit can restore the saved process first.
@@ -728,17 +804,30 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
         e.mov(0,8); e.immediate(1,0); store64(dest)
     def load128(index,regs=(4,5,6,7)):
         """Four little-endian words of a 128-bit slot: lo64=(regs[0],regs[1])."""
-        if registers[index]['class']!='int128': raise ValueError('expected 128-bit virtual value')
+        if registers[index]['class'] not in QUAD: raise ValueError('expected 128-bit virtual value')
         address(index)
         for n,reg in enumerate(regs):
             if n: e.add_immediate(8,4)
             e.load(reg,8)
     def store128(index,regs=(4,5,6,7)):
-        if registers[index]['class']!='int128': raise ValueError('expected 128-bit virtual value')
+        if registers[index]['class'] not in QUAD: raise ValueError('expected 128-bit virtual value')
         address(index)
         for n,reg in enumerate(regs):
             if n: e.add_immediate(8,4)
             e.store(8,reg)
+    def load_lanes(index,base=0):
+        """The four float lanes of a vf slot into FR(base)..FR(base+3)."""
+        if registers[index]['class']!='vector_float': raise ValueError('expected vector float value')
+        address(index)
+        for n in range(4):
+            if n: e.add_immediate(8,4)
+            e.rr(0xf008,base+n,8)  # FMOV.S @R8,FRn
+    def store_lanes(index,base=0):
+        if registers[index]['class']!='vector_float': raise ValueError('expected vector float value')
+        address(index)
+        for n in range(4):
+            if n: e.add_immediate(8,4)
+            e.rr(0xf00a,8,base+n)  # FMOV.S FRm,@R8
     def load_float(index,reg=0):
         address(index); e.word(0xf008|(reg<<8)|(8<<4))
     def store_float(index,reg=0):
@@ -797,6 +886,13 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
     for reg in (14,8,9): e.rr(0x2006,15,reg)
     adjust_stack(-frame); e.mov(14,15)
     if lexical: set_scope_flag(0)
+    if vectors:
+        e.immediate(0,0)
+        for index in sorted(vectors):
+            address(index)
+            for n in range(4):
+                if n: e.add_immediate(8,4)
+                e.store(8,0)
     gpr_args=float_args=0
     for parameter in function['parameters']:
         index=parameter['register']
@@ -911,6 +1007,16 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
                 if not item or item['kind'] not in ('string','float','pair','structure'):
                     raise ValueError('unsupported/missing static object '+op['static_id'])
                 e.literal(0,('symbol','data:'+op['static_id'])); e.immediate(1,0); store64(writes[0])
+            elif kind=='static_load':
+                # Quadword load of a whole static structure into a 128-bit value.
+                item=statics.get(op['static_id'])
+                if not item or item['kind']!='structure' or registers[writes[0]]['class'] not in QUAD:
+                    raise ValueError('unsupported static quadword load '+op['static_id'])
+                e.literal(2,('symbol','data:'+op['static_id']))
+                for n,reg in enumerate((4,5,6,7)):
+                    if n: e.add_immediate(2,4)
+                    e.load(reg,2)
+                store128(writes[0])
             elif kind=='float_constant':
                 bits=op['value_bits']
                 if not isinstance(bits,int) or not 0<=bits<=0xffffffff or registers[writes[0]]['class']!='float':
@@ -942,12 +1048,12 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
                 if not runtime: raise ValueError('object memory access requires native runtime profile')
                 size,offset=op['size'],op['offset']
                 if size==16 and isinstance(offset,int) and -(1<<31)<offset<(1<<31) and \
-                   registers[(writes if kind=='load_memory' else reads)[0]]['class']=='int128':
+                   registers[(writes if kind=='load_memory' else reads)[0]]['class'] in QUAD:
                     # Quadword access: four aligned words (no native 128-bit load).
                     loading=kind=='load_memory'
                     value=writes[0] if loading else reads[0]
                     base=reads[0] if loading else reads[1]
-                    if loading and op.get('memory_class')!='int128':
+                    if loading and op.get('memory_class')!=registers[value]['class']:
                         raise ValueError('memory/register class mismatch')
                     if not loading: load128(value)
                     load64(base,2,3)
@@ -1063,16 +1169,74 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
                 else: raise ValueError('unsupported linked function return type')
             elif kind=='constant':
                 value=op['value']; constant(0,value); constant(1,value>>32); store64(writes[0])
-            elif kind=='move' and (registers[reads[0]]['class']=='int128' or registers[writes[0]]['class']=='int128'):
+            elif kind=='move' and (registers[reads[0]]['class'] in QUAD or registers[writes[0]]['class'] in QUAD):
                 src,dst=reads[0],writes[0]
-                if registers[src]['class']==registers[dst]['class']=='int128':
-                    load128(src); store128(dst)
-                elif registers[dst]['class']=='int128' and registers[src]['class']=='gpr64':
+                sc,dc=registers[src]['class'],registers[dst]['class']
+                if sc in QUAD and dc in QUAD:
+                    load128(src); store128(dst)  # movaps: all 128 bits
+                elif dc=='vector_float' and sc=='float':
+                    load_float(src); store_float(dst)  # movss: lane 0, other lanes kept
+                elif sc=='vector_float' and dc=='float':
+                    load_float(src); store_float(dst)  # lane 0
+                elif dc=='vector_float' and sc=='gpr64':
+                    load64(src,4,5); e.immediate(6,0); e.immediate(7,0); store128(dst)  # movq: zero-extends
+                elif sc=='vector_float' and dc=='gpr64':
+                    load128(src); e.mov(0,4); e.mov(1,5); store64(dst)  # movq: low 64 bits
+                elif dc=='int128' and sc=='gpr64':
                     # Frontend 64->128 register move zero-extends.
                     load64(src,4,5); e.immediate(6,0); e.immediate(7,0); store128(dst)
                 elif registers[src]['class']=='int128' and registers[dst]['class']=='gpr64':
                     load128(src); e.mov(0,4); e.mov(1,5); store64(dst)  # low 64 bits
                 else: raise ValueError('unsupported 128-bit/float move')
+            elif kind=='vf3':
+                vop=op['vop']
+                if vop=='xor':
+                    load128(op['src1']); load128(op['src2'],(0,1,2,3))
+                    for n in range(4): e.rr(0x200a,4+n,n)  # XOR Rm,Rn: all bits
+                    store128(op['dst'])
+                    continue
+                load_lanes(op['src1'],0); load_lanes(op['src2'],4)
+                for n in range(4):
+                    if vop in ('max','min'):
+                        # maxps/minps: src1 if src1 > src2 (resp. <), else src2,
+                        # including NaN and signed-zero choices (as max_float/min_float).
+                        done=label_name()
+                        if vop=='max': e.rr(0xf005,n,4+n)  # T = src1 > src2
+                        else: e.rr(0xf005,4+n,n)          # T = src2 > src1
+                        e.branch('bt',done); e.fmov(n,4+n); e.label(done)
+                    else:
+                        e.rr({'add':0xf000,'sub':0xf001,'mul':0xf002,'div':0xf003}[vop],n,4+n)
+                store_lanes(op['dst'],0)
+            elif kind=='vf2':
+                vop=op['vop']
+                if vop=='itof':
+                    load128(op['src'])  # cvtdq2ps: signed int32 lanes
+                    for n in range(4): e.word(0x405a|(4+n)<<8); e.word(0xf02d|n<<8)  # LDS Rm,FPUL; FLOAT FPUL,FRn
+                    store_lanes(op['dst'],0)
+                elif vop=='sqrt':
+                    load_lanes(op['src'],0)
+                    for n in range(4): e.word(0xf06d|n<<8)  # FSQRT FRn
+                    store_lanes(op['dst'],0)
+                else:
+                    # cvttps2dq: truncate; NaN and out-of-range give 0x80000000,
+                    # the same threshold contract as scalar float_to_int.
+                    load_lanes(op['src'],0)
+                    constant(0,0x4f000000); e.word(0x405a); e.word(0xf40d)  # +2^31 -> FR4
+                    for n in range(4):
+                        invalid,done=label_name(),label_name()
+                        e.rr(0xf005,4,n); e.branch('bf',invalid)  # 2^31 > lane
+                        e.word(0xf03d|n<<8); e.word(0x005a|(4+n)<<8)  # FTRC FRn,FPUL; STS FPUL,Rn
+                        e.branch('bra',done); e.label(invalid); constant(4+n,0x80000000); e.label(done)
+                    store128(op['dst'])
+            elif kind=='vfzero':
+                for n in range(4): e.immediate(4+n,0)
+                store128(op['dst'])
+            elif kind=='vfblend':
+                load128(op['src1']); load128(op['src2'],(0,1,2,3))
+                store128(op['dst'],tuple(n if op['mask']>>n&1 else 4+n for n in range(4)))
+            elif kind=='vfswizzle':
+                load128(op['src'])
+                store128(op['dst'],tuple(4+(op['control']>>(2*n)&3) for n in range(4)))
             elif kind=='pcpyld':
                 # MIPS PCPYLD rd,rs,rt: rd.hi = rs.lo, rd.lo = rt.lo (aliases safe).
                 load128(reads[1]); e.mov(0,4); e.mov(1,5)

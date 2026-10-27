@@ -26,8 +26,8 @@ BINDINGS = {
     'set-to-run-bootstrap': 'set-to-run-bootstrap',
 }
 EXPECTED_CHECKS = 87  # verified in Flycast; never weakened afterwards
-EXPECTED_DGO_CHECKS = 98  # verified KERNEL.CGO + GAME.CGO prefix boot in Flycast
-GAME_PREFIX = 3  # original GAME.CGO files that compile so far
+EXPECTED_DGO_CHECKS = 112  # KERNEL.CGO + 13 GAME.CGO files + 141 vf cases, verified in Flycast
+GAME_PREFIX = 13  # original GAME.CGO files that compile so far (through transformq-h)
 
 
 def main():
@@ -84,12 +84,21 @@ def main():
     # override as an extra object straight after gcommon.
     order = ['gcommon', 'dc-scalar-valid'] + [name for name, _ in modules[1:]]
     write_dgo(port / 'build/kernel-dgo/KERNEL.CGO', 'KERNEL.CGO', [(n, dcsh / f'{n}.dcsh') for n in order])
-    # The compiled prefix of the original GAME.CGO (vector-h, the next file, needs
-    # VU0 vector register lowering).
+    # The compiled prefix of the original GAME.CGO.
     subprocess.run([sys.executable, str(port / 'build_game_cgo.py'), '--frontend', str(args.frontend),
                     '--msys', str(args.msys), '--count', str(GAME_PREFIX)], check=True)
     compiled = json.loads((port / 'build/game-cgo-report.json').read_text())['compiled']
     if len(compiled) != GAME_PREFIX: sys.exit(f'GAME.CGO prefix compiled only {compiled}')
+    # VU0 vf lowering fixture, compiled after the kernel and GAME.CGO through
+    # vector-h, and its independently computed expected lanes.
+    engine = port.parents[1] / 'goal_src/jak1/engine'
+    fixture_preloads = [*contexts, kernel / 'gstring-h.gc', kernel / 'gkernel-h.gc', port / 'dreamcast_thread_context.gc',
+                        *(kernel / f'{n}.gc' for n in ('gkernel', 'pskernel', 'gstring', 'dgo-h', 'gstate')),
+                        engine / 'util/types-h.gc', engine / 'ps2/vu1-macros.gc', engine / 'math/math.gc',
+                        engine / 'math/vector-h.gc']
+    subprocess.run(compiler + preloads(*fixture_preloads) + ['--source', str(port / 'vf_fixture.gc'),
+                                                            '--header', str(port / 'build/vf_fixture.h')], check=True)
+    subprocess.run([sys.executable, str(port / 'gen_vf_cases.py')], check=True)
     elves = (('jak-dc-kernel-boot.elf', args.tests, args.output),
              ('jak-dc-kernel-dgo.elf', args.dgo_tests, args.dgo_output))
     for elf, _, _ in elves:

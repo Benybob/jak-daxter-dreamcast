@@ -138,6 +138,9 @@ static json instruction(IR* ir,const StaticNames& statics,const TypeSystem& type
   } else if(auto* load=dynamic_cast<IR_StaticVarLoad*>(ir)) {
     if(auto* value=dynamic_cast<const StaticFloat*>(load->object())) {
       output["kind"]="float_constant"; output["value_bits"]=float_bits(value->value);
+    } else if(statics.count(load->object())) {
+      // A 128-bit load of a whole static structure, e.g. (.lvf vf0 (new 'static 'vector ...)).
+      output["kind"]="static_load"; output["static_id"]=statics.at(load->object());
     }
   } else if(auto* address=dynamic_cast<IR_StaticVarAddr*>(ir)) {
     output["kind"]="static_address"; output["static_id"]=statics.at(address->object());

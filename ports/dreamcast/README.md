@@ -3,15 +3,19 @@
 **Codex support handoff completed (AI-assisted):** [VU0_REFERENCE.md](VU0_REFERENCE.md)
 documents the independent finite-input desktop vector oracle, SSE comparison tests
 and inventory of all 346 GAME.CGO entries. Claude Code owns vf lowering in
-lower_sh4_ir.py; this support change leaves his lowering/boot files alone.
+lower_sh4_ir.py; this support change leaves the lowering/boot files alone.
+
+**2026-10-27 (AI-assisted):** [VU0 vector registers](VU0_LOWERING.md) now lower to
+SH-4. The original vector-h compiles, and the DGO boot loads 13 GAME.CGO files.
+141 of 141 vector cases match the independent oracle bit for bit (112 of 112 boot checks).
 
 **2026-10-26 (AI-assisted):** [Original kernel boot](KERNEL_BOOT.md) runs the
 top-level startup of all eight original KERNEL.CGO files natively, unchanged and in
 original order. A process started the original way then runs under the original
 kernel-dispatcher. 87 of 87 boot checks, 24,846 runtime checks, 452 host tests and 39
 numeric checks pass in stock 16 MiB Flycast. The kernel also boots from a KERNEL.CGO DGO
-of native DCSH objects and loads the first 3 GAME.CGO engine files (98 of 98 checks).
-VU0 vector lowering (needed from vector-h on), GC and gameplay remain unfinished.
+of native DCSH objects and loads the compiled GAME.CGO prefix. GC and gameplay remain
+unfinished.
 
 **2026-10-26 (AI-assisted):** [Original root initialization](ORIGINAL_INITIALIZATION.md)
 now executes unchanged `run-function-in-process`, `throw` and protect construction

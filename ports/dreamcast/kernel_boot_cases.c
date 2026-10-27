@@ -16,6 +16,9 @@
 #include "runtime_cases.h"
 #ifdef DC_KERNEL_DGO
 #include "goal_dgo.h"
+#include "build/game_cgo_order.h"
+#include "build/vf_cases.h"
+int dc_kernel_load_vf_fixture(dc_goal_runtime *,dc_goal_cache_sync,dc_goal_module_result *);
 #else
 #include "build/boot_gcommon.h"
 #include "build/boot_gstring_h.h"
@@ -120,18 +123,49 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
   /* The compiled prefix of the original GAME.CGO loads on top of the kernel. */
   {
     static dc_goal_dgo_result game;
-    static const char *const order[]={"types-h","vu1-macros","math"};
     FILE *file=fopen("/rd/GAME.CGO","rb");int loaded;unsigned i;
     CHECK(file!=NULL,1,"GAME.CGO prefix opens from the romdisk");
     if(file){
       loaded=dc_goal_load_dgo(&rt,file,sync_code,NULL,&game);fclose(file);
       CHECK(loaded?1:100+rt.error,1,"GAME.CGO prefix links and runs each original startup in order");
-      CHECK(game.objects,3,"GAME.CGO prefix holds the first three original engine files");
-      CHECK(game.initializers,3,"each engine file runs its top-level startup");
-      for(i=0;i<3;++i)CHECK(strcmp(game.object_names[i],order[i]),0,"engine objects in original GAME.CGO order");
+      CHECK(game.objects,DC_GAME_PREFIX,"GAME.CGO holds the compiled prefix of original engine files");
+      CHECK(game.initializers,DC_GAME_PREFIX,"each engine file runs its top-level startup");
+      for(i=0;i<DC_GAME_PREFIX;++i)CHECK(strcmp(game.object_names[i],dc_game_order[i]),0,"engine objects in original GAME.CGO order");
       CHECK(entry(&rt,"rand-vu-init")!=0 && entry(&rt,"truncate")!=0,1,"original math functions are installed");
       code_bytes+=game.code_bytes;rt.error=DC_GOAL_OK;
     }
+  }
+  /* VU0 vf lowering: the fixture forms and original vector-h functions, every
+   * lane compared bit for bit with independently computed expectations. */
+  {
+    typedef uint64_t (*vf4_fn)(uint64_t,uint64_t,uint64_t,uint64_t);
+    typedef uint64_t (*vf3_fn)(uint64_t,uint64_t,uint64_t);
+    typedef uint64_t (*vf1_fn)(uint64_t);
+    typedef float (*dot_fn)(uint64_t,uint64_t);
+    typedef float (*lane_fn)(uint64_t);
+    uint32_t vectors=dc_goal_alloc(&rt,64),i,passed=0;
+    CHECK(vectors!=0 && !(vectors&15u),1,"aligned vector scratch for the vf checks");
+    STEP(dc_kernel_load_vf_fixture(&rt,sync_code,&r),"vf fixture forms link");
+    for(i=0;i<DC_VF_CASES;++i){
+      uint32_t dst=vectors,a=vectors+16,b=vectors+32,c=vectors+48,fn=entry(&rt,dc_vf_cases[i].name),got[4]={0,0,0,0};
+      float value;
+      memcpy(dc_goal_resolve(&rt,a,48),dc_vf_inputs[dc_vf_cases[i].set],48);
+      memset(dc_goal_resolve(&rt,dst,16),0xa5,16);
+      if(!fn){CHECK(0,1,dc_vf_cases[i].name);continue;}
+      switch(dc_vf_cases[i].kind){
+        case 0: ((vf4_fn)(uintptr_t)fn)(dst,a,b,c);memcpy(got,dc_goal_resolve(&rt,dst,16),16);break;
+        case 1: value=((dot_fn)(uintptr_t)fn)(a,b);memcpy(got,&value,4);break;
+        case 2: ((vf3_fn)(uintptr_t)fn)(dst,a,b);memcpy(got,dc_goal_resolve(&rt,dst,16),16);break;
+        case 3: ((vf1_fn)(uintptr_t)fn)(dst);memcpy(got,dc_goal_resolve(&rt,dst,16),16);break;
+        default: value=((lane_fn)(uintptr_t)fn)(a);memcpy(got,&value,4);break;
+      }
+      {int same=!memcmp(got,dc_vf_cases[i].expect,16);passed+=same;
+       if(!same){static char why[120];snprintf(why,sizeof why,"%s set %u: %08lx %08lx %08lx %08lx",dc_vf_cases[i].name,
+                 (unsigned)dc_vf_cases[i].set,(unsigned long)got[0],(unsigned long)got[1],(unsigned long)got[2],(unsigned long)got[3]);
+                 CHECK(0,1,why);}}
+    }
+    CHECK(passed,DC_VF_CASES,"every vf case matches its independent expectation bit for bit");
+    CHECK(rt.error,DC_GOAL_OK,"vf checks leave no runtime fault");
   }
 #endif  /* A process started the original way (process-spawn-function: get-process,
    * activate, run-next-time-in-process) runs under the original kernel-dispatcher. */

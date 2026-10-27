@@ -727,12 +727,14 @@ jak-dc-kernel-boot.elf: kernel_boot_main.o kernel_boot_cases.o kernel_boot_valid
 	kos-cc -o $@ $^
 # The same boot, loading the kernel from a KERNEL.CGO DGO of DCSH objects (AI-assisted).
 goal_dgo.o: goal_dgo.c goal_dgo.h goal_native_file.h goal_module.h
-kernel_dgo_cases.o: kernel_boot_cases.c goal_dgo.h goal_bridge.h goal_fiber.h goal_main_start.h runtime_cases.h
+kernel_dgo_cases.o: kernel_boot_cases.c goal_dgo.h goal_bridge.h goal_fiber.h goal_main_start.h runtime_cases.h  build/game_cgo_order.h build/vf_cases.h
 	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -DDC_KERNEL_DGO -I. -c kernel_boot_cases.c -o $@
 build/kernel-dgo-romdisk.o: build/kernel-dgo/KERNEL.CGO build/kernel-dgo/GAME.CGO
 	$(KOS_GENROMFS) -f build/kernel-dgo-romdisk.img -d build/kernel-dgo
 	$(KOS_BASE)/utils/bin2c/bin2c build/kernel-dgo-romdisk.img build/kernel-dgo-romdisk.c romdisk
 	$(KOS_CC) $(KOS_CFLAGS) -c build/kernel-dgo-romdisk.c -o build/kernel-dgo-romdisk-tmp.o
 	$(KOS_CC) -o $@ -r build/kernel-dgo-romdisk-tmp.o $(KOS_LIB_PATHS) -Wl,--whole-archive -lromdiskbase
-jak-dc-kernel-dgo.elf: kernel_boot_main.o kernel_dgo_cases.o goal_dgo.o build/kernel-dgo-romdisk.o $(KERNEL_BOOT_LIBS)
+kernel_vf_fixture.o: kernel_vf_fixture.c goal_module.h build/vf_fixture.h
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -I. -c kernel_vf_fixture.c -o $@
+jak-dc-kernel-dgo.elf: kernel_boot_main.o kernel_dgo_cases.o kernel_vf_fixture.o goal_dgo.o build/kernel-dgo-romdisk.o $(KERNEL_BOOT_LIBS)
 	kos-cc -o $@ $^

@@ -1,0 +1,44 @@
+;;-*-Lisp-*-
+(in-package goal)
+;; VU0 vector-register fixtures for the SH-4 vf lowering (AI-assisted).
+;; Each function applies one original GOAL vector form, in the rlet/VU0-macro
+;; style the engine uses, to vectors a, b and c, and stores the result in dst.
+;; gen_vf_cases.py computes the expected lanes independently (vu0_reference.py,
+;; or IEEE binary32 from the macro definitions in goalc Asm.cpp) and
+;; kernel_boot_cases.c compares every lane bit for bit in Flycast.
+
+(defmacro dc-vf-case (name &rest body)
+  `(defun ,name ((dst vector) (a vector) (b vector) (c vector))
+     (rlet ((v1 :class vf) (v2 :class vf) (v3 :class vf) (v4 :class vf))
+       (.lvf v1 a)
+       (.lvf v2 b)
+       (.lvf v3 c)
+       (.lvf v4 c)
+       ,@body
+       (.svf dst v4))
+     dst))
+
+(dc-vf-case dc-vf-add (.add.vf v4 v1 v2))
+(dc-vf-case dc-vf-sub (.sub.vf v4 v1 v2))
+(dc-vf-case dc-vf-mul (.mul.vf v4 v1 v2))
+(dc-vf-case dc-vf-add-xz (.add.vf.xz v4 v1 v2))
+(dc-vf-case dc-vf-mul-y (.mul.y.vf v4 v1 v2))
+(dc-vf-case dc-vf-sub-w-xy (.sub.w.vf.xy v4 v1 v2))
+(dc-vf-case dc-vf-madd-z-xyw (.add.mul.z.vf.xyw v4 v1 v2 v3))
+(dc-vf-case dc-vf-mov-w (.mov.vf.w v4 v1))
+(dc-vf-case dc-vf-xor (.xor.vf v4 v1 v2))
+(dc-vf-case dc-vf-max (.max.vf v4 v1 v2))
+(dc-vf-case dc-vf-min (.min.vf v4 v1 v2))
+(dc-vf-case dc-vf-div-x-y (.div.vf v4 v1 v2 :fsf 0 :ftf 1))
+(dc-vf-case dc-vf-sqrt-z (.sqrt.vf v4 v1 :ftf 2))
+(dc-vf-case dc-vf-ftoi (.ftoi.vf v4 v1))
+(dc-vf-case dc-vf-itof (.itof.vf v4 v1))
+(dc-vf-case dc-vf-outer-a (.outer.product.a.vf v4 v1 v2))
+(dc-vf-case dc-vf-blend-0101 (.blend.vf v4 v1 v2 :mask #b0101))
+
+(defun dc-vf-lane-x ((a vector))
+  "vf -> fpr lane 0 move, returned as a float."
+  (rlet ((v1 :class vf) (result :class fpr :type float))
+    (.lvf v1 a)
+    (.mov result v1)
+    result))
