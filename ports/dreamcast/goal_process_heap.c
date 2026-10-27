@@ -19,7 +19,7 @@ static unsigned char *validate(const dc_goal_process_heap *heap,uint32_t *cur,ui
   if(!heap || !(rt=heap->runtime)) return NULL;
   if(heap->process<4 || heap->allocation_bytes<PROCESS_BYTES ||
      heap->allocation_bytes>UINT32_MAX-(heap->process-4)) {
-    fail(rt,DC_GOAL_BAD_ARGUMENT); return NULL;
+    (DC_GOAL_NOTE_SITE(3),fail(rt,DC_GOAL_BAD_ARGUMENT)); return NULL;
   }
   process_type=dc_goal_symbol_value(rt,rt->s7+DC_FIX_SYM_PROCESS_TYPE);
   if(!process_type || dc_goal_type_of(rt,process_type)!=rt->type_type ||
@@ -38,16 +38,16 @@ static unsigned char *validate(const dc_goal_process_heap *heap,uint32_t *cur,ui
   if(read_word(fields,LENGTH_OFFSET)!=heap->allocation_bytes-PROCESS_BYTES ||
      read_word(fields,BASE_OFFSET)!=base || (base&15u) ||
      *cur<base || *cur>*top || *top>end || (*cur&15u)) {
-    fail(rt,DC_GOAL_BAD_ARGUMENT); return NULL;
+    (DC_GOAL_NOTE_SITE(3),fail(rt,DC_GOAL_BAD_ARGUMENT)); return NULL;
   }
   return fields;
 }
 int dc_goal_process_heap_open(dc_goal_process_heap *heap,dc_goal_runtime *rt,
                                uint32_t process,uint32_t allocation_bytes) {
   dc_goal_process_heap candidate; uint32_t cur,top;
-  if(!heap) { fail(rt,DC_GOAL_BAD_ARGUMENT); return 0; }
+  if(!heap) { (DC_GOAL_NOTE_SITE(3),fail(rt,DC_GOAL_BAD_ARGUMENT)); return 0; }
   memset(heap,0,sizeof(*heap));
-  if(!rt || !rt->memory) { fail(rt,DC_GOAL_BAD_ARGUMENT); return 0; }
+  if(!rt || !rt->memory) { (DC_GOAL_NOTE_SITE(3),fail(rt,DC_GOAL_BAD_ARGUMENT)); return 0; }
   candidate.runtime=rt; candidate.process=process; candidate.allocation_bytes=allocation_bytes;
   if(!validate(&candidate,&cur,&top)) return 0;
   *heap=candidate; rt->error=DC_GOAL_OK; return 1;
@@ -56,7 +56,7 @@ uint32_t dc_goal_process_alloc(dc_goal_process_heap *heap,uint32_t bytes) {
   uint32_t cur,top,aligned,next;
   unsigned char *fields,*destination;
   dc_goal_runtime *rt=heap?heap->runtime:NULL;
-  if(!rt || !bytes || bytes>(uint32_t)INT32_MAX-15u) return fail(rt,DC_GOAL_BAD_ARGUMENT);
+  if(!rt || !bytes || bytes>(uint32_t)INT32_MAX-15u) return (DC_GOAL_NOTE_SITE(3),fail(rt,DC_GOAL_BAD_ARGUMENT));
   fields=validate(heap,&cur,&top);
   if(!fields) return 0;
   aligned=(bytes+15u)&~15u;
@@ -74,10 +74,10 @@ uint32_t dc_goal_process_new_basic(dc_goal_process_heap *heap,uint32_t type,uint
   dc_goal_type_fields *fields;
   uint32_t allocation;
   if(!rt) return 0;
-  if(!dc_goal_is_subtype(rt,type,rt->basic_type)) return fail(rt,DC_GOAL_BAD_ARGUMENT);
+  if(!dc_goal_is_subtype(rt,type,rt->basic_type)) return (DC_GOAL_NOTE_SITE(3),fail(rt,DC_GOAL_BAD_ARGUMENT));
   fields=dc_goal_resolve(rt,type,sizeof(*fields));
   if(!fields) return 0;
-  if(bytes<4 || bytes<fields->allocated_size) return fail(rt,DC_GOAL_BAD_ARGUMENT);
+  if(bytes<4 || bytes<fields->allocated_size) return (DC_GOAL_NOTE_SITE(3),fail(rt,DC_GOAL_BAD_ARGUMENT));
   allocation=dc_goal_process_alloc(heap,bytes);
   if(!allocation) return 0;
   memcpy(dc_goal_resolve(rt,allocation,4),&type,4);

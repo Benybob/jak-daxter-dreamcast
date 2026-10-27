@@ -27,7 +27,7 @@ static int add_ok(uint32_t base,uint32_t off,uint32_t *sum) {
 }
 static int read_u32(dc_goal_runtime *rt,uint32_t addr,uint32_t *out) {
   unsigned char *p;
-  if(addr>UINT32_MAX-3u) { rt->error=DC_GOAL_BAD_ARGUMENT; return 0; }
+  if(addr>UINT32_MAX-3u) { (DC_GOAL_NOTE_SITE(4),rt->error=DC_GOAL_BAD_ARGUMENT); return 0; }
   p=dc_goal_resolve(rt,addr,4);
   if(!p) return 0;
   memcpy(out,p,4);
@@ -41,7 +41,7 @@ static int fail_keep(dc_goal_thread_stack *view,dc_goal_runtime *rt) {
 }
 static int fail_arg(dc_goal_thread_stack *view,dc_goal_runtime *rt) {
   dc_goal_thread_stack_clear(view);
-  rt->error=DC_GOAL_BAD_ARGUMENT;
+  (DC_GOAL_NOTE_SITE(4),rt->error=DC_GOAL_BAD_ARGUMENT);
   return 0;
 }
 static int aligned16(uint32_t value) { return (value&15u)==0; }

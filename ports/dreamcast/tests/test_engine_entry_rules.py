@@ -12,7 +12,7 @@ import sys
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from lower_sh4_ir import compile_function, mmi_asm, module_data  # noqa: E402
+from lower_sh4_ir import compile_function, discard_debug_segment, mmi_asm, module_data  # noqa: E402
 
 SELF = {'frontend_register': 'r13', 'register': 2, 'role': 'process_self'}
 
@@ -137,6 +137,45 @@ class TypeReferenceImportTest(unittest.TestCase):
 
     def test_plain_type_pointer_stays_strict(self):
         self.assertEqual(self.imports({'offset': 0, 'symbol': 'type:entity-info'}), ['type:entity-info'])
+
+
+class DebugSegmentTest(unittest.TestCase):
+    def test_debug_functions_drop_and_references_become_null(self):
+        doc = {'functions': [
+            {'name': 'debug-fn', 'segment': 1, 'instructions': []},
+            {'name': 'main-fn', 'segment': 0, 'instructions': [
+                {'kind': 'function_address', 'function': 'debug-fn', 'reads': [], 'writes': [1]},
+                {'kind': 'function_address', 'function': 'main-fn', 'reads': [], 'writes': [2]}]},
+            {'name': 'top-level', 'segment': 2, 'top_level': True, 'instructions': []}],
+            'statics': [{'id': 's', 'relocations': [{'offset': 0, 'symbol': 'function:debug-fn'},
+                                                    {'offset': 4, 'symbol': 'function:main-fn'}]},
+                        {'id': 'p', 'kind': 'pair', 'car': {'kind': 'function', 'target': 'debug-fn'},
+                         'cdr': {'kind': 'constant', 'value_bits': 8}}]}
+        out, discarded = discard_debug_segment(doc)
+        self.assertEqual(discarded, ['debug-fn'])
+        self.assertEqual([f['name'] for f in out['functions']], ['main-fn', 'top-level'])
+        ops = out['functions'][0]['instructions']
+        self.assertEqual((ops[0]['kind'], ops[0]['value']), ('constant', 0))
+        self.assertEqual(ops[1]['kind'], 'function_address')
+        self.assertEqual([r['symbol'] for r in out['statics'][0]['relocations']], ['function:main-fn'])
+        self.assertEqual(out['statics'][1]['car'], {'kind': 'constant', 'value_bits': 0})
+
+
+class VoidResultValueTest(unittest.TestCase):
+    def test_void_call_result_in_a_value_register_is_false(self):
+        """game-save's (('die) (deactivate self)) arm: a void call's phantom result."""
+        fn = {'name': 'dc-void-arm', 'asm': False, 'return_type': 'object', 'return_abi_type': 'object',
+              'registers': [reg(0, typ='(function none)'), reg(1, typ='none'), reg(2)],
+              'parameters': [], 'implicit_parameters': [], 'fixed_registers': [], 'locals': [],
+              'register_aliases': [],
+              'instructions': [
+                  {'kind': 'symbol_value', 'symbol': 'dc-hook', 'reads': [], 'writes': [0]},
+                  {'kind': 'call', 'reads': [0], 'writes': [], 'text': 'call igpr-0 (ret igpr-1) (args)',
+                   'abi': {'parameters': [], 'return_type': 'none'}},
+                  {'kind': 'move', 'reads': [1], 'writes': [2]},
+                  {'kind': 'return', 'reads': [2], 'writes': []}]}
+        data, report = compile_function(fn, runtime=True)
+        self.assertIn('pointer:#f', [r['symbol'] for r in report['relocations']])
 
 
 if __name__ == '__main__':

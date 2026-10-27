@@ -3,12 +3,13 @@
 2026-10-27, Claude Code. The original engine is being compiled file by file in
 GAME.CGO order:
 
-- **192 of GAME.CGO's 326 code files** compile to native SH-4 (through entity-table).
-- **All 192 load and run their original top-level startup** after KERNEL.CGO in
+- **All 331 files** of the GAME.CGO dependency graph export (no refusals).
+- **222 of GAME.CGO's 326 code files** compile to native SH-4 (through collide-edge-grab).
+- **The first 207 load and run their original top-level startup** after KERNEL.CGO in
   stock 16 MiB Flycast, with the Dreamcast memory budget ([MEMORY_BUDGET.md](MEMORY_BUDGET.md)). This includes the 141 lane-exact
   vector cases ([VU0_LOWERING.md](VU0_LOWERING.md)) and the original process
   spawn and dispatch.
-- **292 of 292 boot checks pass.**
+- **307 of 307 boot checks pass.**
 
 ```bash
 python ports/dreamcast/build_kernel_boot.py --msys C:/msys64 --verify
@@ -93,6 +94,27 @@ Lowering (`lower_sh4_ir.py`):
   local has a reason; those are zero-filled at entry and recorded in the
   manifest. A listed local that is assigned or missing fails, unused entries are
   reported, and anything unlisted still refuses, as the host tests assert.
+- **Register aliases** (54 exporter refusals): several frontend RegVals share one
+  register, most often a behavior's `self` and `pp` on r13. They always agree on
+  class and ABI, so the exporter writes one record whose type is their lowest
+  common ancestor; differing class or ABI still refuses. The `pp` role check now
+  asks the type system whether each view is a process.
+- **`(suspend)` in a behavior**: the existing suspend idiom now also covers `pp`
+  as a behavior's `self`. The entry value-reset stays the entry read, the binding
+  stays, and the post-resume re-read writes `self`. The KERNEL_DEBUG stack check
+  reads `rsp`, which is now also defined at entry: the native SP is fixed across
+  the IR body.
+- **A void call's result as a value** (game-save's `(('die) (deactivate self))`):
+  copying a void call's phantom result into a value register defines it as `#f`
+  (desktop leaves the callee's rax). A `none` register nothing produces still
+  refuses.
+- **No debug segment**, as a retail kernel: desktop klink with DebugSegment 0
+  never copies debug-segment code and makes references into it null, and
+  `*debug-segment*` is `#f`. `lower_sh4_ir.py --no-debug-segment` drops those
+  functions (915 in the first 222 files), loads 0 for references in code and
+  removes static relocations to them; `method-set!` of 0 is a no-op as on desktop.
+- **Float top levels** run as void initializers (mood-tables): every loader
+  discards a file's top-level value.
 - **`(inline-array T)`** parameters are addresses, like `(pointer T)`.
 - **none-typed values carry nothing**: copies of a discarded `method-set!` result
   are dropped.
@@ -122,6 +144,17 @@ Runtime:
   `set_fixed_symbol(FIX_SYM_DEBUG_HEAP, "debug", ...)`. Without a debug segment
   (MasterDebug off) its kheap is null and desktop kmalloc falls back to the
   global heap, so native `malloc 'debug` does the same (subdivide's perf stats).
+- **Heaps as desktop `alloc_from_heap`**: `'debug` with its null kheap allocates
+  globally; any value outside the symbol table is "treated as a stack address"
+  and the object is zeroed in place (dead-pool-heap's get-process passes the gap
+  address). Level kheaps still refuse.
+- **State-valued methods**: `method-set!` accepts an instance of the GOAL `state`
+  type (virtual states, game-save's auto-save) as well as a function.
+- **System-config services**: `scf-get-language/aspect/volume/territory/timeout/
+  inactive-timeout` with desktop kboot's defaults (English, 4:3, 100, SCEA, 0, 0).
+- **Diagnostics**: the first BAD_ARGUMENT refusal while GAME.CGO loads is kept as
+  `dc_boot_game_error_site` (file code << 16 | line), readable with
+  `verify_backend.py --dump dc_boot_game_error_site 4`.
 - **kscheme default methods**: `object` asize-of (the zero function) and copy
   (`copy_fixed`), `basic` asize-of (`asize_of_basic`) and copy (`copy_basic`),
   propagated to the fixed kernel types like structure new. surface-h's
@@ -179,17 +212,19 @@ Runtime:
 
 ## Where it stops
 
-- **Loading:** all 192 compiled files now load and start (292 of 292 boot checks),
+- **Loading:** the first 207 compiled files load and start (307 of 307 boot checks),
   after the memory budget in [MEMORY_BUDGET.md](MEMORY_BUDGET.md): the corrected
   `PROCESS_HEAP_MULT`, PS2-sized DMA buffers, native `kmalloc`/`scf-get-time`, and
   a faulting `__pc-get-mips2c` stub. The test ELF now carries GAME.CGO as zstd
   (4.9 MB → 0.66 MB, 128 KiB window), streamed object by object through the
   vendored zstd decompressor (`goal_dgo_zst.c`), so the ELF fell from 6.2 to
-  2.0 MB and the boot arena is 12 MiB; 192 files use 11.45 MB of it.
-- **Stops at loader (object 192)**: the exporter refuses `ja-play-spooled-anim`
-  ("conflicting or non-fixed virtual register alias").
-- **Exporter refusals**: 56, 54 of them "conflicting or non-fixed virtual
-  register alias", mostly event handlers and state code (`refusal_report.py`).
+  2.0 MB and the boot arena is 12 MiB; without the debug segment 207 files use
+  10.69 MB of it. A 13 MiB arena leaves the KOS heap too little for loading.
+- **Loading stops at time-of-day (object 207)**: its startup's `process-spawn`
+  runs `init-time-of-day`, whose `self` read finds no bound process context
+  (`current_process`, the first refusal site). Native process spawn from a
+  file's startup is the next runtime feature.
+- **Lowering stops at collide-shape (object 222)**: an uninitialized read.
 - **Exporter refusals.** 56 of the 331 dependency-graph files refuse; 54 of them
   for one reason, "conflicting or non-fixed virtual register alias". That is one
   exporter feature (rlet register aliasing) to add next.

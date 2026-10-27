@@ -600,6 +600,11 @@ def native_machine_registers(function):
                        for p in writers):
                 keep.append(binding);continue
             for p in writers:ops[p]=dict(kind='stack_pointer',reads=[],writes=[index],text='native stack pointer')
+            # Desktop rsp is live at every read. The native SP is fixed across the
+            # IR body (one prologue frame; outgoing-argument space is undone after
+            # each call), so an entry read defines it for reads no reset reaches
+            # (a later (suspend)'s KERNEL_DEBUG stack check shares one register).
+            entry.append(dict(kind='stack_pointer',reads=[],writes=[index],text='native stack pointer at entry'))
     if not entry and len(keep)==len(function.get('fixed_registers',[])):return function
     if entry:
         ops=[dict(op,target=op['target']+len(entry)) if op['kind'] in ('branch','goto') and isinstance(op.get('target'),int) else op
@@ -618,9 +623,18 @@ def suspend_idiom(function):
     re-reads the authenticated process. Anything else keeps refusing.
     """
     bindings=[b for b in function.get('fixed_registers',[])
-              if b.get('frontend_register')=='r13' and b.get('role')=='unsupported']
+              if b.get('frontend_register')=='r13' and b.get('role') in ('unsupported','process_self')]
     if len(bindings)!=1:return function
+    # In a behavior, pp is self (one register); its entry reset stays the entry read.
+    behavior=bindings[0]['role']=='process_self'
     index=bindings[0]['register'];ops=[dict(op) for op in function['instructions']]
+    # The entry value-reset may follow read-free entry ops native_machine_registers inserted.
+    entry_reset=None
+    if behavior:
+        for q,op in enumerate(ops):
+            if op['kind'] in ('nop','fixed_register_reset') and op.get('text')=='value-reset' and index in op['writes']:
+                entry_reset=q; break
+            if op['reads'] or op['kind'] not in ('constant','stack_pointer') or not op.get('text','').startswith('native'): break
     reads={};writes={}
     for p,op in enumerate(ops):
         for v in op['reads']:reads.setdefault(v,[]).append(p)
@@ -629,6 +643,7 @@ def suspend_idiom(function):
     rewritten=0
     for p,op in enumerate(ops):
         if index not in op['writes'] or op['kind']=='fixed_register_reset':continue
+        if p==entry_reset:continue  # a behavior's entry value-reset
         # pp = (-> pp top-thread)
         if op['kind']!='move' or len(writes.get(op['reads'][0],[]))!=1:return function
         load=ops[writes[op['reads'][0]][0]]
@@ -669,10 +684,12 @@ def suspend_idiom(function):
     if not rewritten:return function
     for p,op in enumerate(ops):
         if index in op['writes']:
+            if p==entry_reset:continue
             if op['kind']!='fixed_register_reset' or op['writes']!=[index] or op['reads']:return function
             ops[p]=dict(kind='process_reread',reads=[],writes=[index],text='pp restored after resume')
     return dict(function,instructions=ops,
-                fixed_registers=[b for b in function['fixed_registers'] if b['register']!=index],
+                fixed_registers=function['fixed_registers'] if behavior else
+                                [b for b in function['fixed_registers'] if b['register']!=index],
                 suspend_process=index)
 
 def compile_function(function,module=None,runtime=False,optimize=True,statics=None):
@@ -687,8 +704,32 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
     if function.get('asm'): raise ValueError('inline/assembly functions unsupported')
     # A none-typed value (e.g. a discarded method-set! result) carries nothing:
     # copies of one are dropped, and a (none) function's return of one reads nothing.
+    # A none copy into a value-typed register (a case arm returning a void
+    # call's result, e.g. (('die) (deactivate self))) defines it as #f: desktop
+    # leaves the callee's rax there; the native void call has no result.
     kinds={r['id']:r['type'] for r in function['registers']}
+    # Only a void call's phantom result ("call f (ret igpr-N)" writing nothing);
+    # a none register nothing produces stays an uninitialized read.
+    void_results={int(m) for op in function['instructions'] if op['kind']=='call' and not op['writes']
+                  for m in re.findall(r'\(ret igpr-(\d+)\)',op.get('text',''))}
+    copies=True  # ...and none registers that only copy one (mov igpr-20, igpr-17)
+    while copies:
+        copies=False
+        for op in function['instructions']:
+            pair=None
+            if op['kind']=='move' and len(op['reads'])==1 and len(op['writes'])==1:
+                pair=(op['writes'][0],op['reads'][0])
+            elif op['kind']=='nop':  # the exporter's no-op for a none phantom copy keeps its text
+                m=re.fullmatch(r'mov igpr-(\d+), igpr-(\d+)',op.get('text',''))
+                if m: pair=(int(m.group(1)),int(m.group(2)))
+            if pair and pair[1] in void_results and pair[0] not in void_results and kinds.get(pair[0])=='none':
+                void_results.add(pair[0]); copies=True
     function=dict(function,instructions=[
+        dict(op,kind='symbol_pointer',symbol='#f',reads=[],text='none value as #f: '+op.get('text',''))
+        if op['kind']=='move' and len(op['reads'])==1 and kinds.get(op['reads'][0])=='none' and
+           op['reads'][0] in void_results and
+           len(op['writes'])==1 and kinds.get(op['writes'][0]) not in (None,'none') and runtime and
+           scalar_kind(kinds[op['writes'][0]],True) in ('object','symbol') else
         dict(op,kind='nop',reads=[],writes=[],text='none copy: '+op.get('text',''))
         if op['kind']=='move' and len(op['reads'])==1 and kinds.get(op['reads'][0])=='none' else
         dict(op,reads=[]) if function.get('return_type')=='none' and op['kind']=='return' and
@@ -714,16 +755,25 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
                      implicit[0].get('abi_type')!='object' or implicit[0].get('process_type') is not True or
                      implicit[0].get('register') in {p['register'] for p in function['parameters']}):
         raise ValueError('implicit process/self entry ABI not implemented for this signature')
-    if implicit and function['instructions'] and function['instructions'][0]['kind']=='nop':
+    if implicit:
         # With arguments the frontend resets self together with them in one
-        # value-reset; split off self's part as its own entry reset.
-        entry=function['instructions'][0]; self_register=implicit[0]['register']
+        # value-reset; split off self's part as its own entry reset. Read-free
+        # entry constants native_machine_registers inserted may precede it;
+        # their order is irrelevant, so the reset is swapped to position 0.
+        ops=function['instructions']; self_register=implicit[0]['register']
         arguments={p['register'] for p in function['parameters']}
         binding=[b for b in function.get('fixed_registers',[]) if b['register']==self_register]
-        if entry.get('text')=='value-reset' and not entry['reads'] and self_register in entry['writes'] and            set(entry['writes'])=={self_register}|arguments and len(entry['writes'])==len(arguments)+1 and len(binding)==1:
-            function=dict(function,instructions=[dict(kind='fixed_register_reset',reads=[],writes=[self_register],
-                                                      bindings=binding,text='self entry reset')]+
-                                                 function['instructions'][1:])
+        for q,entry in enumerate(ops):
+            if q and entry['kind']=='fixed_register_reset' and entry['writes']==[self_register] and not entry['reads']:
+                ops=list(ops); ops[q],ops[0]=ops[0],ops[q]
+                function=dict(function,instructions=ops); break
+            if entry['kind']=='nop' and entry.get('text')=='value-reset' and not entry['reads'] and                set(entry['writes'])=={self_register}|arguments and len(entry['writes'])==len(arguments)+1 and len(binding)==1:
+                ops=list(ops)
+                reset=dict(kind='fixed_register_reset',reads=[],writes=[self_register],bindings=binding,text='self entry reset')
+                ops[q],ops[0]=ops[0],reset
+                if q==0: ops[0]=reset
+                function=dict(function,instructions=ops); break
+            if entry['reads'] or entry['kind'] not in ('constant','stack_pointer') or not entry.get('text','').startswith('native'): break
     value_types=INTEGER_VALUE_TYPES|(TAGGED_VALUE_TYPES if runtime else frozenset())
     void_return=runtime and function.get('return_type')=='none'
     classes={r['id']:r['class'] for r in function['registers']}
@@ -784,6 +834,7 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
         function=lexical_process_bracket(function,lexical[0],fixed[lexical[0]])
         context_reads=[lexical[0]]
         if 'lexical_saved' not in function: lexical=[]  # read-only: no scope to restore
+    implicit_self=[implicit[0]['register']] if implicit else None
     translated=[]
     for position,op in enumerate(function['instructions']):
         if op['kind']=='current_process': raise ValueError('current process must originate from a fixed entry reset')
@@ -801,6 +852,8 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
             else: op=dict(op,kind='symbol_pointer',symbol='#f')
         elif op['kind'] in LEXICAL_SCOPE_KINDS:
             if not lexical or op['writes']!=lexical: raise ValueError('lexical scope operation without its bracket')
+        elif op['kind']=='process_reread' and op['writes']==implicit_self:
+            pass  # a behavior's self re-read after (suspend), as the kernel restores pp
         elif set(op['writes'])&fixed.keys():
             raise ValueError('fixed runtime register mutation is unsupported')
         translated.append(op)
@@ -1649,6 +1702,38 @@ def structured_static_data(item):
             raise ValueError('unsupported structured static import')
     return bytes(payload),offset,relocations
 
+DEBUG_SEGMENT=1  # common/link_types.h
+
+def discard_debug_segment(doc):
+    """A kernel without a debug segment, as on a retail PS2 (AI-assisted).
+
+    Desktop klink with DebugSegment 0 never copies debug-segment code, and every
+    reference into it is a null GOAL pointer; *debug-segment* is #f, so GOAL code
+    skips the debug paths. The same here: debug-segment functions are dropped, a
+    function_address of one loads 0, and a static function: relocation to one is
+    removed (its bytes stay 0). method-set! of 0 is a no-op, as on desktop.
+    Returns the new document and the sorted discarded names."""
+    discarded={f['name'] for f in doc['functions'] if f.get('segment')==DEBUG_SEGMENT and not f.get('top_level')}
+    if not discarded: return doc,[]
+    functions=[]
+    for f in doc['functions']:
+        if f['name'] in discarded: continue
+        functions.append(dict(f,instructions=[
+            dict(op,kind='constant',value=0,text='discarded debug segment: '+op.get('text',''))
+            if op['kind']=='function_address' and op.get('function') in discarded else op
+            for op in f['instructions']]))
+    statics=[]
+    for item in doc.get('statics',[]):
+        if 'relocations' in item:
+            item=dict(item,relocations=[r for r in item['relocations']
+                                        if not (r['symbol'].startswith('function:') and r['symbol'][9:] in discarded)])
+        for side in ('car','cdr'):
+            atom=item.get(side)
+            if isinstance(atom,dict) and atom.get('kind')=='function' and atom.get('target') in discarded:
+                item=dict(item,**{side:{'kind':'constant','value_bits':0}})
+        statics.append(item)
+    return dict(doc,functions=functions,statics=statics),sorted(discarded)
+
 def module_defined_types(doc):
     """Types the module's own top level defines: calls of type's method 0 (new,
     offset 16) whose first argument is a quoted symbol (AI-assisted). Maps each
@@ -1755,6 +1840,8 @@ if __name__=='__main__':
     parser.add_argument('--initializer',help='Export the original top-level code with this unique name')
     parser.add_argument('--native-binding',action='append',default=[],metavar='ORIGINAL=NATIVE',
                         help='Use a loaded native counterpart for an uncompilable original function')
+    parser.add_argument('--no-debug-segment',action='store_true',
+                        help='Discard debug-segment functions as a kernel without a debug segment does')
     parser.add_argument('--unassigned-locals',type=Path,
                         help='Reviewed never-assigned local-vars to zero-fill (dreamcast_unassigned_locals.json)')
     parser.add_argument('--all-functions',action='store_true',
@@ -1769,6 +1856,10 @@ if __name__=='__main__':
         bindings[original]=native
     try:
         doc=json.loads(args.input.read_text())
+        discarded=[]
+        if args.no_debug_segment:
+            if not args.runtime: parser.error('--no-debug-segment requires --runtime')
+            doc,discarded=discard_debug_segment(doc)
         if args.unassigned_locals:
             reviewed={k:v for k,v in json.loads(args.unassigned_locals.read_text()).items() if not k.startswith('_')}
             for f in doc['functions']:
@@ -1787,8 +1878,9 @@ if __name__=='__main__':
             if args.initializer is not None:
                 top=next(f for f in doc['functions'] if f.get('top_level'))
                 result_type=top.get('return_abi_type',top['return_type'])
-                if result_type=='float': raise ValueError('native module floating initializer ABI is not implemented')
-                init_kind=2 if result_type=='none' else 1
+                # Every loader discards a file's top-level value, so a float top
+                # level (its value left in FR0) runs as a void initializer.
+                init_kind=2 if result_type in ('none','float') else 1
             native=pack_native_module(objects,module_data(doc,objects),args.initializer,init_kind)
             args.native_module.parent.mkdir(parents=True,exist_ok=True); args.native_module.write_bytes(native)
         lines=['/* Native code from original typed GOAL frontend IR (AI-assisted). */']

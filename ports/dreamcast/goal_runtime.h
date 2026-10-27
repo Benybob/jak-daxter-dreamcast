@@ -40,6 +40,12 @@ extern uint32_t dc_goal_last_failed_alloc;
  * loader last cleared it. Every runtime call resets rt->error, so without this a
  * failed deftype inside a startup would be hidden by the next call. */
 extern enum dc_goal_error dc_goal_sticky_error;
+/* Diagnostics only (AI-assisted): (file code << 16) | line of the first
+ * BAD_ARGUMENT refusal since the DGO loader cleared it, so a Flycast dump names
+ * the refusing check. File codes: 1 bridge, 2 runtime, 3 process heap,
+ * 4 thread resize, 5 process spans. */
+extern uint32_t dc_goal_error_site;
+#define DC_GOAL_NOTE_SITE(code) (dc_goal_error_site?0u:(dc_goal_error_site=((uint32_t)(code)<<16)|(uint32_t)__LINE__))
 uint32_t dc_goal_hash(const char *name);
 uint32_t dc_goal_find(dc_goal_runtime *rt,const char *name);
 uint32_t dc_goal_intern(dc_goal_runtime *rt,const char *name);

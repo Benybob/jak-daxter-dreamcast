@@ -114,7 +114,9 @@ def main():
                                  '--manifest', str(build / f'game_{stem}.manifest.json'),
                                  '--runtime', '--all-functions', '--initializer', f'dc-game-{name}',
                                  '--native-module', str(dcsh / f'{name}.dcsh'),
-                                 '--unassigned-locals', str(reviewed_locals)], capture_output=True, text=True)
+                                 '--unassigned-locals', str(reviewed_locals),
+                                 # No debug segment on Dreamcast, as a retail kernel (klink DebugSegment 0).
+                                 '--no-debug-segment'], capture_output=True, text=True)
         if result.returncode:
             lines = (result.stdout + result.stderr).splitlines()
             reason = [l for l in lines if 'error' in l.lower()]
@@ -123,6 +125,8 @@ def main():
             break
         for entry in json.loads((build / f'game_{stem}.manifest.json').read_text()):
             if entry.get('zero_locals'): used_locals.add(entry['name'])
+        report['debug_segment_functions'] = report.get('debug_segment_functions', 0) + sum(
+            f.get('segment') == 1 and not f.get('top_level') for f in json.loads(ir[name].read_text())['functions'])
         report['compiled'].append(name)
         print(f'compiled {len(report["compiled"])}: {name}', flush=True)
     # Reviewed zero locals no compiled file used (stale, or past the stop point).

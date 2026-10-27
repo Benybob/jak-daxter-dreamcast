@@ -326,7 +326,7 @@ static void write_export(Compiler& compiler,FileEnv* file,const std::vector<std:
       // lowerer enforces its frame budget on the functions actually selected.
       if(stack_object_slots<0)
         throw std::runtime_error("stack object slot count out of range in "+function->name());
-      json fn={{"name",function->name()},{"asm",function->is_asm_func},
+      json fn={{"name",function->name()},{"segment",function->segment},{"asm",function->is_asm_func},
                {"return_type","none"},{"return_abi_type","none"},
                {"top_level",function.get()==&file->top_level_function()},
                {"stack_slots_used_for_stack_vars",stack_object_slots},
@@ -384,7 +384,7 @@ static void write_export(Compiler& compiler,FileEnv* file,const std::vector<std:
         for(const auto& value:function->reg_vals())
           if(value->ireg().id==constraint.ireg.id) {
             context_type=true;
-            if(value->type()!=TypeSpec("process")) process_typed=false;
+            if(!compiler.type_system().tc(TypeSpec("process"),value->type())) process_typed=false;
           }
         for(const auto& op:function->code()) {
           const auto rai=op->to_rai();
@@ -411,18 +411,30 @@ static void write_export(Compiler& compiler,FileEnv* file,const std::vector<std:
       }
       std::unordered_set<int> no_values;
       std::unordered_map<int,json> register_records;
-      std::unordered_map<int,size_t> alias_counts;
+      std::unordered_map<int,size_t> alias_counts,record_index;
+      std::unordered_map<int,TypeSpec> record_types;
       for(const auto& value:function->reg_vals()) {
         const auto type=shared_exit && value.get()==shared_block->return_value ? result_type : value->type();
         const int id=value->ireg().id;
         json record={{"id",id},{"class",reg_class(value->ireg().reg_class)},
                      {"type",type.print()},{"abi_type",native_value_type(type,compiler.type_system())}};
         const auto found=register_records.find(id);
-        if(found!=register_records.end()) {
-          if(!fixed_registers.count(id) || found->second!=record)
-            throw std::runtime_error("conflicting or non-fixed virtual register alias in "+function->name());
-        } else {
-          register_records.emplace(id,record); fn["registers"].push_back(record);
+        if(found!=register_records.end() && found->second!=record) {
+          // Several frontend views of one register (a behavior's self and pp on
+          // r13, a the-as rebinding) share its class and ABI; the register's
+          // type is their lowest common ancestor. Differing class or ABI refuses.
+          const auto merged=compiler.type_system().lowest_common_ancestor(record_types.at(id),type);
+          json joined={{"id",id},{"class",record.at("class")},{"type",merged.print()},
+                       {"abi_type",native_value_type(merged,compiler.type_system())}};
+          if(found->second.at("class")!=record.at("class") || found->second.at("abi_type")!=record.at("abi_type") ||
+             joined.at("abi_type")!=record.at("abi_type"))
+            throw std::runtime_error("conflicting virtual register alias in "+function->name()+
+                                     ": "+found->second.dump()+" vs "+record.dump());
+          found->second=joined; record_types[id]=merged;
+          fn["registers"][record_index.at(id)]=joined;
+        } else if(found==register_records.end()) {
+          register_records.emplace(id,record); record_types.emplace(id,type);
+          record_index.emplace(id,fn["registers"].size()); fn["registers"].push_back(record);
         }
         ++alias_counts[id];
         if(type.print()=="none") no_values.insert(value->ireg().id);
@@ -474,9 +486,13 @@ static void write_export(Compiler& compiler,FileEnv* file,const std::vector<std:
           if(fixed_registers.count(dest))
             throw std::runtime_error("stack address destination overlaps a fixed register in "+function->name());
           const std::string abi=record->second.at("abi_type").get<std::string>();
-          if(abi!="object" && abi!="pointer" &&
-             !(abi.size()>=11 && abi.compare(0,9,"(pointer ")==0 && abi.back()==')'))
-            throw std::runtime_error("stack address destination is not a scalar address in "+function->name());
+          // (inline-array T) is the address of its first element, like (pointer T).
+          const auto address_form=[&](const char* head){
+            const std::string h(head);
+            return abi.size()>h.size()+1 && abi.compare(0,h.size(),h)==0 && abi.back()==')';
+          };
+          if(abi!="object" && abi!="pointer" && !address_form("(pointer ") && !address_form("(inline-array "))
+            throw std::runtime_error("stack address destination is not a scalar address ("+abi+") in "+function->name());
         }
         fn["instructions"].push_back(std::move(exported));
         ++position;

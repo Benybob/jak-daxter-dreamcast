@@ -33,11 +33,12 @@ static int write32(dc_goal_runtime *rt,uint32_t at,uint32_t value) {
   memcpy(p,&value,4); return 1;
 }
 enum dc_goal_error dc_goal_sticky_error=DC_GOAL_OK;
+uint32_t dc_goal_error_site;
 uint32_t dc_goal_last_failed_alloc;
 uint32_t dc_goal_alloc(dc_goal_runtime *rt,uint32_t bytes) {
   uint32_t size,address;
   if (!rt || !rt->memory || !bytes || bytes>UINT32_MAX-15u)
-    return fail(rt,DC_GOAL_BAD_ARGUMENT);
+    return (DC_GOAL_NOTE_SITE(2),fail(rt,DC_GOAL_BAD_ARGUMENT));
   size=(bytes+15u)&~15u;
   if (rt->used>rt->capacity || size>rt->capacity-rt->used) {
     dc_goal_last_failed_alloc=size;
@@ -110,7 +111,7 @@ const char *dc_goal_symbol_name(dc_goal_runtime *rt,uint32_t symbol) {
 uint32_t dc_goal_new_basic(dc_goal_runtime *rt,uint32_t type,uint32_t bytes) {
   uint32_t memory;
   dc_goal_type_fields *fields=type_fields(rt,type);
-  if (!fields || bytes<4 || bytes<fields->allocated_size) return fail(rt,DC_GOAL_BAD_ARGUMENT);
+  if (!fields || bytes<4 || bytes<fields->allocated_size) return (DC_GOAL_NOTE_SITE(2),fail(rt,DC_GOAL_BAD_ARGUMENT));
   memory=dc_goal_alloc(rt,bytes);
   if (!memory) return 0;
   write32(rt,memory,type); return memory+4;
@@ -118,9 +119,9 @@ uint32_t dc_goal_new_basic(dc_goal_runtime *rt,uint32_t type,uint32_t bytes) {
 uint32_t dc_goal_string(dc_goal_runtime *rt,const char *text) {
   size_t length;
   uint32_t bytes,string;
-  if (!rt || !rt->memory || !text) return fail(rt,DC_GOAL_BAD_ARGUMENT);
+  if (!rt || !rt->memory || !text) return (DC_GOAL_NOTE_SITE(2),fail(rt,DC_GOAL_BAD_ARGUMENT));
   length=strlen(text);
-  if (length>UINT32_MAX-9u) return fail(rt,DC_GOAL_BAD_ARGUMENT);
+  if (length>UINT32_MAX-9u) return (DC_GOAL_NOTE_SITE(2),fail(rt,DC_GOAL_BAD_ARGUMENT));
   bytes=(uint32_t)length+1;
   if (bytes<8) bytes=8;
   string=dc_goal_new_basic(rt,rt->string_type,bytes+8);
@@ -159,7 +160,7 @@ static uint32_t find_slot(dc_goal_runtime *rt,const char *name,uint32_t *free_sl
   int32_t bucket;
   int valid=1;
   *free_slot=0;
-  if (!rt || !rt->table || !name) return fail(rt,DC_GOAL_BAD_ARGUMENT);
+  if (!rt || !rt->table || !name) return (DC_GOAL_NOTE_SITE(2),fail(rt,DC_GOAL_BAD_ARGUMENT));
   hash=dc_goal_hash(name);
   if (!hash) return fail(rt,DC_GOAL_BAD_HASH);
   if (hash==0x8454b6e6u && !strcmp(name,"_empty_")) return rt->s7-10u;
@@ -190,17 +191,17 @@ static uint32_t find_slot(dc_goal_runtime *rt,const char *name,uint32_t *free_sl
 int dc_goal_bind_fixed(dc_goal_runtime *rt,uint32_t offset,const char *name,uint32_t value) {
   uint32_t symbol,existing,hash;
   if (!rt || !name || !*name || (offset&7u) || offset>=DC_FIX_FIXED_SYM_END_OFFSET) {
-    fail(rt,DC_GOAL_BAD_ARGUMENT); return 0;
+    (DC_GOAL_NOTE_SITE(2),fail(rt,DC_GOAL_BAD_ARGUMENT)); return 0;
   }
   symbol=rt->s7+offset;
   existing=dc_goal_find(rt,name);
   if (rt->error!=DC_GOAL_OK || (existing && existing!=symbol) ||
       !read32(rt,symbol+DC_GOAL_SYM_INFO_OFFSET,&hash)) {
-    fail(rt,DC_GOAL_BAD_ARGUMENT); return 0;
+    (DC_GOAL_NOTE_SITE(2),fail(rt,DC_GOAL_BAD_ARGUMENT)); return 0;
   }
   if (hash) {
     const char *old=dc_goal_symbol_name(rt,symbol);
-    if (!old || strcmp(old,name)) { fail(rt,DC_GOAL_BAD_ARGUMENT); return 0; }
+    if (!old || strcmp(old,name)) { (DC_GOAL_NOTE_SITE(2),fail(rt,DC_GOAL_BAD_ARGUMENT)); return 0; }
     return dc_goal_set_symbol(rt,symbol,value);
   }
   return set_slot(rt,symbol,name,value);
@@ -228,7 +229,7 @@ uint32_t dc_goal_new_pair(dc_goal_runtime *rt,uint32_t car,uint32_t cdr) {
 }
 uint32_t dc_goal_type_of(dc_goal_runtime *rt,uint32_t value) {
   uint32_t tag;
-  if (!rt || !rt->memory) return fail(rt,DC_GOAL_BAD_ARGUMENT);
+  if (!rt || !rt->memory) return (DC_GOAL_NOTE_SITE(2),fail(rt,DC_GOAL_BAD_ARGUMENT));
   switch(value&7u) {
     case 0: return rt->binteger_type;
     case 2:
@@ -269,7 +270,7 @@ uint32_t dc_goal_define_type(dc_goal_runtime *rt,const char *name,uint32_t paren
   uint32_t symbol,type,memory;
   uint16_t i;
   if (!source || !name || !methods || methods>=127 || bytes>65520u)
-    return fail(rt,DC_GOAL_BAD_ARGUMENT);
+    return (DC_GOAL_NOTE_SITE(2),fail(rt,DC_GOAL_BAD_ARGUMENT));
   symbol=dc_goal_intern(rt,name);
   if (!symbol) return 0;
   type=dc_goal_symbol_value(rt,symbol);
@@ -297,7 +298,7 @@ uint32_t dc_goal_intern_type(dc_goal_runtime *rt,const char *name,uint16_t metho
   uint32_t symbol,type,memory;
   uint16_t count=methods==0?12u:(methods==1?44u:methods);
   dc_goal_type_fields *fields;
-  if (!rt || !name || !*name || methods>=127) return fail(rt,DC_GOAL_BAD_ARGUMENT);
+  if (!rt || !name || !*name || methods>=127) return (DC_GOAL_NOTE_SITE(2),fail(rt,DC_GOAL_BAD_ARGUMENT));
   symbol=dc_goal_intern(rt,name);
   if (!symbol) return 0;
   type=dc_goal_symbol_value(rt,symbol);
@@ -326,7 +327,7 @@ uint32_t dc_goal_new_type(dc_goal_runtime *rt,uint32_t symbol,uint32_t parent,ui
   name=dc_goal_symbol_name(rt,symbol);
   if (!source || !name) return 0;
   if (!methods) methods=12;
-  if (methods>=127 || bytes>65520u) return fail(rt,DC_GOAL_BAD_ARGUMENT);
+  if (methods>=127 || bytes>65520u) return (DC_GOAL_NOTE_SITE(2),fail(rt,DC_GOAL_BAD_ARGUMENT));
   type=dc_goal_symbol_value(rt,symbol);
   if (type) {
     fields=type_fields(rt,type);
@@ -362,7 +363,17 @@ uint32_t dc_goal_method_set(dc_goal_runtime *rt,uint32_t type,uint32_t index,
   else if (method==2) {
     method=dc_goal_get_method(rt,fields->parent,(uint16_t)index);
     if (rt->error!=DC_GOAL_OK) return 0;
-  } else if (dc_goal_type_of(rt,method)!=rt->function_type) return fail(rt,DC_GOAL_BAD_ARGUMENT);
+  } else if (dc_goal_type_of(rt,method)!=rt->function_type) {
+    /* A virtual state (defstate on a process type) installs a state object in
+     * the method table; desktop method_set stores any value. Accept exactly an
+     * instance of the GOAL state type, once gstate has defined it. */
+    uint32_t state_symbol=dc_goal_find(rt,"state"),state_type,type;
+    state_type=state_symbol?dc_goal_symbol_value(rt,state_symbol):0;
+    type=dc_goal_type_of(rt,method);
+    rt->error=DC_GOAL_OK;
+    if (!state_type || !type || dc_goal_type_of(rt,state_type)!=rt->type_type ||
+        !dc_goal_is_subtype(rt,type,state_type)) return (DC_GOAL_NOTE_SITE(2),fail(rt,DC_GOAL_BAD_ARGUMENT));
+  }
   if (propagate) for (pass=0;pass<2;++pass) {
     /* Validate the full update before mutating. No allocations or scheduling
      * occur between passes. Only installed symbol-bound types participate. */
@@ -407,7 +418,7 @@ int dc_goal_init(dc_goal_runtime *rt,void *memory,uint32_t capacity,uint32_t vir
   };
   memset(rt,0,sizeof(*rt));
   if (!memory || ((uintptr_t)memory&15u) || !virtual_base || (virtual_base&15u) ||
-      capacity>UINT32_MAX-virtual_base) { fail(rt,DC_GOAL_BAD_ARGUMENT); return 0; }
+      capacity>UINT32_MAX-virtual_base) { (DC_GOAL_NOTE_SITE(2),fail(rt,DC_GOAL_BAD_ARGUMENT)); return 0; }
   rt->memory=memory; rt->base=virtual_base; rt->capacity=capacity;
   rt->table=dc_goal_alloc(rt,DC_GOAL_SYMBOL_BYTES);
   if (!rt->table) return 0;

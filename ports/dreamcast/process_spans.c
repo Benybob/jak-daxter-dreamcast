@@ -47,7 +47,7 @@ static int state(dc_goal_runtime *r){
     active->capacity!=registered_capacity||active->count>registered_capacity||active->owner!=registered_owner||
     active->hooks.owner!=registered_hooks.owner||active->hooks.quiescent!=registered_hooks.quiescent||
     (registered_hooks.owner&&registered_hooks.owner()!=registered_owner)){
-  fail(r,DC_GOAL_BAD_ARGUMENT);return -1;
+  (DC_GOAL_NOTE_SITE(5),fail(r,DC_GOAL_BAD_ARGUMENT));return -1;
  }
  return 1;
 }
@@ -62,16 +62,16 @@ static int exact(const dc_goal_process_span *a,const dc_goal_process_span *b){
 int dc_goal_process_spans_init(dc_goal_process_spans *table,dc_goal_runtime *r,
  dc_goal_process_span *rows,uint32_t cap,const dc_goal_process_span_hooks *hooks){
  dc_goal_process_span_hooks copy;uint32_t owner=0;size_t bytes;
- if(!r||!hooks)return fail(r,DC_GOAL_BAD_ARGUMENT);
+ if(!r||!hooks)return (DC_GOAL_NOTE_SITE(5),fail(r,DC_GOAL_BAD_ARGUMENT));
  copy=*hooks;
- if(!cap||cap>UINT32_MAX/(uint32_t)sizeof *rows)return fail(r,DC_GOAL_BAD_ARGUMENT);
+ if(!cap||cap>UINT32_MAX/(uint32_t)sizeof *rows)return (DC_GOAL_NOTE_SITE(5),fail(r,DC_GOAL_BAD_ARGUMENT));
  bytes=(size_t)cap*sizeof *rows;
  if(active||!copy.quiescent||!copy.quiescent(r)||!external(r,table,sizeof *table)||!external(r,rows,bytes)||
-    overlap(address(table),sizeof *table,address(rows),bytes))return fail(r,DC_GOAL_BAD_ARGUMENT);
+    overlap(address(table),sizeof *table,address(rows),bytes))return (DC_GOAL_NOTE_SITE(5),fail(r,DC_GOAL_BAD_ARGUMENT));
 #ifdef __DREAMCAST__
- if(!copy.owner)return fail(r,DC_GOAL_BAD_ARGUMENT);
+ if(!copy.owner)return (DC_GOAL_NOTE_SITE(5),fail(r,DC_GOAL_BAD_ARGUMENT));
 #endif
- if(copy.owner){owner=copy.owner();if(!owner)return fail(r,DC_GOAL_BAD_ARGUMENT);}
+ if(copy.owner){owner=copy.owner();if(!owner)return (DC_GOAL_NOTE_SITE(5),fail(r,DC_GOAL_BAD_ARGUMENT));}
  memset(table,0,sizeof *table);memset(rows,0,bytes);
  table->magic=SPANS_MAGIC;table->runtime=r;table->rows=rows;table->capacity=cap;table->owner=owner;table->hooks=copy;
  active=table;registered_runtime=r;registered_rows=rows;registered_capacity=cap;registered_owner=owner;registered_hooks=copy;
@@ -85,19 +85,19 @@ int dc_goal_process_span_room(dc_goal_runtime *r){
 }
 int dc_goal_process_span_note(dc_goal_runtime *r,uint32_t process,uint32_t bytes,dc_goal_process_span *out){
  uint32_t at,offset;dc_goal_process_span made;
- if(state(r)!=1)return fail(r,DC_GOAL_BAD_ARGUMENT);
- if(out&&!valid_output(r,out,sizeof *out))return fail(r,DC_GOAL_BAD_ARGUMENT);
- if(process<4||((process-4)&15u)||bytes<112||process-4<r->base)return fail(r,DC_GOAL_BAD_ARGUMENT);
+ if(state(r)!=1)return (DC_GOAL_NOTE_SITE(5),fail(r,DC_GOAL_BAD_ARGUMENT));
+ if(out&&!valid_output(r,out,sizeof *out))return (DC_GOAL_NOTE_SITE(5),fail(r,DC_GOAL_BAD_ARGUMENT));
+ if(process<4||((process-4)&15u)||bytes<112||process-4<r->base)return (DC_GOAL_NOTE_SITE(5),fail(r,DC_GOAL_BAD_ARGUMENT));
  offset=process-4-r->base;
- if(offset>r->used||bytes>r->used-offset||!dc_goal_resolve(r,process-4,bytes))return fail(r,DC_GOAL_BAD_ARGUMENT);
+ if(offset>r->used||bytes>r->used-offset||!dc_goal_resolve(r,process-4,bytes))return (DC_GOAL_NOTE_SITE(5),fail(r,DC_GOAL_BAD_ARGUMENT));
  at=lower_bound(process);
  if(at<active->count&&registered_rows[at].process==process){
-  if(registered_rows[at].bytes!=bytes||!registered_rows[at].generation)return fail(r,DC_GOAL_BAD_ARGUMENT);
+  if(registered_rows[at].bytes!=bytes||!registered_rows[at].generation)return (DC_GOAL_NOTE_SITE(5),fail(r,DC_GOAL_BAD_ARGUMENT));
   if(out)*out=registered_rows[at];
   return 1;
  }
- if(at>0&&process-registered_rows[at-1].process<registered_rows[at-1].bytes)return fail(r,DC_GOAL_BAD_ARGUMENT);
- if(at<active->count&&registered_rows[at].process-process<bytes)return fail(r,DC_GOAL_BAD_ARGUMENT);
+ if(at>0&&process-registered_rows[at-1].process<registered_rows[at-1].bytes)return (DC_GOAL_NOTE_SITE(5),fail(r,DC_GOAL_BAD_ARGUMENT));
+ if(at<active->count&&registered_rows[at].process-process<bytes)return (DC_GOAL_NOTE_SITE(5),fail(r,DC_GOAL_BAD_ARGUMENT));
  if(dc_goal_process_span_room(r)!=1)return 0;
  made.process=process;made.bytes=bytes;made.generation=++next_generation;
  memmove(registered_rows+at+1,registered_rows+at,(size_t)(active->count-at)*sizeof *registered_rows);
@@ -105,23 +105,23 @@ int dc_goal_process_span_note(dc_goal_runtime *r,uint32_t process,uint32_t bytes
 }
 int dc_goal_process_span_lookup(dc_goal_runtime *r,uint32_t process,dc_goal_process_span *out){
  uint32_t at;
- if(state(r)!=1)return fail(r,DC_GOAL_BAD_ARGUMENT);
- if(!valid_output(r,out,sizeof *out))return fail(r,DC_GOAL_BAD_ARGUMENT);
+ if(state(r)!=1)return (DC_GOAL_NOTE_SITE(5),fail(r,DC_GOAL_BAD_ARGUMENT));
+ if(!valid_output(r,out,sizeof *out))return (DC_GOAL_NOTE_SITE(5),fail(r,DC_GOAL_BAD_ARGUMENT));
  at=lower_bound(process);
- if(at==active->count||registered_rows[at].process!=process||!registered_rows[at].generation)return fail(r,DC_GOAL_BAD_ARGUMENT);
+ if(at==active->count||registered_rows[at].process!=process||!registered_rows[at].generation)return (DC_GOAL_NOTE_SITE(5),fail(r,DC_GOAL_BAD_ARGUMENT));
  *out=registered_rows[at];return 1;
 }
 int dc_goal_process_span_check(dc_goal_runtime *r,const dc_goal_process_span *witness){
  dc_goal_process_span copy;uint32_t at;
- if(!witness||state(r)!=1)return fail(r,DC_GOAL_BAD_ARGUMENT);
+ if(!witness||state(r)!=1)return (DC_GOAL_NOTE_SITE(5),fail(r,DC_GOAL_BAD_ARGUMENT));
  copy=*witness;at=lower_bound(copy.process);
- return at<active->count&&exact(&copy,registered_rows+at)?1:fail(r,DC_GOAL_BAD_ARGUMENT);
+ return at<active->count&&exact(&copy,registered_rows+at)?1:(DC_GOAL_NOTE_SITE(5),fail(r,DC_GOAL_BAD_ARGUMENT));
 }
 int dc_goal_process_span_retire(dc_goal_runtime *r,const dc_goal_process_span *witness){
  dc_goal_process_span copy;uint32_t at;
- if(!witness||state(r)!=1)return fail(r,DC_GOAL_BAD_ARGUMENT);
+ if(!witness||state(r)!=1)return (DC_GOAL_NOTE_SITE(5),fail(r,DC_GOAL_BAD_ARGUMENT));
  copy=*witness;
- if(!registered_hooks.quiescent(r)||!dc_goal_process_span_check(r,&copy))return fail(r,DC_GOAL_BAD_ARGUMENT);
+ if(!registered_hooks.quiescent(r)||!dc_goal_process_span_check(r,&copy))return (DC_GOAL_NOTE_SITE(5),fail(r,DC_GOAL_BAD_ARGUMENT));
  at=lower_bound(copy.process);
  memmove(registered_rows+at,registered_rows+at+1,(size_t)(active->count-at-1)*sizeof *registered_rows);
  --active->count;memset(registered_rows+active->count,0,sizeof *registered_rows);return 1;
@@ -129,7 +129,7 @@ int dc_goal_process_span_retire(dc_goal_runtime *r,const dc_goal_process_span *w
 int dc_goal_process_spans_detach(dc_goal_runtime *r){
  dc_goal_process_spans *table;dc_goal_process_span *rows;size_t bytes;
  int s=state(r);if(s==0)return 1;if(s<0)return 0;
- if(!registered_hooks.quiescent(r))return fail(r,DC_GOAL_BAD_ARGUMENT);
+ if(!registered_hooks.quiescent(r))return (DC_GOAL_NOTE_SITE(5),fail(r,DC_GOAL_BAD_ARGUMENT));
  table=active;rows=registered_rows;bytes=(size_t)registered_capacity*sizeof *rows;
  active=NULL;registered_runtime=NULL;registered_rows=NULL;registered_capacity=registered_owner=0;
  memset(&registered_hooks,0,sizeof registered_hooks);memset(rows,0,bytes);memset(table,0,sizeof *table);return 1;

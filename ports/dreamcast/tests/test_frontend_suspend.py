@@ -40,7 +40,9 @@ class SuspendTest(unittest.TestCase):
         self.assertLessEqual({'function:dc-c-suspend','function:dc-c-current-process'},symbols)
         mapped=suspend_idiom(native_machine_registers(dict(self.fn,registers=[dict(r,type=r.get('abi_type',r['type'])) for r in self.fn['registers']])))
         kinds=[o['kind'] for o in mapped['instructions']]
-        self.assertEqual(kinds.count('suspend'),1);self.assertEqual(kinds.count('stack_pointer'),1)
+        self.assertEqual(kinds.count('suspend'),1)
+        # the KERNEL_DEBUG stack check's reset, plus the native entry read of rsp
+        self.assertEqual(kinds.count('stack_pointer'),2)
         self.assertEqual(kinds.count('process_reread'),1);self.assertEqual(mapped['fixed_registers'],[])
 
     def test_suspend_near_misses_refuse(self):

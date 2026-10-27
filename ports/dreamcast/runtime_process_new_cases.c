@@ -64,7 +64,9 @@ uint32_t dc_runtime_process_new_cases(dc_goal_runtime *rt,dc_runtime_check check
   CHECK(memcmp(dc_goal_resolve(rt,raw,124),zero,124),0,"sized allocation zeroes body");
   symbols=rt->symbol_count;
   for(i=0;i<10;++i) { bad_heap[i]=global; bad_type[i]=process_type; bad_size[i]=128; errors[i]=DC_GOAL_BAD_ARGUMENT; }
-  bad_heap[0]=global+8; bad_heap[1]=(UINT64_C(1)<<32)|global;
+  /* 'loading-level (global+16): a level kheap with no native counterpart yet.
+   * global+8 ('debug, null kheap) allocates globally, as desktop kmalloc does. */
+  bad_heap[0]=global+16; bad_heap[1]=(UINT64_C(1)<<32)|global;
   bad_type[2]=0; bad_type[3]=rt->object_type; bad_type[4]=(UINT64_C(1)<<32)|process_type;
   bad_size[5]=0; bad_size[6]=111; bad_size[7]=UINT64_C(0x100000000);
   bad_size[8]=UINT32_MAX; bad_size[9]=rt->capacity; errors[9]=DC_GOAL_OUT_OF_MEMORY;

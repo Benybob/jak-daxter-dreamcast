@@ -35,12 +35,12 @@ static int known_span_matches(dc_goal_runtime *rt,uint32_t process,uint32_t byte
   dc_goal_process_span span;int registered=dc_goal_process_spans_registered(rt);
   if(!registered)return 1; /* legacy explicit C ownership contract, no lookup */
   if(registered<0 || !dc_goal_process_span_lookup(rt,process,&span))return 0;
-  if(span.bytes!=bytes){if(rt->error==DC_GOAL_OK)rt->error=DC_GOAL_BAD_ARGUMENT;return 0;}
+  if(span.bytes!=bytes){if(rt->error==DC_GOAL_OK)(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);return 0;}
   return 1;
 }
 static int refuse_live_scope(dc_goal_runtime *rt) {
   if(dc_goal_pp_scope_runtime_clear_allowed(rt))return 0;
-  if(rt && rt->error==DC_GOAL_OK)rt->error=DC_GOAL_BAD_ARGUMENT;
+  if(rt && rt->error==DC_GOAL_OK)(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);
   return 1;
 }
 static unsigned char *context_fields(dc_goal_runtime *rt,uint32_t context) {
@@ -73,7 +73,7 @@ int dc_goal_bind_process_context(dc_goal_runtime *rt,uint32_t process,uint32_t a
   dc_goal_process_heap candidate;
   unsigned char *fields;
   uint32_t symbol,context,current;
-  if(!rt || active_runtime!=rt) { if(rt) rt->error=DC_GOAL_BAD_ARGUMENT; return 0; }
+  if(!rt || active_runtime!=rt) { if(rt) (DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT); return 0; }
   if(refuse_live_scope(rt))return 0;
   dc_goal_clear_process_context(rt);
   if(!known_span_matches(rt,process,allocation_bytes))return 0;
@@ -81,9 +81,9 @@ int dc_goal_bind_process_context(dc_goal_runtime *rt,uint32_t process,uint32_t a
   symbol=dc_goal_find(rt,"*kernel-context*");
   context=symbol?dc_goal_symbol_value(rt,symbol):0;
   fields=context_fields(rt,context);
-  if(!fields) { rt->error=DC_GOAL_BAD_ARGUMENT; return 0; }
+  if(!fields) { (DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT); return 0; }
   memcpy(&current,fields+20,4);
-  if(current!=rt->s7) { rt->error=DC_GOAL_BAD_ARGUMENT; return 0; }
+  if(current!=rt->s7) { (DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT); return 0; }
   execution_context=context; execution_heap=candidate; active_process_heap=candidate;
   memcpy(fields+20,&process,4); rt->error=DC_GOAL_OK; return 1;
 }
@@ -108,13 +108,13 @@ static uint64_t current_process(void) {
   if(current!=execution_heap.process) goto invalid;
   rt->error=DC_GOAL_OK; return current;
 invalid:
-  dc_goal_clear_process_context(rt); rt->error=DC_GOAL_BAD_ARGUMENT; return 0;
+  dc_goal_clear_process_context(rt); (DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT); return 0;
 }
 static uint64_t new_pair(uint64_t heap,uint64_t type,uint64_t car,uint64_t cdr) {
   dc_goal_runtime *rt=active_runtime;
   if (!rt) return 0;
   if (heap!=rt->s7+DC_FIX_SYM_GLOBAL_HEAP || type!=rt->pair_type) {
-    rt->error=DC_GOAL_BAD_ARGUMENT; return 0;
+    (DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT); return 0;
   }
   return dc_goal_new_pair(rt,(uint32_t)car,(uint32_t)cdr);
 }
@@ -133,7 +133,7 @@ static uint64_t method_set(uint64_t type,uint64_t index,uint64_t method) {
   dc_goal_runtime *rt=active_runtime;
   uint32_t enable;
   if (!rt) return 0;
-  if (index>UINT32_MAX || method>UINT32_MAX) { rt->error=DC_GOAL_BAD_ARGUMENT; return 0; }
+  if (index>UINT32_MAX || method>UINT32_MAX) { (DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT); return 0; }
   enable=dc_goal_find(rt,"*enable-method-set*");
   return dc_goal_method_set(rt,(uint32_t)type,(uint32_t)index,(uint32_t)method,
                             enable && dc_goal_symbol_value(rt,enable)!=0);
@@ -151,7 +151,7 @@ static int process_heap_type_allowed(dc_goal_runtime *rt,uint32_t type) {
   if(!configured)return 1;
   family=process_family(rt,type);
   if(family==0)return 1;
-  if(rt->error==DC_GOAL_OK)rt->error=DC_GOAL_BAD_ARGUMENT;
+  if(rt->error==DC_GOAL_OK)(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);
   return 0; /* nested process ownership needs a verified parent-subspan protocol */
 }
 static uint32_t global_basic_new(dc_goal_runtime *rt,uint32_t type,uint32_t bytes) {
@@ -159,12 +159,37 @@ static uint32_t global_basic_new(dc_goal_runtime *rt,uint32_t type,uint32_t byte
   if(configured<0)return 0;
   if(configured){tracked=process_family(rt,type);if(tracked<0)return 0;}
   if(tracked && (bytes<112 || dc_goal_process_span_room(rt)!=1)){
-    if(rt->error==DC_GOAL_OK)rt->error=DC_GOAL_BAD_ARGUMENT;
+    if(rt->error==DC_GOAL_OK)(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);
     return 0;
   }
   result=dc_goal_new_basic(rt,type,bytes);
   if(result && tracked && !dc_goal_process_span_note(rt,result,bytes,NULL))return 0;
   return result;
+}
+/* kscheme alloc_from_heap's heap kinds (AI-assisted). 'debug with a null kheap
+ * is the global heap (kmalloc's null-heap fallback). A value outside the symbol
+ * table is "treated as a stack address": the object is zeroed in place there,
+ * as dead-pool-heap's get-process does with (the symbol gap-address). */
+static int debug_heap_absent(dc_goal_runtime *rt,uint64_t heap);
+enum heap_kind { HEAP_REFUSED,HEAP_GLOBAL,HEAP_PROCESS,HEAP_ADDRESS };
+static enum heap_kind heap_kind(dc_goal_runtime *rt,uint64_t heap) {
+  if(heap==rt->s7+DC_FIX_SYM_GLOBAL_HEAP || debug_heap_absent(rt,heap))return HEAP_GLOBAL;
+  if(heap==rt->s7+DC_FIX_SYM_PROCESS_TYPE)return HEAP_PROCESS;
+  if(heap>UINT32_MAX || (heap>=rt->table && heap<rt->table+DC_GOAL_SYMBOL_BYTES))return HEAP_REFUSED;
+  return HEAP_ADDRESS;
+}
+static uint64_t in_place_new(dc_goal_runtime *rt,uint32_t address,uint32_t type,uint32_t bytes,int basic) {
+  uint32_t aligned=(bytes+15u)&~15u;
+  unsigned char *memory;
+  if(!bytes || bytes>UINT32_MAX-15u || (basic && bytes<4) ||
+     !(memory=dc_goal_resolve(rt,address,aligned))){
+    if(rt->error==DC_GOAL_OK){(void)DC_GOAL_NOTE_SITE(1);rt->error=DC_GOAL_BAD_ARGUMENT;}
+    return 0;
+  }
+  memset(memory,0,aligned);
+  if(!basic)return address;
+  memcpy(memory,&type,4);
+  return address+4u;
 }
 static uint64_t new_basic(uint64_t heap,uint64_t type) {
   dc_goal_runtime *rt=active_runtime;
@@ -173,11 +198,13 @@ static uint64_t new_basic(uint64_t heap,uint64_t type) {
   if(dc_goal_pp_scope_blocks_transfer(rt) && rt->error!=DC_GOAL_OK)return 0;
   if (type>UINT32_MAX ||
       !dc_goal_is_subtype(rt,(uint32_t)type,rt->basic_type)) {
-    rt->error=DC_GOAL_BAD_ARGUMENT; return 0;
+    (DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT); return 0;
   }
   fields=dc_goal_resolve(rt,(uint32_t)type,sizeof(*fields));
   if(!fields) return 0;
-  if(heap==rt->s7+DC_FIX_SYM_GLOBAL_HEAP)
+  if(heap_kind(rt,heap)==HEAP_ADDRESS)
+    return in_place_new(rt,(uint32_t)heap,(uint32_t)type,fields->allocated_size,1);
+  if(heap_kind(rt,heap)==HEAP_GLOBAL)
     return global_basic_new(rt,(uint32_t)type,fields->allocated_size);
   if(heap==rt->s7+DC_FIX_SYM_PROCESS_TYPE && active_process_heap.runtime==rt) {
     uint32_t lexical;
@@ -186,7 +213,7 @@ static uint64_t new_basic(uint64_t heap,uint64_t type) {
                                 &active_process_heap,&lexical)==DC_GOAL_PP_SCOPE_DENIED)return 0;
     return dc_goal_process_new_basic(&active_process_heap,(uint32_t)type,fields->allocated_size);
   }
-  rt->error=DC_GOAL_BAD_ARGUMENT; return 0;
+  (DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT); return 0;
 }
 /* Native counterpart of kscheme new_structure: allocated_size bytes from the
  * global heap, 16-byte rounded and zeroed (kmalloc KMALLOC_MEMSET), no type tag.
@@ -196,12 +223,13 @@ static uint64_t new_structure(uint64_t heap,uint64_t type) {
   dc_goal_type_fields *fields;
   if (!rt) return 0;
   if(dc_goal_pp_scope_blocks_transfer(rt) && rt->error!=DC_GOAL_OK)return 0;
-  if (heap!=rt->s7+DC_FIX_SYM_GLOBAL_HEAP || type>UINT32_MAX ||
+  if ((heap_kind(rt,heap)!=HEAP_GLOBAL && heap_kind(rt,heap)!=HEAP_ADDRESS) || type>UINT32_MAX ||
       !dc_goal_is_subtype(rt,(uint32_t)type,rt->structure_type) || dc_goal_is_subtype(rt,(uint32_t)type,rt->basic_type)) {
-    rt->error=DC_GOAL_BAD_ARGUMENT; return 0;
+    (DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT); return 0;
   }
   fields=dc_goal_resolve(rt,(uint32_t)type,sizeof(*fields));
-  if(!fields || !fields->allocated_size){if(rt->error==DC_GOAL_OK)rt->error=DC_GOAL_BAD_ARGUMENT;return 0;}
+  if(!fields || !fields->allocated_size){if(rt->error==DC_GOAL_OK)(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);return 0;}
+  if(heap_kind(rt,heap)==HEAP_ADDRESS)return in_place_new(rt,(uint32_t)heap,(uint32_t)type,fields->allocated_size,0);
   return dc_goal_alloc(rt,fields->allocated_size);
 }
 /* Native counterparts of the kscheme default asize-of/copy methods (AI-assisted):
@@ -215,7 +243,7 @@ static uint64_t asize_of_basic(uint64_t object) {
   uint32_t type;
   if(!rt)return 0;
   type=dc_goal_type_of(rt,(uint32_t)object);
-  if(!type || !dc_goal_is_subtype(rt,type,rt->basic_type)){if(rt->error==DC_GOAL_OK)rt->error=DC_GOAL_BAD_ARGUMENT;return 0;}
+  if(!type || !dc_goal_is_subtype(rt,type,rt->basic_type)){if(rt->error==DC_GOAL_OK)(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);return 0;}
   fields=dc_goal_resolve(rt,type,sizeof(*fields));
   return fields?fields->allocated_size:0;
 }
@@ -230,12 +258,12 @@ static uint64_t copy_basic(uint64_t object,uint64_t heap) {
   if(!rt)return 0;
   if(dc_goal_pp_scope_blocks_transfer(rt) && rt->error!=DC_GOAL_OK)return 0;
   type=dc_goal_type_of(rt,(uint32_t)object);
-  if(!type || !dc_goal_is_subtype(rt,type,rt->basic_type)){if(rt->error==DC_GOAL_OK)rt->error=DC_GOAL_BAD_ARGUMENT;return 0;}
+  if(!type || !dc_goal_is_subtype(rt,type,rt->basic_type)){if(rt->error==DC_GOAL_OK)(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);return 0;}
   if(dc_goal_get_method(rt,type,4)!=dc_goal_symbol_value(rt,dc_goal_find(rt,"dc-c-basic-asize-of"))){
     rt->error=DC_GOAL_UNSUPPORTED_TRANSFER;return 0;
   }
   bytes=(uint32_t)asize_of_basic(object);
-  if(bytes<4){if(rt->error==DC_GOAL_OK)rt->error=DC_GOAL_BAD_ARGUMENT;return 0;}
+  if(bytes<4){if(rt->error==DC_GOAL_OK)(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);return 0;}
   result=(uint32_t)new_basic(heap,type);
   if(!result)return 0;
   from=dc_goal_resolve(rt,(uint32_t)object,bytes-4);
@@ -250,9 +278,11 @@ static uint64_t new_object(uint64_t heap,uint64_t type,uint64_t size) {
   if(dc_goal_pp_scope_blocks_transfer(rt) && rt->error!=DC_GOAL_OK)return 0;
   if (type>UINT32_MAX || size>UINT32_MAX ||
       !dc_goal_is_subtype(rt,(uint32_t)type,rt->basic_type)) {
-    rt->error=DC_GOAL_BAD_ARGUMENT; return 0;
+    (DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT); return 0;
   }
-  if(heap==rt->s7+DC_FIX_SYM_GLOBAL_HEAP)
+  if(heap_kind(rt,heap)==HEAP_ADDRESS)
+    return in_place_new(rt,(uint32_t)heap,(uint32_t)type,(uint32_t)size,1);
+  if(heap_kind(rt,heap)==HEAP_GLOBAL)
     return global_basic_new(rt,(uint32_t)type,(uint32_t)size);
   if(heap==rt->s7+DC_FIX_SYM_PROCESS_TYPE && active_process_heap.runtime==rt) {
     uint32_t lexical;
@@ -261,7 +291,7 @@ static uint64_t new_object(uint64_t heap,uint64_t type,uint64_t size) {
                                 &active_process_heap,&lexical)==DC_GOAL_PP_SCOPE_DENIED)return 0;
     return dc_goal_process_new_basic(&active_process_heap,(uint32_t)type,(uint32_t)size);
   }
-  rt->error=DC_GOAL_BAD_ARGUMENT; return 0;
+  (DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT); return 0;
 }
 static uint64_t integer_error(uint64_t kind) {
   if (active_runtime) active_runtime->error=kind==1?DC_GOAL_DIVIDE_BY_ZERO:
@@ -278,7 +308,7 @@ int dc_goal_install_main_start_guard(dc_goal_runtime *rt,dc_goal_cache_sync sync
  unsigned char code[12]={1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0};
  dc_goal_code_export function={"set-to-run-bootstrap",code,12,NULL,0};
  uint32_t target=(uint32_t)(uintptr_t)missing_call;
- if(!rt || active_runtime!=rt || dc_goal_fiber_current()) {if(rt)rt->error=DC_GOAL_BAD_ARGUMENT;return 0;}
+ if(!rt || active_runtime!=rt || dc_goal_fiber_current()) {if(rt)(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);return 0;}
  memcpy(code+8,&target,4);return dc_goal_load_module(rt,&function,1,sync,NULL,result);
 }
 int dc_goal_install_core_bridges(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_goal_module_result *result) {
@@ -292,7 +322,7 @@ int dc_goal_install_core_bridges(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_
                                     {"dc-c-call-error",code[2],12,NULL,0}};
   uint32_t target,entry,global,global_value=0;
   if (!rt || !result) return 0;
-  if (active_runtime && active_runtime!=rt) { rt->error=DC_GOAL_BAD_ARGUMENT; return 0; }
+  if (active_runtime && active_runtime!=rt) { (DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT); return 0; }
   if(refuse_live_scope(rt))return 0;
   global=dc_goal_find(rt,"global");
   if (global) global_value=dc_goal_symbol_value(rt,global);
@@ -309,7 +339,7 @@ int dc_goal_install_core_bridges(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_
 void dc_goal_clear_core_bridges(dc_goal_runtime *rt) {
   if (active_runtime==rt && rt) {
     dc_goal_pp_scope_stack *stack;
-    if(dc_goal_fiber_current()){if(rt->error==DC_GOAL_OK)rt->error=DC_GOAL_BAD_ARGUMENT;return;}
+    if(dc_goal_fiber_current()){if(rt->error==DC_GOAL_OK)(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);return;}
     if(refuse_live_scope(rt))return;
     stack=dc_goal_pp_scope_active(rt);
     if(stack && !dc_goal_pp_scope_detach(stack,rt))return;
@@ -338,7 +368,7 @@ int dc_goal_install_type_bridges(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_
                        (uint32_t)(uintptr_t)asize_of_basic,(uint32_t)(uintptr_t)copy_basic};
   unsigned i;
   if (!rt || !result) return 0;
-  if (active_runtime!=rt) { rt->error=DC_GOAL_BAD_ARGUMENT; return 0; }
+  if (active_runtime!=rt) { (DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT); return 0; }
   for (i=0;i<8;++i) { memcpy(code[i],stub,12); memcpy(code[i]+8,&targets[i],4); }
   if (!dc_goal_load_module(rt,functions,8,sync,NULL,result)) return 0;
 #define BRIDGE(name) dc_goal_symbol_value(rt,dc_goal_find(rt,name))
@@ -360,7 +390,7 @@ int dc_goal_install_integer_bridge(dc_goal_runtime *rt,dc_goal_cache_sync sync,d
   uint32_t target=(uint32_t)(uintptr_t)integer_error;
   dc_goal_code_export function={"dc-c-integer-error",code,12,NULL,0};
   if (!rt || !result) return 0;
-  if (active_runtime!=rt) { rt->error=DC_GOAL_BAD_ARGUMENT; return 0; }
+  if (active_runtime!=rt) { (DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT); return 0; }
   memcpy(code+8,&target,4);
   return dc_goal_load_module(rt,&function,1,sync,NULL,result);
 }
@@ -371,7 +401,7 @@ int dc_goal_install_object_bridge(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc
   uint32_t target=(uint32_t)(uintptr_t)new_object;
   dc_goal_code_export function={"dc-c-object-new",code,12,NULL,0};
   if (!rt || !result) return 0;
-  if (active_runtime!=rt) { rt->error=DC_GOAL_BAD_ARGUMENT; return 0; }
+  if (active_runtime!=rt) { (DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT); return 0; }
   memcpy(code+8,&target,4);
   if (!dc_goal_load_module(rt,&function,1,sync,NULL,result)) return 0;
   return dc_goal_set_method(rt,rt->object_type,0,dc_goal_symbol_value(rt,dc_goal_find(rt,"dc-c-object-new")));
@@ -380,7 +410,7 @@ int dc_goal_install_object_bridge(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc
 
 int dc_goal_bind_process_heap(dc_goal_runtime *rt,uint32_t process,uint32_t allocation_bytes) {
   if(!rt || active_runtime!=rt) {
-    if(rt) rt->error=DC_GOAL_BAD_ARGUMENT;
+    if(rt) (DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);
     return 0;
   }
   /* Invalid same-runtime binding must not retain a previous allocation target. */
@@ -395,23 +425,23 @@ void dc_goal_clear_process_heap(dc_goal_runtime *rt) {
 
 int dc_goal_register_pp_scope(dc_goal_runtime *rt,dc_goal_pp_scope_stack *stack) {
   const dc_goal_pp_owner_hooks hooks={dc_goal_kos_stack_owner};
-  if(!rt || active_runtime!=rt){if(rt && rt->error==DC_GOAL_OK)rt->error=DC_GOAL_BAD_ARGUMENT;return 0;}
+  if(!rt || active_runtime!=rt){if(rt && rt->error==DC_GOAL_OK)(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);return 0;}
   return dc_goal_pp_scope_init(stack,rt,&hooks);
 }
 int dc_goal_enter_lexical_scope(dc_goal_runtime *rt,uint32_t process,uint32_t bytes) {
   dc_goal_pp_scope_stack *stack;
-  if(!rt || active_runtime!=rt || execution_heap.runtime!=rt){if(rt && rt->error==DC_GOAL_OK)rt->error=DC_GOAL_BAD_ARGUMENT;return 0;}
+  if(!rt || active_runtime!=rt || execution_heap.runtime!=rt){if(rt && rt->error==DC_GOAL_OK)(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);return 0;}
   stack=dc_goal_pp_scope_active(rt);
-  if(!stack){if(rt->error==DC_GOAL_OK)rt->error=DC_GOAL_BAD_ARGUMENT;return 0;}
+  if(!stack){if(rt->error==DC_GOAL_OK)(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);return 0;}
   if(!known_span_matches(rt,process,bytes))return 0;
   return dc_goal_pp_scope_enter(stack,rt,execution_context,execution_heap.process,execution_heap.allocation_bytes,
                                 process,bytes,&active_process_heap,&active_process_heap);
 }
 int dc_goal_leave_lexical_scope(dc_goal_runtime *rt,uint32_t process,uint32_t bytes) {
   dc_goal_pp_scope_stack *stack;
-  if(!rt || active_runtime!=rt){if(rt && rt->error==DC_GOAL_OK)rt->error=DC_GOAL_BAD_ARGUMENT;return 0;}
+  if(!rt || active_runtime!=rt){if(rt && rt->error==DC_GOAL_OK)(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);return 0;}
   stack=dc_goal_pp_scope_active(rt);
-  if(!stack){if(rt->error==DC_GOAL_OK)rt->error=DC_GOAL_BAD_ARGUMENT;return 0;}
+  if(!stack){if(rt->error==DC_GOAL_OK)(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);return 0;}
   return dc_goal_pp_scope_leave(stack,rt,process,bytes,&active_process_heap);
 }
 void dc_goal_lexical_native_return(dc_goal_runtime *rt) {
@@ -424,26 +454,26 @@ void dc_goal_lexical_native_return(dc_goal_runtime *rt) {
 }
 int dc_goal_register_process_spans(dc_goal_runtime *rt,dc_goal_process_spans *table,dc_goal_process_span *rows,uint32_t capacity) {
   const dc_goal_process_span_hooks hooks={dc_goal_kos_stack_owner,spans_quiescent};
-  if(!rt || active_runtime!=rt){if(rt&&rt->error==DC_GOAL_OK)rt->error=DC_GOAL_BAD_ARGUMENT;return 0;}
+  if(!rt || active_runtime!=rt){if(rt&&rt->error==DC_GOAL_OK)(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);return 0;}
   if(process_family(rt,dc_goal_symbol_value(rt,rt->s7+DC_FIX_SYM_PROCESS_TYPE))!=1)return 0;
   return dc_goal_process_spans_init(table,rt,rows,capacity,&hooks);
 }
 int dc_goal_note_process_span(dc_goal_runtime *rt,uint32_t process,uint32_t bytes,dc_goal_process_span *out) {
-  if(!rt || active_runtime!=rt){if(rt&&rt->error==DC_GOAL_OK)rt->error=DC_GOAL_BAD_ARGUMENT;return 0;}
+  if(!rt || active_runtime!=rt){if(rt&&rt->error==DC_GOAL_OK)(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);return 0;}
   return dc_goal_process_span_note(rt,process,bytes,out);
 }
 int dc_goal_enter_known_scope(dc_goal_runtime *rt,uint32_t process) {
   dc_goal_process_span span;
-  if(!rt || active_runtime!=rt){if(rt&&rt->error==DC_GOAL_OK)rt->error=DC_GOAL_BAD_ARGUMENT;return 0;}
+  if(!rt || active_runtime!=rt){if(rt&&rt->error==DC_GOAL_OK)(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);return 0;}
   return dc_goal_process_span_lookup(rt,process,&span) && dc_goal_enter_lexical_scope(rt,process,span.bytes);
 }
 int dc_goal_leave_known_scope(dc_goal_runtime *rt,uint32_t previous_process) {
   dc_goal_pp_scope_stack *stack;dc_goal_pp_scope_frame *top;
-  if(!rt || active_runtime!=rt){if(rt&&rt->error==DC_GOAL_OK)rt->error=DC_GOAL_BAD_ARGUMENT;return 0;}
+  if(!rt || active_runtime!=rt){if(rt&&rt->error==DC_GOAL_OK)(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);return 0;}
   stack=dc_goal_pp_scope_active(rt);
-  if(!stack || !stack->depth){if(rt->error==DC_GOAL_OK)rt->error=DC_GOAL_BAD_ARGUMENT;return 0;}
+  if(!stack || !stack->depth){if(rt->error==DC_GOAL_OK)(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);return 0;}
   top=&stack->frames[stack->depth-1];
-  if(top->saved_allocation.process!=previous_process){if(rt->error==DC_GOAL_OK)rt->error=DC_GOAL_BAD_ARGUMENT;return 0;}
+  if(top->saved_allocation.process!=previous_process){if(rt->error==DC_GOAL_OK)(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);return 0;}
   return dc_goal_leave_lexical_scope(rt,top->lexical_process,top->lexical_bytes);
 }
 
@@ -452,13 +482,13 @@ int dc_goal_leave_known_scope(dc_goal_runtime *rt,uint32_t previous_process) {
 static uint64_t enter_process_scope(uint64_t process) {
   dc_goal_runtime *rt=active_runtime;
   if(!rt)return 0;
-  if(process>UINT32_MAX){if(rt->error==DC_GOAL_OK)rt->error=DC_GOAL_BAD_ARGUMENT;return 0;}
+  if(process>UINT32_MAX){if(rt->error==DC_GOAL_OK)(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);return 0;}
   return (uint64_t)dc_goal_enter_known_scope(rt,(uint32_t)process);
 }
 static uint64_t leave_process_scope(uint64_t previous_process) {
   dc_goal_runtime *rt=active_runtime;
   if(!rt)return 0;
-  if(previous_process>UINT32_MAX){if(rt->error==DC_GOAL_OK)rt->error=DC_GOAL_BAD_ARGUMENT;return 0;}
+  if(previous_process>UINT32_MAX){if(rt->error==DC_GOAL_OK)(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);return 0;}
   return (uint64_t)dc_goal_leave_known_scope(rt,(uint32_t)previous_process);
 }
 int dc_goal_install_scope_bridge(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_goal_module_result *result) {
@@ -467,7 +497,7 @@ int dc_goal_install_scope_bridge(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_
   dc_goal_code_export functions[2]={{"dc-c-enter-process-scope",code[0],12,NULL,0},
                                     {"dc-c-leave-process-scope",code[1],12,NULL,0}};
   if(!rt || !result) return 0;
-  if(active_runtime!=rt) { rt->error=DC_GOAL_BAD_ARGUMENT; return 0; }
+  if(active_runtime!=rt) { (DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT); return 0; }
   memcpy(code[0]+8,&targets[0],4); memcpy(code[1]+8,&targets[1],4);
   return dc_goal_load_module(rt,functions,2,sync,NULL,result);
 }
@@ -514,13 +544,13 @@ static dc_goal_fiber *thread_fibers[DC_THREAD_FIBERS];
 int dc_goal_register_thread_fiber(dc_goal_runtime *rt,dc_goal_fiber *fiber) {
   unsigned i,free_slot=DC_THREAD_FIBERS;
   if(!rt || active_runtime!=rt || !fiber || fiber->runtime!=rt || !fiber->thread || dc_goal_fiber_current()) {
-    if(rt && rt->error==DC_GOAL_OK)rt->error=DC_GOAL_BAD_ARGUMENT;
+    if(rt && rt->error==DC_GOAL_OK)(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);
     return 0;
   }
   if(!dc_goal_fiber_ownership_check(fiber,rt))return 0;
   for(i=0;i<DC_THREAD_FIBERS;++i) {
     if(thread_fibers[i] && (thread_fibers[i]==fiber || thread_fibers[i]->thread==fiber->thread)) {
-      if(rt->error==DC_GOAL_OK)rt->error=DC_GOAL_BAD_ARGUMENT;
+      if(rt->error==DC_GOAL_OK)(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);
       return 0;
     }
     if(!thread_fibers[i] && free_slot==DC_THREAD_FIBERS)free_slot=i;
@@ -573,7 +603,7 @@ static uint64_t enter_state_code(uint64_t code,uint64_t a0,uint64_t a1,uint64_t 
   dc_goal_fiber *fiber=dc_goal_fiber_current();
   uint64_t arguments[4]={a0,a1,a2,a3};
   if(!rt)return 0;
-  if(code>UINT32_MAX){if(rt->error==DC_GOAL_OK)rt->error=DC_GOAL_BAD_ARGUMENT;return 0;}
+  if(code>UINT32_MAX){if(rt->error==DC_GOAL_OK)(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);return 0;}
   if(fiber && fiber->runtime==rt && execution_context && execution_heap.runtime==rt &&
      fiber->process==execution_heap.process && rt->error==DC_GOAL_OK)
     dc_goal_fiber_restart(rt,(uint32_t)code,4,arguments); /* returns only on refusal */
@@ -592,7 +622,7 @@ static uint32_t kernel_stack_base,kernel_stack_bytes;
 int dc_goal_register_kernel_stack(dc_goal_runtime *rt,uint32_t base,uint32_t bytes) {
   if(!rt || active_runtime!=rt || dc_goal_fiber_current() || (base&15u) || (bytes&15u) || bytes<4096u ||
      bytes>UINT32_MAX-base || (bytes && !dc_goal_resolve(rt,base,bytes))) {
-    if(rt && rt->error==DC_GOAL_OK)rt->error=DC_GOAL_BAD_ARGUMENT;
+    if(rt && rt->error==DC_GOAL_OK)(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);
     return 0;
   }
   kernel_stack_base=base;kernel_stack_bytes=bytes;return 1;
@@ -673,7 +703,7 @@ int dc_goal_install_transfer_bridge(dc_goal_runtime *rt,dc_goal_cache_sync sync,
                                     {"dc-c-thread-suspend",code[6],12,NULL,0}};
   unsigned i;
   if(!rt || !result) return 0;
-  if(active_runtime!=rt) { rt->error=DC_GOAL_BAD_ARGUMENT; return 0; }
+  if(active_runtime!=rt) { (DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT); return 0; }
   for(i=0;i<N;++i){memcpy(code[i],stub,12);memcpy(code[i]+8,&targets[i],4);}
   return dc_goal_load_module(rt,functions,N,sync,NULL,result);
 }
@@ -752,7 +782,7 @@ static uint64_t format_native(uint64_t dest,uint64_t fmt,uint64_t a0,uint64_t a1
 #endif
   return rt->s7;
 bad:
-  if(rt->error==DC_GOAL_OK)rt->error=DC_GOAL_BAD_ARGUMENT;
+  if(rt->error==DC_GOAL_OK)(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);
   return 0;
 }
 /* Desktop without a debug segment (MasterDebug off, as on Dreamcast) leaves the
@@ -766,7 +796,7 @@ static uint64_t malloc_native(uint64_t heap,uint64_t bytes) {
   if(!rt)return 0;
   if(debug_heap_absent(rt,heap))heap=rt->s7+DC_FIX_SYM_GLOBAL_HEAP;
   if(heap!=rt->s7+DC_FIX_SYM_GLOBAL_HEAP || !bytes || bytes>UINT32_MAX){
-    if(rt->error==DC_GOAL_OK){rt->error=DC_GOAL_BAD_ARGUMENT;}
+    if(rt->error==DC_GOAL_OK){(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);}
     return 0;
   }
   return dc_goal_alloc(rt,(uint32_t)bytes);
@@ -781,7 +811,7 @@ static uint64_t kmalloc_native(uint64_t heap,uint64_t bytes,uint64_t flags,uint6
   (void)name;
   if(!rt)return 0;
   if((heap!=global && heap!=dc_goal_symbol_value(rt,global)) || !bytes || bytes>UINT32_MAX-256u){
-    if(rt->error==DC_GOAL_OK)rt->error=DC_GOAL_BAD_ARGUMENT;
+    if(rt->error==DC_GOAL_OK)(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);
     return 0;
   }
   align=(flags&0x100u)?256u:(flags&0x40u)?64u:16u;
@@ -805,7 +835,7 @@ static void *bridge_object(dc_goal_runtime *rt,uint64_t address,uint32_t bytes){
 static uint8_t bcd(int v){return (uint8_t)((v%10)+(v/10)*16);}
 static uint64_t scf_get_time_native(uint64_t clock){
   dc_goal_runtime *rt=active_runtime;uint8_t *out;time_t t;struct tm *date;
-  if(!rt || !(out=bridge_object(rt,clock,8))){if(rt)rt->error=DC_GOAL_BAD_ARGUMENT;return 0;}
+  if(!rt || !(out=bridge_object(rt,clock,8))){if(rt)(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);return 0;}
   t=time(0);date=localtime(&t);
   if(!date){memset(out,0,8);return 0;}
   out[0]=0;out[1]=bcd(date->tm_sec);out[2]=bcd(date->tm_min);out[3]=bcd(date->tm_hour);
@@ -834,45 +864,61 @@ static uint64_t pc_get_mips2c_native(uint64_t name){
 uint32_t dc_goal_mips2c_requests(void){return mips2c_requests;}
 /* Original kscheme nothing: a function that does nothing. */
 static uint64_t nothing_native(void){return 0;}
+/* Desktop kmachine Decode* system-config services with kboot's masterConfig
+ * defaults: language English (Language::English 0), aspect 4:3 (SCE_ASPECT_43),
+ * volume 100, territory SCEA (0), timeouts 0 (demo-only). */
+static uint64_t scf_language_native(void){return 0;}
+static uint64_t scf_aspect_native(void){return 0;}
+static uint64_t scf_volume_native(void){return 100;}
+static uint64_t scf_territory_native(void){return 0;}
+static uint64_t scf_timeout_native(void){return 0;}
+static uint64_t scf_inactive_timeout_native(void){return 0;}
 /* Original kernel cpad-open/cpad-get-data on a 132-byte cpad-info; both return it. */
 static uint64_t cpad_open_native(uint64_t info,uint64_t number){
   dc_goal_runtime *rt=active_runtime;uint8_t *cpad;
-  if(!rt || info>UINT32_MAX || !(cpad=dc_goal_resolve(rt,(uint32_t)info,132))){if(rt)rt->error=DC_GOAL_BAD_ARGUMENT;return 0;}
+  if(!rt || info>UINT32_MAX || !(cpad=dc_goal_resolve(rt,(uint32_t)info,132))){if(rt)(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);return 0;}
   dc_goal_cpad_open(cpad,(int32_t)number);
   return info;
 }
 static uint64_t cpad_get_data_native(uint64_t info){
   dc_goal_runtime *rt=active_runtime;uint8_t *cpad;
-  if(!rt || info>UINT32_MAX || !(cpad=dc_goal_resolve(rt,(uint32_t)info,132))){if(rt)rt->error=DC_GOAL_BAD_ARGUMENT;return 0;}
+  if(!rt || info>UINT32_MAX || !(cpad=dc_goal_resolve(rt,(uint32_t)info,132))){if(rt)(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);return 0;}
   dc_goal_cpad_get_data(cpad);
   return info;
 }
 /* PS2 MMI 128-bit integer ops called by lowered code with frame-slot pointers. */
 static uint64_t mmi_native(uint32_t op,uint32_t dst,uint32_t a,uint32_t b){
   if(!dc_goal_mmi(op,(void*)(uintptr_t)dst,(const void*)(uintptr_t)a,b?(const void*)(uintptr_t)b:NULL) &&
-     active_runtime)active_runtime->error=DC_GOAL_BAD_ARGUMENT;
+     active_runtime)(DC_GOAL_NOTE_SITE(1),active_runtime->error=DC_GOAL_BAD_ARGUMENT);
   return 0;
 }
 uint32_t dc_goal_format_capture(const char **text){if(text)*text=format_text;return format_length;}
 void dc_goal_format_capture_clear(void){format_length=0;}
 int dc_goal_install_kernel_services(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_goal_module_result *result) {
   const unsigned char stub[12]={1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0};
-  unsigned char code[10][12];
-  uint32_t targets[10]={(uint32_t)(uintptr_t)format_native,(uint32_t)(uintptr_t)malloc_native,
+  unsigned char code[16][12];
+  uint32_t targets[16]={(uint32_t)(uintptr_t)format_native,(uint32_t)(uintptr_t)malloc_native,
                        (uint32_t)(uintptr_t)nothing_native,(uint32_t)(uintptr_t)mmi_native,
                        (uint32_t)(uintptr_t)cpad_open_native,(uint32_t)(uintptr_t)cpad_get_data_native,
                        (uint32_t)(uintptr_t)kmalloc_native,(uint32_t)(uintptr_t)scf_get_time_native,
-                       (uint32_t)(uintptr_t)pc_get_mips2c_native,(uint32_t)(uintptr_t)mips2c_missing_native};
-  dc_goal_code_export functions[10]={{"_format",code[0],12,NULL,0},{"malloc",code[1],12,NULL,0},
+                       (uint32_t)(uintptr_t)pc_get_mips2c_native,(uint32_t)(uintptr_t)mips2c_missing_native,
+                       (uint32_t)(uintptr_t)scf_language_native,(uint32_t)(uintptr_t)scf_aspect_native,
+                       (uint32_t)(uintptr_t)scf_volume_native,(uint32_t)(uintptr_t)scf_territory_native,
+                       (uint32_t)(uintptr_t)scf_timeout_native,(uint32_t)(uintptr_t)scf_inactive_timeout_native};
+  dc_goal_code_export functions[16]={{"_format",code[0],12,NULL,0},{"malloc",code[1],12,NULL,0},
                                     {"nothing",code[2],12,NULL,0},{"dc-c-mmi",code[3],12,NULL,0},
                                     {"cpad-open",code[4],12,NULL,0},{"cpad-get-data",code[5],12,NULL,0},
                                     {"kmalloc",code[6],12,NULL,0},{"scf-get-time",code[7],12,NULL,0},
-                                    {"__pc-get-mips2c",code[8],12,NULL,0},{"dc-c-mips2c-missing",code[9],12,NULL,0}};
+                                    {"__pc-get-mips2c",code[8],12,NULL,0},{"dc-c-mips2c-missing",code[9],12,NULL,0},
+                                    {"scf-get-language",code[10],12,NULL,0},{"scf-get-aspect",code[11],12,NULL,0},
+                                    {"scf-get-volume",code[12],12,NULL,0},{"scf-get-territory",code[13],12,NULL,0},
+                                    {"scf-get-timeout",code[14],12,NULL,0},
+                                    {"scf-get-inactive-timeout",code[15],12,NULL,0}};
   unsigned i;
   if(!rt || !result) return 0;
-  if(active_runtime!=rt) { rt->error=DC_GOAL_BAD_ARGUMENT; return 0; }
-  for(i=0;i<10;++i){memcpy(code[i],stub,12);memcpy(code[i]+8,&targets[i],4);}
-  return dc_goal_load_module(rt,functions,10,sync,NULL,result);
+  if(active_runtime!=rt) { (DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT); return 0; }
+  for(i=0;i<16;++i){memcpy(code[i],stub,12);memcpy(code[i]+8,&targets[i],4);}
+  return dc_goal_load_module(rt,functions,16,sync,NULL,result);
 }
 
 int dc_goal_install_process_bridge(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_goal_module_result *result) {
@@ -880,7 +926,7 @@ int dc_goal_install_process_bridge(dc_goal_runtime *rt,dc_goal_cache_sync sync,d
   uint32_t target=(uint32_t)(uintptr_t)current_process;
   dc_goal_code_export function={"dc-c-current-process",code,12,NULL,0};
   if(!rt || !result) return 0;
-  if(active_runtime!=rt) { rt->error=DC_GOAL_BAD_ARGUMENT; return 0; }
+  if(active_runtime!=rt) { (DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT); return 0; }
   memcpy(code+8,&target,4);
   return dc_goal_load_module(rt,&function,1,sync,NULL,result);
 }
@@ -893,7 +939,7 @@ uint32_t dc_goal_construct_main_thread(dc_goal_runtime *rt,uint32_t process,uint
   dc_goal_type_fields *schema;
   unsigned char *fields;
   uint32_t symbol,type,thread_type,top,cur,main_thread,top_thread,body,bytes;
-  if(!rt || active_runtime!=rt) { if(rt) rt->error=DC_GOAL_BAD_ARGUMENT; return 0; }
+  if(!rt || active_runtime!=rt) { if(rt) (DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT); return 0; }
   if(!dc_goal_process_heap_open(&heap,rt,process,reservation_bytes)) return 0;
   symbol=dc_goal_find(rt,"cpu-thread"); type=symbol?dc_goal_symbol_value(rt,symbol):0;
   thread_type=dc_goal_symbol_value(rt,rt->s7+DC_FIX_SYM_THREAD_TYPE);
@@ -904,16 +950,16 @@ uint32_t dc_goal_construct_main_thread(dc_goal_runtime *rt,uint32_t process,uint
   }
   if(!stack_bytes || ((stack_base|stack_bytes|backup_bytes)&15u) || stack_bytes<16 ||
      stack_bytes>UINT32_MAX-stack_base || backup_bytes>stack_bytes || backup_bytes>UINT32_MAX-128u) {
-    rt->error=DC_GOAL_BAD_ARGUMENT; return 0;
+    (DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT); return 0;
   }
   if(!dc_goal_resolve(rt,stack_base,stack_bytes)) return 0;
   if(stack_base<process-4+reservation_bytes && stack_base+stack_bytes>process-4) {
-    rt->error=DC_GOAL_BAD_ARGUMENT; return 0;
+    (DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT); return 0;
   }
   fields=dc_goal_resolve(rt,process,108);
   if(!fields) return 0;
   memcpy(&main_thread,fields+40,4); memcpy(&top_thread,fields+44,4);
-  if(main_thread!=rt->s7 || top_thread!=rt->s7) { rt->error=DC_GOAL_BAD_ARGUMENT; return 0; }
+  if(main_thread!=rt->s7 || top_thread!=rt->s7) { (DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT); return 0; }
   memcpy(&cur,fields+84,4); memcpy(&top,fields+80,4); bytes=128+backup_bytes;
   if(bytes>=top-cur) { rt->error=DC_GOAL_OUT_OF_MEMORY; return 0; }
   symbol=dc_goal_find(rt,"(method new cpu-thread)"); body=symbol?dc_goal_symbol_value(rt,symbol):0;
@@ -938,7 +984,7 @@ int dc_goal_install_fiber_bridge(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_
  unsigned char code[12]={1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0};
  dc_goal_code_export function={"dc-c-fiber-yield",code,12,NULL,0};
  uint32_t target=(uint32_t)(uintptr_t)fiber_yield;
- if(!rt || active_runtime!=rt) {if(rt)rt->error=DC_GOAL_BAD_ARGUMENT;return 0;}
+ if(!rt || active_runtime!=rt) {if(rt)(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);return 0;}
  memcpy(code+8,&target,4);return dc_goal_load_module(rt,&function,1,sync,NULL,result);
 }
 
@@ -965,7 +1011,7 @@ uint32_t dc_goal_activate_process(dc_goal_runtime *rt,uint32_t process,uint32_t 
  dc_goal_type_fields *schema;
  unsigned char *p,*d,*c;
  uint32_t process_type,tree_type,cpu,thread_type,symbol,context,body[4],i,name_type,type_bytes,tree_bytes,cpu_bytes,dead,value;
- if(!rt || active_runtime!=rt) {if(rt)rt->error=DC_GOAL_BAD_ARGUMENT;return 0;}
+ if(!rt || active_runtime!=rt) {if(rt)(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);return 0;}
  if(dc_goal_fiber_current())goto bad;
  if(!dc_goal_process_heap_open(&heap,rt,process,reservation))return 0;
  process_type=dc_goal_symbol_value(rt,rt->s7+DC_FIX_SYM_PROCESS_TYPE);
@@ -1031,7 +1077,7 @@ uint32_t dc_goal_activate_process(dc_goal_runtime *rt,uint32_t process,uint32_t 
  value=(uint32_t)((activate)(uintptr_t)body[0])(process,destination,name,stack_base+stack_bytes);
  return rt->error==DC_GOAL_OK?value:0;
 bad:
- rt->error=DC_GOAL_BAD_ARGUMENT;return 0;
+ (DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);return 0;
 oom:
  rt->error=DC_GOAL_OUT_OF_MEMORY;return 0;
 }
@@ -1041,12 +1087,12 @@ int dc_goal_resize_main_backup(dc_goal_runtime *rt,uint32_t process,uint32_t res
  typedef void (*setter)(uint64_t,uint64_t);
  dc_goal_code_entry_info code;
  uint32_t symbol,body;
- if(!rt || active_runtime!=rt || dc_goal_fiber_current()) {if(rt)rt->error=DC_GOAL_BAD_ARGUMENT;return 0;}
+ if(!rt || active_runtime!=rt || dc_goal_fiber_current()) {if(rt)(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);return 0;}
  if(!dc_goal_thread_resize_check(rt,process,reservation,thread,stack_base,stack_bytes,backup_bytes))return 0;
  symbol=dc_goal_find(rt,"(method stack-size-set! thread)");body=symbol?dc_goal_symbol_value(rt,symbol):0;
  if(!dc_goal_code_entry(rt,body,&code))return 0;
  if(code.symbol!=symbol) {rt->error=DC_GOAL_BAD_FUNCTION;return 0;}
- if(activation_overlap(process-4,reservation,body-4,code.bytes+4)) {rt->error=DC_GOAL_BAD_ARGUMENT;return 0;}
+ if(activation_overlap(process-4,reservation,body-4,code.bytes+4)) {(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);return 0;}
  rt->error=DC_GOAL_OK;
  ((setter)(uintptr_t)body)(thread,backup_bytes);
  return rt->error==DC_GOAL_OK;
@@ -1068,7 +1114,7 @@ typedef struct native_catch_frame {
 } native_catch_frame;
 static native_catch_frame *native_catch_top;
 static uint32_t native_catch_owner;
-static int catch_bad(dc_goal_runtime *rt){if(rt && rt->error==DC_GOAL_OK)rt->error=DC_GOAL_BAD_ARGUMENT;return 0;}
+static int catch_bad(dc_goal_runtime *rt){if(rt && rt->error==DC_GOAL_OK)(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);return 0;}
 static uint32_t catch_word(const void *p){uint32_t v;memcpy(&v,p,4);return v;}
 static void catch_put(void *p,uint32_t v){memcpy(p,&v,4);}
 static uint32_t catch_physical(uint32_t p){return p&0x1fffffffu;}
