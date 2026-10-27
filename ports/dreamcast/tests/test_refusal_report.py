@@ -35,6 +35,16 @@ class RefusalReportTest(unittest.TestCase):
         self.assertEqual(self.report([]).strip(), 'No export refusals.')
         self.assertEqual(json.loads(self.report([], '--json')), dict(total=0, groups=[]))
 
+    def test_by_file_text_and_json(self):
+        errors = [dict(source='a.gc', error='z'), dict(source='b.gc', error='only'),
+                  dict(source='a.gc', error='a\ncontinued')]
+        out = self.report(errors, '--by-file')
+        self.assertEqual(out.splitlines(), ['a.gc (2 refusal(s))', '  a', '  continued', '  z',
+                                           'b.gc (1 refusal(s))', '  only'])
+        result = json.loads(self.report(errors, '--json', '--by-file'))
+        self.assertEqual(result, dict(total=3, groups=[dict(source='a.gc', count=2, errors=['a\ncontinued', 'z']),
+                                                     dict(source='b.gc', count=1, errors=['only'])]))
+
 
 if __name__ == '__main__':
     unittest.main()
