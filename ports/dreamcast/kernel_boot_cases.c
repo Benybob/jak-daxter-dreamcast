@@ -16,6 +16,7 @@
 #include "runtime_cases.h"
 #ifdef DC_KERNEL_DGO
 #include "goal_dgo.h"
+#include "goal_dgo_zst.h"
 #include "build/game_cgo_order.h"
 #include "build/vf_cases.h"
 int dc_kernel_load_vf_fixture(dc_goal_runtime *,dc_goal_cache_sync,dc_goal_module_result *);
@@ -126,8 +127,8 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
   /* The compiled prefix of the original GAME.CGO loads on top of the kernel. */
   {
     static dc_goal_dgo_result game;
-    FILE *file=fopen("/rd/GAME.CGO","rb");int loaded;unsigned i;
-    CHECK(file!=NULL,1,"GAME.CGO prefix opens from the romdisk");
+    FILE *file=dc_goal_open_zst("/rd/GAME.CGO.zst");int loaded;unsigned i;
+    CHECK(file!=NULL,1,"zstd GAME.CGO prefix opens from the romdisk");
     if(file){
       loaded=dc_goal_load_dgo(&rt,file,sync_code,NULL,&game);fclose(file);
       dc_boot_memory_trace.objects=game.objects;dc_boot_memory_trace.completed=game.completed;

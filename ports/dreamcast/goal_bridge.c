@@ -750,9 +750,16 @@ bad:
   if(rt->error==DC_GOAL_OK)rt->error=DC_GOAL_BAD_ARGUMENT;
   return 0;
 }
+/* Desktop without a debug segment (MasterDebug off, as on Dreamcast) leaves the
+ * 'debug symbol's kheap null, and kmalloc puts a null-heap request on the
+ * global heap. So 'debug allocates globally exactly while it has no heap. */
+static int debug_heap_absent(dc_goal_runtime *rt,uint64_t heap){
+  return heap==rt->s7+DC_FIX_SYM_DEBUG_HEAP && !dc_goal_symbol_value(rt,rt->s7+DC_FIX_SYM_DEBUG_HEAP);
+}
 static uint64_t malloc_native(uint64_t heap,uint64_t bytes) {
   dc_goal_runtime *rt=active_runtime;
   if(!rt)return 0;
+  if(debug_heap_absent(rt,heap))heap=rt->s7+DC_FIX_SYM_GLOBAL_HEAP;
   if(heap!=rt->s7+DC_FIX_SYM_GLOBAL_HEAP || !bytes || bytes>UINT32_MAX){
     if(rt->error==DC_GOAL_OK){rt->error=DC_GOAL_BAD_ARGUMENT;}
     return 0;

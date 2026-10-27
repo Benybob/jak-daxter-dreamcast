@@ -729,14 +729,27 @@ jak-dc-kernel-boot.elf: kernel_boot_main.o kernel_boot_cases.o kernel_boot_valid
 	kos-cc -o $@ $^
 # The same boot, loading the kernel from a KERNEL.CGO DGO of DCSH objects (AI-assisted).
 goal_dgo.o: goal_dgo.c goal_dgo.h goal_native_file.h goal_module.h
-kernel_dgo_cases.o: kernel_boot_cases.c goal_dgo.h goal_bridge.h goal_fiber.h goal_main_start.h runtime_cases.h  build/game_cgo_order.h build/vf_cases.h
+# The vendored zstd decompressor (BSD), built for SH-4 with its own flags.
+ZSTD_LIB=../../third-party/zstd/lib
+# xxhash mixes unsigned int and U32 (unsigned long on SH-4, both 32-bit) in XXH32,
+# which decompression never calls (frames check XXH64).
+ZSTD_FLAGS=-Wno-incompatible-pointer-types -DZSTD_LEGACY_SUPPORT=0 -DZSTD_DISABLE_ASM -DZSTD_NO_TRACE -DDEBUGLEVEL=0 -I$(ZSTD_LIB) -I$(ZSTD_LIB)/common
+ZSTD_OBJS=$(addprefix build/zstd-,entropy_common.o error_private.o fse_decompress.o xxhash.o zstd_common.o  huf_decompress.o zstd_ddict.o zstd_decompress.o zstd_decompress_block.o)
+build/zstd-%.o: $(ZSTD_LIB)/common/%.c
+	$(KOS_CC) $(KOS_CFLAGS) $(ZSTD_FLAGS) -c $< -o $@
+build/zstd-%.o: $(ZSTD_LIB)/decompress/%.c
+	$(KOS_CC) $(KOS_CFLAGS) $(ZSTD_FLAGS) -c $< -o $@
+goal_dgo_zst.o: goal_dgo_zst.c goal_dgo_zst.h
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -I$(ZSTD_LIB) -c $< -o $@
+kernel_dgo_cases.o: kernel_boot_cases.c goal_dgo.h goal_dgo_zst.h goal_bridge.h goal_fiber.h goal_main_start.h runtime_cases.h  build/game_cgo_order.h build/vf_cases.h
 	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -DDC_KERNEL_DGO -I. -c kernel_boot_cases.c -o $@
-build/kernel-dgo-romdisk.o: build/kernel-dgo/KERNEL.CGO build/kernel-dgo/GAME.CGO
-	$(KOS_GENROMFS) -f build/kernel-dgo-romdisk.img -d build/kernel-dgo
+# The romdisk holds KERNEL.CGO and a zstd GAME.CGO (build_kernel_boot.py).
+build/kernel-dgo-romdisk.o: build/kernel-dgo-rd/KERNEL.CGO build/kernel-dgo-rd/GAME.CGO.zst
+	$(KOS_GENROMFS) -f build/kernel-dgo-romdisk.img -d build/kernel-dgo-rd
 	$(KOS_BASE)/utils/bin2c/bin2c build/kernel-dgo-romdisk.img build/kernel-dgo-romdisk.c romdisk
 	$(KOS_CC) $(KOS_CFLAGS) -c build/kernel-dgo-romdisk.c -o build/kernel-dgo-romdisk-tmp.o
 	$(KOS_CC) -o $@ -r build/kernel-dgo-romdisk-tmp.o $(KOS_LIB_PATHS) -Wl,--whole-archive -lromdiskbase
 kernel_vf_fixture.o: kernel_vf_fixture.c goal_module.h build/vf_fixture.h
 	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -I. -c kernel_vf_fixture.c -o $@
-jak-dc-kernel-dgo.elf: kernel_boot_main.o kernel_dgo_cases.o kernel_vf_fixture.o goal_dgo.o build/kernel-dgo-romdisk.o $(KERNEL_BOOT_LIBS)
+jak-dc-kernel-dgo.elf: kernel_boot_main.o kernel_dgo_cases.o kernel_vf_fixture.o goal_dgo.o goal_dgo_zst.o $(ZSTD_OBJS) build/kernel-dgo-romdisk.o $(KERNEL_BOOT_LIBS)
 	kos-cc -o $@ $^

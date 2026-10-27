@@ -3,12 +3,12 @@
 2026-10-27, Claude Code. The original engine is being compiled file by file in
 GAME.CGO order:
 
-- **144 of GAME.CGO's 326 code files** compile to native SH-4 (through path-h).
-- **All 144 load and run their original top-level startup** after KERNEL.CGO in
+- **173 of GAME.CGO's 326 code files** compile to native SH-4 (through depth-cue).
+- **All 173 load and run their original top-level startup** after KERNEL.CGO in
   stock 16 MiB Flycast, with the Dreamcast memory budget ([MEMORY_BUDGET.md](MEMORY_BUDGET.md)). This includes the 141 lane-exact
   vector cases ([VU0_LOWERING.md](VU0_LOWERING.md)) and the original process
   spawn and dispatch.
-- **244 of 244 boot checks pass.**
+- **273 of 273 boot checks pass.**
 
 ```bash
 python ports/dreamcast/build_kernel_boot.py --msys C:/msys64 --verify
@@ -63,6 +63,21 @@ Lowering (`lower_sh4_ir.py`):
   lowerer already reads from the authenticated getter. An earlier read or write
   of `pp` still refuses, and a lexical bracket (save, select, restore) keeps the
   strict layout.
+- **Behaviors with arguments** (navigate-h's nav-mesh-connect): `self` sits
+  beside ordinary arguments, with any return the generic ABI accepts. The
+  prologue stores arguments before IR runs, so the entry `current-process` call
+  cannot clobber them. The frontend's combined entry value-reset is split into
+  the arguments (defined by the prologue) and `self`'s own reset. `self` must
+  not alias an argument, and the exporter now decides "is a process" with the
+  type system (`process_type`, so camera-slave or target behaviors qualify and a
+  basic does not), instead of the type name `process`.
+- **PS2 constant idioms**: `.pceqw x,x,x` (all ones) and the `pcgt*`, `psubw`,
+  `pxor` self forms (zero) read no value, so `x` may be unassigned (bsp).
+- **A value stored unassigned** (bsp-camera-asm stores its back-flags without
+  setting them when the root is already a leaf, whatever the PS2 register held):
+  a register assigned on another path and read only as a store's value is
+  zero-filled at entry in a pinned slot, like vf. Returns, branches and
+  arithmetic on unassigned registers still refuse.
 - **`(inline-array T)`** parameters are addresses, like `(pointer T)`.
 - **none-typed values carry nothing**: copies of a discarded `method-set!` result
   are dropped.
@@ -88,6 +103,10 @@ Runtime:
 - **`structure` new**: the native counterpart of kscheme `new_structure`.
   `(new 'global 'matrix)` failed until it existed. It allocates `allocated_size`
   bytes, 16-byte rounded and zeroed, from the global heap.
+- **`'debug` heap**: the kernel now binds the fixed `debug` symbol as desktop's
+  `set_fixed_symbol(FIX_SYM_DEBUG_HEAP, "debug", ...)`. Without a debug segment
+  (MasterDebug off) its kheap is null and desktop kmalloc falls back to the
+  global heap, so native `malloc 'debug` does the same (subdivide's perf stats).
 - **kscheme default methods**: `object` asize-of (the zero function) and copy
   (`copy_fixed`), `basic` asize-of (`asize_of_basic`) and copy (`copy_basic`),
   propagated to the fixed kernel types like structure new. surface-h's
@@ -136,15 +155,17 @@ Runtime:
 
 ## Where it stops
 
-- **Loading:** all 144 compiled files now load and start (244 of 244 boot checks),
+- **Loading:** all 173 compiled files now load and start (273 of 273 boot checks),
   after the memory budget in [MEMORY_BUDGET.md](MEMORY_BUDGET.md): the corrected
   `PROCESS_HEAP_MULT`, PS2-sized DMA buffers, native `kmalloc`/`scf-get-time`, and
-  a faulting `__pc-get-mips2c` stub. The boot arena is now 10 MiB (8 MiB filled
-  at projectiles-h, object 116) and holds 9.27 MB after 144 files.
-- **Lowering stops at navigate-h (object 144)**: "implicit process/self entry
-  ABI not implemented for this signature". Behaviors and event handlers receive
-  the process implicitly; the same family accounts for most of the 54 exporter
-  alias refusals (`refusal_report.py` groups them).
+  a faulting `__pc-get-mips2c` stub. The test ELF now carries GAME.CGO as zstd
+  (4.9 MB → 0.66 MB, 128 KiB window), streamed object by object through the
+  vendored zstd decompressor (`goal_dgo_zst.c`), so the ELF fell from 6.2 to
+  2.0 MB and the boot arena is 12 MiB; 173 files use 10.55 MB of it.
+- **Lowering stops at font (object 173)**: "bootstrap stack frame too large"
+  (over 4 KiB of virtual-register slots).
+- **Exporter refusals**: 56, 54 of them "conflicting or non-fixed virtual
+  register alias", mostly event handlers and state code (`refusal_report.py`).
 - **Exporter refusals.** 56 of the 331 dependency-graph files refuse; 54 of them
   for one reason, "conflicting or non-fixed virtual register alias". That is one
   exporter feature (rlet register aliasing) to add next.

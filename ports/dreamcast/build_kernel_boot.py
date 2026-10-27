@@ -26,8 +26,8 @@ BINDINGS = {
     'set-to-run-bootstrap': 'set-to-run-bootstrap',
 }
 EXPECTED_CHECKS = 87  # verified in Flycast; never weakened afterwards
-EXPECTED_DGO_CHECKS = 244  # KERNEL.CGO + 144 GAME.CGO files + 141 vf cases, verified in Flycast
-GAME_PREFIX = 144  # GAME.CGO files that compile and load (through path-h)
+EXPECTED_DGO_CHECKS = 273  # KERNEL.CGO + 173 GAME.CGO files + 141 vf cases, verified in Flycast
+GAME_PREFIX = 173  # GAME.CGO files that compile and load (through depth-cue)
 
 
 def main():
@@ -89,6 +89,14 @@ def main():
                     '--msys', str(args.msys), '--count', str(GAME_PREFIX)], check=True)
     compiled = json.loads((port / 'build/game-cgo-report.json').read_text())['compiled']
     if len(compiled) != GAME_PREFIX: sys.exit(f'GAME.CGO prefix compiled only {compiled}')
+    # The romdisk carries GAME.CGO as zstd with a 128 KiB window (goal_dgo_zst.c);
+    # the boot streams it, so the resident copy is about 1/8 the size.
+    romdisk = port / 'build/kernel-dgo-rd'
+    romdisk.mkdir(exist_ok=True)
+    (romdisk / 'GAME.CGO.gz').unlink(missing_ok=True)
+    (romdisk / 'KERNEL.CGO').write_bytes((port / 'build/kernel-dgo/KERNEL.CGO').read_bytes())
+    subprocess.run([str(args.msys / 'usr/bin/zstd.exe'), '-19', '--zstd=wlog=17', '-q', '-f',
+                    str(port / 'build/kernel-dgo/GAME.CGO'), '-o', str(romdisk / 'GAME.CGO.zst')], check=True)
     # VU0 vf lowering fixture, compiled after the kernel and GAME.CGO through
     # vector-h, and its independently computed expected lanes.
     engine = port.parents[1] / 'goal_src/jak1/engine'

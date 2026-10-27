@@ -47,13 +47,17 @@ class FrontendProcessEntryTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'implicit process/self'): compile_function(self.fn)
 
     def test_explicit_arguments_other_types_and_ambiguous_entries_remain_rejected(self):
-        for field,value in [('parameters',[{'register':0,'type':'int'}]),
-                            ('implicit_parameters',self.fn['implicit_parameters']*2),
-                            ('return_abi_type','float')]:
+        # Ordinary arguments and any generic return now sit beside self (behaviors
+        # such as nav-mesh-connect); self aliasing an argument still refuses.
+        self_register=self.fn['implicit_parameters'][0]['register']
+        for field,value in [('parameters',[{'register':self_register,'type':'object','abi_type':'object'}]),
+                            ('implicit_parameters',self.fn['implicit_parameters']*2)]:
             fn=copy.deepcopy(self.fn); fn[field]=value
             with self.subTest(field=field),self.assertRaisesRegex(ValueError,'implicit process/self'):
                 compile_function(fn,runtime=True)
-        for field,value in [('name','pp'),('type','cpu-thread'),('abi_type','uint'),('kind','local')]:
+        # The exporter's type-system verdict, never a type name, makes self a process.
+        self.assertIs(self.fn['implicit_parameters'][0]['process_type'],True)
+        for field,value in [('name','pp'),('process_type',False),('abi_type','uint'),('kind','local')]:
             fn=copy.deepcopy(self.fn); fn['implicit_parameters'][0][field]=value
             with self.subTest(field=field),self.assertRaisesRegex(ValueError,'implicit process/self'):
                 compile_function(fn,runtime=True)

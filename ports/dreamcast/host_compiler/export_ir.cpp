@@ -114,7 +114,13 @@ static void export_parameters(FunctionEnv& function,const TypeSystem& types,json
     if(named_arguments.count(reg)) continue;
     json entry={{"name",name.name_ptr},{"register",reg},{"type",value->type().print()},
                 {"abi_type",native_value_type(value->type(),types)}};
-    if(implicit.count(reg)) { entry["kind"]="fixed_entry"; fixed.emplace_back(reg,std::move(entry)); }
+    if(implicit.count(reg)) {
+      // A behavior's self is any process type (camera-slave, target...): the
+      // type system decides, so the lowerer never guesses from a type name.
+      entry["kind"]="fixed_entry";
+      entry["process_type"]=types.tc(TypeSpec("process"),value->type());
+      fixed.emplace_back(reg,std::move(entry));
+    }
     else locals.emplace_back(reg,std::move(entry));
   }
   if(fixed.size()!=implicit.size()) throw std::runtime_error("unnamed fixed entry in "+function.name());
@@ -362,7 +368,7 @@ static void write_export(Compiler& compiler,FileEnv* file,const std::vector<std:
         bool process_self=false;
         for(const auto& parameter:fn["implicit_parameters"])
           if(parameter.at("register")==constraint.ireg.id && parameter.at("name")=="self" &&
-             parameter.at("type")=="process" && parameter.at("kind")=="fixed_entry")
+             parameter.value("process_type",false) && parameter.at("kind")=="fixed_entry")
             process_self=true;
         // A typed, read-only rlet pp is an authenticated context input, not a
         // machine-register allocation on SH-4. Mutable/other roles stay explicit.

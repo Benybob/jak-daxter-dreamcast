@@ -76,6 +76,10 @@ class FrontendParametersTest(unittest.TestCase):
         self.assertEqual([p['name'] for p in fn['implicit_parameters']],['self'])
         self.assertEqual(fn['locals'],[])
         self.assertNotIn(fn['implicit_parameters'][0]['register'],[p['register'] for p in fn['parameters']])
+        # The fixture's dc-local-process is a basic, not a process: the type system
+        # says so (process_type false), the role stays unsupported, and it refuses.
+        self.assertIs(fn['implicit_parameters'][0]['process_type'],False)
+        self.assertEqual(fn['fixed_registers'][0]['role'],'unsupported')
         with self.assertRaisesRegex(ValueError,'implicit process/self'):
             compile_function(fn,runtime=True)
 

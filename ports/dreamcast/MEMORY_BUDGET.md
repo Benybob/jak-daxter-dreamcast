@@ -85,11 +85,12 @@ of the desktop C++ kernel:
   smaller constant. These heaps are allocated when levels load, past the files
   that load now.
 - **The boot arena** filled its 8 MiB at projectiles-h (object 116, a refused
-  4,352-byte request). It is now **10 MiB**: the DGO boot ELF is about 4.8 MB
-  (text, which includes the romdisk holding KERNEL.CGO and the 3.5 MB GAME.CGO,
-  plus bss), and 144 files use 9.27 MB of the arena. A disc build streaming
-  GAME.CGO would free the romdisk copy. It still trades against VRAM-side and
-  audio-side buffers later.
+  4,352-byte request), then 10 MiB at object 171. GAME.CGO in the test ELF's
+  romdisk is now **zstd** (4.9 MB → 0.66 MB, `zstd -19 --zstd=wlog=17`), streamed
+  object by object through the vendored decompressor with a 128 KiB window
+  (`goal_dgo_zst.c`). The ELF fell from 6.2 to 2.0 MB, and the arena is **12 MiB**:
+  173 files use 10.55 MB. A disc build would stream from the GD-ROM instead. It
+  still trades against VRAM-side and audio-side buffers later.
 - **mips2c functions** need real SH-4 implementations before gameplay. A first
   probe is encouraging: `probe_mips2c_sh4.py` syntax-checks all **25 of 25** jak1
   `game/mips2c` C++ files with `sh-elf-g++`. It needs only two adaptations: a

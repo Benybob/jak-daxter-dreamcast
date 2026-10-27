@@ -54,6 +54,9 @@ int dc_goal_install_kernel_types(dc_goal_runtime *rt,dc_kernel_types_result *res
   for (i=0;i<DC_KERNEL_PLACEHOLDER_COUNT;++i)
     if (!bind_preserving_value(rt,dc_kernel_placeholders[i].offset,dc_kernel_placeholders[i].name)) goto rollback;
   if (!bind_preserving_value(rt,DC_FIX_SYM_GLOBAL_HEAP,"global")) goto rollback;
+  /* kscheme set_fixed_symbol(FIX_SYM_DEBUG_HEAP,"debug",kdebugheap): no debug
+   * segment on Dreamcast, so its kheap stays null (malloc falls back to global). */
+  if (!bind_preserving_value(rt,DC_FIX_SYM_DEBUG_HEAP,"debug")) goto rollback;
   result->types=DC_KERNEL_TYPE_COUNT; result->new_types=new_types;
   result->placeholders=DC_KERNEL_PLACEHOLDER_COUNT; result->arena_bytes=rt->used-saved.used;
   result->temporary_bytes=DC_GOAL_SYMBOL_BYTES;

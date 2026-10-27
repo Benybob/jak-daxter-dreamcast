@@ -98,7 +98,7 @@ def argument_return_leaf(function):
 class UninitializedRead(ValueError):
     def __init__(self,node,missing):
         super().__init__(f'IR {node} reads uninitialized virtual registers {sorted(missing)}')
-        self.node=node
+        self.node=node; self.missing=set(missing)
 
 def validate_definitions(function,registers,entry_defined=()):
     """Check definite assignment along reachable paths, including loop edges.
@@ -226,6 +226,7 @@ VF_OPERAND=re.compile(r'ivf-(\d+)$')
 # PS2 MMI ops: codes shared with goal_mmi.h (three-operand from 1, immediate from 32).
 MMI3_OPS={name:1+i for i,name in enumerate(['pextlb', 'pextlh', 'pextlw', 'pextub', 'pextuh', 'pextuw', 'pceqb', 'pceqh', 'pceqw', 'pcgtb', 'pcgth', 'pcgtw', 'psubw', 'por', 'pxor', 'pand', 'packuswb', 'paddb'])}
 MMI2_OPS={name:32+i for i,name in enumerate(['pw.sll', 'pw.srl', 'pw.sra', 'ph.sll', 'ph.srl', 'VPSRLDQ', 'VPSLLDQ', 'VPSHUFLW', 'VPSHUFHW'])}
+SELF_CONSTANT_MMI=frozenset(['pceqb','pceqh','pceqw','pcgtb','pcgth','pcgtw','psubw','pxor'])
 QUAD_OPERAND=re.compile(r'i(?:i128|vf)-(\d+)$')
 
 def mmi_asm(op):
@@ -247,7 +248,11 @@ def mmi_asm(op):
     if name[1:] in MMI3_OPS and len(fields)==3:
         regs=ids(fields)
         if regs and op['writes']==[regs[0]] and set(op['reads'])==set(regs[1:]) and len(op['reads'])<=2:
-            return dict(op,kind='mmi',code=MMI3_OPS[name[1:]],dst=regs[0],srcs=regs[1:])
+            mmi=dict(op,kind='mmi',code=MMI3_OPS[name[1:]],dst=regs[0],srcs=regs[1:])
+            # x==x is all ones, x>x, x-x and x^x are zero for any x: the PS2
+            # constant idioms (.pceqw x,x,x) read no value, so x may be unassigned.
+            if regs[1]==regs[2] and name[1:] in SELF_CONSTANT_MMI: mmi['reads']=[]
+            return mmi
     elif name[1:] in MMI2_OPS and len(fields)==3 and fields[2].isdigit() and int(fields[2])<256:
         regs=ids(fields[:2])
         if regs and op['writes']==[regs[0]] and op['reads']==[regs[1]]:
@@ -671,11 +676,25 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
     transfers=any(op['kind'] in ('return_from_thread','suspend','process_reread','state_code_transfer')
                   for op in function['instructions'])
     implicit=function.get('implicit_parameters',[])
-    if implicit and (not runtime or len(implicit)!=1 or function['parameters'] or
+    # A behavior's self is the process running it (desktop r13 at entry): any
+    # process type in an object container, beside ordinary arguments and with
+    # any return the generic ABI accepts. Arguments are stored by the prologue
+    # before IR runs, so the entry current-process call cannot clobber them.
+    if implicit and (not runtime or len(implicit)!=1 or
                      implicit[0].get('kind')!='fixed_entry' or implicit[0].get('name')!='self' or
-                     implicit[0].get('type')!='process' or implicit[0].get('abi_type')!='object' or
-                     function.get('return_type')!='object'):
+                     implicit[0].get('abi_type')!='object' or implicit[0].get('process_type') is not True or
+                     implicit[0].get('register') in {p['register'] for p in function['parameters']}):
         raise ValueError('implicit process/self entry ABI not implemented for this signature')
+    if implicit and function['instructions'] and function['instructions'][0]['kind']=='nop':
+        # With arguments the frontend resets self together with them in one
+        # value-reset; split off self's part as its own entry reset.
+        entry=function['instructions'][0]; self_register=implicit[0]['register']
+        arguments={p['register'] for p in function['parameters']}
+        binding=[b for b in function.get('fixed_registers',[]) if b['register']==self_register]
+        if entry.get('text')=='value-reset' and not entry['reads'] and self_register in entry['writes'] and            set(entry['writes'])=={self_register}|arguments and len(entry['writes'])==len(arguments)+1 and len(binding)==1:
+            function=dict(function,instructions=[dict(kind='fixed_register_reset',reads=[],writes=[self_register],
+                                                      bindings=binding,text='self entry reset')]+
+                                                 function['instructions'][1:])
     value_types=INTEGER_VALUE_TYPES|(TAGGED_VALUE_TYPES if runtime else frozenset())
     void_return=runtime and function.get('return_type')=='none'
     classes={r['id']:r['class'] for r in function['registers']}
@@ -783,8 +802,28 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
     # other lanes are don't-care). vf slots are zero-filled at entry instead, so
     # vf reads are defined and deterministic; every other class stays strict.
     vf_entry={index for index,r in registers.items() if r['class']=='vector_float'}
+    # A register assigned on some path but read on a path that never assigns it
+    # (original bsp-camera-asm stores its a2 flags unset when the root is a leaf:
+    # whatever the PS2 register held) is zero-filled at entry in a pinned slot,
+    # like vf. A register no op assigns still refuses.
+    zero_entry=set()
+    assigned={index for op in function['instructions'] if op['kind']!='nop' for index in op['writes']}
+    arguments={p['register'] for p in function['parameters']}
+    while runtime:
+        try:
+            validate_definitions(function,set(registers),vf_entry|zero_entry); break
+        except UninitializedRead as error:
+            # Only a value stored to memory: returns, branches and arithmetic
+            # on an unassigned register stay refusals (they flag lowering bugs).
+            offender=function['instructions'][error.node]
+            stored=(offender['kind']=='store_memory' and len(error.missing)==1 and
+                    offender['reads'][:1]==list(error.missing) and offender['reads'].count(offender['reads'][0])==1)
+            partial=error.missing&assigned-arguments
+            if not stored or partial!=error.missing or partial&zero_entry or \
+               any(registers[index]['class'] not in ('gpr64','float','int128') for index in partial): break
+            zero_entry|=partial
     try:
-        validate_definitions(function,set(registers),vf_entry)
+        validate_definitions(function,set(registers),vf_entry|zero_entry)
     except UninitializedRead as error:
         # A file's top-level value is discarded by every loader. A (declare-file
         # (debug)) body of only macros/constants returns an unassigned register
@@ -794,7 +833,7 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
         function=dict(function,return_type='none',instructions=[
             dict(op,reads=[]) if op['kind']=='return' else op for op in function['instructions']])
         void_return=True
-        validate_definitions(function,set(registers),vf_entry)
+        validate_definitions(function,set(registers),vf_entry|zero_entry)
     module=module or {}
     statics=statics or {}
     writers={index:[] for index in registers}
@@ -853,7 +892,7 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
                      'relocations':relocations,'optimization':'empty_void_return',
                      'instruction_stream_bytes':len(data),'literal_pool_and_alignment_bytes':0,
                      'minimum_32_byte_cache_lines':1}
-    if optimize and not stack_objects and not addressed:
+    if optimize and not stack_objects and not addressed and not zero_entry:
         leaf=argument_return_leaf(function)
         if leaf is None: leaf=shift_return_leaf(function)
         if leaf is not None: return leaf
@@ -864,7 +903,7 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
         slots[index]=frame; frame+=16
     # (& var): the variable's home is its slot, which a pointer may reach at any
     # later op, so it is pinned outside liveness reuse like desktop force_on_stack.
-    for index in sorted(addressed-quads):
+    for index in sorted((addressed|zero_entry)-quads):
         slots[index]=frame; frame+=8
     # A dedicated slot, outside liveness reuse, records an entered lexical
     # scope so the call-fault exit can restore the saved process first.
@@ -1001,6 +1040,13 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
         for index in sorted(vectors):
             address(index)
             for n in range(4):
+                if n: e.add_immediate(8,4)
+                e.store(8,0)
+    if zero_entry:
+        e.immediate(0,0)
+        for index in sorted(zero_entry):
+            address(index)
+            for n in range(4 if index in quads else 2):
                 if n: e.add_immediate(8,4)
                 e.store(8,0)
     gpr_args=float_args=0
