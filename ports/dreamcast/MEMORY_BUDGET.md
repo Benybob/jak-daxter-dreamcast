@@ -89,4 +89,9 @@ of the desktop C++ kernel:
 - **mips2c functions** need real SH-4 implementations before gameplay. The C++
   sources in `game/mips2c` might compile for SH-4, which is worth testing first.
 
+`tests/test_memory_budget.py` runs the real frontend on a small file to check that
+the memory context gives `PROCESS_HEAP_MULT` 1. It also checks that a budget entry
+replaces both `#cond` branches of an in-file constant and is recorded, and that a
+stale entry is reported. This keeps the original bug from returning silently.
+
 No hardware claims. Everything is verified in Flycast.
