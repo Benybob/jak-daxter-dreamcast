@@ -10,6 +10,8 @@
 typedef struct {
   char name[60];
   uint32_t objects,completed,failed_object,code_bytes,initializers;
+  /* runtime arena use before the first object and after each completed one */
+  uint32_t arena_before,arena_after[DC_GOAL_DGO_MAX_OBJECTS];
   char object_names[DC_GOAL_DGO_MAX_OBJECTS][60];
 } dc_goal_dgo_result;
 /* Reads the whole DGO from the current position of a caller-owned FILE. Each

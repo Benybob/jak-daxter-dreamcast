@@ -217,14 +217,45 @@ static json instruction(IR* ir,const StaticNames& statics,const TypeSystem& type
   return output;
 }
 
+// Dreamcast target constants (AI-assisted): (defconstant NAME VALUE) forms from a
+// budget file replace the value of any defconstant of NAME, wherever it appears in
+// a source (including inside #cond/#if), as the source is read. The files on disk
+// are unchanged; each export records which names it substituted.
+using TargetConstants=std::unordered_map<std::string,goos::Object>;
+static TargetConstants read_target_constants(Compiler& compiler,const std::string& path) {
+  TargetConstants out;
+  auto forms=compiler.get_goos().reader.read_from_file({path}).as_pair()->cdr;
+  while(forms.is_pair()) {
+    const auto form=forms.as_pair()->car;
+    if(!form.is_pair() || !form.as_pair()->car.is_symbol("defconstant") || !form.as_pair()->cdr.is_pair() ||
+       !form.as_pair()->cdr.as_pair()->car.is_symbol())
+      throw std::runtime_error("target constants file may only contain (defconstant NAME VALUE)");
+    const auto name=form.as_pair()->cdr.as_pair()->car.as_symbol().name_ptr;
+    if(!out.emplace(name,form.as_pair()->cdr).second) throw std::runtime_error("duplicate target constant");
+    forms=forms.as_pair()->cdr;
+  }
+  return out;
+}
+static void apply_target_constants(goos::Object& object,const TargetConstants& constants,
+                                   std::vector<std::string>& applied) {
+  if(!object.is_pair()) return;
+  auto* pair=object.as_pair();
+  if(pair->car.is_symbol("defconstant") && pair->cdr.is_pair() && pair->cdr.as_pair()->car.is_symbol()) {
+    const auto found=constants.find(pair->cdr.as_pair()->car.as_symbol().name_ptr);
+    if(found!=constants.end()) { pair->cdr=found->second; applied.push_back(found->first); return; }
+  }
+  for(goos::Object at=object;at.is_pair();at=at.as_pair()->cdr) apply_target_constants(at.as_pair()->car,constants,applied);
+}
+
 // Export one compiled file's typed IR (AI-assisted).
 static void write_export(Compiler& compiler,FileEnv* file,const std::vector<std::string>& preloads,
                          bool selected_source_preloaded,const json& source_selection,
-                         const std::string& source_path,const std::string& output_path) {
+                         const std::string& source_path,const std::string& output_path,
+                         const std::vector<std::string>& target_constants={}) {
     json output={{"format_version",1},{"frontend","OpenGOAL original typed frontend"},
                  {"scope","SH-4 lowering input; unsupported IR remains explicit"},
                  {"preloads",preloads},{"selected_source_preloaded",selected_source_preloaded},{"source_selection",source_selection},
-                 {"source",source_path},{"functions",json::array()}};
+                 {"source",source_path},{"target_constants",target_constants},{"functions",json::array()}};
     StaticNames statics;
     output["statics"]=json::array();
     for(const auto& object:file->statics()) {
@@ -436,13 +467,17 @@ static void write_export(Compiler& compiler,FileEnv* file,const std::vector<std:
 // order, so each file is compiled once. Entries marked "export" write their IR as
 // they are compiled. LIST.json is [{"source":..., "output":... (optional)}, ...].
 // STATUS.json records the exports written and the first failure, which stops.
-static int run_batch(const std::string& list_path,const std::string& status_path) {
-  json status={{"exported",json::array()},{"export_errors",json::array()},{"failed",nullptr}};
+static int run_batch(const std::string& list_path,const std::string& status_path,const std::string& constants_path) {
+  json status={{"exported",json::array()},{"export_errors",json::array()},{"failed",nullptr},
+               {"target_constants",json::object()}};
   auto write_status=[&](){
     std::ofstream out(std::filesystem::path(status_path),std::ios::binary);
     out<<status.dump(2)<<'\n';
   };
   Compiler compiler(GameVersion::Jak1,emitter::InstructionSet::X86);
+  TargetConstants constants;
+  std::unordered_set<std::string> used_constants;
+  if(!constants_path.empty()) constants=read_target_constants(compiler,constants_path);
   std::ifstream list_stream{std::filesystem::path(list_path)};
   const json list=json::parse(list_stream);
   std::vector<std::string> compiled;
@@ -451,13 +486,16 @@ static int run_batch(const std::string& list_path,const std::string& status_path
     const std::string source=std::filesystem::weakly_canonical(entry.at("source").get<std::string>()).string();
     try {
       auto object=compiler.get_goos().reader.read_from_file({source});
+      std::vector<std::string> applied;
+      apply_target_constants(object,constants,applied);
+      for(const auto& name:applied) { used_constants.insert(name); status["target_constants"][source].push_back(name); }
       auto* file=compiler.compile_object_file("dreamcast-batch-"+std::to_string(index++),object,true);
       if(entry.contains("output")) {
         // An export refusal concerns that file only; it compiled, so later files
         // still see its definitions and the batch continues.
         try {
           write_export(compiler,file,compiled,false,json{{"kind","full_source"}},source,
-                       entry.at("output").get<std::string>());
+                       entry.at("output").get<std::string>(),applied);
           status["exported"].push_back(source);
         } catch(const std::exception& error) {
           status["export_errors"].push_back({{"source",source},{"error",error.what()}});
@@ -470,6 +508,9 @@ static int run_batch(const std::string& list_path,const std::string& status_path
     }
     compiled.push_back(source);
   }
+  // A budget entry no compiled source defines is stale; report it.
+  status["unused_target_constants"]=json::array();
+  for(const auto& [name,value]:constants) if(!used_constants.count(name)) status["unused_target_constants"].push_back(name);
   write_status();
   return 0;
 }
@@ -483,7 +524,8 @@ int main(int argc,char** argv) {
     lg::initialize();
     if(!file_util::setup_project_path(fs::path(argv[1])))
       throw std::runtime_error("project setup failed");
-    if(std::string(argv[2])=="--batch") return run_batch(argv[3],argc>4?argv[4]:std::string(argv[3])+".status.json");
+    if(std::string(argv[2])=="--batch")
+      return run_batch(argv[3],argc>4?argv[4]:std::string(argv[3])+".status.json",argc>5?argv[5]:std::string());
     Compiler compiler(GameVersion::Jak1,emitter::InstructionSet::X86);
     std::vector<std::string> preloads,selected_names;
     std::string prefix_global,from_global;

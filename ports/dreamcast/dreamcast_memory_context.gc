@@ -1,9 +1,15 @@
 ;;-*-Lisp-*-
 ;; Dreamcast target configuration: original console memory sizes (AI-assisted).
 ;; gcommon enables BIG_MEMORY, which (through PC_BIG_MEMORY) triples the shared
-;; process heap behind every dead pool (PROCESS_HEAP_MULT 3, about 2.9 MiB). The
-;; Dreamcast has 16 MiB of RAM in total, so this explicit context, preloaded after
-;; gcommon and before gkernel-h, restores the original multiplier of 1. No original
-;; body is changed. PC_PORT stays enabled. See TARGET_CONFIG_AUDIT.md.
+;; process heap behind every dead pool (PROCESS_HEAP_MULT 3, about 2.9 MiB) and
+;; every buffer scaled by it (display's DMA buffers, engine matrices, draw counts).
+;; The Dreamcast has 16 MiB of RAM in total, so this explicit context, preloaded
+;; after gcommon and before gkernel-h, restores the original multiplier of 1.
+;; No original body is changed. PC_PORT stays enabled. See TARGET_CONFIG_AUDIT.md.
+;;
+;; defglobalconstant binds the GOOS value UNEVALUATED, so PC_BIG_MEMORY must be
+;; the literal #f: binding the form (and PC_PORT BIG_MEMORY) would leave a
+;; non-empty list, which #if treats as true. (Corrected 2026-10-27: the earlier
+;; form kept the 3x multiplier; see MEMORY_BUDGET.md.)
 (defglobalconstant BIG_MEMORY #f)
-(defglobalconstant PC_BIG_MEMORY (and PC_PORT BIG_MEMORY))
+(defglobalconstant PC_BIG_MEMORY #f)

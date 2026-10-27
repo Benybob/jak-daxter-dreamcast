@@ -19,6 +19,7 @@ parser.add_argument('--tests',type=int,default=17)
 parser.add_argument('--suite',choices=('codegen','runtime','runtime-goal','objects','projection','movement','collision','world-manifest','view-clip','camera','sectors','compression','render-io','gpu-catalog','render-cache','world-view','frustum','render-base','training-render'),default='codegen')
 parser.add_argument('--timeout',type=float,default=30,help='Native completion deadline in seconds, 1..300')
 parser.add_argument('--capture',action='store_true',help='Capture completed RGB565 framebuffer before recording terminal success')
+parser.add_argument('--dump',nargs=2,metavar=('SYMBOL','BYTES'),help='Also write BYTES of a guest symbol to dump.bin at the end')
 args=parser.parse_args()
 if args.tests<1: parser.error('--tests must be positive')
 if not 1<=args.timeout<=300: parser.error('--timeout must be 1..300 seconds')
@@ -30,6 +31,12 @@ cache_match=re.search(r'^([0-9a-fA-F]+)\s+\w\s+_?dc_cache_report$',symbols,re.MU
 cache_address=int(cache_match[1],16) if args.suite=='render-cache' and cache_match else 0
 metrics_match=re.search(r'^([0-9a-fA-F]+)\s+\w\s+_?dc_base_metrics$',symbols,re.MULTILINE)
 metrics_address=int(metrics_match[1],16) if args.suite=='render-base' and metrics_match else 0
+metrics_bytes=40
+if args.dump:
+    dump_match=re.search(r'^([0-9a-fA-F]+)\s+\w\s+_?'+re.escape(args.dump[0])+'$',symbols,re.MULTILINE)
+    if not dump_match: parser.error(args.dump[0]+' symbol missing')
+    if metrics_address: parser.error('--dump and render-base metrics are exclusive')
+    metrics_address,metrics_bytes=int(dump_match[1],16),int(args.dump[1])
 out=args.output.resolve(); out.mkdir(parents=True,exist_ok=True)
 result_path=out/'target.bin'; result_path.unlink(missing_ok=True)
 progress_path=out/'progress.bin'; progress_path.unlink(missing_ok=True)
@@ -65,7 +72,7 @@ local function vblank()
     CAPTURE_CALL
     if METRICS~=0 then
       local m=assert(io.open(METRICS_OUTPUT,'wb'))
-      for i=0,39 do m:write(string.char(flycast.memory.read8(METRICS+i))) end
+      for i=0,METRIC_BYTES-1 do m:write(string.char(flycast.memory.read8(METRICS+i))) end
       m:close()
     end
   end
@@ -80,7 +87,8 @@ local function vblank()
 end
 flycast_callbacks={vblank=vblank}
 '''.replace('CAPTURE_HELPER',capture_helper).replace('CAPTURE_CALL',"if state==2 then capture('frame') end" if args.capture else '')
-lua=lua.replace('METRICS_OUTPUT',json.dumps((out/'metrics.bin').as_posix())).replace('METRICS',str(metrics_address))
+lua=lua.replace('METRIC_BYTES',str(metrics_bytes))
+lua=lua.replace('METRICS_OUTPUT',json.dumps((out/('dump.bin' if args.dump else 'metrics.bin')).as_posix())).replace('METRICS',str(metrics_address))
 lua=lua.replace('CACHE_OUTPUT',json.dumps((out/'cache-progress.bin').as_posix())).replace('CACHE',str(cache_address)).replace('ADDRESS',str(address)).replace('OUTPUT',json.dumps(result_path.as_posix())).replace('PROGRESS',json.dumps(progress_path.as_posix()))
 lua_path.write_text(lua)
 command=[str(exe),'-config','config:UseReios=yes','-config','config:Dreamcast.RamMod32MB=no',

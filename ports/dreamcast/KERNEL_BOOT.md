@@ -29,7 +29,9 @@ match `goal_src/jak1/game.gp`. The Dreamcast target contexts are explicit:
 
 - scalar memory bounds;
 - no desktop profiler (`PC_PROFILER_ENABLE #f`);
-- original console memory sizes (`BIG_MEMORY #f`, from `dreamcast_memory_context.gc`);
+- original console memory sizes (`BIG_MEMORY #f`, from `dreamcast_memory_context.gc`).
+  **Correction (2026-10-27):** until this date the context did not take effect, so the
+  kernel ran with the PC 3x actor heap; see [MEMORY_BUDGET.md](MEMORY_BUDGET.md);
 - a 512-byte main-thread stack backup (`PROCESS_STACK_SAVE_SIZE`, from
   `dreamcast_thread_context.gc`). The original 256 bytes fit PS2 frames; a suspended
   native main thread needs 348.
@@ -56,7 +58,8 @@ After startup, the checks read what the original code built:
 gkernel's own `(inspect *test-vec4s*)` prints through native `_format`, with its
 type symbol and float fields.
 
-Startup allocates about 3.6 MiB. The ELF uses a 4 MiB arena.
+Startup allocates about 1.9 MiB with the corrected context (3.6 MiB before it).
+The compiled-in boot ELF uses a 4 MiB arena, and the DGO boot uses 8 MiB.
 
 ## A process started the original way
 

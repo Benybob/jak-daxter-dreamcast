@@ -32,13 +32,16 @@ static int write32(dc_goal_runtime *rt,uint32_t at,uint32_t value) {
   if (!p) return 0;
   memcpy(p,&value,4); return 1;
 }
+uint32_t dc_goal_last_failed_alloc;
 uint32_t dc_goal_alloc(dc_goal_runtime *rt,uint32_t bytes) {
   uint32_t size,address;
   if (!rt || !rt->memory || !bytes || bytes>UINT32_MAX-15u)
     return fail(rt,DC_GOAL_BAD_ARGUMENT);
   size=(bytes+15u)&~15u;
-  if (rt->used>rt->capacity || size>rt->capacity-rt->used)
+  if (rt->used>rt->capacity || size>rt->capacity-rt->used) {
+    dc_goal_last_failed_alloc=size;
     return fail(rt,DC_GOAL_OUT_OF_MEMORY);
+  }
   address=rt->base+rt->used;
   memset(rt->memory+rt->used,0,size); rt->used+=size;
   return address;

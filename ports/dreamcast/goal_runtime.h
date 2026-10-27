@@ -34,6 +34,8 @@ int dc_goal_init_native(dc_goal_runtime *rt,void *memory,uint32_t capacity);
 #endif
 void *dc_goal_resolve(dc_goal_runtime *rt,uint32_t address,uint32_t size);
 uint32_t dc_goal_alloc(dc_goal_runtime *rt,uint32_t bytes);
+/* Size of the most recent arena request that did not fit (diagnostics only). */
+extern uint32_t dc_goal_last_failed_alloc;
 uint32_t dc_goal_hash(const char *name);
 uint32_t dc_goal_find(dc_goal_runtime *rt,const char *name);
 uint32_t dc_goal_intern(dc_goal_runtime *rt,const char *name);

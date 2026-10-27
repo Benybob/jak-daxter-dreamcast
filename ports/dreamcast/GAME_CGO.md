@@ -4,11 +4,11 @@
 GAME.CGO order:
 
 - **92 of GAME.CGO's 326 code files** compile to native SH-4 (through res-h).
-- **48 of those load and run their original top-level startup** after KERNEL.CGO
-  in stock 16 MiB Flycast (through decomp-h). This includes the 141 lane-exact
+- **All 92 load and run their original top-level startup** after KERNEL.CGO in
+  stock 16 MiB Flycast, with the Dreamcast memory budget ([MEMORY_BUDGET.md](MEMORY_BUDGET.md)). This includes the 141 lane-exact
   vector cases ([VU0_LOWERING.md](VU0_LOWERING.md)) and the original process
   spawn and dispatch.
-- **148 of 148 boot checks pass.**
+- **192 of 192 boot checks pass.**
 
 ```bash
 python ports/dreamcast/build_kernel_boot.py --msys C:/msys64 --verify
@@ -111,13 +111,10 @@ Runtime:
 
 ## Where it stops
 
-- **Loading stops at display (object 48).** Its startup allocates two PS2 DMA
-  frame buffers of `DMA_BUFFER_GLOBAL_SIZE`: 2,664 KiB each under PC settings,
-  1,712 KiB on PS2. Together that's 5.2 MiB, on top of 5.2 MiB already used, in
-  a 16 MiB machine. Later engine files allocate level and actor heaps that are
-  larger still. A deliberate Dreamcast memory budget is the next runtime step,
-  and these PS2 GS buffers belong to the renderer the PowerVR path will replace.
-  The arena is not simply being enlarged to hide this.
+- **Loading:** all 92 compiled files now load and start (192 of 192 boot checks),
+  after the memory budget in [MEMORY_BUDGET.md](MEMORY_BUDGET.md): the corrected
+  `PROCESS_HEAP_MULT`, PS2-sized DMA buffers, native `kmalloc`/`scf-get-time`, and
+  a faulting `__pc-get-mips2c` stub. The arena then holds 7.8 of its 8 MiB.
 - **Lowering stops at res (object 92).** `mov igpr-11, &igpr-6` takes the
   address of a register-held local, which needs a stack home for that variable.
 - **Exporter refusals.** 56 of the 331 dependency-graph files refuse; 54 of them

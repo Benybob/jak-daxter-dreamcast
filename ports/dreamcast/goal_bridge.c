@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <limits.h>
 #include <string.h>
+#include <time.h>
 #include <stdio.h>
 #ifdef __DREAMCAST__
 #include <kos/dbgio.h>
@@ -291,7 +292,9 @@ int dc_goal_install_type_bridges(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_
   if (!dc_goal_load_module(rt,functions,4,sync,NULL,result)) return 0;
   return dc_goal_set_method(rt,rt->type_type,0,dc_goal_symbol_value(rt,dc_goal_find(rt,"dc-c-type-new"))) &&
          dc_goal_set_method(rt,rt->basic_type,0,dc_goal_symbol_value(rt,dc_goal_find(rt,"dc-c-basic-new"))) &&
-         dc_goal_set_method(rt,rt->structure_type,0,dc_goal_symbol_value(rt,dc_goal_find(rt,"dc-c-structure-new")));
+         /* Propagate like method-set!: fixed kernel types such as kheap were made
+          * before this bridge and still inherit the old slot (basic's is kept). */
+         dc_goal_method_set(rt,rt->structure_type,0,dc_goal_symbol_value(rt,dc_goal_find(rt,"dc-c-structure-new")),1);
 }
 int dc_goal_install_integer_bridge(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_goal_module_result *result) {
   unsigned char code[12]={1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0};
@@ -702,6 +705,67 @@ static uint64_t malloc_native(uint64_t heap,uint64_t bytes) {
   }
   return dc_goal_alloc(rt,(uint32_t)bytes);
 }
+/* Native counterpart of kmalloc (game/kernel/common/kmalloc.cpp) for the global
+ * heap only: the arena. Memory is always zeroed (covering KMALLOC_MEMSET); the
+ * align-64/align-256 flags round the address up within a padded allocation.
+ * Any other kheap refuses explicitly until native kheaps exist. */
+static uint64_t kmalloc_native(uint64_t heap,uint64_t bytes,uint64_t flags,uint64_t name){
+  dc_goal_runtime *rt=active_runtime;
+  uint32_t global=rt?rt->s7+DC_FIX_SYM_GLOBAL_HEAP:0,align,address;
+  (void)name;
+  if(!rt)return 0;
+  if((heap!=global && heap!=dc_goal_symbol_value(rt,global)) || !bytes || bytes>UINT32_MAX-256u){
+    if(rt->error==DC_GOAL_OK)rt->error=DC_GOAL_BAD_ARGUMENT;
+    return 0;
+  }
+  align=(flags&0x100u)?256u:(flags&0x40u)?64u:16u;
+  address=dc_goal_alloc(rt,(uint32_t)bytes+align-16u);
+  if(!address)return 0;
+  return (address+align-1u)&~(align-1u);
+}
+/* An object a bridge may write: in the arena, or a GOAL stack object in a live
+ * caller frame (above this bridge's own frame, within 64 KiB of it), as
+ * (new 'stack-no-clear ...) objects passed down the call chain are. */
+static void *bridge_object(dc_goal_runtime *rt,uint64_t address,uint32_t bytes){
+  volatile uint32_t marker=0;uintptr_t sp=(uintptr_t)&marker;void *p;enum dc_goal_error prior=rt->error;
+  if(address>UINT32_MAX || !bytes)return NULL;
+  if((p=dc_goal_resolve(rt,(uint32_t)address,bytes)))return p;
+  rt->error=prior;
+  if(address>sp && address+bytes<=sp+0x10000u)return (void*)(uintptr_t)address;
+  return NULL;
+}
+/* Native counterpart of scf-get-time (DecodeTime -> sceCdReadClock): the local
+ * time as BCD, exactly as desktop libscf.cpp fills the 8-byte sceCdCLOCK. */
+static uint8_t bcd(int v){return (uint8_t)((v%10)+(v/10)*16);}
+static uint64_t scf_get_time_native(uint64_t clock){
+  dc_goal_runtime *rt=active_runtime;uint8_t *out;time_t t;struct tm *date;
+  if(!rt || !(out=bridge_object(rt,clock,8))){if(rt)rt->error=DC_GOAL_BAD_ARGUMENT;return 0;}
+  t=time(0);date=localtime(&t);
+  if(!date){memset(out,0,8);return 0;}
+  out[0]=0;out[1]=bcd(date->tm_sec);out[2]=bcd(date->tm_min);out[3]=bcd(date->tm_hour);
+  out[4]=bcd((date->tm_yday-date->tm_wday+7)/7);out[5]=bcd(date->tm_mday);
+  out[6]=bcd(date->tm_mon+1);out[7]=bcd(date->tm_year-100);
+  return 0;
+}
+/* __pc-get-mips2c: the PC port's C++ translations of original MIPS assembly
+ * (game/mips2c) have no SH-4 counterparts yet. Startup only stores the returned
+ * function, so the lookup counts the request and returns one stub that faults
+ * explicitly (UNSUPPORTED_TRANSFER) if it is ever called. Nothing pretends. */
+static uint32_t mips2c_requests;
+static uint64_t mips2c_missing_native(void){
+  if(active_runtime)active_runtime->error=DC_GOAL_UNSUPPORTED_TRANSFER;
+  return 0;
+}
+static uint64_t pc_get_mips2c_native(uint64_t name){
+  dc_goal_runtime *rt=active_runtime;uint32_t stub;
+  (void)name;
+  if(!rt)return 0;
+  stub=dc_goal_symbol_value(rt,dc_goal_find(rt,"dc-c-mips2c-missing"));
+  if(!stub){rt->error=DC_GOAL_BAD_FUNCTION;return 0;}
+  ++mips2c_requests;
+  return stub;
+}
+uint32_t dc_goal_mips2c_requests(void){return mips2c_requests;}
 /* Original kscheme nothing: a function that does nothing. */
 static uint64_t nothing_native(void){return 0;}
 /* Original kernel cpad-open/cpad-get-data on a 132-byte cpad-info; both return it. */
@@ -727,18 +791,22 @@ uint32_t dc_goal_format_capture(const char **text){if(text)*text=format_text;ret
 void dc_goal_format_capture_clear(void){format_length=0;}
 int dc_goal_install_kernel_services(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_goal_module_result *result) {
   const unsigned char stub[12]={1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0};
-  unsigned char code[6][12];
-  uint32_t targets[6]={(uint32_t)(uintptr_t)format_native,(uint32_t)(uintptr_t)malloc_native,
+  unsigned char code[10][12];
+  uint32_t targets[10]={(uint32_t)(uintptr_t)format_native,(uint32_t)(uintptr_t)malloc_native,
                        (uint32_t)(uintptr_t)nothing_native,(uint32_t)(uintptr_t)mmi_native,
-                       (uint32_t)(uintptr_t)cpad_open_native,(uint32_t)(uintptr_t)cpad_get_data_native};
-  dc_goal_code_export functions[6]={{"_format",code[0],12,NULL,0},{"malloc",code[1],12,NULL,0},
+                       (uint32_t)(uintptr_t)cpad_open_native,(uint32_t)(uintptr_t)cpad_get_data_native,
+                       (uint32_t)(uintptr_t)kmalloc_native,(uint32_t)(uintptr_t)scf_get_time_native,
+                       (uint32_t)(uintptr_t)pc_get_mips2c_native,(uint32_t)(uintptr_t)mips2c_missing_native};
+  dc_goal_code_export functions[10]={{"_format",code[0],12,NULL,0},{"malloc",code[1],12,NULL,0},
                                     {"nothing",code[2],12,NULL,0},{"dc-c-mmi",code[3],12,NULL,0},
-                                    {"cpad-open",code[4],12,NULL,0},{"cpad-get-data",code[5],12,NULL,0}};
+                                    {"cpad-open",code[4],12,NULL,0},{"cpad-get-data",code[5],12,NULL,0},
+                                    {"kmalloc",code[6],12,NULL,0},{"scf-get-time",code[7],12,NULL,0},
+                                    {"__pc-get-mips2c",code[8],12,NULL,0},{"dc-c-mips2c-missing",code[9],12,NULL,0}};
   unsigned i;
   if(!rt || !result) return 0;
   if(active_runtime!=rt) { rt->error=DC_GOAL_BAD_ARGUMENT; return 0; }
-  for(i=0;i<6;++i){memcpy(code[i],stub,12);memcpy(code[i]+8,&targets[i],4);}
-  return dc_goal_load_module(rt,functions,6,sync,NULL,result);
+  for(i=0;i<10;++i){memcpy(code[i],stub,12);memcpy(code[i]+8,&targets[i],4);}
+  return dc_goal_load_module(rt,functions,10,sync,NULL,result);
 }
 
 int dc_goal_install_process_bridge(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_goal_module_result *result) {

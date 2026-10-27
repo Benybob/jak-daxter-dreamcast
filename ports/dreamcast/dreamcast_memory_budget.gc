@@ -1,0 +1,13 @@
+;;-*-Lisp-*-
+;; Dreamcast memory budget (AI-assisted): explicit target values for original
+;; size constants that the engine defines inside the same file that uses them, so
+;; a preloaded context cannot override them. The exporter's --batch mode replaces
+;; the value of each (defconstant NAME ...) listed here wherever it appears in a
+;; source, as the source is read; files on disk are unchanged, and each exported
+;; IR records the names it substituted. An entry no source defines is reported
+;; as stale. Reasons and measurements are in MEMORY_BUDGET.md.
+
+;; display.gc: two per-frame PS2 DMA buffers. PC 2,664 KiB, PS2 1,712 KiB.
+;; The original PS2 value, the size the original renderers fit a frame into.
+;; To be revisited with the PowerVR renderer, which decides what they hold.
+(defconstant DMA_BUFFER_GLOBAL_SIZE (* 1712 1024))

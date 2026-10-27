@@ -19,6 +19,9 @@
 #include "build/game_cgo_order.h"
 #include "build/vf_cases.h"
 int dc_kernel_load_vf_fixture(dc_goal_runtime *,dc_goal_cache_sync,dc_goal_module_result *);
+/* Read by verify_backend.py --dump: arena use around every GAME.CGO object. */
+struct dc_boot_memory_trace {uint32_t magic,objects,completed,failed,capacity,before,failed_request,after[DC_GOAL_DGO_MAX_OBJECTS];};
+struct dc_boot_memory_trace dc_boot_memory_trace;
 #else
 #include "build/boot_gcommon.h"
 #include "build/boot_gstring_h.h"
@@ -127,6 +130,11 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
     CHECK(file!=NULL,1,"GAME.CGO prefix opens from the romdisk");
     if(file){
       loaded=dc_goal_load_dgo(&rt,file,sync_code,NULL,&game);fclose(file);
+      dc_boot_memory_trace.objects=game.objects;dc_boot_memory_trace.completed=game.completed;
+      dc_boot_memory_trace.failed=game.failed_object;dc_boot_memory_trace.capacity=capacity;
+      dc_boot_memory_trace.before=game.arena_before;dc_boot_memory_trace.failed_request=dc_goal_last_failed_alloc;
+      memcpy(dc_boot_memory_trace.after,game.arena_after,sizeof game.arena_after);
+      dc_boot_memory_trace.magic=0x4d454d54u;  /* "TMEM" */
       CHECK(game.failed_object==UINT32_MAX?0u:1000u*game.failed_object+rt.error,0,
             "no GAME.CGO object fails (observed = 1000 * object index + error)");
       CHECK(loaded?1:100+rt.error,1,"GAME.CGO prefix links and runs each original startup in order");

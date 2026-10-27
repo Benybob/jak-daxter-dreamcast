@@ -87,9 +87,12 @@ def main():
         batch.append(entry)
     (build / 'game-batch.json').write_text(json.dumps(batch, indent=1) + '\n')
     status_path = build / 'game-batch-status.json'
-    subprocess.run([str(args.frontend), str(root), '--batch', str(build / 'game-batch.json'), str(status_path)],
-                   capture_output=True, text=True)
+    subprocess.run([str(args.frontend), str(root), '--batch', str(build / 'game-batch.json'), str(status_path),
+                    str(port / 'dreamcast_memory_budget.gc')], capture_output=True, text=True)
     status = json.loads(status_path.read_text())
+    report['target_constants'] = status.get('target_constants', {})
+    if status.get('unused_target_constants'):
+        report['unused_target_constants'] = status['unused_target_constants']
     exported = {Path(s).resolve() for s in status['exported']}
     export_errors = {Path(e['source']).resolve(): e['error'] for e in status.get('export_errors', [])}
     for name in sources:
