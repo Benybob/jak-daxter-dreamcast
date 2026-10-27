@@ -9,7 +9,9 @@ def report(directory, count=20):
         raise ValueError('count must be nonnegative')
     functions = []
     for path in sorted(Path(directory).glob('game_*.manifest.json')):
-        for fn in json.loads(path.read_text(encoding='utf-8'))['functions']:
+        manifest = json.loads(path.read_text(encoding='utf-8'))
+        # lower_sh4_ir.py writes a plain list of per-function entries.
+        for fn in manifest if isinstance(manifest, list) else manifest['functions']:
             functions.append(dict(file=path.name, name=fn['name'], bytes=fn['bytes'],
                                   stack_bytes=fn['stack_bytes']))
     functions.sort(key=lambda fn: (-fn['stack_bytes'], fn['file'], fn['name']))

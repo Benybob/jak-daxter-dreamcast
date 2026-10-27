@@ -31,6 +31,16 @@ class StackFramesTest(unittest.TestCase):
                                             '--build', str(root), '-n', '0'], text=True)
             self.assertEqual(text.strip(), '2 of 4 functions exceed 4096 bytes')
 
+    def test_real_manifest_is_a_plain_list(self):
+        with tempfile.TemporaryDirectory() as directory:
+            (Path(directory) / 'game_c.manifest.json').write_text(json.dumps(
+                [dict(name='g', bytes=10, stack_bytes=5000)]))
+            self.assertEqual(report(directory)['exceeds_4096'], 1)
+
+    @unittest.skipUnless((PORT / 'build/game_font.manifest.json').is_file(), 'build GAME.CGO first')
+    def test_reads_the_build_manifests(self):
+        self.assertGreater(report(PORT / 'build')['total'], 0)
+
     def test_empty_and_negative_limit(self):
         with tempfile.TemporaryDirectory() as directory:
             self.assertEqual(report(directory), dict(total=0, exceeds_4096=0, largest=[]))
