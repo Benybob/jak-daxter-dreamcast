@@ -47,7 +47,8 @@ forms, and the exporter's `--batch` mode substitutes them:
 ## Measured startup profile
 
 `verify_backend.py --dump dc_boot_memory_trace 2076` writes the per-object arena
-trace that the DGO loader records. `memory_trace.py` prints it.
+trace that the DGO loader records. `memory_trace.py` prints it. `tests/test_memory_trace.py`
+checks its reading of a synthetic dump (deltas, ranking, the failed object, a missing trace).
 
 | | bytes |
 | --- | --- |
