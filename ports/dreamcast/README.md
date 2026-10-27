@@ -6,11 +6,12 @@ and inventory of all 346 GAME.CGO entries. Claude Code owns vf lowering in
 lower_sh4_ir.py; this support change leaves the lowering/boot files alone.
 
 **2026-10-27 (AI-assisted):** [GAME.CGO](GAME_CGO.md) compiles in game.gp dependency
-order in one frontend run. 97 of 326 code files lower to SH-4, and all 97 load and
-start in Flycast (197 of 197 boot checks) under a [memory budget](MEMORY_BUDGET.md). Native MMI ops, structure allocation, linker type
+order in one frontend run. 144 of 326 code files lower to SH-4, and all 144 load and
+start in Flycast (244 of 244 boot checks) under a [memory budget](MEMORY_BUDGET.md). Native MMI ops, structure allocation, linker type
 placeholders and the original pad services on the Dreamcast controller. All 25 jak1
 mips2c C++ files pass an SH-4 syntax check ([MEMORY_BUDGET.md](MEMORY_BUDGET.md)). `(& var)` locals
-and the kscheme asize-of/copy defaults are native too. Next: `go` from a method (fact-h),
+and the kscheme asize-of/copy defaults are native too, as are `go` from a method and the
+float ABI for `meters`/`degrees`. Next: the implicit process/self ABI (navigate-h),
 compiling mips2c natively, and level heaps.
 
 **2026-10-27 (AI-assisted):** [VU0 vector registers](VU0_LOWERING.md) now lower to

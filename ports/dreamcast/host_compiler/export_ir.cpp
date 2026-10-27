@@ -44,6 +44,13 @@ static std::string native_value_type(const TypeSpec& spec,const TypeSystem& type
        (bytes==1 || bytes==2 || bytes==4 || bytes==8))
       return bits->get_load_signed()?"int":"uint";
   }
+  // Float-derived value types (meters, degrees, seconds-style aliases) are the
+  // same 32-bit float in the FPR class.
+  if(const auto* value=dynamic_cast<const ValueType*>(type)) {
+    if(spec.print()!="float" && !value->is_boxed() && value->get_load_size()==4 &&
+       value->get_preferred_reg_class()==RegClass::FLOAT && types.tc(TypeSpec("float"),spec))
+      return "float";
+  }
   // User-defined reference types are 32-bit addresses in scalar containers.
   // Non-reference aggregates and their 128-bit values stay unsupported.
   if(type->is_reference() && type->get_load_size()==4) return "object";

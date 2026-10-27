@@ -495,13 +495,19 @@ def lexical_process_bracket(function,index,binding):
     so every normal path that enters also leaves. Anything else refuses.
     """
     ops=[dict(op) for op in function['instructions']]
+    read_only=all(op['kind']=='fixed_register_reset' for op in ops if index in op['writes'])
     for position,op in enumerate(ops):
         if op['kind']=='fixed_register_reset' and index in op['writes']:
             if op['reads'] or op['writes']!=[index] or op.get('bindings')!=[binding]:
                 raise ValueError('unsupported lexical process reset layout')
-            if any(o['kind'] in ('branch','goto','call') or index in o['reads'] or index in o['writes']
-                   for o in ops[:position]):
-                raise ValueError('lexical process reset must precede every process use and control transfer')
+            # Desktop IR_ValueReset emits no code, and pp is preserved across
+            # calls, so in a read-only context a reset placed after branches or
+            # calls (a first use of pp on one path, e.g. (go ...) from a method)
+            # still names the entry value. A bracket keeps the strict layout.
+            if any(index in o['reads'] or index in o['writes'] or
+                   (not read_only and o['kind'] in ('branch','goto','call')) for o in ops[:position]):
+                raise ValueError('lexical process reset must precede every process use'+
+                                 ('' if read_only else ' and control transfer'))
             ops[position]=dict(kind='nop',reads=[],writes=[],text=op.get('text','entry pp reset'))
     writes=[p for p,op in enumerate(ops) if index in op['writes']]
     if not writes:

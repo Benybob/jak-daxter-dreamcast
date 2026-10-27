@@ -46,20 +46,21 @@ without the lowering, by ChatGPT/Codex's independent oracle and IEEE binary32.
 
 **GAME.CGO (2026-10-27, AI-assisted):** files now compile in the original game.gp
 dependency order, in one frontend run covering all 331 files of the GAME.CGO
-dependency graph. **97 of GAME.CGO's 326 code files** lower to SH-4, and **all 97 load and
-run their original startups** in Flycast: **197 of 197 boot checks pass**. New native
+dependency graph. **144 of GAME.CGO's 326 code files** lower to SH-4, and **all 144 load and
+run their original startups** in Flycast: **244 of 244 boot checks pass**. New native
 pieces:
 - PS2 MMI integer ops;
 - `structure` allocation;
 - linker type placeholders;
 - the original `cpad-open`/`cpad-get-data` on the Dreamcast controller;
-- `(& var)` of register locals (res) and the kscheme asize-of/copy defaults (surface-h).
+- `(& var)` of register locals (res) and the kscheme asize-of/copy defaults (surface-h);
+- `(go ...)` from a method (fact-h) and the float ABI for `meters`/`degrees` (subdivide-h).
 
 A Dreamcast memory budget ([MEMORY_BUDGET.md](ports/dreamcast/MEMORY_BUDGET.md)) fixed the
 kernel's PC-sized actor heap (the target context never took effect before) and gives
 display PS2-sized DMA buffers. mips2c functions are fault-on-call stubs for now, but all
 25 jak1 mips2c C++ files already pass an SH-4 syntax check (`probe_mips2c_sh4.py`), so
-compiling them natively looks viable. 502 host tests pass.
+compiling them natively looks viable. 519 host tests pass.
 Details are in [GAME_CGO.md](ports/dreamcast/GAME_CGO.md).
 GC, the rest of the engine and gameplay remain unfinished.
 
@@ -86,10 +87,10 @@ Host validation: 470 tests passed, one optional exporter test skipped (471 total
 | Original background LODs | Source published: original LOD selection; reduced training patch passes movement and camera checks |
 | Original kernel process system | Source published: unchanged original `send-event-function`, `deactivate`, `(suspend)`, `enter-state` and `kernel-dispatcher` (including trans/post hooks) run on native SH-4 fibers |
 | Original kernel compilation | Complete: 176 of 184 original kernel functions compile to SH-4, and the other 8 (x86/ARM64 assembly thread primitives) bind to named native counterparts; whole-file startups lower; see [KERNEL_COMPILATION.md](ports/dreamcast/KERNEL_COMPILATION.md) |
-| Original kernel boot | Verified: all 8 KERNEL.CGO startups run natively in original order, and an originally spawned process runs under the original dispatcher (87/87 checks); also boots from a native KERNEL.CGO DGO and loads the first 97 GAME.CGO files (197/197); see [KERNEL_BOOT.md](ports/dreamcast/KERNEL_BOOT.md) |
+| Original kernel boot | Verified: all 8 KERNEL.CGO startups run natively in original order, and an originally spawned process runs under the original dispatcher (87/87 checks); also boots from a native KERNEL.CGO DGO and loads the first 144 GAME.CGO files (244/244); see [KERNEL_BOOT.md](ports/dreamcast/KERNEL_BOOT.md) |
 | Original process initialization | Root C-stack path verified: unchanged initializer, throw, protect exits, native catches and original deactivate/pool return; initialization to a scheduled running state verified end to end; fiber catches pending |
 | VU0 vector registers | Verified: vf ops lower to SH-4; 141/141 lane-exact cases against an independent oracle; see [VU0_LOWERING.md](ports/dreamcast/VU0_LOWERING.md) |
-| Original GAME.CGO | In progress: 97/326 code files lower to SH-4 and all 97 load and start in Flycast under a Dreamcast memory budget; `go` from a method (fact-h) and mips2c next; see [GAME_CGO.md](ports/dreamcast/GAME_CGO.md) |
+| Original GAME.CGO | In progress: 144/326 code files lower to SH-4 and all 144 load and start in Flycast under a Dreamcast memory budget; the implicit process/self ABI (navigate-h) and mips2c next; see [GAME_CGO.md](ports/dreamcast/GAME_CGO.md) |
 | Full original game | Unfinished: fiber catch lifetime, cross-stack unwinding, the rest of GAME.CGO, memory budget, GC, general gameplay, progression or release build |
 
 The playable prototypes use a **native C controller**, as a temporary milestone.

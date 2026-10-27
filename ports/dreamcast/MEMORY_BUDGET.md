@@ -84,9 +84,12 @@ of the desktop C++ kernel:
   too: more than the whole Dreamcast. Levels need a streaming design, not just a
   smaller constant. These heaps are allocated when levels load, past the files
   that load now.
-- **The 8 MiB arena** is nearly full after 92 files. Raising it trades against
-  the romdisk/ELF in these tests and against VRAM-side and audio-side buffers
-  later.
+- **The boot arena** filled its 8 MiB at projectiles-h (object 116, a refused
+  4,352-byte request). It is now **10 MiB**: the DGO boot ELF is about 4.8 MB
+  (text, which includes the romdisk holding KERNEL.CGO and the 3.5 MB GAME.CGO,
+  plus bss), and 144 files use 9.27 MB of the arena. A disc build streaming
+  GAME.CGO would free the romdisk copy. It still trades against VRAM-side and
+  audio-side buffers later.
 - **mips2c functions** need real SH-4 implementations before gameplay. A first
   probe is encouraging: `probe_mips2c_sh4.py` syntax-checks all **25 of 25** jak1
   `game/mips2c` C++ files with `sh-elf-g++`. It needs only two adaptations: a

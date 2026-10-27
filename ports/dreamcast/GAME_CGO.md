@@ -3,12 +3,12 @@
 2026-10-27, Claude Code. The original engine is being compiled file by file in
 GAME.CGO order:
 
-- **97 of GAME.CGO's 326 code files** compile to native SH-4 (through pat-h).
-- **All 97 load and run their original top-level startup** after KERNEL.CGO in
+- **144 of GAME.CGO's 326 code files** compile to native SH-4 (through path-h).
+- **All 144 load and run their original top-level startup** after KERNEL.CGO in
   stock 16 MiB Flycast, with the Dreamcast memory budget ([MEMORY_BUDGET.md](MEMORY_BUDGET.md)). This includes the 141 lane-exact
   vector cases ([VU0_LOWERING.md](VU0_LOWERING.md)) and the original process
   spawn and dispatch.
-- **197 of 197 boot checks pass.**
+- **244 of 244 boot checks pass.**
 
 ```bash
 python ports/dreamcast/build_kernel_boot.py --msys C:/msys64 --verify
@@ -56,6 +56,13 @@ Lowering (`lower_sh4_ir.py`):
   on SH-4, so the lowerer pins the addressed one outside slot reuse (like desktop
   `force_on_stack`), roots its writes for dead-code removal, and stores the
   slot's native address.
+- **`(go ...)` from a method** (fact-h's `fact-info` new): the frontend resets
+  `pp` (r13) at its first use, after a call and a branch. Desktop `IR_ValueReset`
+  emits no code and `pp` is preserved across calls, so in a read-only context
+  (nothing but resets writes `pp`) that reset names the entry value, which the
+  lowerer already reads from the authenticated getter. An earlier read or write
+  of `pp` still refuses, and a lexical bracket (save, select, restore) keeps the
+  strict layout.
 - **`(inline-array T)`** parameters are addresses, like `(pointer T)`.
 - **none-typed values carry nothing**: copies of a discarded `method-set!` result
   are dropped.
@@ -70,6 +77,8 @@ Lowering (`lower_sh4_ir.py`):
 Exporter (`export_ir.cpp`):
 
 - `static_load` for vectors;
+- float-derived value types (`meters`, `degrees`) take the `float` ABI, like
+  bitfields take `int`/`uint`;
 - `--batch`;
 - a (none) function with value early returns (timer-reset's PC-only
   `(return (the uint 0))`) stays (none), since callers cannot observe the value.
@@ -127,15 +136,15 @@ Runtime:
 
 ## Where it stops
 
-- **Loading:** all 97 compiled files now load and start (197 of 197 boot checks),
+- **Loading:** all 144 compiled files now load and start (244 of 244 boot checks),
   after the memory budget in [MEMORY_BUDGET.md](MEMORY_BUDGET.md): the corrected
   `PROCESS_HEAP_MULT`, PS2-sized DMA buffers, native `kmalloc`/`scf-get-time`, and
-  a faulting `__pc-get-mips2c` stub. The arena then holds 7.8 of its 8 MiB.
-- **Lowering stops at fact-h (object 97).** `(method new fact-info)` runs
-  `(go process-drawable-art-error "memory")` on a branch. That `go` resets the
-  process register mid-function, and the lowerer only proves an entry-time reset
-  ("lexical process reset must precede every process use and control transfer").
-  `go` from a non-behavior method is the next feature.
+  a faulting `__pc-get-mips2c` stub. The boot arena is now 10 MiB (8 MiB filled
+  at projectiles-h, object 116) and holds 9.27 MB after 144 files.
+- **Lowering stops at navigate-h (object 144)**: "implicit process/self entry
+  ABI not implemented for this signature". Behaviors and event handlers receive
+  the process implicitly; the same family accounts for most of the 54 exporter
+  alias refusals (`refusal_report.py` groups them).
 - **Exporter refusals.** 56 of the 331 dependency-graph files refuse; 54 of them
   for one reason, "conflicting or non-fixed virtual register alias". That is one
   exporter feature (rlet register aliasing) to add next.
