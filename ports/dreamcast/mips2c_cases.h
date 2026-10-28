@@ -6,7 +6,7 @@
  * generated wrappers (float arguments as bits). The host oracle
  * (host_mips2c_oracle.cpp) runs the unchanged C++ the way desktop does; the boot
  * runs the native SH-4 build. Afterwards every aligned word that is a pointer into
- * the region becomes its offset, and #f (s7) becomes a marker, so both sides hash
+ * the region becomes its offset, and #f and #t become markers, so both sides hash
  * the same bytes. Only functions whose paths stay in C++ (no jalr back into GOAL)
  * are called. The region is 16 KiB aligned on both sides, as the PS2 scratchpad
  * is, so SPAD offsets that are multiples of 0x4000 survive ori address forming. */
@@ -17,6 +17,7 @@
 
 #define DC_M2C_REGION 0x10000u
 #define DC_M2C_FALSE_MARK 0xfffffff7u
+#define DC_M2C_TRUE_MARK 0xffffffffu  /* #t: s7 + 8 */
 #define DC_M2C_GOAL_MARK 0xfff0f000u  /* + slot: a stand-in's address */
 
 struct dc_m2c_env;
@@ -761,6 +762,115 @@ static inline uint32_t dc_m2c_particle_adgif(dc_m2c_env *e) {
   return count;  /* cache entries made */
 }
 
+/* ---- sparticle_launcher: sp-launch-particles-var, one 2d launcher spawning three
+ * particles. sp-init-fields! is modelled exactly (as sparticle-launcher.gc has it,
+ * with every random range 0); sp-get-particle hands out a pool's particles;
+ * particle-adgif is the built mips2c function, reached through jalr. ---- */
+enum { DC_M2C_LAUNCH_POOL = 0x2000, DC_M2C_LAUNCH_POOL_SIZE = 4 };
+static uint64_t dc_m2c_sp_init_fields(dc_m2c_env *e, const uint64_t *a) {
+  uint32_t out = (uint32_t)a[0], spec = (uint32_t)a[1], field = (uint32_t)a[2] + 1, end = (uint32_t)a[3];
+  int missing = (uint32_t)a[4] != e->s7;
+  uint16_t id, flags;
+  uint32_t value;
+  dc_m2c_log(e, 0x1f << 24 | field << 8 | end);
+  for (;;) {
+    memcpy(&id, e->region + dc_m2c_off(e, spec), 2);
+    if (id >= field) break;
+    spec += 16;
+  }
+  if (field >= end) return spec;
+  while (field != end) {
+    memcpy(&id, e->region + dc_m2c_off(e, spec), 2);
+    memcpy(&flags, e->region + dc_m2c_off(e, spec) + 2, 2);
+    memcpy(&value, e->region + dc_m2c_off(e, spec) + 4, 4);
+    if (id != field) {
+      if (missing) memset(e->memory(e, out), 0, 4);
+      spec -= 16;
+    } else if (flags == 3) {  /* copy-from-other: the word value words away */
+      memcpy(e->memory(e, out), e->memory(e, out + 4 * (int32_t)value), 4);
+    } else {  /* int, float, object (random range 0): the value itself */
+      memcpy(e->memory(e, out), &value, 4);
+    }
+    ++field; out += 4; spec += 16;
+  }
+  return spec;
+}
+static uint64_t dc_m2c_sp_get_particle(dc_m2c_env *e, const uint64_t *a) {
+  uint32_t used, cpu;
+  (void)a;
+  memcpy(&used, e->region + DC_M2C_LAUNCH_POOL, 4);
+  dc_m2c_log(e, 0x9e << 24 | used);
+  if (used == DC_M2C_LAUNCH_POOL_SIZE) return e->s7;
+  dc_m2c_u(e, DC_M2C_LAUNCH_POOL, used + 1);
+  cpu = DC_M2C_LAUNCH_POOL + 0x10 + 144 * used;
+  dc_m2c_u(e, cpu + 128, e->s7 + 8);  /* valid */
+  return dc_m2c_ptr(e, cpu);
+}
+static uint64_t dc_m2c_sp_adjust_launch(dc_m2c_env *e, const uint64_t *a) {
+  uint32_t value;
+  memcpy(&value, e->region + dc_m2c_off(e, a[2]) + 4, 4);
+  dc_m2c_log(e, 0xa1 << 24 | (dc_m2c_off(e, a[1]) & 0xffffu));
+  dc_m2c_u(e, dc_m2c_off(e, a[1]) + 16, value);
+  return 0;
+}
+static uint64_t dc_m2c_sp_birth(dc_m2c_env *e, const uint64_t *a) {
+  uint32_t x;
+  memcpy(&x, e->memory(e, (uint32_t)a[2]), 4);  /* the launch info on the launcher's stack */
+  dc_m2c_log(e, 0xb1 << 24 | (dc_m2c_off(e, a[1]) & 0xffffu));
+  dc_m2c_log(e, x);
+  return 0;
+}
+static inline uint32_t dc_m2c_launch_particles(dc_m2c_env *e) {
+  enum { SYSTEM = 0x0104, LAUNCHER = 0x0204, POS = 0x0300, SPECS = 0x0400, LEVEL = 0x0800, TOD = 0x1804,
+         CACHE = 0x3004, SPRITES = 0x5000, ADGIFS = 0x5400 };
+  static const struct { uint16_t field, flags; uint32_t value; } spec[] = {
+    {1, 0, 0x00123400u},   /* spt-texture */
+    {4, 4, 0},             /* spt-birth-func: the stand-in, below */
+    {6, 1, 0x40400000u},   /* spt-num 3.0 */
+    {10, 1, 0x3fc00000u}, {11, 1, 0xc0000000u}, {12, 1, 0x3f000000u},  /* x, y, z */
+    {13, 1, 0x3e800000u},  /* scale-x */
+    {17, 3, (uint32_t)-4}, /* scale-y: copy scale-x */
+    {18, 1, 0x43000000u}, {21, 1, 0x42800000u},  /* r 128, a 64 */
+    {25, 1, 0x3f000000u},  /* vel-y */
+    {46, 0, 300},          /* timer */
+    {47, 0, 4096 | 8},     /* flags: time-of-day colors, adgif 72 */
+    {54, 1, 0x3dcccccdu},  /* launchrot-x: sp-adjust-launch runs */
+    {70, 0, 0}};
+  uint32_t i, used;
+  e->set_symbol(e, "*sp-launcher-enable*", e->s7 + 8);
+  e->set_symbol(e, "*sp-launcher-lock*", e->s7);
+  e->set_symbol(e, "*level*", dc_m2c_ptr(e, LEVEL));
+  e->set_symbol(e, "*time-of-day-context*", dc_m2c_ptr(e, TOD));
+  e->set_symbol(e, "*particle-adgif-cache*", dc_m2c_ptr(e, CACHE));
+  e->set_symbol(e, "sp-init-fields!", dc_m2c_goal(e, 0, dc_m2c_sp_init_fields));
+  e->set_symbol(e, "sp-get-particle", dc_m2c_goal(e, 1, dc_m2c_sp_get_particle));
+  e->set_symbol(e, "sp-adjust-launch", dc_m2c_goal(e, 2, dc_m2c_sp_adjust_launch));
+  e->set_symbol(e, "particle-setup-adgif", dc_m2c_goal(e, 3, dc_m2c_setup_adgif));
+  e->set_symbol(e, "particle-adgif", e->mips2c_function(e, "particle-adgif"));
+  for (i = 0; i < sizeof spec / sizeof spec[0]; ++i) {
+    memcpy(e->region + SPECS + 16 * i, &spec[i].field, 2);
+    memcpy(e->region + SPECS + 16 * i + 2, &spec[i].flags, 2);
+    dc_m2c_u(e, SPECS + 16 * i + 4, spec[i].field == 4 ? dc_m2c_goal(e, 4, dc_m2c_sp_birth) : spec[i].value);
+  }
+  dc_m2c_u(e, SYSTEM + 24, e->s7);  /* 2d */
+  dc_m2c_u(e, LAUNCHER + 8, dc_m2c_ptr(e, SPECS));
+  dc_m2c_vec(e, POS, 10.0f, 20.0f, 30.0f, 1.0f);
+  dc_m2c_u(e, LEVEL + 124, dc_m2c_ptr(e, 0)); dc_m2c_u(e, LEVEL + 128, dc_m2c_ptr(e, 0x1000));  /* level 0's heap */
+  dc_m2c_vec(e, TOD + 108, 1.0f, 0.5f, 0.25f, 1.0f);
+  for (i = 0; i < DC_M2C_LAUNCH_POOL_SIZE; ++i) {
+    uint32_t cpu = DC_M2C_LAUNCH_POOL + 0x10 + 144 * i;
+    dc_m2c_u(e, cpu + 0, dc_m2c_ptr(e, SPRITES + 48 * i));
+    dc_m2c_u(e, cpu + 4, dc_m2c_ptr(e, ADGIFS + 0x60 * i));
+  }
+  {
+    const uint64_t args[8] = {dc_m2c_ptr(e, SYSTEM), dc_m2c_ptr(e, LAUNCHER), dc_m2c_ptr(e, POS), e->s7, e->s7,
+                              dc_m2c_fbits(1.0f), 0, 0};
+    e->call(e, "sp-launch-particles-var", args);
+  }
+  memcpy(&used, e->region + DC_M2C_LAUNCH_POOL, 4);
+  return used;  /* particles launched */
+}
+
 typedef struct { const char *name; uint32_t (*run)(dc_m2c_env *); } dc_m2c_case;
 static const dc_m2c_case dc_m2c_cases[] = {
   {"sky_tng", dc_m2c_sky},
@@ -786,6 +896,7 @@ static const dc_m2c_case dc_m2c_cases[] = {
   {"shadow-execute", dc_m2c_shadow_execute},
   {"sparticle", dc_m2c_sparticle},
   {"sparticle_launcher", dc_m2c_particle_adgif},
+  {"sp-launch-particles-var", dc_m2c_launch_particles},
 };
 #define DC_M2C_CASE_COUNT (sizeof dc_m2c_cases / sizeof dc_m2c_cases[0])
 
@@ -810,6 +921,7 @@ static inline uint32_t dc_m2c_run_case(dc_m2c_env *e, unsigned i, uint32_t *resu
     for (k = 0; k < DC_M2C_GOAL_SLOTS && !(w && w == dc_m2c_goal_address[k]); ++k) {}
     if (k < DC_M2C_GOAL_SLOTS) w = DC_M2C_GOAL_MARK + k;
     else if (w == e->s7) w = DC_M2C_FALSE_MARK;
+    else if (w == e->s7 + 8) w = DC_M2C_TRUE_MARK;
     else if (w >= e->base && w - e->base < DC_M2C_REGION) w -= e->base;
     else continue;
     memcpy(e->region + at, &w, 4);

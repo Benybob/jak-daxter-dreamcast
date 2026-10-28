@@ -26,7 +26,7 @@ GAME.CGO's mips2c lookups. No lookup gets the faulting stub any more.
 | merc_blend_shape | 2 | setup-blerc-chains-for-one-fragment (two fragments) |
 | ocean_vu0 | 2 | ocean-interp-wave (two frame pairs) |
 | sparticle | 2 | sp-process-block-2d (running and paused) and -3d, GOAL stand-ins for the callbacks |
-| sparticle_launcher | 2 | particle-adgif (cache miss, hit and search), a stand-in for particle-setup-adgif |
+| sparticle_launcher | 2 | particle-adgif (cache miss, hit and search); sp-launch-particles-var (three particles, sp-init-fields! modelled, particle-adgif through `jalr`) |
 | tfrag | 2 | stats-tfrag-asm (eight fragments) |
 | tie_methods | 2 | none: never called on PC (below) |
 | draw_string | 1 | draw-string (two strings, both fonts, color/offset/newline codes) |
@@ -102,9 +102,9 @@ The cases are in `mips2c_cases.h`, written once for both sides. Each fills a zer
 paths stay in C++ (no `jalr` back into GOAL). The region is 16 KiB aligned on both
 sides, as the PS2 scratchpad is, because translated code forms scratchpad addresses
 with `ori` (`render-ocean-quad`: `ori t4, spad, 12288`). Afterwards every pointer into the
-region becomes its offset, and `#f` becomes a marker. The boot runs the same cases
-through the native SH-4 build. All 23 match the oracle bit for bit, both the
-region CRC and each case's result (497 of 497 boot checks).
+region becomes its offset, and `#f` and `#t` become markers. The boot runs the same cases
+through the native SH-4 build. All 24 match the oracle bit for bit, both the
+region CRC and each case's result (499 of 499 boot checks).
 
 **GOAL stand-ins.** A case can give a function symbol a stand-in for the GOAL
 function the translated code calls with `jalr` (`env->goal_function`). On SH-4 the
@@ -159,9 +159,12 @@ Not covered yet:
 - `calc-animation-from-spr`, `blerc-execute`, `ocean-generate-verts`,
   `collide-do-primitives`, `collide-probe-instance-tie`, `generic-tie-convert`
   and `draw-inline-array-tfrag`. They call GOAL, or need a level's data;
-- `sp-launch-particles-var`. It makes 15 GOAL calls, including `sp-init-fields!`,
-  which fills the launch state on its stack, and `sp-get-particle`, so its stand-ins
-  would have to model the launcher's field tables;
+- the rest of `sp-launch-particles-var`. Its case launches from a 2d system with
+  no launch state or control, without sound, with every random range 0. So the 3d
+  path (`sp-euler-convert`), `sp-rotate-system`, the `cos`/`sin`/`quaternion-axis-angle!`
+  rotation and the launch queue are not reached. The `sp-init-fields!` stand-in
+  mirrors the GOAL loop in `sparticle-launcher.gc` for the int, float, object and
+  copy-from-other specs it uses;
 - tie_methods, deliberately. Neither function ever runs on the PC port, so neither
   runs here, since the port runs the PC port's GOAL code.
   `draw-inline-array-instance-tie`'s call in `tie-methods.gc` is commented out,
@@ -176,6 +179,6 @@ Not covered yet:
 
 ## Next
 
-Every file is built. Next: `sp-launch-particles-var` with stand-ins that model its
-field tables. A Dreamcast TIE renderer would replace the PC port's C++ TIE
+Every file is built, and each file except tie_methods has a differential case.
+A Dreamcast TIE renderer would replace the PC port's C++ TIE
 renderer, not these functions.
