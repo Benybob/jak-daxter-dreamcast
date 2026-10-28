@@ -27,7 +27,9 @@ import subprocess
 import sys
 
 DEFAULT_FILES = ('collide_cache', 'sky_tng', 'collide_edge_grab', 'collide_mesh', 'generic_effect',
-                 'generic_merc', 'ripple', 'bones', 'generic_effect2')
+                 'generic_merc', 'ripple', 'bones', 'generic_effect2', 'collide_func', 'collide_probe', 'generic_tie',
+                 'joint', 'merc_blend_shape', 'ocean', 'ocean_vu0', 'shadow', 'sparticle', 'sparticle_launcher', 'tfrag',
+                 'tie_methods')
 CPP_TOKEN = re.compile(r'"(?:\\.|[^"\\])*"|//[^\n]*|/\*.*?\*/', re.S)
 
 
@@ -183,7 +185,9 @@ def main():
         return
     # -ffp-contract=off: GCC would fuse a*b+c into SH-4 FMAC (one rounding); desktop
     # x86-64 rounds the product and the sum separately, as the translated VU code does.
-    flags = ['-std=gnu++20', '-O2', '-m4-single', '-ml', '-ffp-contract=off', '-ffunction-sections', '-fdata-sections',
+    # -Os: about 30% less code than -O2 (837 KB of text for 21 files at -O2), which the
+    # KOS heap needs while GAME.CGO loads; the differential cases still match bit for bit.
+    flags = ['-std=gnu++20', '-Os', '-m4-single', '-ml', '-ffp-contract=off', '-ffunction-sections', '-fdata-sections',
              '-fno-exceptions', '-fno-rtti', '-D__forceinline=__attribute__((always_inline))', '-DFMT_HEADER_ONLY',
              f'-I{port / "mips2c_dc"}', f'-I{port}', f'-I{root}', f'-I{root / "third-party"}',
              f'-I{root / "third-party/fmt/include"}']

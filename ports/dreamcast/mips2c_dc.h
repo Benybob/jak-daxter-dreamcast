@@ -25,6 +25,12 @@ uint64_t dc_mips2c_call(const char *name, const uint64_t *args8);
 /* Diagnostics: calls made through the native wrappers, and the first failed
  * mips2c assertion (NULL if none). */
 uint32_t dc_mips2c_calls(void);
+/* jalr calls from translated code that landed on a dc-mips2c stub and went
+ * through the generic entry (GPR bits, as desktop's trampoline). */
+uint32_t dc_mips2c_jalr_calls(void);
+/* Calls a built function by name through jalr on its GOAL stub, as translated
+ * code calls another mips2c function (for the differential cases). */
+uint64_t dc_mips2c_call_jalr(const char *name, const uint64_t *args8);
 const char *dc_mips2c_assert_text(void);
 #ifdef __cplusplus
 }

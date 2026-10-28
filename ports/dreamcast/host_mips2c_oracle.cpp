@@ -141,6 +141,7 @@ int main() {
   env.s7 = kFalse;
   env.set_symbol = set_symbol;
   env.call = call;
+  env.call_jalr = call;  /* desktop's jalr reaches the same exec through its trampoline */
   env.context = nullptr;
   printf("#define DC_M2C_EXPECT_COUNT %uu\n", (unsigned)DC_M2C_CASE_COUNT);
   printf("static const struct { const char *name; uint32_t crc, result; } dc_m2c_expect[] = {\n");

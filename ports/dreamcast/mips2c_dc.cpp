@@ -33,6 +33,7 @@ namespace {
 dc_goal_runtime* g_rt = nullptr;
 uint32_t g_spad_symbol = 0;  /* *fake-scratchpad-data* */
 uint32_t g_calls = 0;
+uint32_t g_jalr = 0;
 char g_assert[160];
 
 struct Slot {
@@ -143,6 +144,46 @@ extern "C" uint32_t dc_mips2c_find(const char* name) {
   for (unsigned i = 0; i < kEntries; ++i)
     if (!strcmp(name, dc_entries[i].name) && g_slots[i].exec) return dc_entries[i].entry;
   return 0;
+}
+/* goal_bridge.c's dc-mips2c:NAME stub: mov.l (the entry at +8),r0; jmp @r0; nop; nop; then the
+ * C entry. */
+extern "C" bool dc_mips2c_jalr(u32 addr, const u64* args, u64* result) {
+  static const unsigned char stub[8] = {1, 0xd0, 0x2b, 0x40, 9, 0, 9, 0};
+  uint32_t target;
+  if (!addr || (addr & 1) || memcmp((const void*)(uintptr_t)addr, stub, 8)) return false;
+  memcpy(&target, (const void*)(uintptr_t)(addr + 8), 4);
+  for (unsigned i = 0; i < kEntries; ++i) {
+    if (dc_entries[i].entry == target) {
+      ++g_jalr;
+      *result = dc_entries[i].generic(args);
+      return true;
+    }
+  }
+  return false;
+}
+/* For the differential cases: calls NAME the way translated code calls another
+ * mips2c function, with jalr on the GOAL stub GAME.CGO's lookup made. */
+extern "C" uint64_t dc_mips2c_call_jalr(const char* name, const uint64_t* args) {
+  char label[96];
+  uint32_t symbol, stub;
+  if (!g_rt) return 0;
+  snprintf(label, sizeof label, "dc-mips2c:%s", name);
+  symbol = dc_goal_find(g_rt, label);
+  stub = symbol ? dc_goal_symbol_value(g_rt, symbol) : 0;
+  if (!stub) {
+    g_rt->error = DC_GOAL_BAD_FUNCTION;
+    return 0;
+  }
+  Mips2C::ExecutionContext c;
+  memset(&c, 0, sizeof c);
+  const int positions[8] = {Mips2C::a0, Mips2C::a1, Mips2C::a2, Mips2C::a3,
+                            Mips2C::t0, Mips2C::t1, Mips2C::t2, Mips2C::t3};
+  for (int i = 0; i < 8; ++i) c.gprs[positions[i]].du64[0] = args[i];
+  c.jalr(stub);
+  return c.gprs[Mips2C::v0].du64[0];
+}
+extern "C" uint32_t dc_mips2c_jalr_calls(void) {
+  return g_jalr;
 }
 extern "C" uint64_t dc_mips2c_call(const char* name, const uint64_t* args) {
   for (unsigned i = 0; i < kEntries; ++i)

@@ -8,7 +8,8 @@
  * runs the native SH-4 build. Afterwards every aligned word that is a pointer into
  * the region becomes its offset, and #f (s7) becomes a marker, so both sides hash
  * the same bytes. Only functions whose paths stay in C++ (no jalr back into GOAL)
- * are called. */
+ * are called. The region is 16 KiB aligned on both sides, as the PS2 scratchpad
+ * is, so SPAD offsets that are multiples of 0x4000 survive ori address forming. */
 #ifndef DC_MIPS2C_CASES_H
 #define DC_MIPS2C_CASES_H
 #include <stdint.h>
@@ -23,6 +24,9 @@ typedef struct dc_m2c_env {
   uint32_t s7;           /* #f */
   void (*set_symbol)(struct dc_m2c_env *, const char *name, uint32_t value);
   uint64_t (*call)(struct dc_m2c_env *, const char *name, const uint64_t *args8);
+  /* The same call made the way translated code calls another mips2c function:
+   * jalr on the GOAL stub (SH-4), desktop's trampoline (host). */
+  uint64_t (*call_jalr)(struct dc_m2c_env *, const char *name, const uint64_t *args8);
   void *context;
 } dc_m2c_env;
 
@@ -45,6 +49,12 @@ static inline uint64_t dc_m2c_call0(dc_m2c_env *e, const char *name) { return dc
 static inline float dc_m2c_rand(uint32_t *state) {
   uint32_t x = *state; x ^= x << 13; x ^= x >> 17; x ^= x << 5; *state = x;
   return (float)(int32_t)(x >> 16 & 0xffffu) / 4096.0f - 8.0f;
+}
+
+/* A random xyz with the given w, in a fixed order (C leaves argument order unspecified). */
+static inline void dc_m2c_rand_vec(dc_m2c_env *e, uint32_t at, uint32_t *state, float w) {
+  float x = dc_m2c_rand(state), y = dc_m2c_rand(state), z = dc_m2c_rand(state);
+  dc_m2c_vec(e, at, x, y, z, w);
 }
 
 /* ---- sky_tng: init-sky-regs, set-sky-vf27/vf23, render-sky-tri (clipping) ---- */
@@ -261,6 +271,233 @@ static inline uint32_t dc_m2c_generic_no_light(dc_m2c_env *e) {
   return 0;
 }
 
+/* ---- ocean: init-ocean-far-regs, render-ocean-quad (tail-calls draw-large-polygon-ocean
+ * and sky_tng's hyperplane clippers directly, in C++) ---- */
+static inline uint32_t dc_m2c_ocean(dc_m2c_env *e) {
+  enum { CAMERA = 0x0004, DATA = 0x0404, QUAD = 0x0500, DMA = 0x0804, SPAD = 0x4000 };
+  static const float corner[2][4][3] = {
+    {{-1.0f, -1.0f, 4.0f}, {1.0f, -1.0f, 4.0f}, {1.0f, 1.0f, 5.0f}, {-1.0f, 1.0f, 5.0f}},
+    /* two corners behind the near plane, so both hyperplane clippers cut */
+    {{-2.0f, -1.0f, 6.0f}, {3.0f, -1.0f, -3.0f}, {2.0f, 2.0f, -2.0f}, {-1.0f, 1.5f, 3.0f}}};
+  uint32_t q, v, result = 0, before, after;
+  dc_m2c_vec(e, CAMERA + 572, 1.0f, 0.0f, 0.0f, 0.0f);
+  dc_m2c_vec(e, CAMERA + 588, 0.0f, 1.0f, 0.0f, 0.0f);
+  dc_m2c_vec(e, CAMERA + 604, 0.0f, 0.0f, 1.0f, 0.25f);
+  dc_m2c_vec(e, CAMERA + 620, 0.0f, 0.0f, -8.0f, 1.0f);
+  dc_m2c_vec(e, CAMERA + 700, 256.0f, 224.0f, 1.0f, 1.0f);
+  dc_m2c_vec(e, CAMERA + 716, 2048.0f, 2048.0f, 0.5f, 0.0f);
+  dc_m2c_vec(e, CAMERA + 732, 2048.0f, 2048.0f, 16777000.0f, 1.0f);
+  dc_m2c_f(e, CAMERA + 124, 0.5f); dc_m2c_f(e, CAMERA + 128, 0.75f); dc_m2c_f(e, CAMERA + 828, 3.0f);
+  dc_m2c_vec(e, DATA + 44, 0.125f, 0.25f, 0.5f, 1.0f);
+  e->set_symbol(e, "*math-camera*", dc_m2c_ptr(e, CAMERA));
+  e->set_symbol(e, "*sky-tng-data*", dc_m2c_ptr(e, DATA));
+  e->set_symbol(e, "*fake-scratchpad-data*", dc_m2c_ptr(e, SPAD));
+  dc_m2c_u(e, DMA + 4, dc_m2c_ptr(e, DMA + 12)); dc_m2c_u(e, DMA + 8, dc_m2c_ptr(e, DMA + 12 + 0x1000));
+  dc_m2c_call0(e, "init-ocean-far-regs");
+  for (q = 0; q < 2; ++q) {
+    uint32_t quad = QUAD + 0x100 * q;
+    for (v = 0; v < 4; ++v) {
+      dc_m2c_vec(e, quad + 48 * v, corner[q][v][0], corner[q][v][1], corner[q][v][2], 1.0f);
+      dc_m2c_vec(e, quad + 48 * v + 16, (float)(v & 1), (float)(v >> 1), 1.0f, 0.0f);
+      dc_m2c_vec(e, quad + 48 * v + 32, 32.0f * (float)(v + 1), 64.0f, 128.0f - 16.0f * (float)v, 128.0f);
+    }
+    memcpy(&before, e->region + DMA + 4, 4);
+    result = result << 1 |
+             (uint32_t)((uint32_t)dc_m2c_call(e, "render-ocean-quad", dc_m2c_ptr(e, quad), dc_m2c_ptr(e, DMA), 0, 0, 0, 0) != e->s7);
+    memcpy(&after, e->region + DMA + 4, 4);
+    result = result << 12 | ((after - before) & 0xfffu);
+  }
+  return result;  /* per quad: drawn bit, packet bytes */
+}
+
+/* ---- collide_probe: collide-probe-node over a two-level draw-node tree ---- */
+static inline uint32_t dc_m2c_probe_node(dc_m2c_env *e) {
+  enum { WORK = 0x0100, STACK = 0x0200, OUT = 0x0300, ROOT = 0x0804, CHILD = 0x0a04, LEAF = 0x0c04, ITEMS = 0x8000 };
+  static const float root[4][4] = {{10, 10, 10, 5}, {500, 0, 0, 5}, {-50, 20, 0, 30}, {0, -98, 0, 1}};
+  static const uint8_t root_count[4] = {4, 4, 3, 2}, root_flag[4] = {0, 0, 1, 0};
+  uint32_t state = 0x1234567u, n, k, leaves = 0, count;
+  dc_m2c_vec(e, WORK + 48, 1.0f, 0.0f, 0.0f, 0.0f); dc_m2c_vec(e, WORK + 64, 0.0f, 1.0f, 0.0f, 0.0f);
+  dc_m2c_vec(e, WORK + 80, 0.0f, 0.0f, 1.0f, 0.0f); dc_m2c_vec(e, WORK + 96, 5.0f, 0.0f, 0.0f, 1.0f);
+  for (k = 0; k < 3; ++k) { dc_m2c_u(e, WORK + 16 + 4 * k, (uint32_t)-100); dc_m2c_u(e, WORK + 32 + 4 * k, 100); }
+  e->set_symbol(e, "*collide-work*", dc_m2c_ptr(e, WORK));
+  e->set_symbol(e, "*collide-probe-stack*", dc_m2c_ptr(e, STACK));
+  for (n = 0; n < 4; ++n) {
+    uint32_t node = ROOT + 32 * n, array;
+    dc_m2c_vec(e, node + 12, root[n][0], root[n][1], root[n][2], root[n][3]);
+    dc_m2c_b(e, node + 2, root_count[n]); dc_m2c_b(e, node + 3, root_flag[n]);
+    if (root_flag[n]) {  /* an array of nodes, each with four leaves */
+      array = CHILD;
+      for (k = 0; k < root_count[n]; ++k) {
+        uint32_t child = CHILD + 32 * k;
+        dc_m2c_vec(e, child + 12, -50.0f + 20.0f * (float)k, 20.0f, 0.0f, 12.0f);
+        dc_m2c_b(e, child + 2, 4); dc_m2c_b(e, child + 3, 0);
+        dc_m2c_u(e, child + 4, dc_m2c_ptr(e, LEAF + 128 * leaves / 4));
+        leaves += 4;
+      }
+    } else {
+      array = LEAF + 128 * leaves / 4;
+      leaves += 4;
+    }
+    dc_m2c_u(e, node + 4, dc_m2c_ptr(e, array));
+  }
+  for (k = 0; k < leaves; ++k) {  /* leaves: an item pointer and a sphere in [-150, 150) */
+    uint32_t leaf = LEAF + 32 * k;
+    float x = dc_m2c_rand(&state) * 18.75f, y = dc_m2c_rand(&state) * 18.75f, z = dc_m2c_rand(&state) * 18.75f;
+    dc_m2c_vec(e, leaf + 12, x, y, z, 4.0f + (float)(k % 5));
+    dc_m2c_u(e, leaf + 4, dc_m2c_ptr(e, ITEMS + 16 * k));
+  }
+  dc_m2c_call(e, "collide-probe-node", dc_m2c_ptr(e, ROOT), 4, dc_m2c_ptr(e, OUT), 0, 0, 0);
+  memcpy(&count, e->region + OUT, 4);
+  return count;  /* leaves whose spheres touch the box */
+}
+
+/* ---- generic_tie: generic-tie-dma-to-spad-sync (cnt, ref, next, refe tags) ---- */
+static inline uint32_t dc_m2c_tie_dma(dc_m2c_env *e) {
+  enum { SPAD = 0x4000, CHAIN = 0x0800, REFDATA = 0x0900, NEXT = 0x0a00, REFE = 0x0b00 };
+  uint32_t i;
+  e->set_symbol(e, "*fake-scratchpad-data*", dc_m2c_ptr(e, SPAD));
+  for (i = 0; i < 0x400; ++i) dc_m2c_b(e, CHAIN + i, (uint8_t)(i * 13u + 1u));
+  dc_m2c_u(e, CHAIN + 0, 1u << 28 | 2u); dc_m2c_u(e, CHAIN + 4, 0);             /* cnt, 2 qw */
+  dc_m2c_u(e, CHAIN + 48, 3u << 28 | 1u); dc_m2c_u(e, CHAIN + 52, dc_m2c_ptr(e, REFDATA));  /* ref, 1 qw */
+  dc_m2c_u(e, CHAIN + 64, 2u << 28 | 1u); dc_m2c_u(e, CHAIN + 68, dc_m2c_ptr(e, NEXT));     /* next, 1 qw */
+  dc_m2c_u(e, NEXT + 0, 0u << 28 | 2u); dc_m2c_u(e, NEXT + 4, dc_m2c_ptr(e, REFE));         /* refe, 2 qw */
+  dc_m2c_call(e, "generic-tie-dma-to-spad-sync", dc_m2c_ptr(e, CHAIN), 0x10100u, 0, 0, 0, 0);
+  return 0;
+}
+
+/* ---- joint: cspace<-parented-transformq-joint! (unscaled and scaled parents) ---- */
+static inline uint32_t dc_m2c_joint(dc_m2c_env *e) {
+  enum { PARENT = 0x0100, CSPACE = 0x0140, PBONE = 0x0200, BONE = 0x0300, TQ = 0x0400 };
+  uint32_t pass, i, state = 0xbeef01u;
+  for (pass = 0; pass < 2; ++pass) {
+    uint32_t pbone = PBONE + 0x400 * pass, bone = BONE + 0x400 * pass, tq = TQ + 0x400 * pass;
+    uint32_t parent = PARENT + 0x400 * pass, cspace = CSPACE + 0x400 * pass;
+    for (i = 0; i < 16; ++i) dc_m2c_f(e, pbone + 4 * i, (i % 5 == 0) ? 1.0f : dc_m2c_rand(&state) * 0.125f);
+    dc_m2c_f(e, pbone + 64, 1.0f + 0.5f * (float)pass); dc_m2c_f(e, pbone + 68, 2.0f); dc_m2c_f(e, pbone + 72, 0.75f);
+    dc_m2c_u(e, pbone + 76, pass);  /* scaled parent */
+    dc_m2c_u(e, parent + 16, dc_m2c_ptr(e, pbone));
+    dc_m2c_u(e, cspace + 0, dc_m2c_ptr(e, parent)); dc_m2c_u(e, cspace + 16, dc_m2c_ptr(e, bone));
+    dc_m2c_vec(e, tq + 0, 1.5f, -2.0f, 0.25f, 1.0f);
+    dc_m2c_vec(e, tq + 16, 0.1f, 0.2f, 0.3f, 0.92736185f);
+    dc_m2c_vec(e, tq + 32, 1.0f, 1.25f, 0.5f, 1.0f);
+    dc_m2c_call(e, "cspace<-parented-transformq-joint!", dc_m2c_ptr(e, cspace), dc_m2c_ptr(e, tq), 0, 0, 0, 0);
+  }
+  return 0;
+}
+
+/* ---- merc_blend_shape: setup-blerc-chains-for-one-fragment (a short and a split fragment) ---- */
+static inline uint32_t dc_m2c_blerc_chains(dc_m2c_env *e) {
+  enum { SPAD = 0x4000, GLOBALS = 0x0100, WEIGHTS = 0x0200, HEADER = 0x0300, OUT = 0x1000 };
+  static const int16_t weight[3] = {100, 0, -50};
+  static const uint8_t header[2][5] = {{40, 0, 1, 1, 1}, {120, 0, 1, 0, 1}};
+  uint32_t pass, result = 0;
+  e->set_symbol(e, "*fake-scratchpad-data*", dc_m2c_ptr(e, SPAD));
+  e->set_symbol(e, "*blerc-globals*", dc_m2c_ptr(e, GLOBALS));
+  memcpy(e->region + WEIGHTS, weight, sizeof weight);
+  for (pass = 0; pass < 2; ++pass) {
+    uint32_t out = OUT + 0x1000 * pass, end;
+    memcpy(e->region + HEADER + 16 * pass, header[pass], 5);
+    {
+      const uint64_t args[8] = {3, dc_m2c_ptr(e, WEIGHTS), dc_m2c_ptr(e, out), dc_m2c_ptr(e, 0x3000 + 0x400 * pass),
+                                dc_m2c_ptr(e, HEADER + 16 * pass), dc_m2c_ptr(e, 0x5000 + 0x800 * pass), 0, 0};
+      end = (uint32_t)e->call(e, "setup-blerc-chains-for-one-fragment", args);
+    }
+    result = result << 16 | ((end - dc_m2c_ptr(e, out)) & 0xffffu);
+  }
+  return result;  /* chain bytes per fragment */
+}
+
+/* ---- ocean_vu0: ocean-interp-wave (frames 0/1, and 5/6 by moving the frame table) ---- */
+static inline uint32_t dc_m2c_ocean_wave(dc_m2c_env *e) {
+  enum { WORK = 0x0104, FRAMES = 0x2000, OUT = 0x6000 };
+  uint32_t i;
+  e->set_symbol(e, "*ocean-work*", dc_m2c_ptr(e, WORK));
+  for (i = 0; i < 0x800; ++i) dc_m2c_b(e, FRAMES + i, (uint8_t)(i * 7u + 3u));
+  e->set_symbol(e, "*ocean-wave-frames*", dc_m2c_ptr(e, FRAMES));
+  dc_m2c_call(e, "ocean-interp-wave", dc_m2c_ptr(e, OUT), 13, 0, 0, 0, 0);
+  e->set_symbol(e, "*ocean-wave-frames*", dc_m2c_ptr(e, FRAMES) - 5u * 1024u);
+  dc_m2c_call(e, "ocean-interp-wave", dc_m2c_ptr(e, OUT + 0x1000), 5 * 32 + 31, 0, 0, 0, 0);
+  return 0;
+}
+
+/* ---- shadow: shadow-init-vars, shadow-xform-verts, shadow-calc-dual-verts, as
+ * shadow-execute chains them (it also calls flush-cache and camera-pos in GOAL) ---- */
+static inline uint32_t dc_m2c_shadow(dc_m2c_env *e) {
+  enum { CAMERA = 0x0004, GEO = 0x2000, WORK = 0x3000, OUT = 0x5000, SPAD = 0x8000 };
+  static const uint8_t joints[12] = {0, 0, 1, 0, 0, 0, 1, 0, 0, 1, 1, 0};
+  uint32_t i, state = 0x5eed5u;
+  e->set_symbol(e, "*math-camera*", dc_m2c_ptr(e, CAMERA));
+  e->set_symbol(e, "*fake-scratchpad-data*", dc_m2c_ptr(e, SPAD));
+  for (i = 0; i < 16; ++i) dc_m2c_f(e, CAMERA + 364 + 4 * i, (i % 5 == 0) ? 1.0f : dc_m2c_rand(&state) * 0.0625f);
+  dc_m2c_vec(e, WORK + 64, 0.0f, -1.0f, 0.25f, 0.0f);
+  dc_m2c_vec(e, WORK + 80, 0.0f, 1.0f, 0.0f, -2.0f);
+  dc_m2c_vec(e, WORK + 96, 0.5f, 0.5f, 0.5f, 1.0f);
+  dc_m2c_vec(e, WORK + 128, 1.0f, 2.0f, 3.0f, 1.0f);
+  dc_m2c_u(e, WORK + 16, dc_m2c_ptr(e, OUT) - 9u);  /* rounded up to 16 */
+  dc_m2c_u(e, GEO + 0, 0); dc_m2c_u(e, GEO + 4, 0);
+  dc_m2c_u(e, GEO + 8, 6u | 2u << 16);  /* six verts, two of them double */
+  dc_m2c_u(e, GEO + 20, 0x200); dc_m2c_u(e, GEO + 24, 0x300);
+  for (i = 0; i < 2 * 32; ++i)  /* two joints' 128-byte records: a matrix first */
+    dc_m2c_f(e, GEO + 144 + 4 * i, (i % 32 < 16) ? ((i % 5 == 0) ? 1.0f : dc_m2c_rand(&state) * 0.25f) : 0.0f);
+  for (i = 0; i < 6; ++i) dc_m2c_rand_vec(e, GEO + 0x200 + 16 * i, &state, 1.0f);
+  memcpy(e->region + GEO + 0x300, joints, sizeof joints);
+  dc_m2c_call(e, "shadow-init-vars", dc_m2c_ptr(e, GEO), dc_m2c_ptr(e, WORK), 0, 0, 0, 0);
+  dc_m2c_call(e, "shadow-xform-verts", dc_m2c_ptr(e, GEO), dc_m2c_ptr(e, WORK), 0, 0, 0, 0);
+  dc_m2c_call(e, "shadow-calc-dual-verts", dc_m2c_ptr(e, GEO), dc_m2c_ptr(e, WORK), 0, 0, 0, 0);
+  return 0;
+}
+
+/* ---- tfrag: stats-tfrag-asm over fragments of each visibility/LOD kind ---- */
+static inline uint32_t dc_m2c_tfrag_stats(dc_m2c_env *e) {
+  enum { REGS = 0x0100, WORK = 0x0300, STATS = 0x0400, DMA = 0x0480, FRAGS = 0x0504 };
+  uint32_t i, state = 0x7f4a7c15u, result = 0;
+  for (i = 0; i < 31 * 4; ++i) dc_m2c_f(e, REGS + 4 * i, dc_m2c_rand(&state));
+  dc_m2c_vec(e, WORK + 80, 1.0f, 1.0f, 1.0f, 1.0f);
+  dc_m2c_u(e, WORK + 144, dc_m2c_ptr(e, STATS)); dc_m2c_u(e, WORK + 148, dc_m2c_ptr(e, STATS + 32));
+  for (i = 0; i < 16; ++i) dc_m2c_b(e, DMA + i, (uint8_t)(3 * i + 2));
+  e->set_symbol(e, "*transform-regs*", dc_m2c_ptr(e, REGS));
+  e->set_symbol(e, "*tfrag-work*", dc_m2c_ptr(e, WORK));
+  for (i = 0; i < 8; ++i) {
+    uint32_t frag = FRAGS + 64 * i;
+    dc_m2c_u(e, frag + 4, i == 7 ? 0 : dc_m2c_ptr(e, DMA));
+    dc_m2c_rand_vec(e, frag + 12, &state, 1.0f + (float)i);
+    dc_m2c_b(e, frag + 49, (uint8_t)(i & 1)); dc_m2c_b(e, frag + 50, (uint8_t)(i >> 1 & 1));
+    dc_m2c_b(e, frag + 51, (uint8_t)(i >> 2 & 1));
+    dc_m2c_call(e, "stats-tfrag-asm", dc_m2c_ptr(e, frag), 0, 0, 0, 0, 0);
+  }
+  for (i = 0; i < 2; ++i) {
+    uint16_t n;
+    memcpy(&n, e->region + STATS + 32 * i + 2, 2);
+    result = result << 8 | n;
+  }
+  return result;  /* fragments counted in each stats record */
+}
+
+/* ---- collide_func: moving-sphere-triangle-intersect, called through jalr on its
+ * stub (float argument and result as GPR bits). Face hits only: an edge hit
+ * calls collide-do-primitives, which calls GOAL. ---- */
+static inline uint32_t dc_m2c_sphere_triangle(dc_m2c_env *e) {
+  enum { SPHERE = 0x0100, VELOCITY = 0x0200, TRI = 0x0300, POS = 0x0400, NORMAL = 0x0500, RESULT = 0x0600 };
+  static const float velocity[3][3] = {{0.0f, 0.0f, -20.0f}, {0.5f, 0.25f, -8.0f}, {0.0f, 0.0f, 20.0f}};
+  uint32_t i, result = 0;
+  dc_m2c_vec(e, SPHERE, 0.25f, 0.5f, 10.0f, 1.0f);
+  dc_m2c_vec(e, TRI + 0, -5.0f, -5.0f, 0.0f, 1.0f);
+  dc_m2c_vec(e, TRI + 16, 5.0f, -5.0f, 0.0f, 1.0f);
+  dc_m2c_vec(e, TRI + 32, 0.0f, 5.0f, 0.0f, 1.0f);
+  for (i = 0; i < 3; ++i) {
+    uint64_t r;
+    dc_m2c_vec(e, VELOCITY + 16 * i, velocity[i][0], velocity[i][1], velocity[i][2], 0.0f);
+    {
+      const uint64_t args[8] = {dc_m2c_ptr(e, SPHERE), dc_m2c_ptr(e, VELOCITY + 16 * i), dc_m2c_fbits(1.0f),
+                                dc_m2c_ptr(e, TRI), dc_m2c_ptr(e, POS + 16 * i), dc_m2c_ptr(e, NORMAL + 16 * i), 0, 0};
+      r = e->call_jalr(e, "moving-sphere-triangle-intersect", args);
+    }
+    dc_m2c_u(e, RESULT + 4 * i, (uint32_t)r);
+    result = result << 1 | (uint32_t)((uint32_t)r != 0xccbebc20u);  /* -1e8: no hit */
+  }
+  return result;
+}
+
 typedef struct { const char *name; uint32_t (*run)(dc_m2c_env *); } dc_m2c_case;
 static const dc_m2c_case dc_m2c_cases[] = {
   {"sky_tng", dc_m2c_sky},
@@ -271,6 +508,15 @@ static const dc_m2c_case dc_m2c_cases[] = {
   {"generic_merc", dc_m2c_high_speed_reject},
   {"bones", dc_m2c_bones},
   {"generic_effect2", dc_m2c_generic_no_light},
+  {"ocean", dc_m2c_ocean},
+  {"collide_probe", dc_m2c_probe_node},
+  {"generic_tie", dc_m2c_tie_dma},
+  {"joint", dc_m2c_joint},
+  {"merc_blend_shape", dc_m2c_blerc_chains},
+  {"ocean_vu0", dc_m2c_ocean_wave},
+  {"shadow", dc_m2c_shadow},
+  {"tfrag", dc_m2c_tfrag_stats},
+  {"collide_func", dc_m2c_sphere_triangle},
 };
 #define DC_M2C_CASE_COUNT (sizeof dc_m2c_cases / sizeof dc_m2c_cases[0])
 

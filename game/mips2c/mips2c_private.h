@@ -60,6 +60,11 @@ namespace Mips2C {
 inline bool ps2_hardware_word(u32 addr) {
   return addr - 0x10000000u < 0x10000u;
 }
+// A jalr into a mips2c function lands on its GOAL stub, whose C entry has the
+// native signature (floats in FPU registers). The translated caller passes and
+// reads GPR bits, as desktop's trampoline does, so the call goes through the
+// function's generic entry instead (mips2c_dc.cpp). Returns false otherwise.
+extern "C" bool dc_mips2c_jalr(u32 addr, const u64* args8, u64* result);
 #endif
 
 // nicknames for GPRs
@@ -416,6 +421,9 @@ struct ExecutionContext {
     // addresses are C addresses and GOAL code uses the C calling convention with
     // 64-bit integer arguments; pp and the symbol table are not registers. A
     // float-returning GOAL function also leaves its bits in v0, as on desktop.
+    if (dc_mips2c_jalr(addr, args, &gprs[v0].du64[0])) {
+      return;
+    }
     using Goal8 = u64 (*)(u64, u64, u64, u64, u64, u64, u64, u64);
     gprs[v0].du64[0] = reinterpret_cast<Goal8>((uintptr_t)addr)(args[0], args[1], args[2], args[3],
                                                                 args[4], args[5], args[6], args[7]);

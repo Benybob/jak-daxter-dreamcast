@@ -38,6 +38,7 @@ static void boot_m2c_set_symbol(dc_m2c_env *e,const char *name,uint32_t value){
   dc_goal_set_symbol(saved->rt,symbol,value);
 }
 static uint64_t boot_m2c_call(dc_m2c_env *e,const char *name,const uint64_t *args){(void)e;return dc_mips2c_call(name,args);}
+static uint64_t boot_m2c_call_jalr(dc_m2c_env *e,const char *name,const uint64_t *args){(void)e;return dc_mips2c_call_jalr(name,args);}
 static void boot_m2c_restore(dc_boot_m2c_saved *saved){
   while(saved->count){--saved->count;dc_goal_set_symbol(saved->rt,saved->symbol[saved->count],saved->value[saved->count]);}
 }
@@ -172,7 +173,7 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
     CHECK(dc_goal_register_pp_scope(&rt,&game_scopes),1,"lexical scope metadata registered for GAME.CGO startups");
     /* The PC port's mips2c functions built for SH-4 (build_mips2c.py): every
      * registration links, and GAME.CGO's lookups of them get native functions. */
-    CHECK(dc_mips2c_install(&rt),53,"the 53 functions of the nine built mips2c files link natively");
+    CHECK(dc_mips2c_install(&rt),91,"the 91 functions of the 21 built mips2c files link natively");
     /* Idle VRAM from 1 to 6 MiB (romdisk_stage.c) holds the PS2 DMA buffers. */
     CHECK(dc_goal_register_extension(&rt,(void *)0xa5100000u,0xa5100000u,5u*1024u*1024u),1,
           "idle VRAM registered as the GOAL extension region");
@@ -192,21 +193,25 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
       CHECK(loaded?1:100+rt.error,1,"GAME.CGO prefix links and runs each original startup in order");
       CHECK(game.objects,DC_GAME_PREFIX,"GAME.CGO holds the compiled prefix of original engine files");
       CHECK(game.initializers,DC_GAME_PREFIX,"each engine file runs its top-level startup");
-      CHECK(dc_goal_mips2c_native(),49,"GAME.CGO's 49 lookups of built mips2c functions return native code");
+      CHECK(dc_goal_mips2c_native(),73,"GAME.CGO's 73 lookups of built mips2c functions return native code");
       /* The differential cases (mips2c_cases.h) through the native SH-4 build,
        * compared with the host oracle: the same C++ as desktop runs it. */
-      {dc_m2c_env env;dc_boot_m2c_saved saved;uint32_t region=dc_goal_alloc_temporary(&rt,DC_M2C_REGION);unsigned k;
+      {dc_m2c_env env;dc_boot_m2c_saved saved;uint32_t region=dc_goal_alloc_temporary(&rt,DC_M2C_REGION+0x4000u);unsigned k;
+       /* 16 KiB aligned like the PS2 scratchpad: translated code forms scratchpad
+        * addresses with ori (render-ocean-quad: ori t4, spad, 12288). */
+       if(region)region=(region+0x3fffu)&~0x3fffu;
        CHECK(region!=0 && DC_M2C_EXPECT_COUNT==DC_M2C_CASE_COUNT,1,"mips2c case region and oracle results");
        if(region && DC_M2C_EXPECT_COUNT==DC_M2C_CASE_COUNT){
          memset(&saved,0,sizeof saved);saved.rt=&rt;
          env.region=dc_goal_resolve(&rt,region,DC_M2C_REGION);env.base=region;env.s7=rt.s7;
-         env.set_symbol=boot_m2c_set_symbol;env.call=boot_m2c_call;env.context=&saved;
+         env.set_symbol=boot_m2c_set_symbol;env.call=boot_m2c_call;env.call_jalr=boot_m2c_call_jalr;env.context=&saved;
          for(k=0;k<DC_M2C_CASE_COUNT;++k){
            uint32_t result,crc=dc_m2c_run_case(&env,k,&result);
            boot_m2c_restore(&saved);
            CHECK(crc,dc_m2c_expect[k].crc,dc_m2c_expect[k].name);
            CHECK(result,dc_m2c_expect[k].result,"mips2c case result matches the host oracle");
          }
+         CHECK(dc_mips2c_jalr_calls()>=3,1,"jalr onto a mips2c stub goes through the generic entry (GPR bits, as desktop)");
          CHECK(rt.error,DC_GOAL_OK,"native mips2c calls leave no runtime fault");
        }
        dc_goal_release_temporary(&rt);rt.error=DC_GOAL_OK;}
