@@ -385,6 +385,14 @@ struct ExecutionContext {
 #elif _WIN32
     gprs[v0].du64[0] = _call_goal8_asm_win32(g_ee_main_mem + addr, args, 0, gprs[s6].du64[0],
                                              gprs[s7].du64[0], g_ee_main_mem);
+#elif defined(__sh__)
+    // Dreamcast native GOAL (ports/dreamcast/mips2c_dc.cpp, AI-assisted): GOAL
+    // addresses are C addresses and GOAL code uses the C calling convention with
+    // 64-bit integer arguments; pp and the symbol table are not registers. A
+    // float-returning GOAL function also leaves its bits in v0, as on desktop.
+    using Goal8 = u64 (*)(u64, u64, u64, u64, u64, u64, u64, u64);
+    gprs[v0].du64[0] = reinterpret_cast<Goal8>((uintptr_t)addr)(args[0], args[1], args[2], args[3],
+                                                                args[4], args[5], args[6], args[7]);
 #else
     ASSERT_MSG(false, "jalr: no GOAL call trampoline for this architecture or platform");
     return;

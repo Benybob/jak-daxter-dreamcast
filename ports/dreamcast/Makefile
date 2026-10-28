@@ -741,7 +741,7 @@ build/zstd-%.o: $(ZSTD_LIB)/decompress/%.c
 	$(KOS_CC) $(KOS_CFLAGS) $(ZSTD_FLAGS) -c $< -o $@
 goal_dgo_zst.o: goal_dgo_zst.c goal_dgo_zst.h
 	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -I$(ZSTD_LIB) -c $< -o $@
-kernel_dgo_cases.o: kernel_boot_cases.c goal_dgo.h goal_dgo_zst.h goal_bridge.h goal_fiber.h goal_main_start.h runtime_cases.h  build/game_cgo_order.h build/vf_cases.h
+kernel_dgo_cases.o: kernel_boot_cases.c goal_dgo.h goal_dgo_zst.h goal_bridge.h goal_fiber.h goal_main_start.h runtime_cases.h  build/game_cgo_order.h build/vf_cases.h mips2c_dc.h mips2c_sky_case.h build/mips2c/mips2c_sky_expect.h
 	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -DDC_KERNEL_DGO -I. -c kernel_boot_cases.c -o $@
 # The romdisk holds KERNEL.CGO and a zstd GAME.CGO (build_kernel_boot.py).
 build/kernel-dgo-romdisk.o: build/kernel-dgo-rd/KERNEL.CGO build/kernel-dgo-rd/GAME.CGO.zst
@@ -755,5 +755,6 @@ kernel_vf_fixture.o: kernel_vf_fixture.c goal_module.h build/vf_fixture.h
 	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -I. -c kernel_vf_fixture.c -o $@
 romdisk_stage.o: romdisk_stage.c
 	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -c romdisk_stage.c -o $@
-jak-dc-kernel-dgo.elf: kernel_boot_main.o kernel_dgo_cases.o kernel_vf_fixture.o goal_dgo.o goal_dgo_zst.o romdisk_stage.o $(ZSTD_OBJS) build/kernel-dgo-romdisk.o $(KERNEL_BOOT_LIBS)
-	kos-cc -o $@ $^ -Wl,--section-start=.dc_stage=0x8cd80000
+# build/mips2c/libdcmips2c.a comes from build_mips2c.py (sh-elf-g++), run by build_kernel_boot.py.
+jak-dc-kernel-dgo.elf: kernel_boot_main.o kernel_dgo_cases.o kernel_vf_fixture.o goal_dgo.o goal_dgo_zst.o romdisk_stage.o $(ZSTD_OBJS) build/kernel-dgo-romdisk.o $(KERNEL_BOOT_LIBS) build/mips2c/libdcmips2c.a
+	kos-c++ -o $@ $^ -Wl,--section-start=.dc_stage=0x8cd80000

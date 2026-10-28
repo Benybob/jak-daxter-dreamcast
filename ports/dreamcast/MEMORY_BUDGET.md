@@ -115,7 +115,7 @@ of the desktop C++ kernel:
   level loading, not with the startup files loading now. Spare VRAM is not a fit for the current users (see
   [VRAM_POOL.md](VRAM_POOL.md)). A disc build would stream from the GD-ROM instead. It
   still trades against VRAM-side and audio-side buffers later.
-- **mips2c functions** need real SH-4 implementations before gameplay. A first
+- **mips2c functions:** collide-cache and sky-tng now run natively ([MIPS2C.md](MIPS2C.md)); the other 23 files still need SH-4 builds before gameplay. A first
   probe is encouraging: `probe_mips2c_sh4.py` syntax-checks all **25 of 25** jak1
   `game/mips2c` C++ files with `sh-elf-g++`. It needs only two adaptations: a
   scalar stand-in for the 8 SSE intrinsics they use, and vu.h's `REALLY_INLINE`

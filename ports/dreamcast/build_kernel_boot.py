@@ -26,7 +26,7 @@ BINDINGS = {
     'set-to-run-bootstrap': 'set-to-run-bootstrap',
 }
 EXPECTED_CHECKS = 90  # verified in Flycast; never weakened afterwards
-EXPECTED_DGO_CHECKS = 446  # KERNEL.CGO + 326 GAME.CGO files + 141 vf cases, verified in Flycast
+EXPECTED_DGO_CHECKS = 452  # KERNEL.CGO + 326 GAME.CGO files + 141 vf cases, verified in Flycast
 GAME_PREFIX = 326  # all of GAME.CGO
 
 
@@ -84,6 +84,8 @@ def main():
     # override as an extra object straight after gcommon.
     order = ['gcommon', 'dc-scalar-valid'] + [name for name, _ in modules[1:]]
     write_dgo(port / 'build/kernel-dgo/KERNEL.CGO', 'KERNEL.CGO', [(n, dcsh / f'{n}.dcsh') for n in order])
+    # The PC port's mips2c functions, built natively for SH-4 into the DGO ELF.
+    subprocess.run([sys.executable, str(port / 'build_mips2c.py')], check=True, stdout=subprocess.DEVNULL)
     # The compiled prefix of the original GAME.CGO.
     subprocess.run([sys.executable, str(port / 'build_game_cgo.py'), '--frontend', str(args.frontend),
                     '--msys', str(args.msys), '--count', str(GAME_PREFIX)], check=True)

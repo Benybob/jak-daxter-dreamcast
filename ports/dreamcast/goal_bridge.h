@@ -81,8 +81,12 @@ int dc_goal_register_kernel_stack(dc_goal_runtime *,uint32_t base,uint32_t bytes
 /* Desktop C++-kernel services called by the original kernel startup: _format
  * (bounded directive subset, capture ring plus debug output) and global malloc. */
 #define DC_GOAL_FORMAT_CAPTURE 2048u
-/* __pc-get-mips2c lookups answered with the faulting stub (no SH-4 mips2c yet). */
+/* __pc-get-mips2c lookups, and how many were answered with a native SH-4 mips2c
+ * function (mips2c_dc.h); the rest get the stub that faults if called. */
 uint32_t dc_goal_mips2c_requests(void);
+uint32_t dc_goal_mips2c_native(void);
+/* The current process for a mips2c call's pp (s6): #f at the root. */
+uint32_t dc_goal_mips2c_current_process(void);
 int dc_goal_install_kernel_services(dc_goal_runtime *,dc_goal_cache_sync,dc_goal_module_result *);
 /* Wraps original stack-size-set! so main-thread backups keep a 512-byte native floor. */
 int dc_goal_install_backup_floor(dc_goal_runtime *,dc_goal_cache_sync,dc_goal_module_result *);

@@ -6,9 +6,15 @@
 #include <arch/cache.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include "goal_module.h"
 #include "goal_bridge.h"
+#ifdef DC_KERNEL_DGO
+#include "mips2c_dc.h"
+#include "mips2c_sky_case.h"
+#include "build/mips2c/mips2c_sky_expect.h"
+#endif
 #include "goal_kernel_types.h"
 #include "goal_main_start.h"
 #include "process_spans.h"
@@ -151,6 +157,9 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
     /* Startups spawn processes (time-of-day): their scopes are authenticated. */
     CHECK(dc_goal_register_process_spans(&rt,&game_spans,game_rows,64),1,"ownership ledger registered for GAME.CGO startups");
     CHECK(dc_goal_register_pp_scope(&rt,&game_scopes),1,"lexical scope metadata registered for GAME.CGO startups");
+    /* The PC port's mips2c functions built for SH-4 (build_mips2c.py): every
+     * registration links, and GAME.CGO's lookups of them get native functions. */
+    CHECK(dc_mips2c_install(&rt),27,"collide-cache and sky-tng mips2c functions link natively");
     /* Idle VRAM from 1 to 6 MiB (romdisk_stage.c) holds the PS2 DMA buffers. */
     CHECK(dc_goal_register_extension(&rt,(void *)0xa5100000u,0xa5100000u,5u*1024u*1024u),1,
           "idle VRAM registered as the GOAL extension region");
@@ -170,6 +179,29 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
       CHECK(loaded?1:100+rt.error,1,"GAME.CGO prefix links and runs each original startup in order");
       CHECK(game.objects,DC_GAME_PREFIX,"GAME.CGO holds the compiled prefix of original engine files");
       CHECK(game.initializers,DC_GAME_PREFIX,"each engine file runs its top-level startup");
+      CHECK(dc_goal_mips2c_native(),23,"GAME.CGO's 23 lookups of built mips2c functions return native code");
+      /* The sky case (mips2c_sky_case.h) through the native SH-4 build, compared
+       * with the host oracle: the same C++ as desktop runs it (build_mips2c.py). */
+      {typedef uint64_t (*f0)(void);typedef uint64_t (*f1)(uint64_t);typedef uint64_t (*f2)(uint64_t,uint64_t);
+       static const char *const names[3]={"*math-camera*","*sky-tng-data*","*fake-scratchpad-data*"};
+       const uint32_t offsets[3]={DC_SKY_CAMERA,DC_SKY_DATA,DC_SKY_SPAD};
+       uint32_t region=dc_goal_alloc_temporary(&rt,DC_SKY_REGION),saved[3],k,bytes;unsigned char *r;
+       f0 init=(f0)(uintptr_t)dc_mips2c_find("init-sky-regs");
+       f1 vf27=(f1)(uintptr_t)dc_mips2c_find("set-sky-vf27"),vf23=(f1)(uintptr_t)dc_mips2c_find("set-sky-vf23-value");
+       f2 tri=(f2)(uintptr_t)dc_mips2c_find("render-sky-tri");
+       CHECK(region && init && vf27 && vf23 && tri,1,"sky case region and native sky functions");
+       if(region && init && vf27 && vf23 && tri){
+         r=dc_goal_resolve(&rt,region,DC_SKY_REGION);dc_sky_fill(r,region);
+         for(k=0;k<3;++k){uint32_t sym=dc_goal_find(&rt,names[k]);saved[k]=dc_goal_symbol_value(&rt,sym);
+                          dc_goal_set_symbol(&rt,sym,region+offsets[k]);}
+         init();vf27(region+DC_SKY_VF27);vf23(DC_SKY_VF23);tri(region+DC_SKY_VERTS,region+DC_SKY_DMA);
+         for(k=0;k<3;++k)dc_goal_set_symbol(&rt,dc_goal_find(&rt,names[k]),saved[k]);
+         bytes=dc_sky_normalize(r,region);
+         CHECK(bytes,DC_SKY_EXPECT_BYTES,"native render-sky-tri writes the oracle's packet length");
+         CHECK(dc_sky_crc32(r,DC_SKY_REGION),DC_SKY_EXPECT_CRC,"native sky pipeline matches the host oracle bit for bit");
+         CHECK(rt.error,DC_GOAL_OK,"native mips2c calls leave no runtime fault");
+       }
+       dc_goal_release_temporary(&rt);rt.error=DC_GOAL_OK;}
       {uint32_t placed_bytes,placed=dc_goal_extension_placed(&placed_bytes);
        CHECK(placed,2,"display's two global DMA buffers live in VRAM");
        CHECK(placed_bytes>=2u*1712u*1024u && rt.extension_used>=placed_bytes,1,"they take their 1,712 KiB each there");}
@@ -325,10 +357,13 @@ spawn_done:
 #ifdef DC_KERNEL_DGO
   /* Damaged containers refuse before linking anything. */
   {
-    static dc_goal_dgo_result bad;static unsigned char image[400000];
-    FILE *file=fopen("/rd/KERNEL.CGO","rb");size_t n=file?fread(image,1,sizeof image,file):0;uint32_t symbols=rt.symbol_count,used=rt.used;
+    /* The image buffer lives only for these tests (malloc, not 400 KB of bss). */
+    enum {IMAGE_BYTES=400000};
+    static dc_goal_dgo_result bad;unsigned char *image=malloc(IMAGE_BYTES);
+    FILE *file=image?fopen("/rd/KERNEL.CGO","rb"):NULL;size_t n=file?fread(image,1,IMAGE_BYTES,file):0;uint32_t symbols=rt.symbol_count,used=rt.used;
     if(file){fclose(file);}
-    CHECK(n>64+64+64 && n<sizeof image,1,"KERNEL.CGO read back for damage tests");
+    CHECK(n>64+64+64 && n<IMAGE_BYTES,1,"KERNEL.CGO read back for damage tests");
+    if(image){
     memcpy(image+0,"oZlB",4);file=fopen("/ram/bad.cgo","wb");if(file){fwrite(image,1,n,file);fclose(file);}
     file=fopen("/ram/bad.cgo","rb");
     CHECK(file && !dc_goal_load_dgo(&rt,file,sync_code,NULL,&bad) && bad.failed_object==UINT32_MAX,1,"compressed DGO header refuses");
@@ -338,7 +373,8 @@ spawn_done:
     file=fopen("/ram/bad.cgo","rb");
     CHECK(file && !dc_goal_load_dgo(&rt,file,sync_code,NULL,&bad) && bad.failed_object==0 && bad.completed==0,1,
           "corrupted first object refuses through its CRC");
-    if(file){fclose(file);}rt.error=DC_GOAL_OK;unlink("/ram/bad.cgo");
+    if(file){fclose(file);}rt.error=DC_GOAL_OK;unlink("/ram/bad.cgo");}
+    free(image);
     CHECK(rt.symbol_count==symbols && rt.used==used,1,"refused DGOs link nothing");
   }
 #endif

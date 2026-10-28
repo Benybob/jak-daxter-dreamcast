@@ -1034,23 +1034,46 @@ static uint64_t scf_get_time_native(uint64_t clock){
   return 0;
 }
 /* __pc-get-mips2c: the PC port's C++ translations of original MIPS assembly
- * (game/mips2c) have no SH-4 counterparts yet. Startup only stores the returned
- * function, so the lookup counts the request and returns one stub that faults
+ * (game/mips2c). Those built for SH-4 (build_mips2c.py, mips2c_dc.cpp) answer
+ * dc_mips2c_find with a C entry that has the GOAL function's native signature;
+ * the lookup returns a GOAL function object that jumps to it, made once per
+ * name ("dc-mips2c:NAME"). A name not built yet still gets the stub that faults
  * explicitly (UNSUPPORTED_TRANSFER) if it is ever called. Nothing pretends. */
-static uint32_t mips2c_requests;
+static uint32_t mips2c_requests,mips2c_native;
+static dc_goal_cache_sync mips2c_sync;  /* the boot's, from install_kernel_services */
+uint32_t __attribute__((weak)) dc_mips2c_find(const char *name){(void)name;return 0;}
+uint32_t dc_goal_mips2c_current_process(void){return (uint32_t)current_process();}
 static uint64_t mips2c_missing_native(void){
   if(active_runtime)active_runtime->error=DC_GOAL_UNSUPPORTED_TRANSFER;
   return 0;
 }
 static uint64_t pc_get_mips2c_native(uint64_t name){
-  dc_goal_runtime *rt=active_runtime;uint32_t stub;
-  (void)name;
+  dc_goal_runtime *rt=active_runtime;uint32_t stub,length,target,symbol;const char *text;char label[96];
+  enum dc_goal_error prior;
   if(!rt)return 0;
+  ++mips2c_requests;
+  /* A GOAL string: allocated length, then the NUL-terminated text. */
+  if(name<=UINT32_MAX && (text=dc_goal_resolve(rt,(uint32_t)name,4))){
+    memcpy(&length,text,4);
+    if(length<64 && (text=dc_goal_resolve(rt,(uint32_t)name+4u,length+1u)) && memchr(text,0,length+1u) &&
+       (target=dc_mips2c_find(text))!=0){
+      snprintf(label,sizeof label,"dc-mips2c:%s",text);
+      prior=rt->error;symbol=dc_goal_find(rt,label);rt->error=prior;
+      if(symbol && (stub=dc_goal_symbol_value(rt,symbol)) && dc_goal_type_of(rt,stub)==rt->function_type)return stub;
+      {unsigned char code[12]={1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0};dc_goal_code_export function={label,code,12,NULL,0};
+       dc_goal_module_result loaded;
+       memcpy(code+8,&target,4);
+       if(dc_goal_load_module(rt,&function,1,mips2c_sync,NULL,&loaded) &&
+          (stub=dc_goal_symbol_value(rt,dc_goal_find(rt,label)))){++mips2c_native;return stub;}
+       return 0;}
+    }
+  }
+  rt->error=DC_GOAL_OK;
   stub=dc_goal_symbol_value(rt,dc_goal_find(rt,"dc-c-mips2c-missing"));
   if(!stub){rt->error=DC_GOAL_BAD_FUNCTION;return 0;}
-  ++mips2c_requests;
   return stub;
 }
+uint32_t dc_goal_mips2c_native(void){return mips2c_native;}
 uint32_t dc_goal_mips2c_requests(void){return mips2c_requests;}
 /* Original kscheme nothing: a function that does nothing. */
 static uint64_t nothing_native(void){return 0;}
@@ -1146,6 +1169,7 @@ int dc_goal_install_kernel_services(dc_goal_runtime *rt,dc_goal_cache_sync sync,
   if(!rt || !result) return 0;
   if(active_runtime!=rt) { (DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT); return 0; }
   for(i=0;i<16;++i){memcpy(code[i],stub,12);memcpy(code[i]+8,&targets[i],4);}
+  mips2c_sync=sync;
   return dc_goal_load_module(rt,functions,16,sync,NULL,result);
 }
 

@@ -1775,7 +1775,10 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
                 if void_return: pass
                 elif reads[0] in wide: load128(reads[0],(0,1,2,3))
                 elif function.get('return_type')=='float':
-                    if registers[reads[0]]['class']=='float': load_float(reads[0])
+                    # FR0 for native callers; the bits also in r0:r1, where desktop
+                    # GOAL leaves them (rax) and mips2c's jalr reads v0 (mtc1 f, v0).
+                    if registers[reads[0]]['class']=='float':
+                        load_float(reads[0]); e.word(0xf01d); e.word(0x005a); sign_extend()  # FLDS FR0,FPUL; STS FPUL,R0
                     else: load64(reads[0]); e.word(0x405a); e.word(0xf00d)
                 else: load64(reads[0])
                 e.branch('bra','epilogue')

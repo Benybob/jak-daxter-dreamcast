@@ -7,12 +7,12 @@ lower_sh4_ir.py; this support change leaves the lowering/boot files alone.
 
 **2026-10-27 (AI-assisted):** [GAME.CGO](GAME_CGO.md) compiles in game.gp dependency
 order in one frontend run; all 331 files of its dependency graph export. 222 of 326 code
-files lower to SH-4 (all 326 now), and all 326 load and start in Flycast, then the original main loop runs 60 frames headless (446 of 446 boot checks, 2026-10-28) under a [memory budget](MEMORY_BUDGET.md) and the [memory plan](MEMORY_PLAN.md): smaller native code, freed startups, and VRAM holding the romdisk and the PS2 DMA buffers. Native MMI ops, structure allocation, linker type
+files lower to SH-4 (all 326 now), and all 326 load and start in Flycast, then the original main loop runs 60 frames headless; the first [mips2c](MIPS2C.md) files (collide-cache, sky-tng) run natively and match the desktop oracle bit for bit (452 of 452 boot checks, 2026-10-28) under a [memory budget](MEMORY_BUDGET.md) and the [memory plan](MEMORY_PLAN.md): smaller native code, freed startups, and VRAM holding the romdisk and the PS2 DMA buffers. Native MMI ops, structure allocation, linker type
 placeholders and the original pad services on the Dreamcast controller. All 25 jak1
 mips2c C++ files pass an SH-4 syntax check ([MEMORY_BUDGET.md](MEMORY_BUDGET.md)). `(& var)` locals
 and the kscheme asize-of/copy defaults are native too, as are `go` from a method and the
 float ABI for `meters`/`degrees`, behaviors with arguments, and a zstd-streamed GAME.CGO.
-Next: compiling mips2c natively, level loading and heaps, a PowerVR renderer and AICA sound.
+Next: the remaining 23 mips2c files, level loading and heaps, a PowerVR renderer and AICA sound.
 Spare VRAM as a data pool is a design note only ([VRAM_POOL.md](VRAM_POOL.md)).
 
 **2026-10-27 (AI-assisted):** [VU0 vector registers](VU0_LOWERING.md) now lower to
