@@ -2,9 +2,9 @@
 
 The PC port replaced some original hand-written MIPS/VU0 assembly with C++
 translations in `game/mips2c`. jak1 has 25 such files registering 94 functions
-(`survey_mips2c_users.py`). Seven files, the survey's first seven by GAME.CGO
-callers, now build natively for SH-4 and run in the Dreamcast boot: 47 functions,
-returned for 43 of GAME.CGO's lookups.
+(`survey_mips2c_users.py`). Nine files, the survey's first nine by GAME.CGO
+callers, now build natively for SH-4 and run in the Dreamcast boot: 53 functions,
+returned for 49 of GAME.CGO's lookups.
 
 | File | Functions | Differential case |
 | --- | --- | --- |
@@ -15,8 +15,10 @@ returned for 43 of GAME.CGO's lookups.
 | generic_effect | 4 | generic-light-proc |
 | generic_merc | 4 | high-speed-reject |
 | ripple | 4 | ripple-execute-init, apply-wave-table, matrix-scale |
+| bones | 3 | draw-bones-check-longest-edge-asm (four radii) |
+| generic_effect2 | 3 | generic-no-light-dproc |
 
-The other 18 files still get the faulting stub.
+The other 16 files still get the faulting stub.
 
 ## How it works
 
@@ -24,7 +26,7 @@ The other 18 files still get the faulting stub.
   against `mips2c_dc.cpp` (the services they need) and `mips2c_dc/immintrin.h`
   (a scalar stand-in for the eight SSE intrinsics `vu.h` uses). The only change to
   shared code is a `__sh__` branch in `mips2c_private.h`'s `jalr`, for calling
-  back into GOAL.
+  back into GOAL, and an SH-4-only PS2 hardware-register window (below).
 - **Memory model.** GOAL addresses on the Dreamcast are cached P0 aliases of the
   same RAM and the MMU is off, so a GOAL address is a C address and
   `g_ee_main_mem` is 0. `intern_from_c` returns the native symbol address.
@@ -51,6 +53,12 @@ The other 18 files still get the faulting stub.
   scratchpad. Desktop's trampoline leaves it uninitialized, so those stores go
   wherever stack garbage points. Every native call (and the host oracle) now enters
   with `at` = `*fake-scratchpad-data*`.
+- **The PS2 hardware-register window.** `bones`, `generic_tie`, `joint`,
+  `merc_blend_shape`, `shadow`, `tfrag`, `tie_methods` and `time_of_day` poll PS2
+  DMA registers (such as `0x1000d400`, the VIF1 channel). On the Dreamcast that
+  address is the tile accelerator's area, so on SH-4 `mips2c_private.h` makes word
+  reads of `0x10000000`-`0x1000ffff` return 0 (channel idle) and drops word writes.
+  Desktop is unchanged.
 - **Same arithmetic as desktop.** Built with `-ffp-contract=off`. Otherwise GCC
   fuses `a*b+c` into SH-4 `fmac` with one rounding, and the clipped sky vertices
   differ from desktop in their last bits.
@@ -66,8 +74,8 @@ The cases are in `mips2c_cases.h`, written once for both sides. Each fills a zer
 64 KiB region, points the symbols it needs into it, and calls only functions whose
 paths stay in C++ (no `jalr` back into GOAL). Afterwards every pointer into the
 region becomes its offset, and `#f` becomes a marker. The boot runs the same cases
-through the native SH-4 build. All six match the oracle bit for bit, both the
-region CRC and each case's result (462 of 462 boot checks).
+through the native SH-4 build. All eight match the oracle bit for bit, both the
+region CRC and each case's result (466 of 466 boot checks).
 
 Found on the way:
 
@@ -82,7 +90,9 @@ Found on the way:
     SH-4, because C leaves argument evaluation order unspecified;
   - small host addresses let packed data look like region pointers to the
     normalization.
-- **Memory.** The ELF now carries five more files. The GOAL arena is 13 MiB (it
+- **A lint false positive.** `lint_mips2c.py` flags `t6` in generic_effect2;
+  it is written in a branch the straight-line scan reads after the use.
+- **Memory.** The ELF now carries seven more files. The GOAL arena is 13 MiB (it
   holds 10.7 MB), so the KOS heap has room to load GAME.CGO.
 
 Not covered yet:
@@ -90,11 +100,13 @@ Not covered yet:
 - `ripple-create-wave-table` and the merc conversion functions, which call back
   into GOAL;
 - the two `generic-prepare-dma-*` functions, which mercneric-convert reaches;
+- `bones-mtx-calc`, which follows the joint records' pointers (the oracle asserts
+  16-byte alignment on them) and needs a real skeleton, and the hardware window,
+  which only its DMA wait reaches;
 - `high-speed-reject`'s reject path. Its case runs the function on real data, but
   none of the three plane sets rejects.
 
 ## Next
 
-Next in the survey's order: `bones` and `generic_effect2` (3 callers each), then the
-2-caller files. Each gets a case in `mips2c_cases.h`, and `lint_mips2c.py` gets
+Next in the survey's order: the 2-caller files. Each gets a case in `mips2c_cases.h`, and `lint_mips2c.py` gets
 checked against its findings first.

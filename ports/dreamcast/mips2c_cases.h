@@ -223,6 +223,44 @@ static inline uint32_t dc_m2c_high_speed_reject(dc_m2c_env *e) {
   return result;  /* the reject byte after each plane set */
 }
 
+/* ---- bones: draw-bones-check-longest-edge-asm (a float argument) ----
+ * bones-mtx-calc follows pointers inside its joint records; it needs real joints. */
+static inline uint32_t dc_m2c_bones(dc_m2c_env *e) {
+  enum { SPAD = 0x4000, CAMERA = 0x0104, DRAW = 0x0404 };
+  static const float radius[4] = {0.5f, 4.0f, 40.0f, 400.0f};
+  uint32_t i, result = 0;
+  e->set_symbol(e, "*fake-scratchpad-data*", dc_m2c_ptr(e, SPAD));
+  e->set_symbol(e, "*math-camera*", dc_m2c_ptr(e, CAMERA));
+  for (i = 0; i < 32; ++i) dc_m2c_f(e, CAMERA + 4 * i, 1.0f + 0.5f * (float)i);  /* fov, clip planes, ... */
+  dc_m2c_f(e, DRAW + 64, 12.0f); dc_m2c_f(e, DRAW + 136, 3.0f);
+  dc_m2c_f(e, SPAD + 176, 2.0f); dc_m2c_f(e, SPAD + 180, -1.5f); dc_m2c_f(e, SPAD + 184, 30.0f);
+  for (i = 0; i < 4; ++i) {
+    uint64_t r = dc_m2c_call(e, "draw-bones-check-longest-edge-asm", dc_m2c_ptr(e, DRAW), dc_m2c_fbits(radius[i]),
+                             0, 0, 0, 0);
+    result = result << 1 | (uint32_t)((uint32_t)r != e->s7);
+  }
+  return result;  /* one bit per radius: the check's answer was not #f */
+}
+
+/* ---- generic_effect2: generic-no-light-dproc (the light-proc work layout) ---- */
+static inline uint32_t dc_m2c_generic_no_light(dc_m2c_env *e) {
+  enum { SPAD = 0x4000, STREAM = 0x0100, INDICES = 0x0200, TABLE = 0x0400, OUT = 0x1000 };
+  uint32_t i;
+  e->set_symbol(e, "*fake-scratchpad-data*", dc_m2c_ptr(e, SPAD));
+  dc_m2c_u(e, SPAD + 60, dc_m2c_ptr(e, STREAM));
+  dc_m2c_u(e, SPAD + 52, 8);
+  for (i = 0; i < 5; ++i) dc_m2c_u(e, SPAD + 20 + 4 * i, dc_m2c_ptr(e, OUT + 0x400 * i));
+  dc_m2c_u(e, STREAM + 0, dc_m2c_ptr(e, INDICES)); dc_m2c_u(e, STREAM + 4, dc_m2c_ptr(e, TABLE));
+  for (i = 0; i < 16; ++i) {
+    uint16_t index = (uint16_t)(((i * 5u + 3u) & 15u) | ((i & 2u) << 7));
+    memcpy(e->region + INDICES + 2 * i, &index, 2);
+  }
+  for (i = 0; i < 16 * 32; ++i) dc_m2c_b(e, TABLE + i, (uint8_t)(i * 11u + 5u));
+  dc_m2c_vec(e, SPAD + 12160, 128.0f, 128.0f, 128.0f, 128.0f);
+  dc_m2c_call0(e, "generic-no-light-dproc");
+  return 0;
+}
+
 typedef struct { const char *name; uint32_t (*run)(dc_m2c_env *); } dc_m2c_case;
 static const dc_m2c_case dc_m2c_cases[] = {
   {"sky_tng", dc_m2c_sky},
@@ -231,6 +269,8 @@ static const dc_m2c_case dc_m2c_cases[] = {
   {"collide_edge_grab", dc_m2c_edge_grab},
   {"generic_effect", dc_m2c_generic_light},
   {"generic_merc", dc_m2c_high_speed_reject},
+  {"bones", dc_m2c_bones},
+  {"generic_effect2", dc_m2c_generic_no_light},
 };
 #define DC_M2C_CASE_COUNT (sizeof dc_m2c_cases / sizeof dc_m2c_cases[0])
 

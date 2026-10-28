@@ -51,6 +51,17 @@ u64 _call_goal8_asm_win32(void* func, u64* arg_array, u64 zero, u64 pp, u64 st, 
 
 namespace Mips2C {
 
+#if defined(__sh__)
+// Dreamcast native GOAL (ports/dreamcast/MIPS2C.md, AI-assisted): GOAL addresses
+// are C addresses, so the PS2 hardware registers some translations still poll
+// (DMA/VIF/GIF at 0x10000000-0x1000ffff, e.g. "wait for spr-to DMA") would land in
+// Dreamcast hardware. Word accesses there read 0 (channel idle, as the PC port's
+// synchronous DMA always is) and writes are dropped.
+inline bool ps2_hardware_word(u32 addr) {
+  return addr - 0x10000000u < 0x10000u;
+}
+#endif
+
 // nicknames for GPRs
 enum Gpr {
   r0 = 0,  // hardcoded to zero
@@ -328,6 +339,12 @@ struct ExecutionContext {
 
   void lw(int dst, int offset, int src) {
     s32 val;
+#if defined(__sh__)
+    if (ps2_hardware_word(gpr_src(src).du32[0] + offset)) {
+      gprs[dst].ds64[0] = 0;
+      return;
+    }
+#endif
     memcpy(&val, g_ee_main_mem + gpr_src(src).du32[0] + offset, 4);
     gprs[dst].ds64[0] = val;
   }
@@ -351,6 +368,12 @@ struct ExecutionContext {
 
   void lwu(int dst, int offset, int src) {
     u32 val;
+#if defined(__sh__)
+    if (ps2_hardware_word(gpr_src(src).du32[0] + offset)) {
+      gprs[dst].du64[0] = 0;
+      return;
+    }
+#endif
     memcpy(&val, g_ee_main_mem + gpr_src(src).du32[0] + offset, 4);
     gprs[dst].du64[0] = val;
   }
@@ -365,6 +388,9 @@ struct ExecutionContext {
 
   void sw(int src, int offset, int addr) {
     auto s = gpr_src(src);
+#if defined(__sh__)
+    if (ps2_hardware_word(gpr_addr(addr) + offset)) return;
+#endif
     memcpy(g_ee_main_mem + gpr_addr(addr) + offset, &s.du32[0], 4);
   }
 

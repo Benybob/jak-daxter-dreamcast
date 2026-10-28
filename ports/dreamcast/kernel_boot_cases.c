@@ -172,7 +172,7 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
     CHECK(dc_goal_register_pp_scope(&rt,&game_scopes),1,"lexical scope metadata registered for GAME.CGO startups");
     /* The PC port's mips2c functions built for SH-4 (build_mips2c.py): every
      * registration links, and GAME.CGO's lookups of them get native functions. */
-    CHECK(dc_mips2c_install(&rt),47,"the 47 functions of the seven built mips2c files link natively");
+    CHECK(dc_mips2c_install(&rt),53,"the 53 functions of the nine built mips2c files link natively");
     /* Idle VRAM from 1 to 6 MiB (romdisk_stage.c) holds the PS2 DMA buffers. */
     CHECK(dc_goal_register_extension(&rt,(void *)0xa5100000u,0xa5100000u,5u*1024u*1024u),1,
           "idle VRAM registered as the GOAL extension region");
@@ -192,7 +192,7 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
       CHECK(loaded?1:100+rt.error,1,"GAME.CGO prefix links and runs each original startup in order");
       CHECK(game.objects,DC_GAME_PREFIX,"GAME.CGO holds the compiled prefix of original engine files");
       CHECK(game.initializers,DC_GAME_PREFIX,"each engine file runs its top-level startup");
-      CHECK(dc_goal_mips2c_native(),43,"GAME.CGO's 43 lookups of built mips2c functions return native code");
+      CHECK(dc_goal_mips2c_native(),49,"GAME.CGO's 49 lookups of built mips2c functions return native code");
       /* The differential cases (mips2c_cases.h) through the native SH-4 build,
        * compared with the host oracle: the same C++ as desktop runs it. */
       {dc_m2c_env env;dc_boot_m2c_saved saved;uint32_t region=dc_goal_alloc_temporary(&rt,DC_M2C_REGION);unsigned k;

@@ -27,7 +27,7 @@ import subprocess
 import sys
 
 DEFAULT_FILES = ('collide_cache', 'sky_tng', 'collide_edge_grab', 'collide_mesh', 'generic_effect',
-                 'generic_merc', 'ripple')
+                 'generic_merc', 'ripple', 'bones', 'generic_effect2')
 CPP_TOKEN = re.compile(r'"(?:\\.|[^"\\])*"|//[^\n]*|/\*.*?\*/', re.S)
 
 
