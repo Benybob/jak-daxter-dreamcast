@@ -94,7 +94,16 @@ of the desktop C++ kernel:
   need the arena to grow again or memory to shrink. The largest single item is
   display's two PS2 DMA buffers: 3.4 MB of PS2 GIF/VIF packets that the PowerVR
   renderer will not consume as they are. Their size is a renderer decision
-  (`DMA_BUFFER_GLOBAL_SIZE` in `dreamcast_memory_budget.gc`). Spare VRAM is not a fit for the current users (see
+  (`DMA_BUFFER_GLOBAL_SIZE` in `dreamcast_memory_budget.gc`).
+- **Where the Dreamcast's 8 MB of VRAM helps.** The PS2 had 4 MB, which couldn't hold
+  a level's textures. So it kept them in main RAM, in the level heaps, and uploaded
+  them every frame. The Dreamcast can keep textures resident in VRAM, so they never
+  need a main-RAM copy. That's the main saving for the 10 MiB-per-level heaps. A
+  PowerVR renderer also sends its display lists to the tile accelerator, which keeps
+  them in VRAM, so the PS2 DMA buffers above can shrink once it exists. VRAM can't
+  replace the arena for GOAL objects or code: the CPU reads it slowly over a narrow
+  bus (see [VRAM_POOL.md](VRAM_POOL.md)). Both savings arrive with the renderer and
+  level loading, not with the startup files loading now. Spare VRAM is not a fit for the current users (see
   [VRAM_POOL.md](VRAM_POOL.md)). A disc build would stream from the GD-ROM instead. It
   still trades against VRAM-side and audio-side buffers later.
 - **mips2c functions** need real SH-4 implementations before gameplay. A first

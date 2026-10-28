@@ -92,15 +92,15 @@ int dc_goal_bind_process_context(dc_goal_runtime *rt,uint32_t process,uint32_t a
  * C stack with no execution context bound, the original kernel context naming
  * no current process, and authenticated scope and span ledgers registered. */
 static int root_context(dc_goal_runtime *rt,uint32_t *context) {
-  unsigned char *fields;uint32_t symbol,value,current;
+  unsigned char *fields;uint32_t symbol,value,current;enum dc_goal_error prior=rt->error;int root=0;
   if(execution_context || execution_heap.runtime || dc_goal_fiber_current() ||
      !dc_goal_pp_scope_active(rt) || dc_goal_process_spans_registered(rt)!=1)return 0;
-  symbol=dc_goal_find(rt,"*kernel-context*");
+  symbol=dc_goal_find(rt,"*kernel-context*");  /* find resets rt->error */
   value=symbol?dc_goal_symbol_value(rt,symbol):0;
-  if(!(fields=context_fields(rt,value)))return 0;
-  memcpy(&current,fields+20,4);
-  if(current!=rt->s7)return 0;
-  *context=value;return 1;
+  if((fields=context_fields(rt,value))){memcpy(&current,fields+20,4);root=current==rt->s7;}
+  rt->error=prior;  /* a probe, not a refusal; a retained fault stays */
+  if(root)*context=value;
+  return root;
 }
 /* The scheduler a lexical scope is checked against: the bound execution
  * context, or at the root the kernel context with #f and no reservation. */
@@ -122,7 +122,7 @@ static uint64_t current_process(void) {
   scoped=scope_resolve(rt,&lexical);
   if(scoped==DC_GOAL_PP_SCOPE_DENIED)return 0;
   if(scoped==DC_GOAL_PP_SCOPE_READY)return lexical; /* retain faults through cleanup */
-  if(!active_process_heap.runtime && root_context(rt,&root)){rt->error=DC_GOAL_OK;return rt->s7;}
+  if(!active_process_heap.runtime && root_context(rt,&root))return rt->s7; /* a retained fault stays */
   symbol=dc_goal_find(rt,"*kernel-context*");
   if(!execution_context || execution_heap.runtime!=rt ||
      active_process_heap.runtime!=rt || active_process_heap.process!=execution_heap.process ||
@@ -215,6 +215,20 @@ static unsigned char *root_stack_object(dc_goal_runtime *rt,uint32_t address,uin
      address-base>size || bytes>size-(address-base))return NULL;
   rt->error=DC_GOAL_OK;
   return (unsigned char *)(uintptr_t)address;
+}
+/* An object's bytes in the arena or, for root C code's stack objects, on the
+ * live root stack. The arena miss is not kept as an error. */
+static unsigned char *object_bytes(dc_goal_runtime *rt,uint32_t address,uint32_t bytes) {
+  enum dc_goal_error prior=rt->error;unsigned char *p=dc_goal_resolve(rt,address,bytes);
+  if(p)return p;
+  rt->error=prior;
+  return root_stack_object(rt,address,bytes)?(rt->error=prior,(unsigned char *)(uintptr_t)address):NULL;
+}
+/* A basic's type tag, read like object_bytes; 0 when it is neither. */
+static uint32_t basic_type(dc_goal_runtime *rt,uint64_t object) {
+  const unsigned char *p;uint32_t type;
+  if(object<4 || object>UINT32_MAX || ((uint32_t)object&7u)!=4u || !(p=object_bytes(rt,(uint32_t)object-4,4)))return 0;
+  memcpy(&type,p,4);return type;
 }
 static uint64_t in_place_new(dc_goal_runtime *rt,uint32_t address,uint32_t type,uint32_t bytes,int basic) {
   uint32_t aligned=(bytes+15u)&~15u;
@@ -336,7 +350,10 @@ static uint64_t integer_error(uint64_t kind) {
                                             (kind==2?DC_GOAL_INTEGER_OVERFLOW:DC_GOAL_BAD_ARGUMENT);
   return 0;
 }
+/* A call to a non-function is always a fault. It is also sticky, because a later
+ * bridge's symbol lookup (dc_goal_find) resets rt->error before the loader looks. */
 static uint64_t missing_call(void) {
+  if(dc_goal_sticky_error==DC_GOAL_OK)dc_goal_sticky_error=DC_GOAL_BAD_FUNCTION;
   if(active_runtime) active_runtime->error=DC_GOAL_BAD_FUNCTION;
   return 0;
 }
@@ -603,7 +620,7 @@ static uint64_t suspend_current(void) {
   return rt->error==DC_GOAL_OK;
 }
 /* Original cpu-thread resume-hook targets: registered native fibers by thread. */
-#define DC_THREAD_FIBERS 8
+#define DC_THREAD_FIBERS 24
 static dc_goal_fiber *thread_fibers[DC_THREAD_FIBERS];
 int dc_goal_register_thread_fiber(dc_goal_runtime *rt,dc_goal_fiber *fiber) {
   unsigned i,free_slot=DC_THREAD_FIBERS;
@@ -628,6 +645,34 @@ int dc_goal_unregister_thread_fiber(dc_goal_runtime *rt,dc_goal_fiber *fiber) {
   for(i=0;i<DC_THREAD_FIBERS;++i)if(thread_fibers[i]==fiber){thread_fibers[i]=NULL;return 1;}
   return 0;
 }
+/* A process spawned by original GOAL (process-spawn) gets its native main fiber
+ * the first time the dispatcher resumes it. Only an armed main thread on the
+ * shared fake-scratchpad stack is imported (activate's PC-port stack for
+ * process-spawn's default *scratch-memory-top*). The extent is the process's own
+ * record (allocated-length + 112), noted in the ledger when one is registered. */
+#define DC_SPAWNED_FIBERS 16
+static dc_goal_fiber spawned_fibers[DC_SPAWNED_FIBERS];
+static dc_goal_fiber *import_spawned(dc_goal_runtime *rt,uint32_t thread) {
+  const unsigned char *p;uint32_t process,top,length,base,symbol;dc_goal_process_span span;unsigned i;
+  enum dc_goal_error prior=rt->error;dc_goal_fiber *f=NULL;
+  if(!(p=dc_goal_resolve(rt,thread+4,28)))return NULL;
+  memcpy(&process,p,4);memcpy(&top,p+24,4);
+  symbol=dc_goal_find(rt,"*fake-scratchpad-stack*");base=symbol?dc_goal_symbol_value(rt,symbol):0;
+  rt->error=prior;
+  if(!base || (base&15u) || top!=base+32u*1024u || process<4 || !(p=dc_goal_resolve(rt,process+68,4)))return NULL;
+  memcpy(&length,p,4);
+  if(length>UINT32_MAX-112u)return NULL;
+  for(i=0;i<DC_SPAWNED_FIBERS && !f;++i)if(spawned_fibers[i].runtime!=rt || !spawned_fibers[i].thread)f=&spawned_fibers[i];
+  if(!f)return NULL;
+  if(dc_goal_process_spans_registered(rt)==1 && !dc_goal_process_span_lookup(rt,process,&span)) {
+    rt->error=prior;
+    if(!dc_goal_process_span_note(rt,process,length+112u,&span))return NULL;
+  }
+  rt->error=prior;
+  if(!dc_goal_fiber_init_main(f,rt,process,length+112u,thread,base,32u*1024u)){memset(f,0,sizeof *f);return NULL;}
+  if(!dc_goal_register_thread_fiber(rt,f)){memset(f,0,sizeof *f);return NULL;}
+  return f;
+}
 /* Original thread-resume: called by the original kernel-dispatcher with the
  * scheduler's current-process already set to the thread's process. Natively the
  * registered fiber steps under an explicit execution binding; the dispatcher's
@@ -638,6 +683,8 @@ static uint64_t thread_resume(uint64_t thread) {
   uint32_t symbol,context,current;unsigned char *fields;uint64_t out=0;unsigned i;
   if(!rt)return 0;
   for(i=0;i<DC_THREAD_FIBERS;++i)if(thread_fibers[i] && thread_fibers[i]->thread==thread)fiber=thread_fibers[i];
+  if(!fiber && thread<=UINT32_MAX && !dc_goal_fiber_current() && !execution_context)
+    fiber=import_spawned(rt,(uint32_t)thread);
   if(!fiber || fiber->runtime!=rt || dc_goal_fiber_current() || execution_context)goto unsupported;
   if(!dc_goal_fiber_ownership_check(fiber,rt))return 0;
   symbol=dc_goal_find(rt,"*kernel-context*");context=symbol?dc_goal_symbol_value(rt,symbol):0;
@@ -708,6 +755,11 @@ static uint64_t reset_and_call(uint64_t thread,uint64_t func) {
   /* Trans threads use the main stack; post threads the registered DRAM stack. */
   if(top==fiber->stack_base+fiber->stack_bytes)base=fiber->stack_base;
   else if(kernel_stack_bytes && top==kernel_stack_base+kernel_stack_bytes)base=kernel_stack_base;
+  /* Original *kernel-dram-stack* is (&+ *dram-stack* DPROCESS_STACK_SIZE), from
+   * the array's tagged pointer, so it can sit up to 15 bytes above the aligned
+   * end of the array's data. The call runs at that aligned end, inside the span. */
+  else if(kernel_stack_bytes && top>kernel_stack_base+kernel_stack_bytes &&
+          top-(kernel_stack_base+kernel_stack_bytes)<16u){base=kernel_stack_base;top=base+kernel_stack_bytes;}
   else goto unsupported;
   /* Keep the temporary thread's structure (object at thread, 128 bytes from its
    * tag at thread-4) below the call stack when it lives in that stack. */
@@ -794,7 +846,9 @@ static int format_object(dc_goal_runtime *rt,char *out,uint32_t *n,uint32_t cap,
     if(type==rt->string_type){
       uint32_t length;const char *text;memcpy(&length,dc_goal_resolve(rt,v,4),4);
       text=dc_goal_resolve(rt,v+4,length+1);
-      if(text){return (!quoted||format_put(out,n,cap,"\"",1)) && format_put(out,n,cap,text,length) &&
+      /* The length word is the allocated size; desktop prints up to the NUL. */
+      if(text){uint32_t used=0;while(used<length && text[used])++used;
+               return (!quoted||format_put(out,n,cap,"\"",1)) && format_put(out,n,cap,text,used) &&
                       (!quoted||format_put(out,n,cap,"\"",1));}
     }
     if(type==rt->symbol_type && (name=dc_goal_symbol_name(rt,v)))return format_put(out,n,cap,name,strlen(name));
@@ -839,6 +893,29 @@ static uint64_t format_native(uint64_t dest,uint64_t fmt,uint64_t a0,uint64_t a1
     if(!format_put(out,&n,sizeof out,tmp,strlen(tmp)))goto bad;
   }
   if(dest==rt->s7){if(n>=sizeof out)goto bad;out[n]=0;return dc_goal_string(rt,out);}
+  /* Desktop kprint: a string destination is appended to (kstrncat, bounded by
+   * the string's allocated length); a file-stream is written to its file, and a
+   * stream with no open file (no storage here) takes nothing. #t and 0 print. */
+  if(dest!=rt->s7+DC_FIX_SYM_TRUE && dest!=0) {
+    uint32_t type=basic_type(rt,dest),limit,have=0;char *text_out;const unsigned char *q;
+    if(type==rt->string_type) {
+      if(!(q=object_bytes(rt,(uint32_t)dest,4)))goto bad;
+      memcpy(&limit,q,4);
+      if(limit>UINT32_MAX-5u || !(text_out=(char *)object_bytes(rt,(uint32_t)dest+4,limit+1)))goto bad;
+      while(have<limit && text_out[have])++have;
+      for(i=0;i<n && have<limit;++i)text_out[have++]=out[i];
+      text_out[have]=0;
+      return 0;
+    }
+    if(type && type==dc_goal_symbol_value(rt,rt->s7+DC_FIX_SYM_FILE_STREAM_TYPE)) {
+      int32_t file;
+      if(!(q=object_bytes(rt,(uint32_t)dest+12,4)))goto bad;
+      memcpy(&file,q,4);
+      if(file<0)return 0;  /* nothing open: desktop sceWrite fails the same way */
+      goto bad;            /* no native files are ever opened */
+    }
+    goto bad;              /* desktop asserts on an unknown destination */
+  }
   if(n>sizeof format_text-format_length)format_length=0; /* bounded ring: newest output wins */
   if(n<=sizeof format_text){memcpy(format_text+format_length,out,n);format_length+=n;}
 #ifdef __DREAMCAST__
@@ -958,6 +1035,37 @@ static uint64_t mmi_native(uint32_t op,uint32_t dst,uint32_t a,uint32_t b){
 }
 uint32_t dc_goal_format_capture(const char **text){if(text)*text=format_text;return format_length;}
 void dc_goal_format_capture_clear(void){format_length=0;}
+/* Main-thread backup floor. A suspended native SH-4 main thread needs 348
+ * bytes; dreamcast_thread_context.gc makes 512 (PROCESS_STACK_SAVE_SIZE) the
+ * default every activate reserves. Original stack-size-set! calls size backups
+ * for PS2 frames (time-of-day asks for 128), so this counterpart passes the
+ * unchanged original method max(request, 512): smaller requests keep 512, larger
+ * ones still grow. */
+#define DC_MAIN_BACKUP_FLOOR 512u
+static uint32_t original_stack_size_set;
+static uint64_t stack_size_set_floor(uint64_t thread,uint64_t bytes) {
+  typedef uint64_t (*setter)(uint64_t,uint64_t);
+  if(!original_stack_size_set){if(active_runtime)active_runtime->error=DC_GOAL_BAD_FUNCTION;return 0;}
+  if((int64_t)bytes<(int64_t)DC_MAIN_BACKUP_FLOOR)bytes=DC_MAIN_BACKUP_FLOOR;
+  return ((setter)(uintptr_t)original_stack_size_set)(thread,bytes);
+}
+int dc_goal_install_backup_floor(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_goal_module_result *result) {
+  unsigned char code[12]={1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0};
+  uint32_t target=(uint32_t)(uintptr_t)stack_size_set_floor,symbol,shim,thread,cpu,body;
+  dc_goal_code_export function={"dc-c-stack-size-set-floor",code,12,NULL,0};
+  enum {STACK_SIZE_SET=9};
+  if(!rt || !result || active_runtime!=rt){if(rt)(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);return 0;}
+  symbol=dc_goal_find(rt,"(method stack-size-set! thread)");body=symbol?dc_goal_symbol_value(rt,symbol):0;
+  thread=dc_goal_symbol_value(rt,rt->s7+DC_FIX_SYM_THREAD_TYPE);
+  symbol=dc_goal_find(rt,"cpu-thread");cpu=symbol?dc_goal_symbol_value(rt,symbol):0;
+  if(!body || !thread || !cpu || dc_goal_get_method(rt,thread,STACK_SIZE_SET)!=body ||
+     dc_goal_get_method(rt,cpu,STACK_SIZE_SET)!=body){(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);return 0;}
+  memcpy(code+8,&target,4);
+  if(!dc_goal_load_module(rt,&function,1,sync,NULL,result))return 0;
+  shim=dc_goal_symbol_value(rt,dc_goal_find(rt,"dc-c-stack-size-set-floor"));
+  original_stack_size_set=body;
+  return dc_goal_set_method(rt,thread,STACK_SIZE_SET,shim) && dc_goal_set_method(rt,cpu,STACK_SIZE_SET,shim);
+}
 int dc_goal_install_kernel_services(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_goal_module_result *result) {
   const unsigned char stub[12]={1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0};
   unsigned char code[16][12];
@@ -983,6 +1091,76 @@ int dc_goal_install_kernel_services(dc_goal_runtime *rt,dc_goal_cache_sync sync,
   if(active_runtime!=rt) { (DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT); return 0; }
   for(i=0;i<16;++i){memcpy(code[i],stub,12);memcpy(code[i]+8,&targets[i],4);}
   return dc_goal_load_module(rt,functions,16,sync,NULL,result);
+}
+
+/* PC-port kernel services (desktop kmachine pc_*), with the answers desktop
+ * gives when it has no main display: the Dreamcast has no PC window, display
+ * manager, keyboard, mouse or writable storage. Getters return those defaults,
+ * setters change nothing, and file opens fail (AI-assisted). */
+static uint64_t pc_symbol(const char *name){
+  dc_goal_runtime *rt=active_runtime;enum dc_goal_error prior;uint32_t symbol;
+  if(!rt)return 0;
+  prior=rt->error;symbol=dc_goal_intern(rt,name);rt->error=prior;
+  return symbol;
+}
+static uint64_t pc_false(void){return active_runtime?active_runtime->s7:0;}
+static uint64_t pc_get_os_native(void){return pc_false();}          /* not windows/linux/darwin */
+static uint64_t pc_display_mode_native(void){return pc_symbol("windowed");}
+static uint64_t pc_zero_native(void){return 0;}                     /* refresh rate; void setters */
+static uint64_t pc_filepath_exists_native(uint64_t path){(void)path;return pc_false();}
+static uint64_t pc_resolution_native(uint64_t w,uint64_t h){(void)w;(void)h;return pc_false();}
+static float pc_axis_scale_native(void){return 1.33f;}
+/* kopen: mode, name, flags 0 and the open's result; nothing can be opened. */
+static uint64_t pc_kopen_native(uint64_t fs,uint64_t name,uint64_t mode){
+  dc_goal_runtime *rt=active_runtime;unsigned char *fields;int32_t none=-1;uint32_t zero=0,m=(uint32_t)mode,n=(uint32_t)name;
+  if(!rt || basic_type(rt,fs)!=dc_goal_symbol_value(rt,rt->s7+DC_FIX_SYM_FILE_STREAM_TYPE) ||
+     !(fields=object_bytes(rt,(uint32_t)fs,16))) {
+    if(rt && rt->error==DC_GOAL_OK)(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);
+    return 0;
+  }
+  memcpy(fields,&zero,4);memcpy(fields+4,&m,4);memcpy(fields+8,&n,4);memcpy(fields+12,&none,4);
+  return fs;
+}
+static uint64_t pc_kclose_native(uint64_t fs){return fs;}
+#define DC_PC_SERVICES 36
+int dc_goal_install_pc_services(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_goal_module_result *result) {
+  static const char *const void_setters[]={
+    "pc-set-mouse-options!","pc-set-mouse-camera-sens!","pc-set-auto-hide-cursor!","pc-set-window-size!",
+    "pc-set-frame-rate","pc-ignore-background-controller-events!","pc-get-active-display-size",
+    "pc-get-window-size","pc-get-window-scale","pc-set-vsync","pc-set-msaa","pc-set-letterbox",
+    "pc-set-game-resolution","pc-set-gfx-hack","pc-set-collision","pc-set-collision-mode",
+    "pc-set-collision-wireframe","pc-set-controller-led!","pc-renderer-tree-set-lod","pc-discord-rpc-set",
+    "pc-discord-rpc-update","pc-sound-set-fade-hack","pc-sound-set-flava-hack",
+    /* No IOP: sound and loader RPCs are dropped (rpc-busy? 0, rpc-call returns at
+     * once with nothing received) until a Dreamcast AICA sound driver serves them. */
+    "rpc-call","rpc-busy?"};
+  const unsigned char stub[12]={1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0};
+  unsigned char code[DC_PC_SERVICES][12];uint32_t targets[DC_PC_SERVICES];
+  dc_goal_code_export functions[DC_PC_SERVICES];unsigned i,k=0;
+  if(!rt || !result) return 0;
+  if(active_runtime!=rt) { (DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT); return 0; }
+  {static const char *const names[]={"pc-get-os","pc-get-display-mode","pc-get-active-display-refresh-rate",
+     "pc-filepath-exists?","pc-mkdir-file-path","pc-is-supported-resolution?","pc-get-keyboard-enabled?",
+     "pc-get-pressure-sensitivity-enabled?","pc-get-axis-scale","file-stream-open"};
+   const uint32_t fns[]={(uint32_t)(uintptr_t)pc_get_os_native,(uint32_t)(uintptr_t)pc_display_mode_native,
+     (uint32_t)(uintptr_t)pc_zero_native,(uint32_t)(uintptr_t)pc_filepath_exists_native,
+     (uint32_t)(uintptr_t)pc_filepath_exists_native,(uint32_t)(uintptr_t)pc_resolution_native,
+     (uint32_t)(uintptr_t)pc_false,(uint32_t)(uintptr_t)pc_false,
+     (uint32_t)(uintptr_t)pc_axis_scale_native,(uint32_t)(uintptr_t)pc_kopen_native};
+   for(i=0;i<sizeof names/sizeof names[0];++i){functions[k]=(dc_goal_code_export){names[i],code[k],12,NULL,0};targets[k++]=fns[i];}}
+  functions[k]=(dc_goal_code_export){"file-stream-close",code[k],12,NULL,0};targets[k++]=(uint32_t)(uintptr_t)pc_kclose_native;
+  for(i=0;i<sizeof void_setters/sizeof void_setters[0];++i){
+    functions[k]=(dc_goal_code_export){void_setters[i],code[k],12,NULL,0};targets[k++]=(uint32_t)(uintptr_t)pc_zero_native;}
+  if(k>DC_PC_SERVICES){(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);return 0;}
+  for(i=0;i<k;++i){memcpy(code[i],stub,12);memcpy(code[i]+8,&targets[i],4);}
+  if(!dc_goal_load_module(rt,functions,k,sync,NULL,result))return 0;
+  /* Desktop InitMachine_PCPort's strings. Settings would live on the VMU (KOS
+   * /vmu/a1); with no storage access yet, pc-filepath-exists? stays #f. */
+  {static const char *const globals[3][2]={{"*pc-user-dir-base-path*","/vmu/a1"},
+     {"*pc-settings-folder*","/vmu/a1"},{"*pc-settings-built-sha*","dreamcast"}};
+   for(i=0;i<3;++i){uint32_t text=dc_goal_string(rt,globals[i][1]);
+     if(!text || !dc_goal_set_symbol(rt,dc_goal_intern(rt,globals[i][0]),text))return 0;}}
+  return 1;
 }
 
 int dc_goal_install_process_bridge(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_goal_module_result *result) {

@@ -40,6 +40,14 @@ static void sync_code(uint32_t allocation,uint32_t bytes,void *context){
   (void)context;dcache_flush_range(allocation,bytes);icache_flush_range(allocation,bytes);
 }
 static uint32_t entry(dc_goal_runtime *rt,const char *name){return dc_goal_symbol_value(rt,dc_goal_find(rt,name));}
+/* Desktop kscheme/kmachine raise *enable-method-set* while the kernel and GAME
+ * DGOs load, so a method defined on a parent after its child types exist (gkernel's
+ * stack-size-set! on thread, after gkernel-h made cpu-thread) reaches the children. */
+static void method_set_depth(dc_goal_runtime *rt,int32_t delta){
+  enum dc_goal_error prior=rt->error;uint32_t symbol=dc_goal_intern(rt,"*enable-method-set*");
+  dc_goal_set_symbol(rt,symbol,dc_goal_symbol_value(rt,symbol)+(uint32_t)delta);
+  rt->error=prior;  /* intern resets the error; the load's result stays */
+}
 static uint32_t word(dc_goal_runtime *rt,uint32_t p,unsigned off){uint32_t v=0;const void *q=dc_goal_resolve(rt,p+off,4);if(q)memcpy(&v,q,4);return v;}
 static uint32_t typed(dc_goal_runtime *rt,const char *global,const char *type_name){
   uint32_t value=entry(rt,global),type=entry(rt,type_name);
@@ -65,8 +73,10 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
   STEP(dc_goal_install_main_start_guard(&rt,sync_code,&r),"set-to-run-bootstrap guard");
   STEP(dc_goal_install_catch_bridge(&rt,sync_code,&r),"native catch-frame and throw-dispatch");
   STEP(dc_goal_install_kernel_services(&rt,sync_code,&r),"_format, malloc and nothing services");
+  STEP(dc_goal_install_pc_services(&rt,sync_code,&r),"PC-port services with desktop's no-display answers");
   CHECK(dc_goal_set_symbol(&rt,dc_goal_intern(&rt,"*debug-segment*"),rt.s7),1,"no debug segment, as a non-debug kernel");
   dc_goal_format_capture_clear();before=rt.used;
+  method_set_depth(&rt,1);
 #ifdef DC_KERNEL_DGO
   /* Native counterpart of the C++ kernel's load_and_link_dgo("KERNEL.CGO"). */
   {
@@ -103,7 +113,9 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
   BOOT(GSTATE,gstate,"gstate");
 #undef BOOT
 #endif
+  method_set_depth(&rt,-1);
   CHECK(rt.error,DC_GOAL_OK,"complete original kernel startup leaves no fault");
+  STEP(dc_goal_install_backup_floor(&rt,sync_code,&r),"original stack-size-set! keeps the 512-byte native backup floor");
   /* What the original startup built. */
   CHECK(typed(&rt,"*kernel-context*","kernel-context"),1,"original kernel context");
   CHECK(word(&rt,entry(&rt,"*kernel-context*"),20),rt.s7,"no current process after boot");
@@ -137,7 +149,9 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
     CHECK(dc_goal_register_process_spans(&rt,&game_spans,game_rows,64),1,"ownership ledger registered for GAME.CGO startups");
     CHECK(dc_goal_register_pp_scope(&rt,&game_scopes),1,"lexical scope metadata registered for GAME.CGO startups");
     if(file){
+      method_set_depth(&rt,1);
       loaded=dc_goal_load_dgo(&rt,file,sync_code,NULL,&game);fclose(file);
+      method_set_depth(&rt,-1);
       dc_boot_game_error_site=dc_goal_error_site;  /* read by verify_backend.py --dump */
       dc_boot_memory_trace.objects=game.objects;dc_boot_memory_trace.completed=game.completed;
       dc_boot_memory_trace.failed=game.failed_object;dc_boot_memory_trace.capacity=capacity;
@@ -154,6 +168,10 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
       code_bytes+=game.code_bytes;rt.error=DC_GOAL_OK;
     }
     CHECK(dc_goal_pp_scope_depth(&rt),0,"every startup scope was left");
+    /* time-of-day's startup spawned *time-of-day-proc* through the original
+     * run-function-in-process: init ran to its (go), so it waits to run. */
+    {uint32_t tod=word(&rt,entry(&rt,"*time-of-day-proc*"),0),waiting=dc_goal_find(&rt,"waiting-to-run");
+     CHECK(word(&rt,tod,32),waiting,"spawned time-of-day process waits to run after its init");rt.error=DC_GOAL_OK;}
     CHECK(dc_goal_pp_scope_detach(&game_scopes,&rt),1,"quiescent GAME.CGO scope metadata detaches");
     CHECK(dc_goal_process_spans_detach(&rt),1,"GAME.CGO ownership ledger detaches");
   }
@@ -197,15 +215,19 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
     typedef uint64_t (*eight_fn)(uint64_t,uint64_t,uint64_t,uint64_t,uint64_t,uint64_t,uint64_t,uint64_t);
     enum {STATUS=32,PID=36,MAIN=40,TOP=44,HEAP_TOP=80,RESUME_HOOK=16,NEXT_PID=12,SELF=24,CHILD=16,GET_PROCESS=14,ACTIVATE=9,DEACTIVATE=10,
           STACK_BYTES=16384,FRAMES=3};
-    static dc_goal_process_spans table;static dc_goal_process_span rows[8];static dc_goal_pp_scope_stack scopes;
+    static dc_goal_process_spans table;static dc_goal_process_span rows[32];static dc_goal_pp_scope_stack scopes;
     static dc_goal_fiber fiber;
     uint32_t pool=entry(&rt,"*8k-dead-pool*"),parent=entry(&rt,"*default-pool*"),process_type=entry(&rt,"process");
     uint32_t name=dc_goal_intern(&rt,"dc-boot-spawn"),suspended=dc_goal_intern(&rt,"suspended");
     uint32_t proc,thread,stack,bytes,pid,i;
     zero_fn dispatch=(zero_fn)(uintptr_t)entry(&rt,"kernel-dispatcher");
     CHECK(dispatch!=NULL && entry(&rt,"looping-code")!=0,1,"original kernel-dispatcher and looping-code booted");
-    CHECK(dc_goal_register_process_spans(&rt,&table,rows,8),1,"ownership ledger registered after boot");
+    CHECK(dc_goal_register_process_spans(&rt,&table,rows,32),1,"ownership ledger registered after boot");
     CHECK(dc_goal_register_pp_scope(&rt,&scopes),1,"lexical scope metadata registered after boot");
+    /* Original post hooks run on *kernel-dram-stack*: the 32 KiB *dram-stack*
+     * array's data, which starts 12 bytes after its tagged pointer. */
+    {uint32_t dram=entry(&rt,"*dram-stack*"),base=(dram+12u+15u)&~15u,top=(dram+0x8000u)&~15u;
+     CHECK(dc_goal_register_kernel_stack(&rt,base,top-base),1,"original *dram-stack* data registered for post hooks");}
     proc=(uint32_t)((three_fn)(uintptr_t)dc_goal_get_method(&rt,dc_goal_type_of(&rt,pool),GET_PROCESS))(pool,process_type,1024);
     CHECK(proc!=0 && proc!=rt.s7 && dc_goal_type_of(&rt,proc)==process_type,1,"original get-process takes a member of the 8k pool");
     if(!proc || proc==rt.s7)goto spawn_done;
@@ -234,6 +256,12 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
       CHECK(fiber.phase,DC_FIBER_SUSPENDED,"its native fiber is suspended between frames");
       CHECK(word(&rt,entry(&rt,"*kernel-context*"),20),rt.s7,"dispatcher clears current-process after the frame");
     }
+#ifdef DC_KERNEL_DGO
+    /* The process time-of-day's startup spawned ran too: the dispatcher gave it a
+     * native fiber on its first resume, and its state code suspends each frame. */
+    {uint32_t tod=word(&rt,entry(&rt,"*time-of-day-proc*"),0);
+     CHECK(word(&rt,tod,32),suspended,"spawned time-of-day process runs and suspends under the dispatcher");}
+#endif
     CHECK(dc_goal_unregister_thread_fiber(&rt,&fiber),1,"fiber unregistered");
     {uint32_t listener=entry(&rt,"*listener-process*"),lbytes=word(&rt,listener,HEAP_TOP)-(listener-4u);
      CHECK(dc_goal_note_process_span(&rt,listener,lbytes,NULL),1,"trusted C notes the original listener's exact extent");

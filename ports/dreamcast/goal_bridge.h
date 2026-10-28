@@ -84,6 +84,10 @@ int dc_goal_register_kernel_stack(dc_goal_runtime *,uint32_t base,uint32_t bytes
 /* __pc-get-mips2c lookups answered with the faulting stub (no SH-4 mips2c yet). */
 uint32_t dc_goal_mips2c_requests(void);
 int dc_goal_install_kernel_services(dc_goal_runtime *,dc_goal_cache_sync,dc_goal_module_result *);
+/* Wraps original stack-size-set! so main-thread backups keep a 512-byte native floor. */
+int dc_goal_install_backup_floor(dc_goal_runtime *,dc_goal_cache_sync,dc_goal_module_result *);
+/* PC-port pc-* and file-stream services with desktop's no-display answers. */
+int dc_goal_install_pc_services(dc_goal_runtime *,dc_goal_cache_sync,dc_goal_module_result *);
 uint32_t dc_goal_format_capture(const char **text);
 void dc_goal_format_capture_clear(void);
 void dc_goal_clear_kernel_stack(void);

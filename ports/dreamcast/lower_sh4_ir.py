@@ -1760,6 +1760,26 @@ def structured_static_data(item):
 
 DEBUG_SEGMENT=1  # common/link_types.h
 
+ANONYMOUS=re.compile(r'anon-function-\d+$')
+
+def qualify_anonymous(doc,module):
+    """Give a module's anonymous functions module-local names (AI-assisted).
+
+    Desktop GOAL never makes anon-function-N a global symbol: each object file
+    links its lambdas (state code, hooks) by address. Native modules export every
+    function under its name, and dc_goal_code_entry authenticates code by the
+    symbol that still holds it, so the eighteen GAME.CGO files that each define
+    anon-function-1 would overwrite one another. MODULE:anon-function-N keeps them apart.
+    """
+    def local(name): return module+':'+name if isinstance(name,str) and ANONYMOUS.match(name) else name
+    functions=[]
+    for f in doc['functions']:
+        f=dict(f,name=local(f['name']))
+        f['instructions']=[dict(op,function=local(op['function'])) if op['kind']=='function_address' else op
+                           for op in f['instructions']]
+        functions.append(f)
+    return dict(doc,functions=functions)
+
 def discard_debug_segment(doc):
     """A kernel without a debug segment, as on a retail PS2 (AI-assisted).
 
@@ -1900,6 +1920,8 @@ if __name__=='__main__':
                         help='Discard debug-segment functions as a kernel without a debug segment does')
     parser.add_argument('--unassigned-locals',type=Path,
                         help='Reviewed never-assigned local-vars to zero-fill (dreamcast_unassigned_locals.json)')
+    parser.add_argument('--qualify-anonymous',metavar='MODULE',
+                        help='Rename anon-function-N to MODULE:anon-function-N (module-local lambdas)')
     parser.add_argument('--all-functions',action='store_true',
                         help='Compile every non-top-level function of the IR except natively bound ones')
     args=parser.parse_args()
@@ -1912,6 +1934,7 @@ if __name__=='__main__':
         bindings[original]=native
     try:
         doc=json.loads(args.input.read_text())
+        if args.qualify_anonymous: doc=qualify_anonymous(doc,args.qualify_anonymous)
         discarded=[]
         if args.no_debug_segment:
             if not args.runtime: parser.error('--no-debug-segment requires --runtime')

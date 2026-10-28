@@ -9,8 +9,9 @@ GAME.CGO order:
   stock 16 MiB Flycast, with the Dreamcast memory budget ([MEMORY_BUDGET.md](MEMORY_BUDGET.md)). This includes the 141 lane-exact
   vector cases ([VU0_LOWERING.md](VU0_LOWERING.md)) and the original process
   spawn and dispatch.
-- **342 of 342 boot checks pass.** That includes process spawn from a file's startup
-  (time-of-day), described below.
+- **347 of 347 boot checks pass.** That includes process spawn from a file's startup
+  (time-of-day), and that spawned process running and suspending under the original
+  dispatcher, described below.
 
 ```bash
 python ports/dreamcast/build_kernel_boot.py --msys C:/msys64 --verify
@@ -232,7 +233,7 @@ Runtime:
 
 ## Where it stops
 
-- **Loading:** the first 237 compiled files load and start (342 of 342 boot checks),
+- **Loading:** the first 237 compiled files load and start (347 of 347 boot checks),
   after the memory budget in [MEMORY_BUDGET.md](MEMORY_BUDGET.md): the corrected
   `PROCESS_HEAP_MULT`, PS2-sized DMA buffers, native `kmalloc`/`scf-get-time`, and
   a faulting `__pc-get-mips2c` stub. The test ELF now carries GAME.CGO as zstd
@@ -240,11 +241,12 @@ Runtime:
   vendored zstd decompressor (`goal_dgo_zst.c`), so the ELF fell from 6.2 to
   2.0 MB and the boot arena is 12 MiB; without the debug segment 237 files use
   12.44 MB of it. A 13 MiB arena leaves the KOS heap too little for loading.
-- **cam-start (object 237) loads, but the boot test after it then fails.** Its startup
-  spawns the camera processes. The boot's later kernel-dispatcher check then
-  reaches processes that have no native fiber and refuses with
-  `UNSUPPORTED_TRANSFER`. Running every spawned process under the dispatcher (one
-  native fiber each) is the next runtime feature.
+- **cam-start (object 237) loads, but its cameras can't run yet.** Its startup spawns
+  the camera processes, and the dispatcher now gives each one a native fiber. Their
+  state code in cam-states then calls functions from GAME.CGO files that aren't
+  loaded yet. The real game loads all of GAME.CGO before the dispatcher runs, so this
+  is the partial prefix, not a runtime defect. With these 240 files the arena is also
+  full (next item).
 - **The arena fills at ambient (object 240)**: 12.52 of 12.58 MB, with a refused
   1,952-byte request. Two PS2 DMA buffers of 1,712 KiB take 3.4 MB of it (see
   [MEMORY_BUDGET.md](MEMORY_BUDGET.md)).
@@ -284,8 +286,62 @@ Two runtime checks expected an unbound C caller to refuse: original
 `send-event-function` and `deactivate`. They now check the desktop root behaviour
 instead: the body runs with `pp` set to the target, and `pp` is `#f` again afterwards.
 
-Not verified yet:
-- `shrink-heap` after init leaves the noted span at its pre-shrink extent;
-- the spawned processes have not run under the dispatcher.
+Not verified yet: `shrink-heap` after init leaves the noted span at its pre-shrink
+extent.
+
+## Running spawned processes, and faults the loader used to miss (2026-10-27, AI-assisted)
+
+time-of-day's spawned process now runs under the original kernel-dispatcher: its
+state code updates the clock and suspends each frame, and its `:post` hook
+`time-of-day-update` runs on the original DRAM stack. Getting there fixed several
+real defects. Two of them mean earlier "loads" were wrong.
+
+- **Hidden faults (a correction).** `dc_goal_find` resets `rt->error`, and bridges call
+  it mid-GOAL. So a call to a missing function could fault and then be erased before
+  the loader checked. gsound's and pckernel's startups had done exactly that since
+  they first "loaded". A call to a non-function is now a sticky fault the loader
+  always sees, and the root `pp` probe keeps a pending fault too.
+- **Method propagation.** Desktop raises `*enable-method-set*` while it loads
+  KERNEL.CGO (kscheme.cpp) and GAME.CGO (kmachine.cpp). That lets a method defined
+  on a parent after its child types exist reach the children. The native boot never
+  did, so `cpu-thread` had no `stack-size-set!` (method 9 was 0). The boot now
+  brackets both loads the same way.
+- **PC-port services.** pckernel's `*pc-settings*` construction calls the PC kernel's
+  `pc-*` functions. On a Dreamcast there is no PC window, display manager, keyboard,
+  mouse or writable storage, so each service gives the answer desktop gives with no
+  main display. Getters return those defaults, the 23 setters change nothing,
+  `pc-get-os` is `#f`, `pc-filepath-exists?` is `#f`, and `file-stream-open` records a
+  failed open. Desktop's three `InitMachine_PCPort` strings are set too: user and
+  settings folders `/vmu/a1`, build `dreamcast`.
+- **No IOP.** gsound's startup loads sound banks over IOP RPC. `rpc-busy?` is 0 and
+  `rpc-call` returns at once with nothing received. Sound and loader RPCs are dropped
+  until a Dreamcast AICA sound driver serves them.
+- **`format` destinations, as desktop kprint.** A string destination is appended to
+  (`kstrncat`, bounded by its allocated length). Before, it went to the console,
+  which left pc-settings' path strings empty. A file stream with no open file takes
+  nothing, and an unknown destination refuses. `~A`/`~S` of a string print up to its
+  NUL, not its whole allocated length.
+- **Root stack objects.** A `(new 'stack ...)` file-stream or string in a top-level
+  startup lives on the root KOS stack. `kopen` and `format` read it there, like
+  in-place `new`.
+- **The main-thread backup floor.** A suspended native main thread needs 348 bytes,
+  and `dreamcast_thread_context.gc` makes 512 every activate's default. The game asks
+  `stack-size-set!` for 128 bytes in 10 places (time-of-day among them). The native
+  counterpart passes the unchanged original method `max(request, 512)`: smaller
+  requests keep 512, and larger ones (1,024) still grow.
+- **Spawned fibers.** The first time the dispatcher resumes a thread with no
+  registered fiber, it imports it. That happens only for an armed main thread on
+  the shared fake-scratchpad stack, which is activate's PC-port stack for
+  process-spawn's default. The extent comes from the process's own record (noted in
+  the ledger), and the fiber from a pool of 16. Anything else still refuses.
+- **The DRAM post stack.** Original post hooks run on `*kernel-dram-stack*`, which is
+  `*dram-stack*` + 32 KiB from the array's tagged pointer. The boot registers the
+  array's aligned data span. `reset-and-call` treats the original top, up to 15
+  bytes above it, as that stack.
+- **Module-local lambdas.** Eighteen GAME.CGO files each define `anon-function-1`.
+  Desktop links lambdas by address and never makes them global, but native modules
+  export by name, and code entry is checked against the symbol that still holds the
+  function. The GAME build now lowers with `--qualify-anonymous`, which names them
+  `MODULE:anon-function-N` (`tests/test_qualify_anonymous.py`).
 
 No hardware claims. Everything is verified in Flycast.

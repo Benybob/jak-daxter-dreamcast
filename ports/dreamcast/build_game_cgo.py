@@ -115,6 +115,7 @@ def main():
                                  '--runtime', '--all-functions', '--initializer', f'dc-game-{name}',
                                  '--native-module', str(dcsh / f'{name}.dcsh'),
                                  '--unassigned-locals', str(reviewed_locals),
+                                 '--qualify-anonymous', name,
                                  # No debug segment on Dreamcast, as a retail kernel (klink DebugSegment 0).
                                  '--no-debug-segment'], capture_output=True, text=True)
         if result.returncode:
