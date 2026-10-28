@@ -126,6 +126,18 @@ int dc_goal_process_span_retire(dc_goal_runtime *r,const dc_goal_process_span *w
  memmove(registered_rows+at,registered_rows+at+1,(size_t)(active->count-at-1)*sizeof *registered_rows);
  --active->count;memset(registered_rows+active->count,0,sizeof *registered_rows);return 1;
 }
+int dc_goal_process_span_shrink(dc_goal_runtime *r,const dc_goal_process_span *witness,uint32_t bytes,
+                                dc_goal_process_span *out){
+ dc_goal_process_span copy;uint32_t at;
+ if(!witness||state(r)!=1||(out&&!valid_output(r,out,sizeof *out)))return (DC_GOAL_NOTE_SITE(5),fail(r,DC_GOAL_BAD_ARGUMENT));
+ copy=*witness;
+ if(!dc_goal_process_span_check(r,&copy)||bytes<112||bytes>copy.bytes||next_generation==UINT64_MAX)
+  return (DC_GOAL_NOTE_SITE(5),fail(r,DC_GOAL_BAD_ARGUMENT));
+ at=lower_bound(copy.process);
+ registered_rows[at].bytes=bytes;registered_rows[at].generation=++next_generation;
+ if(out)*out=registered_rows[at];
+ return 1;
+}
 int dc_goal_process_spans_detach(dc_goal_runtime *r){
  dc_goal_process_spans *table;dc_goal_process_span *rows;size_t bytes;
  int s=state(r);if(s==0)return 1;if(s<0)return 0;

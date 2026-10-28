@@ -34,6 +34,12 @@ int dc_goal_process_span_check(dc_goal_runtime *,const dc_goal_process_span *wit
  * It requires the current exact generation and global runtime quiescence. Core
  * teardown detaches only after execution/allocation/scopes are cleared. */
 int dc_goal_process_span_retire(dc_goal_runtime *,const dc_goal_process_span *);
+/* The process's own record shrank (original dead-pool-heap shrink-heap after a
+ * successful init): the exact current row keeps its process with fewer bytes and
+ * a fresh generation, so a witness of the old extent no longer checks. Trusted C
+ * only, while nothing holds that witness. bytes must be at least 112. */
+int dc_goal_process_span_shrink(dc_goal_runtime *,const dc_goal_process_span *,uint32_t bytes,
+                                dc_goal_process_span *optional_out);
 int dc_goal_process_spans_detach(dc_goal_runtime *);
 /* 0 absent/foreign, 1 registered, -1 invalid owning metadata/context. */
 int dc_goal_process_spans_registered(dc_goal_runtime *);

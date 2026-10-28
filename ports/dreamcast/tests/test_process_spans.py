@@ -18,3 +18,4 @@ class ProcessSpansTest(unittest.TestCase):
     def test_capacity_retirement_quiescence_and_reuse_generations(self):self.check_group(1)
     def test_metadata_alias_foreign_runtime_and_owner_guards(self):self.check_group(2)
     def test_temporary_output_requires_live_current_working_stack(self):self.check_group(3)
+    def test_shrink_keeps_the_process_with_a_fresh_generation(self):self.check_group(4)

@@ -26,8 +26,8 @@ BINDINGS = {
     'set-to-run-bootstrap': 'set-to-run-bootstrap',
 }
 EXPECTED_CHECKS = 90  # verified in Flycast; never weakened afterwards
-EXPECTED_DGO_CHECKS = 439  # KERNEL.CGO + 325 GAME.CGO files + 141 vf cases, verified in Flycast
-GAME_PREFIX = 325  # all of GAME.CGO but hud-classes-pc (see GAME_CGO.md)
+EXPECTED_DGO_CHECKS = 440  # KERNEL.CGO + 326 GAME.CGO files + 141 vf cases, verified in Flycast
+GAME_PREFIX = 326  # all of GAME.CGO
 
 
 def main():

@@ -571,8 +571,28 @@ int dc_goal_enter_known_scope(dc_goal_runtime *rt,uint32_t process) {
   }
   return dc_goal_enter_lexical_scope(rt,process,span.bytes);
 }
+/* Original dead-pool-heap shrink-heap (run-function-in-process, once an init's
+ * go left the process waiting-to-run) makes the process's own record smaller than
+ * the extent noted when its scope was first entered. The pool then carves the
+ * next process right after the shrunk heap. So when a process's last scope is
+ * left, and no catch frame or fiber holds it, its ledger row shrinks to its
+ * record: allocated-length plus the 112-byte process. */
+static int process_held(uint32_t process);
+static int shrink_left_span(dc_goal_runtime *rt,uint32_t process) {
+  dc_goal_pp_scope_stack *stack=dc_goal_pp_scope_active(rt);dc_goal_process_span span;
+  enum dc_goal_error prior=rt->error;uint32_t site=dc_goal_error_site,length;unsigned i;
+  const unsigned char *fields;
+  if(!stack || process_held(process))return 1;
+  for(i=0;i<stack->depth;++i)if(stack->frames[i].lexical_process==process)return 1;
+  if(!(fields=dc_goal_resolve(rt,process,108)) || !dc_goal_process_span_lookup(rt,process,&span)) {
+    rt->error=prior;dc_goal_error_site=site;return 1;  /* not a noted process */
+  }
+  memcpy(&length,fields+68,4);
+  if(length>UINT32_MAX-112u || span.bytes<=length+112u)return 1;
+  return dc_goal_process_span_shrink(rt,&span,length+112u,NULL);
+}
 int dc_goal_leave_known_scope(dc_goal_runtime *rt,uint32_t previous_process) {
-  dc_goal_pp_scope_stack *stack;dc_goal_pp_scope_frame *top;
+  dc_goal_pp_scope_stack *stack;dc_goal_pp_scope_frame *top;uint32_t process;
   if(!rt || active_runtime!=rt){if(rt&&rt->error==DC_GOAL_OK)(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);return 0;}
   stack=dc_goal_pp_scope_active(rt);
   if(!stack || !stack->depth){if(rt->error==DC_GOAL_OK)(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);return 0;}
@@ -580,7 +600,8 @@ int dc_goal_leave_known_scope(dc_goal_runtime *rt,uint32_t previous_process) {
   /* The outermost frame restores its scheduler (#f at the root, which owns no
    * allocation record); a nested one restores the enclosing lexical process. */
   if((stack->depth==1?top->scheduler_process:top->saved_allocation.process)!=previous_process){if(rt->error==DC_GOAL_OK)(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);return 0;}
-  return dc_goal_leave_lexical_scope(rt,top->lexical_process,top->lexical_bytes);
+  process=top->lexical_process;
+  return dc_goal_leave_lexical_scope(rt,process,top->lexical_bytes) && shrink_left_span(rt,process);
 }
 
 /* Compiled original (set! pp X) ... (set! pp saved) brackets. Both are boxed
@@ -1482,6 +1503,12 @@ static uint64_t new_catch_frame(uint64_t allocation,uint64_t type,uint64_t name,
  }
  native_catch_top=frame.previous;native_catch_owner=frame.previous?frame.owner:0;
  catch_put(top,frame.next);return rt->error==DC_GOAL_OK?value:0;
+}
+static int process_held(uint32_t process){
+ const native_catch_frame *f;unsigned i;
+ for(f=native_catch_top;f;f=f->previous)if(f->process==process)return 1;
+ for(i=0;i<DC_THREAD_FIBERS;++i)if(thread_fibers[i] && thread_fibers[i]->process==process)return 1;
+ return 0;
 }
 static uint64_t catch_throw_dispatch(uint64_t object,uint64_t value){
  dc_goal_runtime *rt=active_runtime;native_catch_frame *f;

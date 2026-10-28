@@ -109,8 +109,27 @@ static void outputs(fixture *f){
  fiber.root_live=1;CHECK(!dc_goal_process_span_lookup(&f->r,f->p[0],(dc_goal_process_span*)((unsigned char*)scratch+248)));
  CHECK(!dc_goal_process_spans_detach(&f->r));current=NULL;CHECK(dc_goal_process_spans_detach(&f->r));
 }
+/* shrink-heap: a row keeps its process with fewer bytes and a fresh generation. */
+static void shrinking(fixture *f){
+ dc_goal_process_span a,b,c;
+ CHECK(init(f));CHECK(dc_goal_process_span_note(&f->r,f->p[0],240,&a));
+ CHECK(!dc_goal_process_span_shrink(&f->r,&a,241,NULL));f->r.error=DC_GOAL_OK;
+ CHECK(!dc_goal_process_span_shrink(&f->r,&a,111,NULL));f->r.error=DC_GOAL_OK;
+ CHECK(dc_goal_process_span_lookup(&f->r,f->p[0],&b)&&memcmp(&a,&b,sizeof a)==0);
+ CHECK(dc_goal_process_span_shrink(&f->r,&a,160,&b));
+ CHECK(b.process==f->p[0]&&b.bytes==160&&b.generation!=a.generation&&f->table.count==1);
+ CHECK(!dc_goal_process_span_check(&f->r,&a));f->r.error=DC_GOAL_OK;
+ CHECK(dc_goal_process_span_check(&f->r,&b));
+ CHECK(!dc_goal_process_span_shrink(&f->r,&a,128,NULL));f->r.error=DC_GOAL_OK;
+ /* The next pool member right after the shrunk extent no longer overlaps. */
+ CHECK(dc_goal_process_span_note(&f->r,f->p[0]+160,96+16,&c)&&f->table.count==2);
+ CHECK(!dc_goal_process_span_note(&f->r,f->p[0],240,NULL));f->r.error=DC_GOAL_OK;
+ CHECK(dc_goal_process_span_note(&f->r,f->p[0],160,&c)&&memcmp(&b,&c,sizeof b)==0);
+ CHECK(dc_goal_process_span_shrink(&f->r,&b,160,&c)&&c.bytes==160&&c.generation!=b.generation);
+ CHECK(dc_goal_process_spans_detach(&f->r));
+}
 int main(int argc,char **argv){
  fixture f;int group=argc>1?atoi(argv[1]):0;if(!setup(&f))return 2;
- if(group==0)sorted(&f);else if(group==1)lifetime(&f);else if(group==2)metadata(&f);else if(group==3)outputs(&f);else return 3;
+ if(group==0)sorted(&f);else if(group==1)lifetime(&f);else if(group==2)metadata(&f);else if(group==3)outputs(&f);else if(group==4)shrinking(&f);else return 3;
  printf("process spans %u/%u checks group=%d\n",passed,total,group);free(f.memory);return passed==total?0:1;
 }

@@ -241,16 +241,23 @@ Runtime:
     `#when` that compiles away;
   - a behavior's own `(protect (pp) (set! pp ...))` brackets in subtitle, each
     lowered to a lexical scope enter and leave (`self_process_brackets`).
-- **Loading:** the first 325 files load and start (439 of 439 boot checks), and the
+- **Loading:** all 326 files load and start (440 of 440 boot checks), and the
   processes they spawn run their dispatcher frames. Memory is no longer the limit:
   see [MEMORY_PLAN.md](MEMORY_PLAN.md) for the freed startups, the VRAM-staged
   romdisk, the 13.5 MiB arena and the PS2 DMA buffers in VRAM.
-- **hud-classes-pc (object 325) stops at a nested spawn.** Its startup spawns the PC
-  HUD, whose init spawns a manipy icon process (`hud-pc-make-icon`). That child's
-  `go` throws `'initialize`, and `throw` finds no matching catch frame
-  ("ERROR: throw could not find tag initialize", then `(break)`, which is
-  `(/ 0 0)`). A process spawned from inside another spawned process's init, from a
-  startup, is the next native initialization case to support.
+- **Shrunk process heaps (hud-classes-pc).** Its startup spawns the PC HUD, whose
+  init spawns a manipy icon from `*default-dead-pool*`. That failed with "ERROR: throw
+  could not find tag initialize" and then `(break)`, which is `(/ 0 0)`. The cause
+  was the ledger, not the nesting. After an init that `go`es,
+  `run-function-in-process` calls `shrink-heap`, and the pool carves the next process
+  right after the shrunk heap. The earlier process's ledger row still had its
+  pre-shrink extent, so the icon's extent overlapped it and the scope entry was
+  refused. Now, when a process's last scope is left, and no catch frame or fiber
+  holds it, its row shrinks to its record (`dc_goal_process_span_shrink`:
+  allocated-length + 112, with a fresh generation).
+- **Console output with all 326 files** shows only what a machine without these
+  pieces prints: the IRX version check (there is no IOP), skipped texture setup (no
+  textures loaded) and "Game subtitle heap overrun!" (no subtitle files).
 - **Spawned processes.** A camera asks `stack-size-set!` for 512 bytes (sized for PS2
   frames) but suspends with 668 bytes of native stack in use, so the backup
   counterpart passes `max(2 * request, 512)` to the original method.
@@ -308,8 +315,8 @@ Two runtime checks expected an unbound C caller to refuse: original
 `send-event-function` and `deactivate`. They now check the desktop root behaviour
 instead: the body runs with `pp` set to the target, and `pp` is `#f` again afterwards.
 
-Not verified yet: `shrink-heap` after init leaves the noted span at its pre-shrink
-extent.
+`shrink-heap` after init used to leave the noted span at its pre-shrink extent. The
+span now shrinks when the process's scope is left (see "Where it stops").
 
 ## Running spawned processes, and faults the loader used to miss (2026-10-27, AI-assisted)
 
