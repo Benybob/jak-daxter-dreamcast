@@ -1,7 +1,42 @@
 {
-  "_comment": "Reviewed original local-vars that no op assigns on the PC port, zero-filled at entry on Dreamcast (AI-assisted). Each entry names the function, its locals and why. Anything not listed still refuses as an uninitialized read. lower_sh4_ir.py --unassigned-locals checks every listed local exists and is never assigned; build_game_cgo.py reports entries no file used.",
+  "_comment": "Reviewed original local-vars that no op assigns on the PC port, zero-filled at entry on Dreamcast (AI-assisted). Each entry names the function, its locals and why; \"assigned_elsewhere\": true marks locals the original sets on other paths but reads stale on one. Anything not listed still refuses as an uninitialized read. lower_sh4_ir.py --unassigned-locals checks every listed local exists and is never assigned; build_game_cgo.py reports entries no file used. \"false_locals\" lists locals that start as #f instead of 0 (a stale value only ever tested for truth).",
   "process-particles": {
-    "locals": ["v1-29", "gp-0"],
+    "locals": [
+      "v1-29",
+      "gp-0"
+    ],
     "reason": "sparticle.gc: the PC port comments out the original (.mfc0 gp-0 Count) / (.mfc0 v1-29 Count) cycle-counter reads; their difference only feeds a profiling stat. Desktop reads garbage; Dreamcast reads 0."
+  },
+  "(method find-overlapping-shapes collide-shape)": {
+    "locals": [
+      "s2-0"
+    ],
+    "assigned_elsewhere": true,
+    "reason": "collide-shape.gc: when tlist is #f, (b! (= a0-10 #f) cfg-11 :delay (set! v1-2 #t)) jumps to cfg-11, which tests s2-0 without setting it on that path; the PS2 and desktop read whatever the register last held (the previous loop iteration's value). Dreamcast: zero at entry, then the slot keeps its value across iterations like the register."
+  },
+  "(method update-vis-volumes level-group)": {
+    "locals": [
+      "v1-10",
+      "sv-16"
+    ],
+    "false_locals": [
+      "sv-16"
+    ],
+    "assigned_elsewhere": true,
+    "reason": "entity.gc:434-441: the source notes an original GOAL compiler bug. v1-10 is read inside its own assignment ((set! sv-16 (the-as process v1-10))) and sv-16 is overwritten with s0-1 on the next line, so that stale value is never used. sv-16 is also tested by (when sv-16 ...) on the path where that when was false, reading the previous iteration's stack value or, the first time, an unset one. Dreamcast: v1-10 starts 0; sv-16 starts #f, so a first iteration without a process-drawable skips the update instead of calling it on garbage."
+  },
+  "birth-pickup-at-point": {
+    "locals": [
+      "v1-28",
+      "v1-34",
+      "v1-40",
+      "v1-46",
+      "v1-52",
+      "v1-58",
+      "v1-64",
+      "v1-71"
+    ],
+    "assigned_elsewhere": true,
+    "reason": "collectables.gc:1381-1388: the same original compiler pattern as update-vis-volumes, once per pickup type. Each v1-N is read inside its own (set! v1-N (when sv-64 ...)) as (set! sv-192 (the-as (pointer process) v1-N)), and sv-192 is overwritten with (-> sv-64 ppointer) before any use. Dreamcast: zero at entry."
   }
 }

@@ -43,7 +43,9 @@ class SuspendTest(unittest.TestCase):
         self.assertEqual(kinds.count('suspend'),1)
         # the KERNEL_DEBUG stack check's reset, plus the native entry read of rsp
         self.assertEqual(kinds.count('stack_pointer'),2)
-        self.assertEqual(kinds.count('process_reread'),1);self.assertEqual(mapped['fixed_registers'],[])
+        # the (suspend) reset's re-read, plus the authenticated entry read of pp
+        self.assertEqual(kinds.count('process_reread'),2);self.assertEqual(mapped['fixed_registers'],[])
+        self.assertEqual(mapped['instructions'][0]['kind'],'process_reread')
 
     def test_suspend_near_misses_refuse(self):
         index=next(b['register'] for b in self.fn['fixed_registers'] if b['frontend_register']=='r13')

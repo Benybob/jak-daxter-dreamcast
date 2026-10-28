@@ -42,9 +42,20 @@ class FrontendFixedTest(unittest.TestCase):
         self.assertEqual(len(fn['parameters']),1)
 
     def test_unknown_desktop_register_and_symbol_table_writes_reject(self):
-        for name,reason in [('unknown','role not implemented'),('mutation','mutation is unsupported')]:
-            with self.subTest(name=name),self.assertRaisesRegex(ValueError,reason):
-                compile_function(self.functions['dc-fixed-'+name],runtime=True)
+        with self.assertRaisesRegex(ValueError,'mutation is unsupported'):
+            compile_function(self.functions['dc-fixed-mutation'],runtime=True)
+        # A register with no native meaning still refuses.
+        fn=copy.deepcopy(self.functions['dc-fixed-unknown'])
+        for binding in fn['fixed_registers']: binding['frontend_register']='rbx'
+        for op in fn['instructions']:
+            for binding in op.get('bindings',[]): binding['frontend_register']='rbx'
+        with self.assertRaisesRegex(ValueError,'role not implemented'): compile_function(fn,runtime=True)
+
+    def test_reset_r15_is_the_native_zero_memory_base(self):
+        # (rlet ((offset :reg r15 :reset-here #t)) offset): native GOAL pointers
+        # are absolute, so the reset reads the base 0, like an unreset read.
+        _,report=compile_function(self.functions['dc-fixed-unknown'],runtime=True)
+        self.assertGreater(report['bytes'],0)
 
     def test_absent_reset_does_not_invent_an_initialized_runtime_value(self):
         with self.assertRaisesRegex(ValueError,'uninitialized virtual'):

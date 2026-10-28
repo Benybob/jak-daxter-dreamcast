@@ -370,6 +370,26 @@ def remove_dead_pure_ops(function):
         if not needed[i]: ops[i]=dict(op,kind='nop',reads=[],writes=[],text='dead: '+op.get('text',''))
     return dict(function,instructions=ops)
 
+def mips_zero_register_writes(function):
+    """Writes to a decompiled local named after MIPS $zero (r0-N) (AI-assisted).
+
+    The decompiler keeps original pipeline padding such as (.mov r0-0 f31-0).
+    $zero is hardwired: writes are discarded and reads give 0, which code relies
+    on (drawable-sphere-box-intersect? feeds r0-2 to .ppach as its zero half).
+    So an asm move into such a local defines it as 0 and reads nothing."""
+    zero={l['register'] for l in function.get('locals',[]) if re.fullmatch(r'r0-\d+',l.get('name',''))}
+    if not zero: return function
+    classes={r['id']:r['class'] for r in function['registers']}
+    ops=[]
+    for op in function['instructions']:
+        text=op.get('text','').strip()
+        if op['kind']=='unsupported' and text.startswith('.mov ') and len(op['writes'])==1 and op['writes'][0] in zero:
+            dst=op['writes'][0]
+            if classes.get(dst)=='int128': op=dict(op,kind='vfzero',dst=dst,reads=[],text='$zero: '+text)
+            elif classes.get(dst)=='gpr64': op=dict(op,kind='constant',value=0,reads=[],text='$zero: '+text)
+        ops.append(op)
+    return dict(function,instructions=ops)
+
 def normalize_register_asm(function):
     """Read explicit x86 (.mov a b)/(.add a b) asm ops as plain 64-bit IR (AI-assisted).
 
@@ -515,6 +535,10 @@ def return_from_thread_idiom(function):
         rewritten[add]=dict(kind='nop',reads=[],writes=[],text='native return-from-thread offset')
         rewritten[push]=dict(kind='return_from_thread',reads=[],writes=[],text=ops[push].get('text',''))
         rewritten[following[0]]=dict(kind='nop',reads=[],writes=[],text='.ret')
+    # (go ...)'s rlet r15 :reset-here only defines the offset the jump used.
+    rewritten=[dict(kind='nop',reads=[],writes=[],text='r15 reset for return-from-thread')
+               if op['kind']=='fixed_register_reset' and op['writes']==[offset] and not op['reads'] else op
+               for op in rewritten]
     if any(offset in op['reads'] or offset in op['writes'] for op in rewritten):
         return function
     return dict(function,instructions=rewritten,
@@ -593,7 +617,11 @@ def native_machine_registers(function):
             keep.append(binding);continue
         writers=[p for p,op in enumerate(ops) if index in op['writes']]
         if name=='r15':
-            if writers:keep.append(binding);continue
+            # A reset re-reads the same base (0 natively); any real write keeps refusing.
+            if not all(ops[p]['kind']=='fixed_register_reset' and ops[p]['writes']==[index] and not ops[p]['reads']
+                       for p in writers):
+                keep.append(binding);continue
+            for p in writers:ops[p]=dict(kind='constant',value=0,reads=[],writes=[index],text='native r15 memory offset is zero')
             entry.append(dict(kind='constant',value=0,reads=[],writes=[index],text='native r15 memory offset is zero'))
         else:
             if not all(ops[p]['kind']=='fixed_register_reset' and ops[p]['writes']==[index] and not ops[p]['reads']
@@ -687,7 +715,18 @@ def suspend_idiom(function):
             if p==entry_reset:continue
             if op['kind']!='fixed_register_reset' or op['writes']!=[index] or op['reads']:return function
             ops[p]=dict(kind='process_reread',reads=[],writes=[index],text='pp restored after resume')
+    shared=function.get('shared_exit')
+    if not behavior:
+        # Desktop pp is r13, live at every read; the frontend emits one rlet
+        # :reset-here for several (suspend)s (one per if branch), so a read may
+        # see no reset. State code runs inside its process: one authenticated
+        # read at entry defines pp for those reads.
+        ops=[dict(op,target=op['target']+1) if op['kind'] in ('branch','goto') and isinstance(op.get('target'),int) else op
+             for op in ops]
+        ops=[dict(kind='process_reread',reads=[],writes=[index],text='pp at entry')]+ops
+        if shared: shared=dict(shared,exit_ir=shared['exit_ir']+1)
     return dict(function,instructions=ops,
+                **({'shared_exit':shared} if shared else {}),
                 fixed_registers=function['fixed_registers'] if behavior else
                                 [b for b in function['fixed_registers'] if b['register']!=index],
                 suspend_process=index)
@@ -736,6 +775,7 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
                              len(op['reads'])==1 and kinds.get(op['reads'][0])=='none'
         else op for op in function['instructions']])
     if runtime:
+        function=mips_zero_register_writes(function)
         function=normalize_register_asm(function)
         function=state_code_idiom(function)
         function=return_from_thread_idiom(function)
@@ -888,16 +928,26 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
     # (original bsp-camera-asm stores its a2 flags unset when the root is a leaf:
     # whatever the PS2 register held) is zero-filled at entry in a pinned slot,
     # like vf. A register no op assigns still refuses.
-    zero_entry=set()
+    zero_entry=set(); false_entry=set()
     assigned={index for op in function['instructions'] if op['kind']!='nop' for index in op['writes']}
+    # Decompiled locals named after MIPS $zero (zero, r0-N) that nothing assigns
+    # read as 0, as the hardwired register does (e.g. .pextlh x, y, zero).
+    for local in function.get('locals',[]):
+        if runtime and local.get('register') not in assigned and \
+           re.fullmatch(r'zero|r0-\d+',local.get('name','')):
+            zero_entry.add(local['register'])
     # Reviewed never-assigned original local-vars (dreamcast_unassigned_locals.json).
     if function.get('zero_locals'):
         if not runtime: raise ValueError('reviewed zero locals require the native runtime profile')
         named={local['name']:local['register'] for local in function.get('locals',[])}
         for name in function['zero_locals']:
             if name not in named: raise ValueError('reviewed zero local '+name+' is not a local of this function')
-            if named[name] in assigned: raise ValueError('reviewed zero local '+name+' is assigned; remove it from the list')
+            if named[name] in assigned and not function.get('zero_locals_assigned_elsewhere'):
+                raise ValueError('reviewed zero local '+name+' is assigned; remove it from the list')
             zero_entry.add(named[name])
+        for name in function.get('false_locals',[]):
+            if name not in function['zero_locals']: raise ValueError('reviewed #f local '+name+' must also be listed in locals')
+            false_entry.add(named[name])
     arguments={p['register'] for p in function['parameters']}
     while runtime:
         try:
@@ -1149,6 +1199,8 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
             for n in range(4 if index in quads else 2):
                 if n: e.add_immediate(8,4)
                 e.store(8,0)
+        for index in sorted(false_entry):  # reviewed stale truth tests start as #f
+            e.literal(0,('symbol','pointer:#f')); e.immediate(1,0); store64(index)
     gpr_args=float_args=0
     for parameter in function['parameters']:
         index=parameter['register']
@@ -1247,7 +1299,11 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
                 # Never substitute a made-up address for a live GOAL symbol.
                 if all(value not in used for value in writes): continue
                 if not runtime: raise ValueError('live GOAL symbol requires native symbol runtime')
-                e.literal(0,('symbol','pointer:'+op['symbol'])); e.immediate(1,0); store64(writes[0])
+                e.literal(0,('symbol','pointer:'+op['symbol'])); e.immediate(1,0)
+                if registers[writes[0]]['class']=='int128':
+                    # desktop movq xmm, gpr: the pointer in the low 64 bits, high 64 zeroed
+                    e.immediate(2,0); e.immediate(3,0); store128(writes[0],(0,1,2,3))
+                else: store64(writes[0])
                 continue
             if kind=='native_function':
                 # Import of a loaded native counterpart (resolved and type-checked by the loader).
@@ -1867,6 +1923,8 @@ if __name__=='__main__':
                     entry=reviewed[f['name']]
                     if not entry.get('reason') or not entry.get('locals'): raise ValueError('reviewed zero local entry needs locals and a reason')
                     f['zero_locals']=list(entry['locals'])
+                    if entry.get('false_locals'): f['false_locals']=list(entry['false_locals'])
+                    if entry.get('assigned_elsewhere') is True: f['zero_locals_assigned_elsewhere']=True
         if args.all_functions:
             if args.function: parser.error('--all-functions cannot be combined with --function')
             args.function=[f['name'] for f in doc['functions'] if not f.get('top_level') and f['name'] not in bindings]

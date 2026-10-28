@@ -7,7 +7,7 @@ lower_sh4_ir.py; this support change leaves the lowering/boot files alone.
 
 **2026-10-27 (AI-assisted):** [GAME.CGO](GAME_CGO.md) compiles in game.gp dependency
 order in one frontend run; all 331 files of its dependency graph export. 222 of 326 code
-files lower to SH-4, and the first 207 load and start in Flycast (307 of 307 boot checks) under a [memory budget](MEMORY_BUDGET.md). Native MMI ops, structure allocation, linker type
+files lower to SH-4 (275 of 326 now), and the first 207 load and start in Flycast (307 of 307 boot checks) under a [memory budget](MEMORY_BUDGET.md). Native MMI ops, structure allocation, linker type
 placeholders and the original pad services on the Dreamcast controller. All 25 jak1
 mips2c C++ files pass an SH-4 syntax check ([MEMORY_BUDGET.md](MEMORY_BUDGET.md)). `(& var)` locals
 and the kscheme asize-of/copy defaults are native too, as are `go` from a method and the

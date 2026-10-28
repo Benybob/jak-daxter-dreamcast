@@ -4,7 +4,7 @@
 GAME.CGO order:
 
 - **All 331 files** of the GAME.CGO dependency graph export (no refusals).
-- **222 of GAME.CGO's 326 code files** compile to native SH-4 (through collide-edge-grab).
+- **275 of GAME.CGO's 326 code files** compile to native SH-4 (through task-control).
 - **The first 207 load and run their original top-level startup** after KERNEL.CGO in
   stock 16 MiB Flycast, with the Dreamcast memory budget ([MEMORY_BUDGET.md](MEMORY_BUDGET.md)). This includes the 141 lane-exact
   vector cases ([VU0_LOWERING.md](VU0_LOWERING.md)) and the original process
@@ -113,6 +113,25 @@ Lowering (`lower_sh4_ir.py`):
   `*debug-segment*` is `#f`. `lower_sh4_ir.py --no-debug-segment` drops those
   functions (915 in the first 222 files), loads 0 for references in code and
   removes static relocations to them; `method-set!` of 0 is a no-op as on desktop.
+- **MIPS `$zero` locals**: the decompiler keeps pipeline padding such as
+  `(.mov r0-0 f31-0)` and names `$zero` as `r0-N` or `zero`. Writes to such a
+  local define it as 0 without reading the source, and a never-assigned one reads
+  as 0, as the hardwired register does (main-collide feeds it to `.ppach` and
+  `.pextlh` as the zero operand).
+- **Fixed-register resets**: an `r15` reset reads the native memory base 0 (any
+  real write still refuses); `(go ...)`'s `.push (r15 + return-from-thread)` jump
+  drops its own `r15` reset. A non-behavior `pp` used by several `(suspend)`s
+  (the frontend emits one reset for all of them) gets one authenticated read at
+  entry. `#f` into an int128 register is the pointer in the low 64 bits, high 64
+  zero, as desktop `movq`.
+- **Integer value types** (`seconds`, `time-frame`) take the int/uint ABI of their
+  signedness, like float aliases take float.
+- **Reviewed stale locals** (`dreamcast_unassigned_locals.json`): entries may set
+  `assigned_elsewhere` for a local the original sets on other paths but reads
+  stale on one, and `false_locals` for one only tested for truth, which starts as
+  `#f`. The current entries are original compiler-bug patterns the source itself
+  documents (update-vis-volumes, birth-pickup-at-point) and find-overlapping-shapes'
+  stale `s2-0`.
 - **Float top levels** run as void initializers (mood-tables): every loader
   discards a file's top-level value.
 - **`(inline-array T)`** parameters are addresses, like `(pointer T)`.
@@ -224,7 +243,7 @@ Runtime:
   runs `init-time-of-day`, whose `self` read finds no bound process context
   (`current_process`, the first refusal site). Native process spawn from a
   file's startup is the next runtime feature.
-- **Lowering stops at collide-shape (object 222)**: an uninitialized read.
+- **Lowering stops at process-taskable (object 275)**: an uninitialized read.
 - **Exporter refusals.** 56 of the 331 dependency-graph files refuse; 54 of them
   for one reason, "conflicting or non-fixed virtual register alias". That is one
   exporter feature (rlet register aliasing) to add next.

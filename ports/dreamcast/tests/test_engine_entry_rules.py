@@ -12,7 +12,8 @@ import sys
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from lower_sh4_ir import compile_function, discard_debug_segment, mmi_asm, module_data  # noqa: E402
+from lower_sh4_ir import (compile_function, discard_debug_segment, mips_zero_register_writes,  # noqa: E402
+                          mmi_asm, module_data, native_machine_registers)
 
 SELF = {'frontend_register': 'r13', 'register': 2, 'role': 'process_self'}
 
@@ -175,6 +176,60 @@ class VoidResultValueTest(unittest.TestCase):
                   {'kind': 'move', 'reads': [1], 'writes': [2]},
                   {'kind': 'return', 'reads': [2], 'writes': []}]}
         data, report = compile_function(fn, runtime=True)
+        self.assertIn('pointer:#f', [r['symbol'] for r in report['relocations']])
+
+
+class MipsZeroTest(unittest.TestCase):
+    def test_write_to_r0_local_is_zero_and_reads_nothing(self):
+        fn = {'locals': [{'name': 'r0-2', 'register': 7}], 'registers': [reg(7, 'int128', 'uint128'), reg(15, typ='none')],
+              'instructions': [{'kind': 'unsupported', 'text': '.mov ii128-7 igpr-15', 'reads': [15], 'writes': [7]}]}
+        op = mips_zero_register_writes(fn)['instructions'][0]
+        self.assertEqual((op['kind'], op['reads'], op['dst']), ('vfzero', [], 7))
+
+    def test_never_assigned_zero_local_reads_as_zero(self):
+        fn = partly_assigned()
+        fn['locals'] = [{'name': 'zero', 'register': 1, 'type': 'int', 'abi_type': 'int'}]
+        fn['instructions'] = [fn['instructions'][3], fn['instructions'][4]]  # store zero; return
+        self.assertGreater(len(compile_function(fn, runtime=True)[0]), 0)
+
+
+class FixedRegisterResetTest(unittest.TestCase):
+    def test_r15_reset_reads_the_zero_base(self):
+        fn = {'registers': [reg(5, typ='uint')], 'fixed_registers': [{'frontend_register': 'r15', 'register': 5,
+                                                                       'role': 'unsupported'}],
+              'instructions': [{'kind': 'fixed_register_reset', 'reads': [], 'writes': [5]}]}
+        out = native_machine_registers(fn)
+        self.assertEqual(out['fixed_registers'], [])
+        self.assertEqual([(o['kind'], o.get('value')) for o in out['instructions']], [('constant', 0), ('constant', 0)])
+
+    def test_r15_real_write_keeps_refusing(self):
+        fn = {'registers': [reg(5, typ='uint'), reg(6, typ='uint')],
+              'fixed_registers': [{'frontend_register': 'r15', 'register': 5, 'role': 'unsupported'}],
+              'instructions': [{'kind': 'move', 'reads': [6], 'writes': [5]}]}
+        self.assertEqual(len(native_machine_registers(fn)['fixed_registers']), 1)
+
+
+class ReviewedStaleLocalTest(unittest.TestCase):
+    def test_assigned_elsewhere_and_false_initial(self):
+        fn = dict(partly_assigned(), zero_locals=['v'], zero_locals_assigned_elsewhere=True, false_locals=['v'],
+                  locals=[{'name': 'v', 'register': 1, 'type': 'int', 'abi_type': 'int'}])
+        _, report = compile_function(fn, runtime=True)
+        self.assertIn('pointer:#f', [r['symbol'] for r in report['relocations']])
+
+    def test_false_local_must_be_listed(self):
+        fn = dict(never_assigned_local(), zero_locals=['v1-29'], false_locals=['other'])
+        with self.assertRaisesRegex(ValueError, 'must also be listed'):
+            compile_function(fn, runtime=True)
+
+
+class WideFalseTest(unittest.TestCase):
+    def test_false_into_int128_is_low_pointer_high_zero(self):
+        fn = {'name': 'dc-wide-false', 'asm': False, 'return_type': 'uint128', 'return_abi_type': 'uint128',
+              'registers': [reg(2, 'int128', 'uint128')], 'parameters': [], 'implicit_parameters': [],
+              'fixed_registers': [], 'locals': [], 'register_aliases': [],
+              'instructions': [{'kind': 'symbol_pointer', 'symbol': '#f', 'reads': [], 'writes': [2]},
+                               {'kind': 'return', 'reads': [2], 'writes': []}]}
+        _, report = compile_function(fn, runtime=True)
         self.assertIn('pointer:#f', [r['symbol'] for r in report['relocations']])
 
 
