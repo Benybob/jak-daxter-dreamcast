@@ -31,6 +31,7 @@ u8* g_ee_main_mem_exec = nullptr;
 
 namespace {
 dc_goal_runtime* g_rt = nullptr;
+uint32_t g_spad_symbol = 0;  /* *fake-scratchpad-data* */
 uint32_t g_calls = 0;
 char g_assert[160];
 
@@ -75,6 +76,10 @@ u64 dc_run(unsigned index, const u64* args) {
   for (int i = 0; i < 8; ++i) c.gprs[positions[i]].du64[0] = args[i];
   c.gprs[Mips2C::s6].du64[0] = dc_goal_mips2c_current_process();
   c.gprs[Mips2C::s7].du64[0] = g_rt->s7;
+  /* The PS2 callers of the generic/merc functions enter with at holding the
+   * scratchpad, and those functions save registers at 12432(at) and up (the
+   * generic work's save area) before setting it. Desktop leaves at uninitialized. */
+  if (g_spad_symbol) memcpy(&c.gprs[Mips2C::at].du32[0], (const void*)(uintptr_t)g_spad_symbol, 4);
   u8* stack = (u8*)alloca(slot.stack + 16);
   c.gprs[Mips2C::sp].du64[0] = ((uintptr_t)stack + slot.stack + 15) & ~(uintptr_t)15;
   return slot.exec(&c);
@@ -129,6 +134,7 @@ extern "C" unsigned dc_mips2c_install(dc_goal_runtime* rt) {
   unsigned i, linked = 0;
   if (!rt) return 0;
   g_rt = rt;
+  g_spad_symbol = dc_goal_intern(rt, "*fake-scratchpad-data*");
   for (i = 0; i < sizeof dc_links / sizeof dc_links[0]; ++i) dc_links[i]();
   for (i = 0; i < kEntries; ++i) linked += g_slots[i].exec != nullptr;
   return linked == kEntries ? linked : 0;
@@ -136,6 +142,12 @@ extern "C" unsigned dc_mips2c_install(dc_goal_runtime* rt) {
 extern "C" uint32_t dc_mips2c_find(const char* name) {
   for (unsigned i = 0; i < kEntries; ++i)
     if (!strcmp(name, dc_entries[i].name) && g_slots[i].exec) return dc_entries[i].entry;
+  return 0;
+}
+extern "C" uint64_t dc_mips2c_call(const char* name, const uint64_t* args) {
+  for (unsigned i = 0; i < kEntries; ++i)
+    if (!strcmp(name, dc_entries[i].name) && g_slots[i].exec) return dc_entries[i].generic(args);
+  if (g_rt) g_rt->error = DC_GOAL_BAD_FUNCTION;
   return 0;
 }
 extern "C" uint32_t dc_mips2c_calls(void) {

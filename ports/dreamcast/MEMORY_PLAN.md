@@ -34,7 +34,8 @@ hardware claims: everything here is measured in stock 16 MiB Flycast.
   ELF links its 1.5 MB romdisk high in main RAM (`.dc_stage` at 0x8cd80000), and the
   first thing `main` does is copy it into idle VRAM and remount `/rd` there
   (`romdisk_stage.c`). The main-RAM copy is then free for the heap, so the arena grew
-  from 12 to 13.5 MiB; 14 MiB starves the KOS heap. This stands in for streaming from
+  from 12 to 13.5 MiB; 14 MiB starves the KOS heap. With native mips2c code in the
+  ELF it is 13 MiB, still well above the 10.7 MB that all of GAME.CGO uses. This stands in for streaming from
   the GD-ROM, which keeps no copy in main RAM at all.
 
 - **The PS2 DMA buffers live in VRAM.** They hold PS2 packets that the CPU writes

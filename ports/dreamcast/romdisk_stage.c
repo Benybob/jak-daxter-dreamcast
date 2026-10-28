@@ -28,4 +28,6 @@ int dc_stage_romdisk(void) {
 }
 
 /* The arena the staged romdisk leaves room for. */
-uint32_t dc_kernel_arena_bytes(void) { return 27u * 512u * 1024u; }  /* 13.5 MiB; 14 starves the KOS heap */
+/* 13 MiB: the arena holds 10.7 MB of GAME.CGO; the KOS heap needs the rest of main
+ * RAM while objects load, now that the ELF carries the native mips2c code. */
+uint32_t dc_kernel_arena_bytes(void) { return 13u * 1024u * 1024u; }

@@ -2,9 +2,21 @@
 
 The PC port replaced some original hand-written MIPS/VU0 assembly with C++
 translations in `game/mips2c`. jak1 has 25 such files registering 94 functions
-(`survey_mips2c_users.py`). The first two files with the most GAME.CGO callers,
-`collide_cache.cpp` (14 functions) and `sky_tng.cpp` (13), now build natively for
-SH-4 and run in the Dreamcast boot. The other 23 files still get the faulting stub.
+(`survey_mips2c_users.py`). Seven files, the survey's first seven by GAME.CGO
+callers, now build natively for SH-4 and run in the Dreamcast boot: 47 functions,
+returned for 43 of GAME.CGO's lookups.
+
+| File | Functions | Differential case |
+| --- | --- | --- |
+| collide_cache | 14 | none yet |
+| sky_tng | 13 | init-sky-regs, set-sky-vf27/vf23, render-sky-tri (clipping) |
+| collide_edge_grab | 4 | edge-work methods 16 and 15, hold-list add-to-list! |
+| collide_mesh | 4 | methods 14 and 15 |
+| generic_effect | 4 | generic-light-proc |
+| generic_merc | 4 | high-speed-reject |
+| ripple | 4 | ripple-execute-init, apply-wave-table, matrix-scale |
+
+The other 18 files still get the faulting stub.
 
 ## How it works
 
@@ -28,41 +40,61 @@ SH-4 and run in the Dreamcast boot. The other 23 files still get the faulting st
   other mips2c code with integer registers.
 - **Lookups.** `__pc-get-mips2c` asks `dc_mips2c_find` for the name and loads a
   12-byte GOAL function (`dc-mips2c:NAME`) that jumps to the wrapper, made once
-  per name. GAME.CGO's 23 lookups of these names now get native code.
+  per name. GAME.CGO's 43 lookups of these names now get native code.
 - **Calls back into GOAL.** `jalr` calls the GOAL function directly with eight
   64-bit arguments. A float-returning native GOAL function now also leaves its bits
   in r0:r1, as desktop leaves them in rax, because the translated code reads them
   from v0 (`mtc1 f3, v0` after `moving-sphere-sphere-intersect`).
+- **The PS2 entry convention for `at`.** The generic and merc functions save
+  registers at `12432(at)` and up (the generic work's save area in the scratchpad)
+  before they set `at`. On the PS2 their callers enter with `at` holding the
+  scratchpad. Desktop's trampoline leaves it uninitialized, so those stores go
+  wherever stack garbage points. Every native call (and the host oracle) now enters
+  with `at` = `*fake-scratchpad-data*`.
 - **Same arithmetic as desktop.** Built with `-ffp-contract=off`. Otherwise GCC
   fuses `a*b+c` into SH-4 `fmac` with one rounding, and the clipped sky vertices
   differ from desktop in their last bits.
 
 ## Verified
 
-`build_mips2c.py` also builds a host oracle: `host_mips2c_sky.cpp` runs the
-unchanged `sky_tng.cpp` on x86-64 with real SSE, as desktop does, over one memory
-region (`mips2c_sky_case.h`):
+`build_mips2c.py` also builds a host oracle, `host_mips2c_oracle.cpp`. It runs the
+unchanged files on x86-64 with real SSE, the way desktop does. It calls through the
+same generated wrappers, with host GOAL addresses biased to a native magnitude
+(0x0c300000 + offset).
 
-1. `init-sky-regs` reads a test `*math-camera*` and writes `*sky-tng-data*`.
-2. `set-sky-vf27` and `set-sky-vf23-value` set the two sky registers.
-3. `render-sky-tri` clips a triangle with one vertex behind the near plane, through
-   `draw-large-polygon` and both hyperplane helpers, into a dma-buffer, using the
-   fake scratchpad as work memory.
+The cases are in `mips2c_cases.h`, written once for both sides. Each fills a zeroed
+64 KiB region, points the symbols it needs into it, and calls only functions whose
+paths stay in C++ (no `jalr` back into GOAL). Afterwards every pointer into the
+region becomes its offset, and `#f` becomes a marker. The boot runs the same cases
+through the native SH-4 build. All six match the oracle bit for bit, both the
+region CRC and each case's result (462 of 462 boot checks).
 
-The Flycast boot runs the same bytes through the native wrappers. The 208 bytes of
-packets and the whole 32 KiB region, CRC-32 0x64e8d239, match the oracle bit for
-bit (452 of 452 boot checks).
+Found on the way:
 
-Not verified yet: the collide-cache functions have no differential case. They link
-and are returned to GAME.CGO, but no loaded level calls them. A case needs a
-collide-cache filled from collision data. This test ELF also links libstdc++
-(`std::string` in the registration table), about 170 KB of main RAM with the two
-files. That's why the boot's 400 KB damaged-file buffer is now allocated only
-while its tests run.
+- **A real translation bug, fixed in the shared source.**
+  `high_speed_reject::vcallms_454` wrote `vis[5]` twice and never wrote `vis[6]`,
+  so `high-speed-reject` read `vis[6]` uninitialized, on desktop too. ChatGPT's
+  `lint_mips2c.py` (straight-line read-before-write and `vis` checks, candidates for
+  a human to confirm) finds this class mechanically. It also lists more `vis`
+  overwrite candidates in `mercneric_convert` to review.
+- **Two test-harness traps:**
+  - three random arguments in one call came out in different orders on x86 and
+    SH-4, because C leaves argument evaluation order unspecified;
+  - small host addresses let packed data look like region pointers to the
+    normalization.
+- **Memory.** The ELF now carries five more files. The GOAL arena is 13 MiB (it
+  holds 10.7 MB), so the KOS heap has room to load GAME.CGO.
+
+Not covered yet:
+- the 14 collide-cache functions, which need a cache filled from collision data;
+- `ripple-create-wave-table` and the merc conversion functions, which call back
+  into GOAL;
+- the two `generic-prepare-dma-*` functions, which mercneric-convert reaches;
+- `high-speed-reject`'s reject path. Its case runs the function on real data, but
+  none of the three plane sets rejects.
 
 ## Next
 
-Add files in the survey's order: `collide_edge_grab`, `collide_mesh`,
-`generic_effect`, `generic_merc` and `ripple` have 4 GAME.CGO callers each.
-`build_mips2c.py --files` takes the list. Give each a differential case like the
-sky one before trusting it in gameplay.
+Next in the survey's order: `bones` and `generic_effect2` (3 callers each), then the
+2-caller files. Each gets a case in `mips2c_cases.h`, and `lint_mips2c.py` gets
+checked against its findings first.

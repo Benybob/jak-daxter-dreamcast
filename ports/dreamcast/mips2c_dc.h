@@ -18,6 +18,10 @@ unsigned dc_mips2c_install(dc_goal_runtime *rt);
  * function's own native signature (float arguments and result where GOAL has
  * them). 0 when the name is not built. Overrides goal_bridge.c's weak default. */
 uint32_t dc_mips2c_find(const char *name);
+/* Calls a built function by name with eight u64 arguments (float arguments as
+ * their bits) through its typed wrapper; a float result comes back as bits. For
+ * the differential cases (mips2c_cases.h). */
+uint64_t dc_mips2c_call(const char *name, const uint64_t *args8);
 /* Diagnostics: calls made through the native wrappers, and the first failed
  * mips2c assertion (NULL if none). */
 uint32_t dc_mips2c_calls(void);

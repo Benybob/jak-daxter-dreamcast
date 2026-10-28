@@ -12,8 +12,8 @@
 #include "goal_bridge.h"
 #ifdef DC_KERNEL_DGO
 #include "mips2c_dc.h"
-#include "mips2c_sky_case.h"
-#include "build/mips2c/mips2c_sky_expect.h"
+#include "mips2c_cases.h"
+#include "build/mips2c/mips2c_cases_expect.h"
 #endif
 #include "goal_kernel_types.h"
 #include "goal_main_start.h"
@@ -28,6 +28,19 @@
 int dc_kernel_load_vf_fixture(dc_goal_runtime *,dc_goal_cache_sync,dc_goal_module_result *);
 /* First BAD_ARGUMENT site while GAME.CGO loads (dc_goal_error_site encoding). */
 volatile uint32_t dc_boot_game_error_site;
+/* The boot's environment for the mips2c differential cases: symbols a case
+ * points into its region are restored after it. */
+typedef struct {dc_goal_runtime *rt;unsigned count;uint32_t symbol[8],value[8];} dc_boot_m2c_saved;
+static void boot_m2c_set_symbol(dc_m2c_env *e,const char *name,uint32_t value){
+  dc_boot_m2c_saved *saved=e->context;uint32_t symbol=dc_goal_intern(saved->rt,name);unsigned i;
+  for(i=0;i<saved->count && saved->symbol[i]!=symbol;++i){}
+  if(i==saved->count && i<8){saved->symbol[i]=symbol;saved->value[i]=dc_goal_symbol_value(saved->rt,symbol);++saved->count;}
+  dc_goal_set_symbol(saved->rt,symbol,value);
+}
+static uint64_t boot_m2c_call(dc_m2c_env *e,const char *name,const uint64_t *args){(void)e;return dc_mips2c_call(name,args);}
+static void boot_m2c_restore(dc_boot_m2c_saved *saved){
+  while(saved->count){--saved->count;dc_goal_set_symbol(saved->rt,saved->symbol[saved->count],saved->value[saved->count]);}
+}
 /* Diagnostics (verify_backend.py --dump): display-loop frames completed, and the
  * error and first refusal site where they stopped. */
 volatile uint32_t dc_boot_display_frames,dc_boot_display_error,dc_boot_display_site;
@@ -159,7 +172,7 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
     CHECK(dc_goal_register_pp_scope(&rt,&game_scopes),1,"lexical scope metadata registered for GAME.CGO startups");
     /* The PC port's mips2c functions built for SH-4 (build_mips2c.py): every
      * registration links, and GAME.CGO's lookups of them get native functions. */
-    CHECK(dc_mips2c_install(&rt),27,"collide-cache and sky-tng mips2c functions link natively");
+    CHECK(dc_mips2c_install(&rt),47,"the 47 functions of the seven built mips2c files link natively");
     /* Idle VRAM from 1 to 6 MiB (romdisk_stage.c) holds the PS2 DMA buffers. */
     CHECK(dc_goal_register_extension(&rt,(void *)0xa5100000u,0xa5100000u,5u*1024u*1024u),1,
           "idle VRAM registered as the GOAL extension region");
@@ -179,26 +192,21 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
       CHECK(loaded?1:100+rt.error,1,"GAME.CGO prefix links and runs each original startup in order");
       CHECK(game.objects,DC_GAME_PREFIX,"GAME.CGO holds the compiled prefix of original engine files");
       CHECK(game.initializers,DC_GAME_PREFIX,"each engine file runs its top-level startup");
-      CHECK(dc_goal_mips2c_native(),23,"GAME.CGO's 23 lookups of built mips2c functions return native code");
-      /* The sky case (mips2c_sky_case.h) through the native SH-4 build, compared
-       * with the host oracle: the same C++ as desktop runs it (build_mips2c.py). */
-      {typedef uint64_t (*f0)(void);typedef uint64_t (*f1)(uint64_t);typedef uint64_t (*f2)(uint64_t,uint64_t);
-       static const char *const names[3]={"*math-camera*","*sky-tng-data*","*fake-scratchpad-data*"};
-       const uint32_t offsets[3]={DC_SKY_CAMERA,DC_SKY_DATA,DC_SKY_SPAD};
-       uint32_t region=dc_goal_alloc_temporary(&rt,DC_SKY_REGION),saved[3],k,bytes;unsigned char *r;
-       f0 init=(f0)(uintptr_t)dc_mips2c_find("init-sky-regs");
-       f1 vf27=(f1)(uintptr_t)dc_mips2c_find("set-sky-vf27"),vf23=(f1)(uintptr_t)dc_mips2c_find("set-sky-vf23-value");
-       f2 tri=(f2)(uintptr_t)dc_mips2c_find("render-sky-tri");
-       CHECK(region && init && vf27 && vf23 && tri,1,"sky case region and native sky functions");
-       if(region && init && vf27 && vf23 && tri){
-         r=dc_goal_resolve(&rt,region,DC_SKY_REGION);dc_sky_fill(r,region);
-         for(k=0;k<3;++k){uint32_t sym=dc_goal_find(&rt,names[k]);saved[k]=dc_goal_symbol_value(&rt,sym);
-                          dc_goal_set_symbol(&rt,sym,region+offsets[k]);}
-         init();vf27(region+DC_SKY_VF27);vf23(DC_SKY_VF23);tri(region+DC_SKY_VERTS,region+DC_SKY_DMA);
-         for(k=0;k<3;++k)dc_goal_set_symbol(&rt,dc_goal_find(&rt,names[k]),saved[k]);
-         bytes=dc_sky_normalize(r,region);
-         CHECK(bytes,DC_SKY_EXPECT_BYTES,"native render-sky-tri writes the oracle's packet length");
-         CHECK(dc_sky_crc32(r,DC_SKY_REGION),DC_SKY_EXPECT_CRC,"native sky pipeline matches the host oracle bit for bit");
+      CHECK(dc_goal_mips2c_native(),43,"GAME.CGO's 43 lookups of built mips2c functions return native code");
+      /* The differential cases (mips2c_cases.h) through the native SH-4 build,
+       * compared with the host oracle: the same C++ as desktop runs it. */
+      {dc_m2c_env env;dc_boot_m2c_saved saved;uint32_t region=dc_goal_alloc_temporary(&rt,DC_M2C_REGION);unsigned k;
+       CHECK(region!=0 && DC_M2C_EXPECT_COUNT==DC_M2C_CASE_COUNT,1,"mips2c case region and oracle results");
+       if(region && DC_M2C_EXPECT_COUNT==DC_M2C_CASE_COUNT){
+         memset(&saved,0,sizeof saved);saved.rt=&rt;
+         env.region=dc_goal_resolve(&rt,region,DC_M2C_REGION);env.base=region;env.s7=rt.s7;
+         env.set_symbol=boot_m2c_set_symbol;env.call=boot_m2c_call;env.context=&saved;
+         for(k=0;k<DC_M2C_CASE_COUNT;++k){
+           uint32_t result,crc=dc_m2c_run_case(&env,k,&result);
+           boot_m2c_restore(&saved);
+           CHECK(crc,dc_m2c_expect[k].crc,dc_m2c_expect[k].name);
+           CHECK(result,dc_m2c_expect[k].result,"mips2c case result matches the host oracle");
+         }
          CHECK(rt.error,DC_GOAL_OK,"native mips2c calls leave no runtime fault");
        }
        dc_goal_release_temporary(&rt);rt.error=DC_GOAL_OK;}

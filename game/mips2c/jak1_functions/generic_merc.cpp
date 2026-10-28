@@ -3604,7 +3604,7 @@ void vcallms_454(ExecutionContext* c, u16* vis) {
   // nop                        |  maddy.xyzw vf07, vf11, vf07    182
   u16 f3 = c->acc.vf.madd_flag(Mask::xyzw, c->vfs[vf07].vf, c->vf_src(vf11).vf, c->vf_src(vf07).vf.y());
   // fmand vi06, vi09           |  mulaz.xyzw ACC, vf09, vf08     183
-  c->acc.vf.mula_xyzw(c->vf_src(vf09).vf, c->vf_src(vf08).vf.z());   vis[5] = vis[9] & f2;
+  c->acc.vf.mula_xyzw(c->vf_src(vf09).vf, c->vf_src(vf08).vf.z());   vis[6] = vis[9] & f2;  // was vis[5] (AI-assisted fix): vis[6] was read uninitialized
   // nop                        |  maddax.xyzw ACC, vf10, vf08    184
   c->acc.vf.madda_xyzw(c->vfs[vf10].vf, c->vfs[vf08].vf.x());
   // nop                        |  maddy.xyzw vf08, vf11, vf08    185

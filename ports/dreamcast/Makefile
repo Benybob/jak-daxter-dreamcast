@@ -741,7 +741,7 @@ build/zstd-%.o: $(ZSTD_LIB)/decompress/%.c
 	$(KOS_CC) $(KOS_CFLAGS) $(ZSTD_FLAGS) -c $< -o $@
 goal_dgo_zst.o: goal_dgo_zst.c goal_dgo_zst.h
 	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -I$(ZSTD_LIB) -c $< -o $@
-kernel_dgo_cases.o: kernel_boot_cases.c goal_dgo.h goal_dgo_zst.h goal_bridge.h goal_fiber.h goal_main_start.h runtime_cases.h  build/game_cgo_order.h build/vf_cases.h mips2c_dc.h mips2c_sky_case.h build/mips2c/mips2c_sky_expect.h
+kernel_dgo_cases.o: kernel_boot_cases.c goal_dgo.h goal_dgo_zst.h goal_bridge.h goal_fiber.h goal_main_start.h runtime_cases.h  build/game_cgo_order.h build/vf_cases.h mips2c_dc.h mips2c_cases.h build/mips2c/mips2c_cases_expect.h
 	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -DDC_KERNEL_DGO -I. -c kernel_boot_cases.c -o $@
 # The romdisk holds KERNEL.CGO and a zstd GAME.CGO (build_kernel_boot.py).
 build/kernel-dgo-romdisk.o: build/kernel-dgo-rd/KERNEL.CGO build/kernel-dgo-rd/GAME.CGO.zst
