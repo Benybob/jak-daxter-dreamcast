@@ -28,7 +28,7 @@ GAME.CGO's mips2c lookups. No lookup gets the faulting stub any more.
 | sparticle | 2 | sp-process-block-2d (running and paused) and -3d, GOAL stand-ins for the callbacks |
 | sparticle_launcher | 2 | particle-adgif (cache miss, hit and search), a stand-in for particle-setup-adgif |
 | tfrag | 2 | stats-tfrag-asm (eight fragments) |
-| tie_methods | 2 | none yet |
+| tie_methods | 2 | none: never called on PC (below) |
 | draw_string | 1 | draw-string (two strings, both fonts, color/offset/newline codes) |
 | texture | 1 | adgif-shader<-texture-with-update! (four textures, every branch) |
 | time_of_day | 1 | time-of-day-interp-colors-scratch (64 colors, two scratchpad chunks) |
@@ -162,13 +162,20 @@ Not covered yet:
 - `sp-launch-particles-var`. It makes 15 GOAL calls, including `sp-init-fields!`,
   which fills the launch state on its stack, and `sp-get-particle`, so its stand-ins
   would have to model the launcher's field tables;
-- tie_methods. It calls no GOAL, but it needs a level's TIE data: instance arrays
-  streamed through the scratchpad, visibility bits, prototype buckets with their
-  LOD geometry, `*instance-tie-work-copy*` and `*wind-work*`;
+- tie_methods, deliberately. Neither function ever runs on the PC port, so neither
+  runs here, since the port runs the PC port's GOAL code.
+  `draw-inline-array-instance-tie`'s call in `tie-methods.gc` is commented out,
+  because the PC renderer draws TIE in C++. `draw-inline-array-prototype-tie-generic-asm`
+  runs only when `*instance-tie-work*` flags bit 2 is set, and only the instance
+  function sets it (`sw s4, 432(t0)`). A case would need a level's TIE tree,
+  prototypes and visibility bits, linked from the user's DGO at build time,
+  to verify code the game never calls. Both stay built, so the lookups get
+  native code;
 - `high-speed-reject`'s reject path. Its case runs the function on real data, but
   none of the three plane sets rejects.
 
 ## Next
 
-Every file is built. Next: a case for tie_methods built from a real level's TIE
-data, and `sp-launch-particles-var` with stand-ins that model its field tables.
+Every file is built. Next: `sp-launch-particles-var` with stand-ins that model its
+field tables. A Dreamcast TIE renderer would replace the PC port's C++ TIE
+renderer, not these functions.
