@@ -6,7 +6,7 @@ where the DGO boot's memory goes, what the port already does about it, and the o
 that are left, including unconventional uses of VRAM and sound RAM. It makes no
 hardware claims: everything here is measured in stock 16 MiB Flycast.
 
-## Where main RAM goes (DGO boot, 274 GAME.CGO files)
+## Where main RAM goes (DGO boot, 274 GAME.CGO files, before the DMA move)
 
 | Item | Bytes | Notes |
 | --- | --- | --- |
@@ -37,17 +37,28 @@ hardware claims: everything here is measured in stock 16 MiB Flycast.
   from 12 to 13.5 MiB; 14 MiB starves the KOS heap. This stands in for streaming from
   the GD-ROM, which keeps no copy in main RAM at all.
 
+- **The PS2 DMA buffers live in VRAM.** They hold PS2 packets that the CPU writes
+  and the PS2 DMA read; on the Dreamcast nothing reads them yet. The runtime has an
+  optional extension region outside the arena (`dc_goal_register_extension`), which
+  `dc_goal_resolve` accepts and which is zeroed with 32-bit stores only (Flycast drops
+  8-bit VRAM writes). The DGO boot registers idle VRAM from 1 to 6 MiB and places
+  global `dma-buffer` objects of 512 KiB or more there (`dc_goal_place_in_extension`),
+  which takes display's two 1,712 KiB buffers out of the arena: 274 files fell from
+  12.07 to 8.57 MB. The renderer decides later whether they stay, shrink, or move
+  back; until then nothing may write bytes into them.
+
+VRAM layout in the DGO boot: the framebuffer below 1 MiB, the extension region (DMA
+buffers) from 1 to 6 MiB, the staged romdisk from 6 to 8 MiB.
+
 ## Options left, best first
 
 1. **A register allocator.** Code is still the largest thing that grows with
    GAME.CGO. Keeping values in registers instead of 8-byte stack slots would cut it
    much further than any peephole.
-2. **The PS2 DMA buffers in VRAM.** They hold PS2 packets that the CPU writes and the
-   PS2 DMA read. On the Dreamcast nothing reads them yet. VRAM takes 16- and 32-bit
-   CPU writes (Flycast drops 8-bit VRAM writes), so it fits write-mostly packet
-   buffers, and the renderer decides later whether they stay there, shrink, or move
-   back. Cost: 3.4 of the 8 MiB of VRAM, which the PowerVR renderer will want for
-   framebuffers, tile-accelerator lists and textures.
+2. **Give VRAM back to the renderer.** The PowerVR renderer will want VRAM for
+   framebuffers, tile-accelerator lists and textures. The romdisk staging goes away
+   with GD-ROM streaming, and the DMA buffers should shrink to what the renderer
+   actually needs.
 3. **A smaller KOS heap need while loading.** The loader keeps a 256 KiB snapshot of
    the symbol table per object for rollback. A journal of only the changed slots, or
    the snapshot staged in VRAM during boot, would leave more room for the arena.

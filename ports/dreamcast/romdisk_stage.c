@@ -13,8 +13,10 @@
 extern const unsigned char romdisk_data[];
 extern const int romdisk_size;
 
-#define DC_STAGE_VRAM ((uint32_t *)0xa5400000u)  /* 32-bit VRAM, 4 MiB in */
-#define DC_STAGE_VRAM_BYTES (4u * 1024u * 1024u)
+/* 32-bit VRAM: the framebuffer below 1 MiB, the GOAL extension region (PS2 DMA
+ * buffers, kernel_boot_cases.c) from 1 to 6 MiB, the romdisk from 6 to 8 MiB. */
+#define DC_STAGE_VRAM ((uint32_t *)0xa5600000u)
+#define DC_STAGE_VRAM_BYTES (2u * 1024u * 1024u)
 
 int dc_stage_romdisk(void) {
   const uint32_t *source = (const uint32_t *)(const void *)romdisk_data;

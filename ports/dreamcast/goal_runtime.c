@@ -24,6 +24,10 @@ void *dc_goal_resolve(dc_goal_runtime *rt,uint32_t address,uint32_t size) {
   low=rt->capacity-rt->temporary;  /* the temporary region, [low, capacity) */
   if (rt->temporary && offset>=low && offset<=rt->capacity && size<=rt->capacity-offset)
     return rt->memory+offset;
+  if (rt->extension_memory && address>=rt->extension_base &&
+      address-rt->extension_base<=rt->extension_used &&
+      size<=rt->extension_used-(address-rt->extension_base))
+    return rt->extension_memory+(address-rt->extension_base);
   fail(rt,DC_GOAL_BOUNDS); return NULL;
 }
 static int read32(dc_goal_runtime *rt,uint32_t at,uint32_t *value) {
@@ -66,6 +70,32 @@ uint32_t dc_goal_alloc_temporary(dc_goal_runtime *rt,uint32_t bytes) {
   rt->temporary+=size;
   memset(rt->memory+(rt->capacity-rt->temporary),0,size);
   return rt->base+(rt->capacity-rt->temporary);
+}
+int dc_goal_register_extension(dc_goal_runtime *rt,void *memory,uint32_t base,uint32_t capacity) {
+  if (!rt || !rt->memory || rt->extension_memory || !memory || ((uintptr_t)memory&15u) || (base&15u) ||
+      !capacity || (capacity&15u) || capacity>UINT32_MAX-base ||
+      (base<rt->base+rt->capacity && rt->base<base+capacity)) {
+    (DC_GOAL_NOTE_SITE(2),fail(rt,DC_GOAL_BAD_ARGUMENT)); return 0;
+  }
+  rt->extension_memory=memory; rt->extension_base=base;
+  rt->extension_capacity=capacity; rt->extension_used=0;
+  return 1;
+}
+uint32_t dc_goal_alloc_extension(dc_goal_runtime *rt,uint32_t bytes) {
+  uint32_t size,address,i;
+  volatile uint32_t *words;
+  if (!rt || !rt->extension_memory || !bytes || bytes>UINT32_MAX-15u)
+    return (DC_GOAL_NOTE_SITE(2),fail(rt,DC_GOAL_BAD_ARGUMENT));
+  size=(bytes+15u)&~15u;
+  if (rt->extension_used>rt->extension_capacity || size>rt->extension_capacity-rt->extension_used) {
+    dc_goal_last_failed_alloc=size;
+    return fail(rt,DC_GOAL_OUT_OF_MEMORY);
+  }
+  address=rt->extension_base+rt->extension_used;
+  words=(volatile uint32_t *)(void *)(rt->extension_memory+rt->extension_used);
+  for (i=0;i<size/4u;++i) words[i]=0;
+  rt->extension_used+=size;
+  return address;
 }
 void dc_goal_release_temporary(dc_goal_runtime *rt) {
   if (!rt) return;

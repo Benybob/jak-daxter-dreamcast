@@ -233,21 +233,27 @@ Runtime:
 
 ## Where it stops
 
-- **Loading:** the first 274 compiled files load and start (384 of 384 boot checks),
-  through target2: cam-start, ambient and target included. This follows the memory
-  budget in [MEMORY_BUDGET.md](MEMORY_BUDGET.md) and smaller native code (next
-  section). The test ELF carries GAME.CGO as zstd, streamed object by object through
-  the vendored decompressor (`goal_dgo_zst.c`), and the boot arena is 12 MiB. A 13 MiB
-  arena leaves the KOS heap too little for loading.
-- **Spawned processes run.** cam-start's camera processes and the other startup
-  spawns run their dispatcher frames without error. A camera asks
-  `stack-size-set!` for 512 bytes (sized for PS2 frames) but suspends with 668
-  bytes of native stack in use, so the backup counterpart now passes
-  `max(2 * request, 512)` to the original method.
-- **The arena fills at task-control (object 274)**: 12.54 of 12.58 MB, with a refused
-  720-byte request. Two PS2 DMA buffers of 1,712 KiB take 3.4 MB of it (see
-  [MEMORY_BUDGET.md](MEMORY_BUDGET.md)).
-- **Lowering stops at process-taskable (object 275)**: an uninitialized read.
+- **Lowering:** all 326 GAME.CGO code files lower to SH-4. The last fixes were:
+  - a void call's phantom result copied into an integer register is 0
+    (process-taskable);
+  - `number` and `binteger` are 64-bit GPR values (pov-camera, progress-pc);
+  - a reviewed partial return in `draw-subtitle`, whose true path ends in a
+    `#when` that compiles away;
+  - a behavior's own `(protect (pp) (set! pp ...))` brackets in subtitle, each
+    lowered to a lexical scope enter and leave (`self_process_brackets`).
+- **Loading:** the first 325 files load and start (439 of 439 boot checks), and the
+  processes they spawn run their dispatcher frames. Memory is no longer the limit:
+  see [MEMORY_PLAN.md](MEMORY_PLAN.md) for the freed startups, the VRAM-staged
+  romdisk, the 13.5 MiB arena and the PS2 DMA buffers in VRAM.
+- **hud-classes-pc (object 325) stops at a nested spawn.** Its startup spawns the PC
+  HUD, whose init spawns a manipy icon process (`hud-pc-make-icon`). That child's
+  `go` throws `'initialize`, and `throw` finds no matching catch frame
+  ("ERROR: throw could not find tag initialize", then `(break)`, which is
+  `(/ 0 0)`). A process spawned from inside another spawned process's init, from a
+  startup, is the next native initialization case to support.
+- **Spawned processes.** A camera asks `stack-size-set!` for 512 bytes (sized for PS2
+  frames) but suspends with 668 bytes of native stack in use, so the backup
+  counterpart passes `max(2 * request, 512)` to the original method.
 
 ## Smaller native code (2026-10-28, AI-assisted)
 

@@ -15,8 +15,12 @@ from division_sh4 import emit_div32
 
 # GCC -m4-single -ml places singles in swapped pairs (verified with GCC).
 FLOAT_ARGUMENT_REGISTERS=(5,4,7,6,9,8,11,10)
-INTEGER_VALUE_TYPES=frozenset(('int','uint','integer'))
-TAGGED_VALUE_TYPES=frozenset(('object','basic','symbol','type','string','pair','function','pointer'))
+# number (parent of integer and float) is a 64-bit value in a GPR, as on desktop:
+# pov-camera's event handler returns one.
+INTEGER_VALUE_TYPES=frozenset(('int','uint','integer','number'))
+# binteger is a boxed fixnum (value << 3), a tagged object in a GPR: progress-pc
+# passes one to an (function binteger pair object).
+TAGGED_VALUE_TYPES=frozenset(('object','basic','symbol','type','string','pair','function','pointer','binteger'))
 
 def native_identifiers(names):
     """Readable legacy spellings when unique; reversible UTF-8 names otherwise.
@@ -611,6 +615,51 @@ def lexical_process_bracket(function,index,binding):
     ops[leave]=dict(ops[leave],kind='process_scope_leave')
     return dict(function,instructions=ops,lexical_saved=saved)
 
+def self_process_brackets(function,index):
+    """A behavior's own (old=self; self=X; ...; self=old) brackets (AI-assisted).
+
+    subtitle.gc's trans runs ja-aframe-num with pp set to the movie's process
+    twice: (protect (pp) (set! pp (handle->process ...)) ...). Each pair becomes a
+    lexical scope enter and leave, as lexical_process_bracket proves for one. The
+    brackets must not overlap, and each restore must use a single copy of self
+    taken outside every bracket, so every saved copy is the entry value; the
+    first one is the fault cleanup's restore value (pinned in its own slot).
+    """
+    ops=[dict(op) for op in function['instructions']]
+    writes=[p for p,op in enumerate(ops) if index in op['writes'] and op['kind']!='fixed_register_reset']
+    if any(op['kind']=='fixed_register_reset' and index in op['writes'] for op in ops[1:]):
+        raise ValueError('behavior self reset must be at function entry')
+    if not writes or len(writes)%2:
+        raise ValueError('behavior self brackets require assignment and restore pairs')
+    pairs=[(writes[k],writes[k+1]) for k in range(0,len(writes),2)]
+    def inside_any(position): return any(enter<position<leave for enter,leave in pairs)
+    first=None
+    for enter,leave in pairs:
+        for position in (enter,leave):
+            if ops[position]['kind']!='move' or len(ops[position]['reads'])!=1 or ops[position]['writes']!=[index]:
+                raise ValueError('behavior self assignment must be a plain move')
+        target,saved=ops[enter]['reads'][0],ops[leave]['reads'][0]
+        if index in (target,saved) or target==saved:
+            raise ValueError('behavior self assignment must not restore its own entry value')
+        writers=[p for p,op in enumerate(ops) if saved in op['writes']]
+        if len(writers)!=1 or not writers[0]<enter or ops[writers[0]]['kind']!='move' or \
+           ops[writers[0]]['reads']!=[index] or inside_any(writers[0]):
+            raise ValueError('behavior self restore must use a single entry-value copy of self')
+        for position,op in enumerate(ops):
+            inside=enter<position<leave
+            if inside and op['kind']=='return':
+                raise ValueError('return inside behavior self bracket is unsupported')
+            if op['kind'] in ('branch','goto'):
+                lands_inside=isinstance(op['target'],int) and enter<op['target']<=leave
+                if inside and not lands_inside:
+                    raise ValueError('control transfer leaves behavior self bracket')
+                if not inside and position!=leave and lands_inside:
+                    raise ValueError('control transfer enters behavior self bracket')
+        ops[enter]=dict(ops[enter],kind='process_scope_enter')
+        ops[leave]=dict(ops[leave],kind='process_scope_leave')
+        if first is None: first=saved
+    return dict(function,instructions=ops,lexical_saved=first,lexical_saved_pinned=True)
+
 SUSPEND_TOP_THREAD=44  # process top-thread
 SUSPEND_HOOK=12        # thread suspend-hook
 
@@ -758,7 +807,9 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
     # copies of one are dropped, and a (none) function's return of one reads nothing.
     # A none copy into a value-typed register (a case arm returning a void
     # call's result, e.g. (('die) (deactivate self))) defines it as #f: desktop
-    # leaves the callee's rax there; the native void call has no result.
+    # leaves the callee's rax there; the native void call has no result. Into an
+    # integer register ((the-as int (ja-post)) in process-taskable-hide-enter, a
+    # state enter whose value is discarded) it defines 0.
     kinds={r['id']:r['type'] for r in function['registers']}
     # Only a void call's phantom result ("call f (ret igpr-N)" writing nothing);
     # a none register nothing produces stays an uninitialized read.
@@ -782,6 +833,10 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
            op['reads'][0] in void_results and
            len(op['writes'])==1 and kinds.get(op['writes'][0]) not in (None,'none') and runtime and
            scalar_kind(kinds[op['writes'][0]],True) in ('object','symbol') else
+        dict(op,kind='constant',value=0,reads=[],text='none value as 0: '+op.get('text',''))
+        if op['kind']=='move' and len(op['reads'])==1 and kinds.get(op['reads'][0])=='none' and
+           op['reads'][0] in void_results and
+           len(op['writes'])==1 and runtime and kinds.get(op['writes'][0]) in INTEGER_VALUE_TYPES else
         dict(op,kind='nop',reads=[],writes=[],text='none copy: '+op.get('text',''))
         if op['kind']=='move' and len(op['reads'])==1 and kinds.get(op['reads'][0])=='none' else
         dict(op,reads=[]) if function.get('return_type')=='none' and op['kind']=='return' and
@@ -887,6 +942,10 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
         function=lexical_process_bracket(function,lexical[0],fixed[lexical[0]])
         context_reads=[lexical[0]]
         if 'lexical_saved' not in function: lexical=[]  # read-only: no scope to restore
+    elif implicit and any(implicit[0]['register'] in op['writes'] and op['kind']=='move'
+                          for op in function['instructions']):
+        function=self_process_brackets(function,implicit[0]['register'])
+        lexical=[implicit[0]['register']]
     implicit_self=[implicit[0]['register']] if implicit else None
     translated=[]
     for position,op in enumerate(function['instructions']):
@@ -971,10 +1030,15 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
             offender=function['instructions'][error.node]
             stored=(offender['kind']=='store_memory' and len(error.missing)==1 and
                     offender['reads'][:1]==list(error.missing) and offender['reads'].count(offender['reads'][0])==1)
+            # A reviewed partial return (dreamcast_unassigned_locals.json): a value
+            # set on other paths and returned unset on one starts as #f.
+            returned=(function.get('partial_return') and offender['kind']=='return' and
+                      len(error.missing)==1 and registers[next(iter(error.missing))]['class']=='gpr64')
             partial=error.missing&assigned-arguments
-            if not stored or partial!=error.missing or partial&zero_entry or \
+            if not (stored or returned) or partial!=error.missing or partial&zero_entry or \
                any(registers[index]['class'] not in ('gpr64','float','int128') for index in partial): break
             zero_entry|=partial
+            if returned: false_entry|=partial
     try:
         validate_definitions(function,set(registers),vf_entry|zero_entry)
     except UninitializedRead as error:
@@ -1028,6 +1092,9 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
         if source in vectors: raise ValueError('register address of a vf value is unsupported')
         if not runtime: raise ValueError('register addresses require the native runtime profile')
         addressed.add(source)
+    # The fault cleanup reads a behavior's first saved self after later brackets,
+    # outside liveness: keep it in its own slot.
+    if function.get('lexical_saved_pinned'): addressed.add(function['lexical_saved'])
     if wide and not runtime: raise ValueError('128-bit values require the native runtime profile')
     parameter_types=[scalar_kind(p['type'],runtime) for p in function['parameters']]
     if len(parameter_types)>8: raise ValueError('more than eight arguments unsupported')
@@ -1750,6 +1817,7 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
                 'optimization':'stack_slot_reuse' if optimize else 'stack_baseline','instruction_stream_bytes':instruction_bytes,
                 'stack_slot_count':frame//8,'virtual_register_count':len(registers),
                 **({'zero_locals':list(function['zero_locals'])} if function.get('zero_locals') else {}),
+                **({'zero_locals':['(return)']} if function.get('partial_return') else {}),
                 'baseline_stack_bytes':len(registers)*8+16+(8 if lexical and stack_objects else 0)+(16+stack_objects*8 if stack_objects else 0),
                 'coalesced_stack_moves':coalesced_moves,
                 **({'stack_object_slots':stack_objects,'stack_object_region':stack_region} if stack_objects else {}),
@@ -2030,6 +2098,8 @@ if __name__=='__main__':
             for f in doc['functions']:
                 if f['name'] in reviewed:
                     entry=reviewed[f['name']]
+                    if entry.get('partial_return') is True and entry.get('reason') and not entry.get('locals'):
+                        f['partial_return']=True; continue
                     if not entry.get('reason') or not entry.get('locals'): raise ValueError('reviewed zero local entry needs locals and a reason')
                     f['zero_locals']=list(entry['locals'])
                     if entry.get('false_locals'): f['false_locals']=list(entry['false_locals'])

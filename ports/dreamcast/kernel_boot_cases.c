@@ -148,6 +148,10 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
     /* Startups spawn processes (time-of-day): their scopes are authenticated. */
     CHECK(dc_goal_register_process_spans(&rt,&game_spans,game_rows,64),1,"ownership ledger registered for GAME.CGO startups");
     CHECK(dc_goal_register_pp_scope(&rt,&game_scopes),1,"lexical scope metadata registered for GAME.CGO startups");
+    /* Idle VRAM from 1 to 6 MiB (romdisk_stage.c) holds the PS2 DMA buffers. */
+    CHECK(dc_goal_register_extension(&rt,(void *)0xa5100000u,0xa5100000u,5u*1024u*1024u),1,
+          "idle VRAM registered as the GOAL extension region");
+    CHECK(dc_goal_place_in_extension(&rt,"dma-buffer",512u*1024u),1,"large dma-buffers placed in VRAM");
     if(file){
       method_set_depth(&rt,1);
       loaded=dc_goal_load_dgo(&rt,file,sync_code,NULL,&game);fclose(file);
@@ -163,6 +167,9 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
       CHECK(loaded?1:100+rt.error,1,"GAME.CGO prefix links and runs each original startup in order");
       CHECK(game.objects,DC_GAME_PREFIX,"GAME.CGO holds the compiled prefix of original engine files");
       CHECK(game.initializers,DC_GAME_PREFIX,"each engine file runs its top-level startup");
+      {uint32_t placed_bytes,placed=dc_goal_extension_placed(&placed_bytes);
+       CHECK(placed,2,"display's two global DMA buffers live in VRAM");
+       CHECK(placed_bytes>=2u*1712u*1024u && rt.extension_used>=placed_bytes,1,"they take their 1,712 KiB each there");}
       for(i=0;i<DC_GAME_PREFIX;++i)CHECK(strcmp(game.object_names[i],dc_game_order[i]),0,"engine objects in original GAME.CGO order");
       CHECK(entry(&rt,"rand-vu-init")!=0 && entry(&rt,"truncate")!=0,1,"original math functions are installed");
       code_bytes+=game.code_bytes;rt.error=DC_GOAL_OK;

@@ -38,5 +38,9 @@
     ],
     "assigned_elsewhere": true,
     "reason": "collectables.gc:1381-1388: the same original compiler pattern as update-vis-volumes, once per pickup type. Each v1-N is read inside its own (set! v1-N (when sv-64 ...)) as (set! sv-192 (the-as (pointer process) v1-N)), and sv-192 is overwritten with (-> sv-64 ppointer) before any use. Dreamcast: zero at entry."
+  },
+  "draw-subtitle": {
+    "partial_return": true,
+    "reason": "subtitle.gc: the (when ...) body ends in (#when PC_SUBTITLE_DEBUG ...), which compiles to nothing, so the true path never sets the returned value; desktop returns whatever rax held. Both callers discard it. Dreamcast: the value starts as #f, the false path's value."
   }
 }

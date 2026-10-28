@@ -119,7 +119,7 @@ class ReviewedZeroLocalTest(unittest.TestCase):
         reviewed = json.loads((Path(__file__).resolve().parents[1] / 'dreamcast_unassigned_locals.json').read_text())
         for name, entry in reviewed.items():
             if name.startswith('_'): continue
-            self.assertTrue(entry['locals'] and entry['reason'], name)
+            self.assertTrue((entry.get('locals') or entry.get('partial_return') is True) and entry['reason'], name)
 
 
 class TypeReferenceImportTest(unittest.TestCase):
@@ -177,6 +177,34 @@ class VoidResultValueTest(unittest.TestCase):
                   {'kind': 'return', 'reads': [2], 'writes': []}]}
         data, report = compile_function(fn, runtime=True)
         self.assertIn('pointer:#f', [r['symbol'] for r in report['relocations']])
+
+
+    def test_void_call_result_in_an_integer_register_is_zero(self):
+        """process-taskable-hide-enter: (the-as int (ja-post)) through a none copy."""
+        fn = {'name': 'dc-void-int', 'asm': False, 'return_type': 'int', 'return_abi_type': 'int',
+              'registers': [reg(0, typ='(function none)'), reg(1, typ='none'), reg(2, typ='none'),
+                            reg(3, typ='int')],
+              'parameters': [], 'implicit_parameters': [], 'fixed_registers': [], 'locals': [],
+              'register_aliases': [],
+              'instructions': [
+                  {'kind': 'symbol_value', 'symbol': 'dc-hook', 'reads': [], 'writes': [0]},
+                  {'kind': 'call', 'reads': [0], 'writes': [], 'text': 'call igpr-0 (ret igpr-1) (args)',
+                   'abi': {'parameters': [], 'return_type': 'none'}},
+                  {'kind': 'nop', 'reads': [], 'writes': [], 'text': 'mov igpr-2, igpr-1'},
+                  {'kind': 'move', 'reads': [2], 'writes': [3]},
+                  {'kind': 'return', 'reads': [3], 'writes': []}]}
+        data, report = compile_function(fn, runtime=True)
+        self.assertGreater(len(data), 0)
+
+    def test_none_register_nothing_produces_still_refuses(self):
+        fn = {'name': 'dc-no-producer', 'asm': False, 'return_type': 'int', 'return_abi_type': 'int',
+              'registers': [reg(1, typ='none'), reg(3, typ='int')],
+              'parameters': [], 'implicit_parameters': [], 'fixed_registers': [], 'locals': [],
+              'register_aliases': [],
+              'instructions': [{'kind': 'move', 'reads': [1], 'writes': [3]},
+                               {'kind': 'return', 'reads': [3], 'writes': []}]}
+        with self.assertRaisesRegex(ValueError, 'uninitialized'):
+            compile_function(fn, runtime=True)
 
 
 class MipsZeroTest(unittest.TestCase):

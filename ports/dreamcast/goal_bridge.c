@@ -180,6 +180,23 @@ static int process_heap_type_allowed(dc_goal_runtime *rt,uint32_t type) {
   if(rt->error==DC_GOAL_OK)(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);
   return 0; /* nested process ownership needs a verified parent-subspan protocol */
 }
+/* Extension placement (AI-assisted): global-heap objects of one named type, at
+ * least min bytes, go to the runtime's extension region instead of the arena.
+ * The DGO boot places display's two PS2 DMA buffers (dma-buffer, 1,712 KiB each)
+ * in idle VRAM: the CPU writes them and nothing on the Dreamcast reads them yet. */
+static char placement_type[64];static uint32_t placement_min,placed_objects,placed_bytes;
+static int placement_matches(dc_goal_runtime *rt,uint32_t type,uint32_t bytes){
+  uint32_t symbol;enum dc_goal_error prior=rt->error;
+  if(!placement_type[0] || !rt->extension_memory || bytes<placement_min)return 0;
+  symbol=dc_goal_find(rt,placement_type);rt->error=prior;
+  return symbol && dc_goal_symbol_value(rt,symbol)==type;
+}
+int dc_goal_place_in_extension(dc_goal_runtime *rt,const char *type_name,uint32_t min_bytes){
+  if(!rt || !rt->extension_memory || !type_name || !type_name[0] || strlen(type_name)>=sizeof placement_type ||
+     !min_bytes){if(rt)(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);return 0;}
+  strcpy(placement_type,type_name);placement_min=min_bytes;placed_objects=placed_bytes=0;return 1;
+}
+uint32_t dc_goal_extension_placed(uint32_t *bytes){if(bytes)*bytes=placed_bytes;return placed_objects;}
 static uint32_t global_basic_new(dc_goal_runtime *rt,uint32_t type,uint32_t bytes) {
   int configured=dc_goal_process_spans_registered(rt),tracked=0;uint32_t result;
   if(configured<0)return 0;
@@ -187,6 +204,14 @@ static uint32_t global_basic_new(dc_goal_runtime *rt,uint32_t type,uint32_t byte
   if(tracked && (bytes<112 || dc_goal_process_span_room(rt)!=1)){
     if(rt->error==DC_GOAL_OK)(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);
     return 0;
+  }
+  if(!tracked && placement_matches(rt,type,bytes)){
+    uint32_t allocation=dc_goal_alloc_extension(rt,bytes);
+    volatile uint32_t *header;
+    if(!allocation)return 0;
+    header=dc_goal_resolve(rt,allocation,4);*header=type;
+    ++placed_objects;placed_bytes+=bytes;
+    return allocation+4u;
   }
   result=dc_goal_new_basic(rt,type,bytes);
   if(result && tracked && !dc_goal_process_span_note(rt,result,bytes,NULL))return 0;

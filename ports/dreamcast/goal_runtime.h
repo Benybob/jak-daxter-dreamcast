@@ -31,6 +31,10 @@ typedef struct {
    * linker places at the top of the heap and frees after it runs. Bytes taken
    * from the top, and the startup's exact code entry while it is resident. */
   uint32_t temporary,temporary_entry,temporary_bytes,temporary_symbol;
+  /* An optional second region outside the arena (AI-assisted), bump-allocated
+   * and never freed: idle VRAM in the DGO boot, for bulk write-mostly objects. */
+  unsigned char *extension_memory;
+  uint32_t extension_base,extension_capacity,extension_used;
 } dc_goal_runtime;
 
 int dc_goal_init(dc_goal_runtime *rt,void *memory,uint32_t capacity,uint32_t virtual_base);
@@ -44,6 +48,11 @@ uint32_t dc_goal_alloc(dc_goal_runtime *rt,uint32_t bytes);
 uint32_t dc_goal_alloc_temporary(dc_goal_runtime *rt,uint32_t bytes);
 /* Frees the temporary region; a resident startup's symbol becomes #f. */
 void dc_goal_release_temporary(dc_goal_runtime *rt);
+/* Registers the extension region once: 16-byte aligned memory addressed from
+ * base, outside the arena. Its allocations are zeroed with 32-bit stores only
+ * (VRAM ignores 8-bit writes) and dc_goal_resolve accepts them. */
+int dc_goal_register_extension(dc_goal_runtime *rt,void *memory,uint32_t base,uint32_t capacity);
+uint32_t dc_goal_alloc_extension(dc_goal_runtime *rt,uint32_t bytes);
 /* Size of the most recent arena request that did not fit (diagnostics only). */
 extern uint32_t dc_goal_last_failed_alloc;
 /* First failure of a GOAL-called type bridge (type new, method-set!) since the

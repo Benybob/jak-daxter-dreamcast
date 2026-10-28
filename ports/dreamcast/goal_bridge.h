@@ -120,4 +120,8 @@ int dc_goal_resize_main_backup(dc_goal_runtime *,uint32_t process,uint32_t reser
  * Registered process ownership and supported KOS owner/stack required. No
  * fiber/yield/cross-stack catch lifetime yet; guest RA/SP is never executed. */
 int dc_goal_install_catch_bridge(dc_goal_runtime *,dc_goal_cache_sync,dc_goal_module_result *);
+/* Global-heap objects of type_name with at least min_bytes go to the runtime's
+ * extension region (dc_goal_register_extension). Placed count, and their bytes. */
+int dc_goal_place_in_extension(dc_goal_runtime *rt,const char *type_name,uint32_t min_bytes);
+uint32_t dc_goal_extension_placed(uint32_t *bytes);
 #endif
