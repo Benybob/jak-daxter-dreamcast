@@ -1096,6 +1096,16 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
         if d is not None:
             e.word(0x50e0|low<<8|d); e.word(0x50e0|high<<8|(d+1)); return  # mov.l @(disp,r14),Rn
         address(index); e.load(low,8); e.add_immediate(8,4); e.load(high,8)
+    def load_address(index,reg=2):
+        # The low word of a 64-bit base: native addresses are 32 bits.
+        if registers[index]['class']!='gpr64': raise ValueError('expected integer virtual value')
+        d=near(index,8)
+        if d is not None: e.word(0x50e0|reg<<8|d)
+        else: address(index); e.load(reg,8)
+    def offset_base(offset):
+        if not offset: return
+        if -128<=offset<=127: e.add_immediate(2,offset)
+        else: constant(3,offset); e.add(2,3)
     def store64(index,low=0,high=1):
         if registers[index]['class']!='gpr64': raise ValueError('expected integer virtual value')
         d=near(index,8)
@@ -1388,9 +1398,7 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
                     if loading and op.get('memory_class')!=registers[value]['class']:
                         raise ValueError('memory/register class mismatch')
                     if not loading: load128(value)
-                    load64(base,2,3)
-                    if -128<=offset<=127: e.add_immediate(2,offset)
-                    else: constant(3,offset); e.add(2,3)
+                    load_address(base); offset_base(offset)
                     for n,reg in enumerate((4,5,6,7)):
                         if n: e.add_immediate(2,4)
                         if loading: e.load(reg,2)
@@ -1407,18 +1415,26 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
                     raise ValueError('unsupported floating memory width/sign')
                 if loading and op['memory_class']!=registers[value]['class']:
                     raise ValueError('memory/register class mismatch')
-                load64(base,2,3)
-                if -128<=offset<=127: e.add_immediate(2,offset)
-                else: constant(3,offset); e.add(2,3)
+                load_address(base)
+                # MOV @(disp,Rm) reaches 0..15 units of the access size (MOV.B/W
+                # only through R0, the value register here); 8 bytes need disp+4.
+                unit=4 if size==8 else size
+                disp=offset//unit if (not floating and 0<=offset and offset%unit==0 and
+                                      offset+size-unit<=15*unit) else None
+                if disp is None: offset_base(offset)
                 # Typed native addresses must satisfy SH-4's natural alignment.
                 # Pairs use tag-adjusted offsets (-2/+2), restoring word alignment.
                 if loading:
                     if floating:
                         e.rr(0xf008,0,2); store_float(value)
                     else:
-                        e.rr({1:0x6000,2:0x6001,4:0x6002,8:0x6002}[size],0,2)
-                        if size==8:
-                            e.add_immediate(2,4); e.load(1,2)
+                        if disp is not None:
+                            e.word({1:0x8420,2:0x8520,4:0x5020,8:0x5020}[size]|disp)
+                            if size==8: e.word(0x5120|(disp+1))
+                        else:
+                            e.rr({1:0x6000,2:0x6001,4:0x6002,8:0x6002}[size],0,2)
+                            if size==8: e.add_immediate(2,4); e.load(1,2)
+                        if size==8: pass  # both words loaded
                         elif op['signed']: sign_extend()
                         else:
                             if size in (1,2): e.rr(0x600c if size==1 else 0x600d,0,0)
@@ -1427,8 +1443,13 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
                 elif floating:
                     load_float(value); e.rr(0xf00a,2,0)
                 else:
-                    load64(value); e.rr({1:0x2000,2:0x2001,4:0x2002,8:0x2002}[size],2,0)
-                    if size==8: e.add_immediate(2,4); e.store(2,1)
+                    load64(value)
+                    if disp is not None:
+                        e.word({1:0x8020,2:0x8120,4:0x1200,8:0x1200}[size]|disp)
+                        if size==8: e.word(0x1210|(disp+1))
+                    else:
+                        e.rr({1:0x2000,2:0x2001,4:0x2002,8:0x2002}[size],2,0)
+                        if size==8: e.add_immediate(2,4); e.store(2,1)
             elif kind=='call':
                 if runtime and 'abi' in op:
                     if scalar_kind(registers[reads[0]]['type'],True)!='function':
