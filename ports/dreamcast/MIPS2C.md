@@ -17,7 +17,7 @@ GAME.CGO's mips2c lookups. No lookup gets the faulting stub any more.
 | ripple | 4 | ripple-execute-init, apply-wave-table, matrix-scale |
 | bones | 3 | draw-bones-check-longest-edge-asm (four radii) |
 | generic_effect2 | 3 | generic-no-light-dproc |
-| shadow | 15 | shadow-init-vars, shadow-xform-verts, shadow-calc-dual-verts |
+| shadow | 15 | shadow-init-vars, shadow-xform-verts, shadow-calc-dual-verts; shadow-execute over a tetrahedron (all 13 helpers, GOAL stand-ins) |
 | ocean | 3 | init-ocean-far-regs, render-ocean-quad (two quads, one clipped) |
 | collide_func | 2 | moving-sphere-triangle-intersect, called through `jalr` (two misses, a face hit) |
 | collide_probe | 2 | collide-probe-node (a two-level node tree) |
@@ -25,8 +25,8 @@ GAME.CGO's mips2c lookups. No lookup gets the faulting stub any more.
 | joint | 2 | cspace<-parented-transformq-joint! (unscaled and scaled parent) |
 | merc_blend_shape | 2 | setup-blerc-chains-for-one-fragment (two fragments) |
 | ocean_vu0 | 2 | ocean-interp-wave (two frame pairs) |
-| sparticle | 2 | none yet |
-| sparticle_launcher | 2 | none yet |
+| sparticle | 2 | sp-process-block-2d (running and paused) and -3d, GOAL stand-ins for the callbacks |
+| sparticle_launcher | 2 | particle-adgif (cache miss, hit and search), a stand-in for particle-setup-adgif |
 | tfrag | 2 | stats-tfrag-asm (eight fragments) |
 | tie_methods | 2 | none yet |
 | draw_string | 1 | draw-string (two strings, both fonts, color/offset/newline codes) |
@@ -103,8 +103,18 @@ paths stay in C++ (no `jalr` back into GOAL). The region is 16 KiB aligned on bo
 sides, as the PS2 scratchpad is, because translated code forms scratchpad addresses
 with `ori` (`render-ocean-quad`: `ori t4, spad, 12288`). Afterwards every pointer into the
 region becomes its offset, and `#f` becomes a marker. The boot runs the same cases
-through the native SH-4 build. All 20 match the oracle bit for bit, both the
-region CRC and each case's result (491 of 491 boot checks).
+through the native SH-4 build. All 23 match the oracle bit for bit, both the
+region CRC and each case's result (497 of 497 boot checks).
+
+**GOAL stand-ins.** A case can give a function symbol a stand-in for the GOAL
+function the translated code calls with `jalr` (`env->goal_function`). On SH-4 the
+symbol holds a C thunk in the boot, and `jalr` calls it natively. On the host it
+holds a fake address that the oracle's `jalr` trampoline dispatches. A call into a
+built mips2c function reaches its generic entry on both sides
+(`env->mips2c_function`). Nested calls get their own stack below the caller's, as
+`alloca` gives them on SH-4. The stand-ins log each call in the region and only
+move bits, never doing float arithmetic, which could round differently on the two
+sides. Their addresses become markers in the normalization.
 
 Found on the way:
 
@@ -120,7 +130,12 @@ Found on the way:
   - small host addresses let packed data look like region pointers to the
     normalization;
   - the boot's region was only 16-byte aligned, so `ori`-formed scratchpad
-    addresses landed elsewhere than on the host.
+    addresses landed elsewhere than on the host;
+  - a denormal float in a particle sprite. The SH-4 FPU runs with denormals
+    flushed to zero (FPSCR.DN), like the PS2's VU0, while desktop x86 keeps them.
+    So `vmax` of a denormal differs between the two. Case data uses normal
+    floats; game data that relies on denormals would differ from desktop the
+    same way, but match the PS2.
 - **Lint false positives.** `lint_mips2c.py` flags `t6` in generic_effect2;
   it is written in a branch the straight-line scan reads after the use. In the
   12 two-caller files it finds no `vis` candidates. Its 45 register reads are
@@ -129,7 +144,7 @@ Found on the way:
   `draw-large-polygon-ocean`). The 1-caller files add only `t9` in time_of_day
   (`mov fp, t9`).
 - **Memory.** The GOAL arena is 13 MiB (it holds 10.7 MB), so the KOS heap has
-  room to load GAME.CGO with all 21 files linked, at `-Os`.
+  room to load GAME.CGO with all 24 files linked, at `-Os`.
 
 Not covered yet:
 - the 14 collide-cache functions, which need a cache filled from collision data;
@@ -139,18 +154,21 @@ Not covered yet:
 - `bones-mtx-calc`, which follows the joint records' pointers (the oracle asserts
   16-byte alignment on them) and needs a real skeleton, and the hardware window,
   which only its DMA wait reaches;
-- `shadow-execute` (it calls `flush-cache` and `camera-pos` in GOAL) and the other
-  12 shadow helpers;
+- shadow geometry with double-sided verts, tris and edges (the case's tetrahedron
+  has none), and shadow objects chained by the next pointer;
 - `calc-animation-from-spr`, `blerc-execute`, `ocean-generate-verts`,
   `collide-do-primitives`, `collide-probe-instance-tie`, `generic-tie-convert`
   and `draw-inline-array-tfrag`. They call GOAL, or need a level's data;
-- sparticle, sparticle_launcher and tie_methods, whose main paths call GOAL
-  (particle callbacks, `sp-get-particle`) or need a prototype/instance setup;
+- `sp-launch-particles-var`. It makes 15 GOAL calls, including `sp-init-fields!`,
+  which fills the launch state on its stack, and `sp-get-particle`, so its stand-ins
+  would have to model the launcher's field tables;
+- tie_methods. It calls no GOAL, but it needs a level's TIE data: instance arrays
+  streamed through the scratchpad, visibility bits, prototype buckets with their
+  LOD geometry, `*instance-tie-work-copy*` and `*wind-work*`;
 - `high-speed-reject`'s reject path. Its case runs the function on real data, but
   none of the three plane sets rejects.
 
 ## Next
 
-Every file is built. Next come cases for the functions that call back into GOAL.
-Those need the oracle to stand in for the GOAL callees, such as `flush-cache` and
-the particle callbacks.
+Every file is built. Next: a case for tie_methods built from a real level's TIE
+data, and `sp-launch-particles-var` with stand-ins that model its field tables.

@@ -17,6 +17,13 @@
 
 #define DC_M2C_REGION 0x10000u
 #define DC_M2C_FALSE_MARK 0xfffffff7u
+#define DC_M2C_GOAL_MARK 0xfff0f000u  /* + slot: a stand-in's address */
+
+struct dc_m2c_env;
+/* A case's stand-in for a GOAL function the translated code calls with jalr: the
+ * eight argument registers in, v0 out. */
+typedef uint64_t (*dc_m2c_goal_fn)(struct dc_m2c_env *, const uint64_t *args8);
+#define DC_M2C_GOAL_SLOTS 12u
 
 typedef struct dc_m2c_env {
   unsigned char *region; /* DC_M2C_REGION bytes */
@@ -27,6 +34,14 @@ typedef struct dc_m2c_env {
   /* The same call made the way translated code calls another mips2c function:
    * jalr on the GOAL stub (SH-4), desktop's trampoline (host). */
   uint64_t (*call_jalr)(struct dc_m2c_env *, const char *name, const uint64_t *args8);
+  /* An address to store in a function symbol: jalr on it runs fn (slot <
+   * DC_M2C_GOAL_SLOTS). SH-4: a C thunk; host: dispatched in the jalr trampoline. */
+  uint32_t (*goal_function)(struct dc_m2c_env *, unsigned slot, dc_m2c_goal_fn fn);
+  /* The address jalr calls for a built mips2c function: its dc-mips2c stub (SH-4),
+   * an entry desktop's trampoline dispatches (host). */
+  uint32_t (*mips2c_function)(struct dc_m2c_env *, const char *name);
+  /* Memory at a GOAL address outside the region (the translated code's stack). */
+  void *(*memory)(struct dc_m2c_env *, uint32_t address);
   void *context;
 } dc_m2c_env;
 
@@ -583,6 +598,169 @@ static inline uint32_t dc_m2c_draw_string(dc_m2c_env *e) {
   return result;  /* packet bytes per string */
 }
 
+/* ---- GOAL stand-ins (env->goal_function) for the cases below. They log their calls
+ * in the region and only move bits: no float arithmetic, which C compilers may
+ * round differently on the two sides. ---- */
+#define DC_M2C_LOG 0x0e00u  /* [0] count, then one word per entry */
+static inline void dc_m2c_log(dc_m2c_env *e, uint32_t value) {
+  uint32_t n;
+  memcpy(&n, e->region + DC_M2C_LOG, 4);
+  if (n < 127) { dc_m2c_u(e, DC_M2C_LOG + 4 + 4 * n, value); dc_m2c_u(e, DC_M2C_LOG, n + 1); }
+}
+static inline uint32_t dc_m2c_off(dc_m2c_env *e, uint64_t address) { return (uint32_t)address - e->base; }
+/* The stand-in addresses this case handed out: they differ between the two sides,
+ * so the normalization turns any copy of them in the region into a marker. */
+static uint32_t dc_m2c_goal_address[DC_M2C_GOAL_SLOTS];
+static inline uint32_t dc_m2c_goal(dc_m2c_env *e, unsigned slot, dc_m2c_goal_fn fn) {
+  return dc_m2c_goal_address[slot] = e->goal_function(e, slot, fn);
+}
+
+/* ---- shadow: shadow-execute over one shadow object (a tetrahedron), with
+ * flush-cache and camera-pos standing in for GOAL ---- */
+enum { DC_M2C_SHADOW_CAMPOS = 0x0400 };
+static uint64_t dc_m2c_flush_cache(dc_m2c_env *e, const uint64_t *a) { dc_m2c_log(e, 0xf1u << 24 | (uint32_t)a[0]); return 0; }
+static uint64_t dc_m2c_camera_pos(dc_m2c_env *e, const uint64_t *a) {
+  (void)a; dc_m2c_log(e, 0xca << 24); return dc_m2c_ptr(e, DC_M2C_SHADOW_CAMPOS);
+}
+static inline uint32_t dc_m2c_shadow_execute(dc_m2c_env *e) {
+  enum { CAMERA = 0x0004, SDATA = 0x0600, CHAIN = 0x1000, GSF = 0x8000, OUT = 0xa000, SPAD = 0x4000 };
+  enum { SETTINGS = CHAIN + 16, GEO = CHAIN + 112, GEO_BYTES = 528 };
+  static const float vert[4][3] = {{0, 0, 0}, {2, 0, 0}, {0, 0, 2}, {0, 2, 0}};
+  static const uint8_t tris[16] = {0, 1, 2, 0, 0, 3, 1, 0, 1, 3, 2, 0, 2, 3, 0, 0};
+  static const uint8_t edges[24] = {0, 1, 0, 1, 1, 2, 0, 2, 2, 0, 0, 3, 0, 3, 1, 3, 3, 1, 1, 2, 3, 2, 2, 3};
+  static const uint16_t counts[6] = {4, 0, 4, 6, 0, 0};       /* verts, double verts, tris, edges, double tris/edges */
+  static const uint32_t offsets[6] = {400, 464, 480, 496, 528, 528};
+  uint32_t i, state = 0x5ade5u;
+  uint64_t end;
+  e->set_symbol(e, "*math-camera*", dc_m2c_ptr(e, CAMERA));
+  e->set_symbol(e, "*fake-scratchpad-data*", dc_m2c_ptr(e, SPAD));
+  e->set_symbol(e, "*gsf-buffer*", dc_m2c_ptr(e, GSF));
+  e->set_symbol(e, "flush-cache", dc_m2c_goal(e, 0, dc_m2c_flush_cache));
+  e->set_symbol(e, "camera-pos", dc_m2c_goal(e, 1, dc_m2c_camera_pos));
+  e->set_symbol(e, "*shadow-data*", dc_m2c_ptr(e, SDATA));
+  for (i = 0; i < 64; ++i) dc_m2c_u(e, SDATA + 4 * i, 0x10000000u * (i & 7) + 0x101u * i);  /* gif tags */
+  dc_m2c_f(e, CAMERA + 0, 1.0f);
+  for (i = 0; i < 16; ++i) dc_m2c_f(e, CAMERA + 364 + 4 * i, (i % 5 == 0) ? 1.0f : dc_m2c_rand(&state) * 0.0625f);
+  dc_m2c_vec(e, DC_M2C_SHADOW_CAMPOS, 0.0f, 10.0f, 20.0f, 1.0f);
+  /* the chain: one cnt tag over the settings and the geometry, then end */
+  dc_m2c_u(e, CHAIN + 0, 1u << 28 | (96 + GEO_BYTES) / 16);
+  dc_m2c_u(e, CHAIN + 16 + 96 + GEO_BYTES, 7u << 28);
+  dc_m2c_vec(e, SETTINGS + 0, 0.5f, 3.0f, 0.5f, 0.0f); dc_m2c_u(e, SETTINGS + 12, 1 | 8);  /* camera check, scissor top */
+  dc_m2c_vec(e, SETTINGS + 16, 0.25f, -1.0f, 0.125f, 8.0f);
+  dc_m2c_vec(e, SETTINGS + 32, 0.0f, 1.0f, 0.0f, -0.5f);
+  dc_m2c_vec(e, SETTINGS + 48, 0.0f, 1.0f, 0.0f, 4.0f);
+  dc_m2c_vec(e, SETTINGS + 64, 0.0f, -1.0f, 0.0f, 6.0f);
+  for (i = 0; i < 6; ++i) {
+    memcpy(e->region + GEO + 8 + 2 * i, &counts[i], 2);
+    dc_m2c_u(e, GEO + 20 + 4 * i, offsets[i]);
+  }
+  for (i = 0; i < 2 * 32; ++i)  /* two joints' 128-byte records: a matrix first */
+    dc_m2c_f(e, GEO + 144 + 4 * i, (i % 32 < 16) ? ((i % 5 == 0) ? 1.0f : dc_m2c_rand(&state) * 0.125f) : 0.0f);
+  for (i = 0; i < 4; ++i) {
+    dc_m2c_vec(e, GEO + 400 + 16 * i, vert[i][0], vert[i][1], vert[i][2], 1.0f);
+    dc_m2c_b(e, GEO + 464 + 2 * i, (uint8_t)(i & 1));
+  }
+  memcpy(e->region + GEO + 480, tris, sizeof tris);
+  memcpy(e->region + GEO + 496, edges, sizeof edges);
+  end = dc_m2c_call(e, "shadow-execute", dc_m2c_ptr(e, CHAIN), dc_m2c_ptr(e, OUT), 0, 0, 0, 0);
+  return dc_m2c_off(e, end) - OUT;  /* packet bytes */
+}
+
+/* ---- sparticle: sp-process-block-2d and -3d over six particles each, with the
+ * particle callback, sp-relaunch-particle-2d/3d, sp-orbiter, sp-free-particle and
+ * quaternion*! standing in for GOAL ---- */
+static uint64_t dc_m2c_sp_free(dc_m2c_env *e, const uint64_t *a) {
+  dc_m2c_log(e, 0xfe << 24 | (uint32_t)a[1]);
+  dc_m2c_u(e, dc_m2c_off(e, a[2]) + 128, e->s7);  /* the particle is dead */
+  return 0;
+}
+static uint64_t dc_m2c_sp_callback(dc_m2c_env *e, const uint64_t *a) {
+  dc_m2c_log(e, 0xcb << 24 | (dc_m2c_off(e, a[1]) & 0xffffu));
+  dc_m2c_u(e, dc_m2c_off(e, a[1]) + 124, 0xc0ffee00u | (uint32_t)(a[2] & 0xff));
+  return 0;
+}
+static uint64_t dc_m2c_sp_relaunch(dc_m2c_env *e, const uint64_t *a) {
+  dc_m2c_log(e, 0x7e << 24 | (dc_m2c_off(e, a[2]) & 0xffffu));
+  dc_m2c_u(e, dc_m2c_off(e, a[2]) + 116, 10);
+  dc_m2c_u(e, dc_m2c_off(e, a[2]) + 120, 0);
+  return 0;
+}
+static uint64_t dc_m2c_sp_orbiter(dc_m2c_env *e, const uint64_t *a) {
+  uint32_t sprite = dc_m2c_off(e, a[2]), x;
+  dc_m2c_log(e, 0x0b << 24 | (sprite & 0xffffu));
+  memcpy(&x, e->region + sprite, 4); dc_m2c_u(e, sprite, x ^ 0x00800000u);  /* x doubled or halved: an exponent bit */
+  return 0;
+}
+/* quaternion*!: a0 <- a permutation of a2 (a0 is the caller's stack quaternion). */
+static uint64_t dc_m2c_quaternion_mul(dc_m2c_env *e, const uint64_t *a) {
+  uint32_t q[4], r[4];
+  memcpy(q, e->memory(e, (uint32_t)a[2]), 16);
+  r[0] = q[1]; r[1] = q[2]; r[2] = q[0]; r[3] = q[3] ^ 0x80000000u;
+  memcpy(e->memory(e, (uint32_t)a[0]), r, 16);
+  dc_m2c_log(e, 0x9a << 24 | (dc_m2c_off(e, a[2]) & 0xffffu));
+  return a[0];
+}
+static inline uint32_t dc_m2c_sparticle(dc_m2c_env *e) {
+  enum { TIME = 0x0300, SYS = 0x0404, RELAUNCH = 0x0500, CPU = 0x1000, SPRITES = 0x2000 };
+  /* timer, flags, callback?, relaunch timer (with a relaunch), alive */
+  static const int32_t timer[6] = {-1, 5, 0, -1, 7, 3};
+  static const uint32_t flags[6] = {0, 64, 0, 2 | 4, 128 | 1, 0};
+  static const uint8_t callback[6] = {0, 1, 0, 0, 1, 0}, relaunch[6] = {0, 0, 0, 1, 0, 0}, alive[6] = {1, 1, 1, 1, 1, 0};
+  uint32_t pass, i, k, state = 0x51a2c3u, result = 0;
+  uint32_t free_fn = dc_m2c_goal(e, 0, dc_m2c_sp_free), callback_fn = dc_m2c_goal(e, 1, dc_m2c_sp_callback);
+  e->set_symbol(e, "*sp-frame-time*", dc_m2c_ptr(e, TIME));
+  e->set_symbol(e, "sp-free-particle", free_fn);
+  e->set_symbol(e, "sp-orbiter", dc_m2c_goal(e, 2, dc_m2c_sp_orbiter));
+  e->set_symbol(e, "sp-relaunch-particle-2d", dc_m2c_goal(e, 3, dc_m2c_sp_relaunch));
+  e->set_symbol(e, "sp-relaunch-particle-3d", dc_m2c_goal(e, 4, dc_m2c_sp_relaunch));
+  e->set_symbol(e, "quaternion*!", dc_m2c_goal(e, 5, dc_m2c_quaternion_mul));
+  dc_m2c_u(e, TIME, 2);  /* frames this tick */
+  for (pass = 0; pass < 3; ++pass) {  /* 2d running, 2d paused, 3d */
+    uint32_t cpu = CPU + 0x1000 * pass, sprites = SPRITES + 0x1000 * pass;
+    uint64_t r;
+    for (i = 0; i < 6; ++i) {
+      uint32_t p = cpu + 144 * i, s = sprites + 48 * i;
+      for (k = 0; k < 6; ++k) dc_m2c_rand_vec(e, p + 16 + 16 * k, &state, dc_m2c_rand(&state) / 8.0f);
+      dc_m2c_f(e, p + 96, i & 1 ? 0.0f : 0.875f);  /* friction, or none */
+      dc_m2c_u(e, p + 100, (uint32_t)timer[i]);
+      dc_m2c_u(e, p + 104, flags[i] | (pass == 1 && i == 0 ? 8192u : 0u));
+      dc_m2c_u(e, p + 112, callback[i] ? callback_fn : 0);
+      dc_m2c_u(e, p + 116, relaunch[i] ? 2 : 0);
+      dc_m2c_u(e, p + 120, relaunch[i] ? dc_m2c_ptr(e, RELAUNCH) : 0);
+      dc_m2c_u(e, p + 124, 0x40000000u + (i << 16));  /* a normal float: SH-4 flushes denormals, x86 does not */
+      dc_m2c_u(e, p + 128, alive[i] ? dc_m2c_ptr(e, SYS) : e->s7);
+      for (k = 0; k < 3; ++k) dc_m2c_rand_vec(e, s + 16 * k, &state, 1.0f + (float)k);
+    }
+    {
+      const uint64_t args[8] = {dc_m2c_ptr(e, SYS), dc_m2c_ptr(e, cpu), dc_m2c_ptr(e, sprites), 0, 6,
+                                pass == 1 ? (uint64_t)e->s7 + 8 : e->s7, 0, 0};
+      r = e->call(e, pass == 2 ? "sp-process-block-3d" : "sp-process-block-2d", args);
+    }
+    result = result << 8 | (uint32_t)(r & 0xff);
+  }
+  return result;  /* particle indices reached per pass */
+}
+
+/* ---- sparticle_launcher: particle-adgif's cache (miss, last hit, search miss,
+ * search hit), particle-setup-adgif standing in for GOAL ---- */
+static uint64_t dc_m2c_setup_adgif(dc_m2c_env *e, const uint64_t *a) {
+  uint32_t entry = dc_m2c_off(e, a[0]), i;
+  dc_m2c_log(e, 0xad << 24 | (entry & 0xffffu));
+  for (i = 0; i < 20; ++i) dc_m2c_u(e, entry + 4 * i, (uint32_t)a[1] * 3u + i);
+  return 0;
+}
+static inline uint32_t dc_m2c_particle_adgif(dc_m2c_env *e) {
+  enum { CACHE = 0x1004, OUT = 0x4000 };
+  static const uint32_t texture[6] = {0x00123400u, 0x00123400u, 0x02a05600u, 0x00123400u, 0x02a05600u, 0x07707700u};
+  uint32_t i, count;
+  e->set_symbol(e, "*particle-adgif-cache*", dc_m2c_ptr(e, CACHE));
+  e->set_symbol(e, "particle-setup-adgif", dc_m2c_goal(e, 0, dc_m2c_setup_adgif));
+  for (i = 0; i < 6; ++i)
+    dc_m2c_call(e, "particle-adgif", dc_m2c_ptr(e, OUT + 0x80 * i), texture[i], 0, 0, 0, 0);
+  memcpy(&count, e->region + CACHE, 4);
+  return count;  /* cache entries made */
+}
+
 typedef struct { const char *name; uint32_t (*run)(dc_m2c_env *); } dc_m2c_case;
 static const dc_m2c_case dc_m2c_cases[] = {
   {"sky_tng", dc_m2c_sky},
@@ -605,6 +783,9 @@ static const dc_m2c_case dc_m2c_cases[] = {
   {"texture", dc_m2c_adgif_texture},
   {"time_of_day", dc_m2c_time_of_day},
   {"draw_string", dc_m2c_draw_string},
+  {"shadow-execute", dc_m2c_shadow_execute},
+  {"sparticle", dc_m2c_sparticle},
+  {"sparticle_launcher", dc_m2c_particle_adgif},
 };
 #define DC_M2C_CASE_COUNT (sizeof dc_m2c_cases / sizeof dc_m2c_cases[0])
 
@@ -620,12 +801,15 @@ static inline uint32_t dc_m2c_crc32(const unsigned char *p, uint32_t n) {
 /* Runs case i on a zeroed region; returns the normalized region's CRC-32 and the
  * case's own result (packet bytes, kept triangles, ...). */
 static inline uint32_t dc_m2c_run_case(dc_m2c_env *e, unsigned i, uint32_t *result) {
-  uint32_t at, w;
+  uint32_t at, w, k;
   memset(e->region, 0, DC_M2C_REGION);
+  memset(dc_m2c_goal_address, 0, sizeof dc_m2c_goal_address);
   *result = dc_m2c_cases[i].run(e);
   for (at = 0; at < DC_M2C_REGION; at += 4) {
     memcpy(&w, e->region + at, 4);
-    if (w == e->s7) w = DC_M2C_FALSE_MARK;
+    for (k = 0; k < DC_M2C_GOAL_SLOTS && !(w && w == dc_m2c_goal_address[k]); ++k) {}
+    if (k < DC_M2C_GOAL_SLOTS) w = DC_M2C_GOAL_MARK + k;
+    else if (w == e->s7) w = DC_M2C_FALSE_MARK;
     else if (w >= e->base && w - e->base < DC_M2C_REGION) w -= e->base;
     else continue;
     memcpy(e->region + at, &w, 4);

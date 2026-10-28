@@ -163,13 +163,17 @@ extern "C" bool dc_mips2c_jalr(u32 addr, const u64* args, u64* result) {
 }
 /* For the differential cases: calls NAME the way translated code calls another
  * mips2c function, with jalr on the GOAL stub GAME.CGO's lookup made. */
-extern "C" uint64_t dc_mips2c_call_jalr(const char* name, const uint64_t* args) {
+extern "C" uint32_t dc_mips2c_stub(const char* name) {
   char label[96];
-  uint32_t symbol, stub;
+  uint32_t symbol;
   if (!g_rt) return 0;
   snprintf(label, sizeof label, "dc-mips2c:%s", name);
   symbol = dc_goal_find(g_rt, label);
-  stub = symbol ? dc_goal_symbol_value(g_rt, symbol) : 0;
+  return symbol ? dc_goal_symbol_value(g_rt, symbol) : 0;
+}
+extern "C" uint64_t dc_mips2c_call_jalr(const char* name, const uint64_t* args) {
+  uint32_t stub = dc_mips2c_stub(name);
+  if (!g_rt) return 0;
   if (!stub) {
     g_rt->error = DC_GOAL_BAD_FUNCTION;
     return 0;

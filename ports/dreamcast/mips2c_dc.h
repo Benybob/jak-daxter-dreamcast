@@ -31,6 +31,8 @@ uint32_t dc_mips2c_jalr_calls(void);
 /* Calls a built function by name through jalr on its GOAL stub, as translated
  * code calls another mips2c function (for the differential cases). */
 uint64_t dc_mips2c_call_jalr(const char *name, const uint64_t *args8);
+/* The dc-mips2c:NAME GOAL stub GAME.CGO's lookup made for a built function, 0 if none. */
+uint32_t dc_mips2c_stub(const char *name);
 const char *dc_mips2c_assert_text(void);
 #ifdef __cplusplus
 }

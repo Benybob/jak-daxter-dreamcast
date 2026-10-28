@@ -30,16 +30,34 @@ int dc_kernel_load_vf_fixture(dc_goal_runtime *,dc_goal_cache_sync,dc_goal_modul
 volatile uint32_t dc_boot_game_error_site;
 /* The boot's environment for the mips2c differential cases: symbols a case
  * points into its region are restored after it. */
-typedef struct {dc_goal_runtime *rt;unsigned count;uint32_t symbol[8],value[8];} dc_boot_m2c_saved;
+typedef struct {dc_goal_runtime *rt;unsigned count;uint32_t symbol[16],value[16];} dc_boot_m2c_saved;
 static void boot_m2c_set_symbol(dc_m2c_env *e,const char *name,uint32_t value){
   dc_boot_m2c_saved *saved=e->context;uint32_t symbol=dc_goal_intern(saved->rt,name);unsigned i;
   for(i=0;i<saved->count && saved->symbol[i]!=symbol;++i){}
-  if(i==saved->count && i<8){saved->symbol[i]=symbol;saved->value[i]=dc_goal_symbol_value(saved->rt,symbol);++saved->count;}
+  if(i==saved->count && i<16){saved->symbol[i]=symbol;saved->value[i]=dc_goal_symbol_value(saved->rt,symbol);++saved->count;}
   dc_goal_set_symbol(saved->rt,symbol,value);
 }
 static uint64_t boot_m2c_call(dc_m2c_env *e,const char *name,const uint64_t *args){(void)e;return dc_mips2c_call(name,args);}
 static uint64_t boot_m2c_call_jalr(dc_m2c_env *e,const char *name,const uint64_t *args){(void)e;return dc_mips2c_call_jalr(name,args);}
+/* A case's GOAL stand-ins: jalr in translated code calls these thunks natively,
+ * with the argument registers as eight u64 arguments (mips2c_private.h). */
+static dc_m2c_goal_fn boot_m2c_goal[DC_M2C_GOAL_SLOTS];static dc_m2c_env *boot_m2c_goal_env;
+#define BOOT_M2C_THUNK(i) static uint64_t boot_m2c_thunk##i(uint64_t a0,uint64_t a1,uint64_t a2,uint64_t a3,\
+  uint64_t a4,uint64_t a5,uint64_t a6,uint64_t a7){const uint64_t a[8]={a0,a1,a2,a3,a4,a5,a6,a7};\
+  return boot_m2c_goal[i]?boot_m2c_goal[i](boot_m2c_goal_env,a):0;}
+BOOT_M2C_THUNK(0) BOOT_M2C_THUNK(1) BOOT_M2C_THUNK(2) BOOT_M2C_THUNK(3) BOOT_M2C_THUNK(4) BOOT_M2C_THUNK(5)
+BOOT_M2C_THUNK(6) BOOT_M2C_THUNK(7) BOOT_M2C_THUNK(8) BOOT_M2C_THUNK(9) BOOT_M2C_THUNK(10) BOOT_M2C_THUNK(11)
+static uint64_t (*const boot_m2c_thunks[DC_M2C_GOAL_SLOTS])(uint64_t,uint64_t,uint64_t,uint64_t,uint64_t,uint64_t,uint64_t,uint64_t)={
+  boot_m2c_thunk0,boot_m2c_thunk1,boot_m2c_thunk2,boot_m2c_thunk3,boot_m2c_thunk4,boot_m2c_thunk5,
+  boot_m2c_thunk6,boot_m2c_thunk7,boot_m2c_thunk8,boot_m2c_thunk9,boot_m2c_thunk10,boot_m2c_thunk11};
+static uint32_t boot_m2c_goal_function(dc_m2c_env *e,unsigned slot,dc_m2c_goal_fn fn){
+  if(slot>=DC_M2C_GOAL_SLOTS)return 0;
+  boot_m2c_goal[slot]=fn;boot_m2c_goal_env=e;return (uint32_t)(uintptr_t)boot_m2c_thunks[slot];
+}
+static uint32_t boot_m2c_mips2c_function(dc_m2c_env *e,const char *name){(void)e;return dc_mips2c_stub(name);}
+static void *boot_m2c_memory(dc_m2c_env *e,uint32_t address){(void)e;return (void *)(uintptr_t)address;}
 static void boot_m2c_restore(dc_boot_m2c_saved *saved){
+  memset(boot_m2c_goal,0,sizeof boot_m2c_goal);
   while(saved->count){--saved->count;dc_goal_set_symbol(saved->rt,saved->symbol[saved->count],saved->value[saved->count]);}
 }
 /* Diagnostics (verify_backend.py --dump): display-loop frames completed, and the
@@ -204,7 +222,8 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
        if(region && DC_M2C_EXPECT_COUNT==DC_M2C_CASE_COUNT){
          memset(&saved,0,sizeof saved);saved.rt=&rt;
          env.region=dc_goal_resolve(&rt,region,DC_M2C_REGION);env.base=region;env.s7=rt.s7;
-         env.set_symbol=boot_m2c_set_symbol;env.call=boot_m2c_call;env.call_jalr=boot_m2c_call_jalr;env.context=&saved;
+         env.set_symbol=boot_m2c_set_symbol;env.call=boot_m2c_call;env.call_jalr=boot_m2c_call_jalr;env.goal_function=boot_m2c_goal_function;
+         env.mips2c_function=boot_m2c_mips2c_function;env.memory=boot_m2c_memory;env.context=&saved;
          for(k=0;k<DC_M2C_CASE_COUNT;++k){
            uint32_t result,crc=dc_m2c_run_case(&env,k,&result);
            boot_m2c_restore(&saved);
