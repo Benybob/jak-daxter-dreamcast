@@ -241,8 +241,11 @@ Runtime:
     `#when` that compiles away;
   - a behavior's own `(protect (pp) (set! pp ...))` brackets in subtitle, each
     lowered to a lexical scope enter and leave (`self_process_brackets`).
-- **Loading:** all 326 files load and start (440 of 440 boot checks), and the
-  processes they spawn run their dispatcher frames. Memory is no longer the limit:
+- **Loading:** all 326 files load and start, and the processes they spawn run their
+  dispatcher frames.
+- **The main loop** (`display-loop`) then runs 60 frames headless (446 of 446 boot
+  checks; see "The main loop, headless" below). The next steps are a level, input,
+  mips2c, drawing and sound. Memory is no longer the limit:
   see [MEMORY_PLAN.md](MEMORY_PLAN.md) for the freed startups, the VRAM-staged
   romdisk, the 13.5 MiB arena and the PS2 DMA buffers in VRAM.
 - **Shrunk process heaps (hud-classes-pc).** Its startup spawns the PC HUD, whose
@@ -261,6 +264,45 @@ Runtime:
 - **Spawned processes.** A camera asks `stack-size-set!` for 512 bytes (sized for PS2
   frames) but suspends with 668 bytes of native stack in use, so the backup
   counterpart passes `max(2 * request, 512)` to the original method.
+
+## The main loop, headless (2026-10-28, AI-assisted)
+
+After all of GAME.CGO loads, the DGO boot starts the original `display-loop` the way
+main.gc's `on` does: `process-spawn-function display-loop :name 'display :from
+*4k-dead-pool* :to *display-pool*` on the default fake-scratchpad stack, with `*run*`
+set and `*dproc*` pointing at it. `on` itself also loads a level and kills the display
+process when none is loaded, so the boot spawns it directly. No level is loaded and
+nothing draws. The loop runs **60 frames** under the original kernel-dispatcher (446 of
+446 boot checks). Each frame runs one iteration and suspends, and
+`*display*`'s `real-integral-frame-counter` advances every frame.
+
+Getting there needed:
+
+- **A running fiber that resizes its own backup.** `display-loop` begins with
+  `(stack-size-set! (-> self main-thread) 512)`, which the original allows while the
+  process heap has nothing after the thread. The fiber cached the old backup size,
+  and its next suspend refused. The resize counterpart now reopens the running
+  fiber's image view at the new size (`dc_goal_fiber_backup_resized`). Before this,
+  the refusal was silent: a fiber fault sets `rt->error`, and the dispatcher's next
+  symbol lookup cleared it, leaving the process `running`.
+- **The C-kernel services the loop calls.** Desktop answers with no renderer
+  attached, and these give the same answers:
+  - `syncv`, `sync-path` and `dma-sync` return 0;
+  - `reset-graph`, `reset-path`, `put-display-env`, `flush-cache`, `mc-run`,
+    `__pc-set-levels` and `__send-gfx-dma-chain` do nothing;
+  - `kset-language` records the language;
+  - `pc-rand` is a 32-bit xorshift generator (desktop uses mt19937; GOAL only mixes it
+    into `rand-vu`);
+  - `__read-ee-timer` is KOS's nanosecond clock × 3 / 10, the 300 MHz EE cycle count
+    desktop returns.
+
+  `__send-gfx-dma-chain` is where display-sync hands each frame's DMA chain to the
+  renderer, so it is where a PowerVR renderer plugs in. A real `syncv` will wait for
+  the vertical blank.
+
+Not covered yet: no level is loaded, so level-update, ambients and actors run on empty
+lists; there is no input, no sound and no drawing; and the frames run as fast as
+Flycast executes them, not at 60 Hz.
 
 ## Smaller native code (2026-10-28, AI-assisted)
 

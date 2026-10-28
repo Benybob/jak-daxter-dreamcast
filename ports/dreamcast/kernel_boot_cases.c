@@ -22,6 +22,9 @@
 int dc_kernel_load_vf_fixture(dc_goal_runtime *,dc_goal_cache_sync,dc_goal_module_result *);
 /* First BAD_ARGUMENT site while GAME.CGO loads (dc_goal_error_site encoding). */
 volatile uint32_t dc_boot_game_error_site;
+/* Diagnostics (verify_backend.py --dump): display-loop frames completed, and the
+ * error and first refusal site where they stopped. */
+volatile uint32_t dc_boot_display_frames,dc_boot_display_error,dc_boot_display_site;
 /* Read by verify_backend.py --dump: arena use around every GAME.CGO object. */
 struct dc_boot_memory_trace {uint32_t magic,objects,completed,failed,capacity,before,failed_request,after[DC_GOAL_DGO_MAX_OBJECTS];};
 struct dc_boot_memory_trace dc_boot_memory_trace;
@@ -268,6 +271,40 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
      * native fiber on its first resume, and its state code suspends each frame. */
     {uint32_t tod=word(&rt,entry(&rt,"*time-of-day-proc*"),0);
      CHECK(word(&rt,tod,32),suspended,"spawned time-of-day process runs and suspends under the dispatcher");}
+    /* The original main loop, headless: display-loop started as main.gc's `on`
+     * does (process-spawn-function display-loop :name 'display :from
+     * *4k-dead-pool* :to *display-pool*, on the default fake-scratchpad stack),
+     * with *run* set. No level is loaded and nothing draws; each dispatcher frame
+     * runs one iteration of the loop and suspends. */
+    {enum {DISPLAY_FRAMES=60,REAL_INTEGRAL_FRAMES=804};  /* display field at 808, less the basic tag */
+     uint32_t dpool=entry(&rt,"*4k-dead-pool*"),dparent=entry(&rt,"*display-pool*");
+     uint32_t scratch=entry(&rt,"*fake-scratchpad-stack*"),dname=dc_goal_intern(&rt,"display"),dproc,dthread;
+     unsigned frame,completed=0;uint32_t before;
+     CHECK(dpool && dparent && scratch && entry(&rt,"display-loop"),1,"display-loop and its pools booted");
+     dproc=(uint32_t)((three_fn)(uintptr_t)dc_goal_get_method(&rt,dc_goal_type_of(&rt,dpool),GET_PROCESS))(dpool,process_type,0x4000);
+     CHECK(dproc!=0 && dproc!=rt.s7,1,"original get-process takes a *4k-dead-pool* member for display");
+     if(dproc && dproc!=rt.s7){
+       ((four_fn)(uintptr_t)dc_goal_get_method(&rt,process_type,ACTIVATE))(dproc,dparent,dname,scratch+32u*1024u);
+       dthread=word(&rt,dproc,MAIN);
+       ((eight_fn)(uintptr_t)entry(&rt,"set-to-run"))(dthread,entry(&rt,"display-loop"),0,0,0,0,0,0);
+       CHECK(rt.error,DC_GOAL_OK,"display process activates and arms display-loop");
+       dc_goal_set_symbol(&rt,dc_goal_find(&rt,"*run*"),dc_goal_find(&rt,"#t"));
+       dc_goal_set_symbol(&rt,dc_goal_find(&rt,"*dproc*"),dproc);
+       before=word(&rt,entry(&rt,"*display*"),REAL_INTEGRAL_FRAMES);
+       for(frame=0;frame<DISPLAY_FRAMES && rt.error==DC_GOAL_OK;++frame){
+         dc_goal_error_site=0;
+         dispatch();
+         if(rt.error==DC_GOAL_OK && word(&rt,dproc,STATUS)==suspended)++completed;
+         else {dc_boot_display_error=rt.error|((uint32_t)dc_goal_sticky_error<<8);dc_boot_display_site=dc_goal_error_site;}
+       }
+       dc_boot_display_frames=completed;
+       CHECK(completed,DISPLAY_FRAMES,"original display-loop runs and suspends each frame, headless");
+       CHECK(rt.error,DC_GOAL_OK,"display-loop frames leave no runtime fault");
+       /* Every swap-display's display-frame-start counts at least one frame. */
+       CHECK(word(&rt,entry(&rt,"*display*"),REAL_INTEGRAL_FRAMES)-before>=DISPLAY_FRAMES,1,
+             "*display* real-integral-frame-counter advances every frame");
+       rt.error=DC_GOAL_OK;
+     }}
 #endif
     CHECK(dc_goal_unregister_thread_fiber(&rt,&fiber),1,"fiber unregistered");
     {uint32_t listener=entry(&rt,"*listener-process*"),lbytes=word(&rt,listener,HEAP_TOP)-(listener-4u);

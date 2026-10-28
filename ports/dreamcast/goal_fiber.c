@@ -137,6 +137,14 @@ int dc_goal_fiber_init(dc_goal_fiber *f,dc_goal_runtime *rt,uint32_t process,uin
                        uint32_t thread,uint32_t stack_base,uint32_t stack_bytes,uint32_t entry) {
  return dc_goal_fiber_init_words(f,rt,process,reservation,thread,stack_base,stack_bytes,entry,0,NULL);
 }
+int dc_goal_fiber_backup_resized(dc_goal_fiber *f) {
+ dc_goal_thread_stack fresh;dc_goal_runtime *rt;
+ if(!f || f!=current || f->phase!=DC_FIBER_RUNNING || !(rt=f->runtime) || !view_ok(f) || f->image.saved)
+  return bad(f?f->runtime:NULL);
+ if(!dc_goal_thread_stack_open(&fresh,rt,f->process,f->reservation,f->thread,f->stack_base,f->stack_bytes))return 0;
+ dc_goal_thread_stack_clear(&f->image);f->image=fresh;
+ return 1;
+}
 int dc_goal_fiber_clear(dc_goal_fiber *f) {
  if(!f)return 0;
  if(current)return bad(f->magic==FIBER_MAGIC?f->runtime:NULL);

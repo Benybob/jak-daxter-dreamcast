@@ -6,6 +6,9 @@
 #include <stdio.h>
 #ifdef __DREAMCAST__
 #include <kos/dbgio.h>
+#ifdef __DREAMCAST__
+#include <arch/timer.h>
+#endif
 #endif
 #include "goal_mmi.h"
 #include "goal_pad.h"
@@ -1095,7 +1098,12 @@ static uint64_t stack_size_set_floor(uint64_t thread,uint64_t bytes) {
   if(!original_stack_size_set){if(active_runtime)active_runtime->error=DC_GOAL_BAD_FUNCTION;return 0;}
   if((int64_t)bytes<(int64_t)(DC_MAIN_BACKUP_FLOOR/DC_MAIN_BACKUP_SCALE))bytes=DC_MAIN_BACKUP_FLOOR;
   else if(bytes<=0x10000u)bytes*=DC_MAIN_BACKUP_SCALE;
-  return ((setter)(uintptr_t)original_stack_size_set)(thread,bytes);
+  {uint64_t value=((setter)(uintptr_t)original_stack_size_set)(thread,bytes);
+   dc_goal_fiber *fiber=dc_goal_fiber_current();
+   /* A running fiber resizing its own main thread: its image follows. */
+   if(fiber && fiber->thread==thread && active_runtime && active_runtime->error==DC_GOAL_OK)
+     dc_goal_fiber_backup_resized(fiber);
+   return value;}
 }
 int dc_goal_install_backup_floor(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_goal_module_result *result) {
   unsigned char code[12]={1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0};
@@ -1155,6 +1163,24 @@ static uint64_t pc_false(void){return active_runtime?active_runtime->s7:0;}
 static uint64_t pc_get_os_native(void){return pc_false();}          /* not windows/linux/darwin */
 static uint64_t pc_display_mode_native(void){return pc_symbol("windowed");}
 static uint64_t pc_zero_native(void){return 0;}                     /* refresh rate; void setters */
+/* kmemcard.cpp MC_set_language: the C kernel only records the language. */
+static uint32_t kernel_language;
+static uint64_t kset_language_native(uint64_t language){kernel_language=(uint32_t)language;return 0;}
+/* kmachine.cpp pc-rand: a 32-bit pseudo-random number (desktop uses mt19937;
+ * GOAL only mixes it into rand-vu, so a xorshift generator stands in). */
+/* kmachine.cpp __read-ee-timer: the 300 MHz EE cycle count since start,
+ * ns * 3 / 10, from KOS's nanosecond clock. */
+static uint64_t read_ee_timer_native(void){
+#ifdef __DREAMCAST__
+  return timer_ns_gettime64()*3u/10u;
+#else
+  return 0;
+#endif
+}
+static uint32_t pc_rand_state=2463534242u;
+static uint64_t pc_rand_native(void){
+  uint32_t x=pc_rand_state;x^=x<<13;x^=x>>17;x^=x<<5;pc_rand_state=x;return x;
+}
 static uint64_t pc_filepath_exists_native(uint64_t path){(void)path;return pc_false();}
 static uint64_t pc_resolution_native(uint64_t w,uint64_t h){(void)w;(void)h;return pc_false();}
 static float pc_axis_scale_native(void){return 1.33f;}
@@ -1170,7 +1196,7 @@ static uint64_t pc_kopen_native(uint64_t fs,uint64_t name,uint64_t mode){
   return fs;
 }
 static uint64_t pc_kclose_native(uint64_t fs){return fs;}
-#define DC_PC_SERVICES 36
+#define DC_PC_SERVICES 52
 int dc_goal_install_pc_services(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_goal_module_result *result) {
   static const char *const void_setters[]={
     "pc-set-mouse-options!","pc-set-mouse-camera-sens!","pc-set-auto-hide-cursor!","pc-set-window-size!",
@@ -1181,7 +1207,17 @@ int dc_goal_install_pc_services(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_g
     "pc-discord-rpc-update","pc-sound-set-fade-hack","pc-sound-set-flava-hack",
     /* No IOP: sound and loader RPCs are dropped (rpc-busy? 0, rpc-call returns at
      * once with nothing received) until a Dreamcast AICA sound driver serves them. */
-    "rpc-call","rpc-busy?"};
+    "rpc-call","rpc-busy?",
+    /* PS2 graphics/DMA library calls (kmachine.cpp: sceGs*, sceDmaSync,
+     * FlushCache) answer as desktop does with no renderer attached: syncv and
+     * sync-path 0, dma-sync 0 (finished), the rest do nothing. A PowerVR renderer
+     * will give syncv a real vertical blank. mc-run with no card operation
+     * pending does nothing (MC_run's callback is null). */
+    "syncv","sync-path","reset-graph","reset-path","put-display-env","flush-cache","dma-sync","mc-run",
+    /* The PC renderer's level texture list, and the frame's DMA chain handed to
+     * the renderer (display-sync). No renderer to tell yet: the PowerVR
+     * renderer will consume the chain here. */
+    "__pc-set-levels","__send-gfx-dma-chain"};
   const unsigned char stub[12]={1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0};
   unsigned char code[DC_PC_SERVICES][12];uint32_t targets[DC_PC_SERVICES];
   dc_goal_code_export functions[DC_PC_SERVICES];unsigned i,k=0;
@@ -1197,6 +1233,9 @@ int dc_goal_install_pc_services(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_g
      (uint32_t)(uintptr_t)pc_axis_scale_native,(uint32_t)(uintptr_t)pc_kopen_native};
    for(i=0;i<sizeof names/sizeof names[0];++i){functions[k]=(dc_goal_code_export){names[i],code[k],12,NULL,0};targets[k++]=fns[i];}}
   functions[k]=(dc_goal_code_export){"file-stream-close",code[k],12,NULL,0};targets[k++]=(uint32_t)(uintptr_t)pc_kclose_native;
+  functions[k]=(dc_goal_code_export){"kset-language",code[k],12,NULL,0};targets[k++]=(uint32_t)(uintptr_t)kset_language_native;
+  functions[k]=(dc_goal_code_export){"pc-rand",code[k],12,NULL,0};targets[k++]=(uint32_t)(uintptr_t)pc_rand_native;
+  functions[k]=(dc_goal_code_export){"__read-ee-timer",code[k],12,NULL,0};targets[k++]=(uint32_t)(uintptr_t)read_ee_timer_native;
   for(i=0;i<sizeof void_setters/sizeof void_setters[0];++i){
     functions[k]=(dc_goal_code_export){void_setters[i],code[k],12,NULL,0};targets[k++]=(uint32_t)(uintptr_t)pc_zero_native;}
   if(k>DC_PC_SERVICES){(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);return 0;}

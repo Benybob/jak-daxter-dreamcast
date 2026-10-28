@@ -66,6 +66,11 @@ int dc_goal_fiber_abandon(dc_goal_runtime *,uint64_t value);
  * deactivate method. Never returns on success. */
 int dc_goal_fiber_restart(dc_goal_runtime *,uint32_t entry,unsigned argument_count,const uint64_t *arguments);
 int dc_goal_fiber_clear(dc_goal_fiber *);
+/* The original stack-size-set! resized the running fiber's own main-thread
+ * backup (display-loop does, first thing, which the original allows while its
+ * process heap has nothing after the thread). Reopens the image view on the new
+ * size; only the current running fiber, whose image is restored (not saved). */
+int dc_goal_fiber_backup_resized(dc_goal_fiber *);
 /* C ownership witness only; does not bind/activate execution. Scheduler hooks
  * call this before process writes or using a suspended fiber's working stack. */
 int dc_goal_fiber_ownership_check(const dc_goal_fiber *,dc_goal_runtime *);
