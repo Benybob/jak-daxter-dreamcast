@@ -1082,13 +1082,25 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
         if index not in slots: raise ValueError('unknown virtual register')
         e.mov(8,14)
         offset=slots[index]
+        if not offset: return
         if offset<=127: e.add_immediate(8,offset)
         else: e.constant(9,offset); e.add(8,9)
+    def near(index,size):
+        # A slot whose every word MOV.L @(disp,R14) reaches (disp 0..60, scaled by 4).
+        if index not in slots: raise ValueError('unknown virtual register')
+        offset=slots[index]
+        return offset//4 if offset%4==0 and offset+size-4<=60 else None
     def load64(index,low=0,high=1):
         if registers[index]['class']!='gpr64': raise ValueError('expected integer virtual value')
+        d=near(index,8)
+        if d is not None:
+            e.word(0x50e0|low<<8|d); e.word(0x50e0|high<<8|(d+1)); return  # mov.l @(disp,r14),Rn
         address(index); e.load(low,8); e.add_immediate(8,4); e.load(high,8)
     def store64(index,low=0,high=1):
         if registers[index]['class']!='gpr64': raise ValueError('expected integer virtual value')
+        d=near(index,8)
+        if d is not None:
+            e.word(0x1e00|low<<4|d); e.word(0x1e00|high<<4|(d+1)); return  # mov.l Rm,@(disp,r14)
         address(index); e.store(8,low); e.add_immediate(8,4); e.store(8,high)
     def stack_object_address(slot,dest):
         if stack_region is None: raise ValueError('stack address without a stack object region')
@@ -1104,12 +1116,20 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
     def load128(index,regs=(4,5,6,7)):
         """Four little-endian words of a 128-bit slot: lo64=(regs[0],regs[1])."""
         if registers[index]['class'] not in QUAD: raise ValueError('expected 128-bit virtual value')
+        d=near(index,16)
+        if d is not None:
+            for n,reg in enumerate(regs): e.word(0x50e0|reg<<8|(d+n))
+            return
         address(index)
         for n,reg in enumerate(regs):
             if n: e.add_immediate(8,4)
             e.load(reg,8)
     def store128(index,regs=(4,5,6,7)):
         if registers[index]['class'] not in QUAD: raise ValueError('expected 128-bit virtual value')
+        d=near(index,16)
+        if d is not None:
+            for n,reg in enumerate(regs): e.word(0x1e00|reg<<4|(d+n))
+            return
         address(index)
         for n,reg in enumerate(regs):
             if n: e.add_immediate(8,4)
