@@ -118,9 +118,24 @@ static int open_reservation(dc_goal_runtime *rt, uint32_t process, uint32_t byte
   return out->runtime == rt && out->process == process && out->allocation_bytes == bytes;
 }
 
+/* The root scheduler: C top level, where desktop call_goal runs with pp = #f
+ * (r13 = the symbol table). It owns no process reservation, so its saved
+ * allocation is the empty record. Only the root C stack establishes it. */
+static int root_scheduler(const dc_goal_runtime *rt, uint32_t process, uint32_t bytes) {
+  return rt && process == rt->s7 && bytes == 0;
+}
+
 static int same_heap(const dc_goal_process_heap *heap, dc_goal_runtime *rt,
                      uint32_t process, uint32_t bytes) {
+  if (root_scheduler(rt, process, bytes))
+    return heap && !heap->runtime && !heap->process && !heap->allocation_bytes;
   return heap && heap->runtime == rt && heap->process == process && heap->allocation_bytes == bytes;
+}
+
+static int scheduler_open(dc_goal_runtime *rt, uint32_t process, uint32_t bytes,
+                          dc_goal_process_heap *out) {
+  if (root_scheduler(rt, process, bytes)) return 1;
+  return open_reservation(rt, process, bytes, out);
 }
 
 static int span_bad(uint32_t base, uint32_t bytes) {
@@ -144,6 +159,11 @@ static int pid_read(dc_goal_runtime *rt, uint32_t process, uint32_t *pid) {
   return 1;
 }
 
+static int scheduler_pid_read(dc_goal_runtime *rt, uint32_t process, uint32_t bytes, uint32_t *pid) {
+  if (root_scheduler(rt, process, bytes)) { *pid = 0; return 1; }
+  return pid_read(rt, process, pid);
+}
+
 static int stack_usable(const dc_goal_runtime *rt, const dc_goal_pp_scope_stack *stack) {
   return stack && storage_ok(rt, stack, sizeof *stack) && outside_fiber(stack, sizeof *stack);
 }
@@ -157,7 +177,7 @@ static int chain_ok(dc_goal_pp_scope_stack *stack,dc_goal_runtime *rt,uint32_t c
   dc_goal_process_heap checked;uint32_t pid;unsigned i;
   if(!stack->depth || stack->depth>DC_GOAL_PP_SCOPE_MAX_DEPTH ||
      !scheduler_word(rt,context,scheduler) ||
-     !open_reservation(rt,scheduler,scheduler_bytes,&checked) || !pid_read(rt,scheduler,&pid) ||
+     !scheduler_open(rt,scheduler,scheduler_bytes,&checked) || !scheduler_pid_read(rt,scheduler,scheduler_bytes,&pid) ||
      pid!=stack->frames[0].scheduler_pid_witness)return 0;
   for(i=0;i<stack->depth;++i) {
     const dc_goal_pp_scope_frame *f=&stack->frames[i];
@@ -244,10 +264,11 @@ int dc_goal_pp_scope_enter(dc_goal_pp_scope_stack *stack, dc_goal_runtime *rt,
     if (distinct_overlap(stack->frames[i].lexical_process, stack->frames[i].lexical_bytes,
                          lexical_process, lexical_bytes)) return fail(rt, prior);
   }
-  if (!open_reservation(rt, scheduler_process, scheduler_bytes, &opened_scheduler)) return fail(rt, prior);
+  if (root_scheduler(rt, scheduler_process, scheduler_bytes) && seen) return fail(rt, prior);
+  if (!scheduler_open(rt, scheduler_process, scheduler_bytes, &opened_scheduler)) return fail(rt, prior);
   if (!open_reservation(rt, lexical_process, lexical_bytes, &opened_lexical)) return fail(rt, prior);
   if (!pid_read(rt, lexical_process, &pid)) return fail(rt, prior);
-  if (!pid_read(rt, scheduler_process, &scheduler_pid)) return fail(rt, prior);
+  if (!scheduler_pid_read(rt, scheduler_process, scheduler_bytes, &scheduler_pid)) return fail(rt, prior);
   /* Mutation starts here. Failure paths above do not reach it. */
   saved = *current_allocation;
   frame = &stack->frames[stack->depth];

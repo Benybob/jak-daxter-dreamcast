@@ -129,8 +129,13 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
   /* The compiled prefix of the original GAME.CGO loads on top of the kernel. */
   {
     static dc_goal_dgo_result game;
+    static dc_goal_process_spans game_spans;static dc_goal_process_span game_rows[64];
+    static dc_goal_pp_scope_stack game_scopes;
     FILE *file=dc_goal_open_zst("/rd/GAME.CGO.zst");int loaded;unsigned i;
     CHECK(file!=NULL,1,"zstd GAME.CGO prefix opens from the romdisk");
+    /* Startups spawn processes (time-of-day): their scopes are authenticated. */
+    CHECK(dc_goal_register_process_spans(&rt,&game_spans,game_rows,64),1,"ownership ledger registered for GAME.CGO startups");
+    CHECK(dc_goal_register_pp_scope(&rt,&game_scopes),1,"lexical scope metadata registered for GAME.CGO startups");
     if(file){
       loaded=dc_goal_load_dgo(&rt,file,sync_code,NULL,&game);fclose(file);
       dc_boot_game_error_site=dc_goal_error_site;  /* read by verify_backend.py --dump */
@@ -148,6 +153,9 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
       CHECK(entry(&rt,"rand-vu-init")!=0 && entry(&rt,"truncate")!=0,1,"original math functions are installed");
       code_bytes+=game.code_bytes;rt.error=DC_GOAL_OK;
     }
+    CHECK(dc_goal_pp_scope_depth(&rt),0,"every startup scope was left");
+    CHECK(dc_goal_pp_scope_detach(&game_scopes,&rt),1,"quiescent GAME.CGO scope metadata detaches");
+    CHECK(dc_goal_process_spans_detach(&rt),1,"GAME.CGO ownership ledger detaches");
   }
   /* VU0 vf lowering: the fixture forms and original vector-h functions, every
    * lane compared bit for bit with independently computed expectations. */

@@ -170,11 +170,15 @@ uint32_t dc_runtime_deactivate_cases(dc_goal_runtime *rt,dc_runtime_check check,
   CHECK(rt->error,DC_GOAL_BAD_ARGUMENT,"abandon outside a fiber reports bad argument");rt->error=DC_GOAL_OK;
  }
 scopes_done:
- /* No execution identity: the original body never starts. */
+ /* No execution identity bound: the C top level is the root, where desktop
+  * call_goal runs GOAL with pp = #f. m0 is not pp, so the body runs to completion. */
  dc_goal_clear_process_context(rt);put(rt,m0,STATUS,ready);put(rt,m0,PID,35);exit_count=0;
  deactivate(m0);
- CHECK(word(rt,m0,STATUS),ready,"missing identity refuses before any original write");
- CHECK(rt->error,DC_GOAL_BAD_ARGUMENT,"missing identity explicit error");rt->error=DC_GOAL_OK;
+ CHECK(rt->error,DC_GOAL_OK,"root deactivate leaves no error");rt->error=DC_GOAL_OK;
+ CHECK(word(rt,m0,STATUS),dead,"root deactivate kills the process");
+ CHECK(word(rt,m0,PID),0,"root deactivate clears the PID");
+ CHECK(in_pool(rt,pool,m0),1,"root deactivate leaves the process in its pool");
+ CHECK(dc_goal_pp_scope_depth(rt),0,"root deactivate leaves its scope");
  dc_goal_clear_process_context(rt);
  CHECK(dc_goal_pp_scope_detach(&scopes,rt),1,"quiescent scope metadata detaches");
 detach:

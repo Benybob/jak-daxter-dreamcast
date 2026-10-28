@@ -87,16 +87,42 @@ int dc_goal_bind_process_context(dc_goal_runtime *rt,uint32_t process,uint32_t a
   execution_context=context; execution_heap=candidate; active_process_heap=candidate;
   memcpy(fields+20,&process,4); rt->error=DC_GOAL_OK; return 1;
 }
+/* Desktop call_goal enters GOAL from C with pp = #f (r13 = the symbol table):
+ * a file's top-level startup runs with no process. Natively that root is the
+ * C stack with no execution context bound, the original kernel context naming
+ * no current process, and authenticated scope and span ledgers registered. */
+static int root_context(dc_goal_runtime *rt,uint32_t *context) {
+  unsigned char *fields;uint32_t symbol,value,current;
+  if(execution_context || execution_heap.runtime || dc_goal_fiber_current() ||
+     !dc_goal_pp_scope_active(rt) || dc_goal_process_spans_registered(rt)!=1)return 0;
+  symbol=dc_goal_find(rt,"*kernel-context*");
+  value=symbol?dc_goal_symbol_value(rt,symbol):0;
+  if(!(fields=context_fields(rt,value)))return 0;
+  memcpy(&current,fields+20,4);
+  if(current!=rt->s7)return 0;
+  *context=value;return 1;
+}
+/* The scheduler a lexical scope is checked against: the bound execution
+ * context, or at the root the kernel context with #f and no reservation. */
+static void scheduler_identity(dc_goal_runtime *rt,uint32_t *context,uint32_t *process,uint32_t *bytes) {
+  *context=execution_context;*process=execution_heap.process;*bytes=execution_heap.allocation_bytes;
+  if(root_context(rt,context)){*process=rt->s7;*bytes=0;}
+}
+static int scope_resolve(dc_goal_runtime *rt,uint32_t *lexical) {
+  uint32_t context,process,bytes;
+  scheduler_identity(rt,&context,&process,&bytes);
+  return dc_goal_pp_scope_resolve(rt,context,process,bytes,&active_process_heap,lexical);
+}
 static uint64_t current_process(void) {
   dc_goal_runtime *rt=active_runtime;
   dc_goal_process_heap candidate;
   unsigned char *fields;
-  uint32_t symbol,current=0,lexical=0;int scoped;
+  uint32_t symbol,current=0,lexical=0,root=0;int scoped;
   if(!rt) return 0;
-  scoped=dc_goal_pp_scope_resolve(rt,execution_context,execution_heap.process,execution_heap.allocation_bytes,
-                                  &active_process_heap,&lexical);
+  scoped=scope_resolve(rt,&lexical);
   if(scoped==DC_GOAL_PP_SCOPE_DENIED)return 0;
   if(scoped==DC_GOAL_PP_SCOPE_READY)return lexical; /* retain faults through cleanup */
+  if(!active_process_heap.runtime && root_context(rt,&root)){rt->error=DC_GOAL_OK;return rt->s7;}
   symbol=dc_goal_find(rt,"*kernel-context*");
   if(!execution_context || execution_heap.runtime!=rt ||
      active_process_heap.runtime!=rt || active_process_heap.process!=execution_heap.process ||
@@ -178,11 +204,25 @@ static enum heap_kind heap_kind(dc_goal_runtime *rt,uint64_t heap) {
   if(heap>UINT32_MAX || (heap>=rt->table && heap<rt->table+DC_GOAL_SYMBOL_BYTES))return HEAP_REFUSED;
   return HEAP_ADDRESS;
 }
+/* A (new 'stack ...) object of root C code (a startup) lives on the current
+ * KOS thread's stack, outside the arena: the live part, at or above SP. */
+static unsigned char *root_stack_object(dc_goal_runtime *rt,uint32_t address,uint32_t bytes) {
+  kthread_t *owner;uint32_t base,size,sp;
+  if(dc_goal_fiber_current() || !(owner=(kthread_t *)(uintptr_t)dc_goal_kos_stack_owner()))return NULL;
+  base=(uint32_t)(uintptr_t)owner->stack;size=owner->stack_size;
+  __asm__ volatile("mov r15,%0":"=r"(sp));
+  if((address&0xe0000000u)!=(base&0xe0000000u) || address<sp || address<base ||
+     address-base>size || bytes>size-(address-base))return NULL;
+  rt->error=DC_GOAL_OK;
+  return (unsigned char *)(uintptr_t)address;
+}
 static uint64_t in_place_new(dc_goal_runtime *rt,uint32_t address,uint32_t type,uint32_t bytes,int basic) {
   uint32_t aligned=(bytes+15u)&~15u;
-  unsigned char *memory;
-  if(!bytes || bytes>UINT32_MAX-15u || (basic && bytes<4) ||
-     !(memory=dc_goal_resolve(rt,address,aligned))){
+  unsigned char *memory=NULL;enum dc_goal_error prior=rt->error;
+  if(bytes && bytes<=UINT32_MAX-15u && !(basic && bytes<4) &&
+     !(memory=dc_goal_resolve(rt,address,aligned)) && prior==DC_GOAL_OK)
+    memory=root_stack_object(rt,address,aligned);
+  if(!bytes || bytes>UINT32_MAX-15u || (basic && bytes<4) || !memory){
     if(rt->error==DC_GOAL_OK){(void)DC_GOAL_NOTE_SITE(1);rt->error=DC_GOAL_BAD_ARGUMENT;}
     return 0;
   }
@@ -209,8 +249,7 @@ static uint64_t new_basic(uint64_t heap,uint64_t type) {
   if(heap==rt->s7+DC_FIX_SYM_PROCESS_TYPE && active_process_heap.runtime==rt) {
     uint32_t lexical;
     if(!process_heap_type_allowed(rt,(uint32_t)type))return 0;
-    if(dc_goal_pp_scope_resolve(rt,execution_context,execution_heap.process,execution_heap.allocation_bytes,
-                                &active_process_heap,&lexical)==DC_GOAL_PP_SCOPE_DENIED)return 0;
+    if(scope_resolve(rt,&lexical)==DC_GOAL_PP_SCOPE_DENIED)return 0;
     return dc_goal_process_new_basic(&active_process_heap,(uint32_t)type,fields->allocated_size);
   }
   (DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT); return 0;
@@ -287,8 +326,7 @@ static uint64_t new_object(uint64_t heap,uint64_t type,uint64_t size) {
   if(heap==rt->s7+DC_FIX_SYM_PROCESS_TYPE && active_process_heap.runtime==rt) {
     uint32_t lexical;
     if(!process_heap_type_allowed(rt,(uint32_t)type))return 0;
-    if(dc_goal_pp_scope_resolve(rt,execution_context,execution_heap.process,execution_heap.allocation_bytes,
-                                &active_process_heap,&lexical)==DC_GOAL_PP_SCOPE_DENIED)return 0;
+    if(scope_resolve(rt,&lexical)==DC_GOAL_PP_SCOPE_DENIED)return 0;
     return dc_goal_process_new_basic(&active_process_heap,(uint32_t)type,(uint32_t)size);
   }
   (DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT); return 0;
@@ -430,11 +468,14 @@ int dc_goal_register_pp_scope(dc_goal_runtime *rt,dc_goal_pp_scope_stack *stack)
 }
 int dc_goal_enter_lexical_scope(dc_goal_runtime *rt,uint32_t process,uint32_t bytes) {
   dc_goal_pp_scope_stack *stack;
-  if(!rt || active_runtime!=rt || execution_heap.runtime!=rt){if(rt && rt->error==DC_GOAL_OK)(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);return 0;}
+  uint32_t context,scheduler,scheduler_bytes;
+  if(!rt || active_runtime!=rt ||
+     (execution_heap.runtime!=rt && !root_context(rt,&context))){if(rt && rt->error==DC_GOAL_OK)(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);return 0;}
   stack=dc_goal_pp_scope_active(rt);
   if(!stack){if(rt->error==DC_GOAL_OK)(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);return 0;}
   if(!known_span_matches(rt,process,bytes))return 0;
-  return dc_goal_pp_scope_enter(stack,rt,execution_context,execution_heap.process,execution_heap.allocation_bytes,
+  scheduler_identity(rt,&context,&scheduler,&scheduler_bytes);
+  return dc_goal_pp_scope_enter(stack,rt,context,scheduler,scheduler_bytes,
                                 process,bytes,&active_process_heap,&active_process_heap);
 }
 int dc_goal_leave_lexical_scope(dc_goal_runtime *rt,uint32_t process,uint32_t bytes) {
@@ -462,10 +503,31 @@ int dc_goal_note_process_span(dc_goal_runtime *rt,uint32_t process,uint32_t byte
   if(!rt || active_runtime!=rt){if(rt&&rt->error==DC_GOAL_OK)(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);return 0;}
   return dc_goal_process_span_note(rt,process,bytes,out);
 }
+/* A startup's process-spawn takes its process from a pool. Dead-pool-heap
+ * members are carved by original GOAL from the pool's C-allocated heap, so no C
+ * allocator notes them. At the root the spawned process's extent is its own
+ * original record: allocated-length plus the 112-byte process, whose heap
+ * base/top the process heap validator checks before the extent is noted. */
+static int note_root_member(dc_goal_runtime *rt,uint32_t process,dc_goal_process_span *span) {
+  enum dc_goal_error prior=rt->error;dc_goal_process_heap candidate;const unsigned char *fields;
+  uint32_t context,length;
+  if(!root_context(rt,&context) || process<4 || !(fields=dc_goal_resolve(rt,process,108)))return 0;
+  memcpy(&length,fields+68,4);
+  if(length>UINT32_MAX-112u){if(prior==DC_GOAL_OK)(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);return 0;}
+  rt->error=DC_GOAL_OK;
+  if(!dc_goal_process_heap_open(&candidate,rt,process,length+112u) ||
+     !dc_goal_process_span_note(rt,process,length+112u,span))return 0;
+  rt->error=prior;return 1;
+}
 int dc_goal_enter_known_scope(dc_goal_runtime *rt,uint32_t process) {
-  dc_goal_process_span span;
+  dc_goal_process_span span;enum dc_goal_error prior;uint32_t site;
   if(!rt || active_runtime!=rt){if(rt&&rt->error==DC_GOAL_OK)(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);return 0;}
-  return dc_goal_process_span_lookup(rt,process,&span) && dc_goal_enter_lexical_scope(rt,process,span.bytes);
+  prior=rt->error;site=dc_goal_error_site;
+  if(!dc_goal_process_span_lookup(rt,process,&span)){
+    rt->error=prior;dc_goal_error_site=site;  /* a miss is not yet a refusal */
+    if(!note_root_member(rt,process,&span)){if(rt->error==DC_GOAL_OK)(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);return 0;}
+  }
+  return dc_goal_enter_lexical_scope(rt,process,span.bytes);
 }
 int dc_goal_leave_known_scope(dc_goal_runtime *rt,uint32_t previous_process) {
   dc_goal_pp_scope_stack *stack;dc_goal_pp_scope_frame *top;
@@ -473,7 +535,9 @@ int dc_goal_leave_known_scope(dc_goal_runtime *rt,uint32_t previous_process) {
   stack=dc_goal_pp_scope_active(rt);
   if(!stack || !stack->depth){if(rt->error==DC_GOAL_OK)(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);return 0;}
   top=&stack->frames[stack->depth-1];
-  if(top->saved_allocation.process!=previous_process){if(rt->error==DC_GOAL_OK)(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);return 0;}
+  /* The outermost frame restores its scheduler (#f at the root, which owns no
+   * allocation record); a nested one restores the enclosing lexical process. */
+  if((stack->depth==1?top->scheduler_process:top->saved_allocation.process)!=previous_process){if(rt->error==DC_GOAL_OK)(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);return 0;}
   return dc_goal_leave_lexical_scope(rt,top->lexical_process,top->lexical_bytes);
 }
 

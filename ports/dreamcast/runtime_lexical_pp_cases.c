@@ -112,10 +112,14 @@ uint32_t dc_runtime_lexical_pp_cases(dc_goal_runtime *rt,dc_runtime_check check,
  CHECK(dc_goal_pp_scope_depth(rt),0,"call-fault exit restores the entered scope");
  rt->error=DC_GOAL_OK;CHECK(get(),a,"A recovered after call-fault restore");
  put(rt,b,EVENT_HOOK,hook);
- /* Without an execution identity the original body never starts. */
+ /* With no execution identity bound, a C top-level caller is the root: desktop
+  * call_goal runs GOAL with pp = #f. The body runs with pp = B, then pp is #f again. */
  dc_goal_clear_process_context(rt);hook_calls=0;
- CHECK(send(b,block),0,"missing entry identity refuses before the body");
- CHECK(hook_calls,0,"missing identity never dispatches");rt->error=DC_GOAL_OK;
+ CHECK(get(),rt->s7,"root caller's pp is #f, as under desktop call_goal");
+ CHECK(send(b,block),0x5a0001u,"root send runs the original body");
+ CHECK(hook_calls==1 && hook_pp==b && hook_depth==1,1,"hook sees B inside one root scope");
+ CHECK(dc_goal_pp_scope_depth(rt),0,"root send leaves its scope");
+ CHECK(get(),rt->s7,"root pp is #f again after the send");rt->error=DC_GOAL_OK;
 unbind:
  dc_goal_clear_process_context(rt);rt->error=DC_GOAL_OK;
  CHECK(dc_goal_pp_scope_detach(&scopes,rt),1,"quiescent scope metadata detaches");

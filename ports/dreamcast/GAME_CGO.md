@@ -5,11 +5,12 @@ GAME.CGO order:
 
 - **All 331 files** of the GAME.CGO dependency graph export (no refusals).
 - **275 of GAME.CGO's 326 code files** compile to native SH-4 (through task-control).
-- **The first 207 load and run their original top-level startup** after KERNEL.CGO in
+- **The first 237 load and run their original top-level startup** after KERNEL.CGO in
   stock 16 MiB Flycast, with the Dreamcast memory budget ([MEMORY_BUDGET.md](MEMORY_BUDGET.md)). This includes the 141 lane-exact
   vector cases ([VU0_LOWERING.md](VU0_LOWERING.md)) and the original process
   spawn and dispatch.
-- **307 of 307 boot checks pass.**
+- **342 of 342 boot checks pass.** That includes process spawn from a file's startup
+  (time-of-day), described below.
 
 ```bash
 python ports/dreamcast/build_kernel_boot.py --msys C:/msys64 --verify
@@ -231,21 +232,60 @@ Runtime:
 
 ## Where it stops
 
-- **Loading:** the first 207 compiled files load and start (307 of 307 boot checks),
+- **Loading:** the first 237 compiled files load and start (342 of 342 boot checks),
   after the memory budget in [MEMORY_BUDGET.md](MEMORY_BUDGET.md): the corrected
   `PROCESS_HEAP_MULT`, PS2-sized DMA buffers, native `kmalloc`/`scf-get-time`, and
   a faulting `__pc-get-mips2c` stub. The test ELF now carries GAME.CGO as zstd
   (4.9 MB → 0.66 MB, 128 KiB window), streamed object by object through the
   vendored zstd decompressor (`goal_dgo_zst.c`), so the ELF fell from 6.2 to
-  2.0 MB and the boot arena is 12 MiB; without the debug segment 207 files use
-  10.69 MB of it. A 13 MiB arena leaves the KOS heap too little for loading.
-- **Loading stops at time-of-day (object 207)**: its startup's `process-spawn`
-  runs `init-time-of-day`, whose `self` read finds no bound process context
-  (`current_process`, the first refusal site). Native process spawn from a
-  file's startup is the next runtime feature.
+  2.0 MB and the boot arena is 12 MiB; without the debug segment 237 files use
+  12.44 MB of it. A 13 MiB arena leaves the KOS heap too little for loading.
+- **cam-start (object 237) loads, but the boot test after it then fails.** Its startup
+  spawns the camera processes. The boot's later kernel-dispatcher check then
+  reaches processes that have no native fiber and refuses with
+  `UNSUPPORTED_TRANSFER`. Running every spawned process under the dispatcher (one
+  native fiber each) is the next runtime feature.
+- **The arena fills at ambient (object 240)**: 12.52 of 12.58 MB, with a refused
+  1,952-byte request. Two PS2 DMA buffers of 1,712 KiB take 3.4 MB of it (see
+  [MEMORY_BUDGET.md](MEMORY_BUDGET.md)).
 - **Lowering stops at process-taskable (object 275)**: an uninitialized read.
-- **Exporter refusals.** 56 of the 331 dependency-graph files refuse; 54 of them
-  for one reason, "conflicting or non-fixed virtual register alias". That is one
-  exporter feature (rlet register aliasing) to add next.
+
+## Process spawn from a startup (2026-10-27, AI-assisted)
+
+time-of-day's startup runs `(process-spawn time-of-day-proc :init init-time-of-day)`.
+Desktop `call_goal` enters a file's top level from C with `pp = #f` (r13 is the
+symbol table), and the original `run-function-in-process` saves that `#f`, sets
+`pp` to the new process and runs the init function inside its catch. Native
+support for this:
+
+- **The root.** The root has these conditions:
+  - no execution context bound;
+  - no fiber running;
+  - the kernel context names no current process;
+  - the scope and span ledgers are registered.
+
+  In that state, `dc-c-current-process` returns `#f`.
+- **Root scopes.** A lexical pp scope may be entered from the root, with `#f` as its
+  scheduler. The root owns no reservation or PID, and only the root C stack can
+  establish it. `(set! pp old)` restores `#f`.
+- **Spawned extents.** Dead-pool-heap members are carved by original GOAL from the
+  pool's C-allocated heap, so no C allocator notes them. The root's scope entry
+  notes the process's own record (allocated-length + 112). The process heap
+  validator checks it first.
+- **Process subtypes.** The process heap validator accepts any process subtype. For
+  those, `activate` starts the heap at `(-> stack)` plus the type's heap-base.
+- **Root stack objects.** In-place `new` also accepts the live part of the current
+  KOS stack. sky-tng's startup builds sky-vertex objects in a
+  `(new 'stack-no-clear ...)` array.
+- **The boot.** It registers both ledgers for the GAME.CGO load, checks that every
+  startup scope was left, and detaches them before the later dispatcher test.
+
+Two runtime checks expected an unbound C caller to refuse: original
+`send-event-function` and `deactivate`. They now check the desktop root behaviour
+instead: the body runs with `pp` set to the target, and `pp` is `#f` again afterwards.
+
+Not verified yet:
+- `shrink-heap` after init leaves the noted span at its pre-shrink extent;
+- the spawned processes have not run under the dispatcher.
 
 No hardware claims. Everything is verified in Flycast.

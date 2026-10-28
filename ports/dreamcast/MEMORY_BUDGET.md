@@ -89,8 +89,12 @@ of the desktop C++ kernel:
   romdisk is now **zstd** (4.9 MB → 0.66 MB, `zstd -19 --zstd=wlog=17`), streamed
   object by object through the vendored decompressor with a 128 KiB window
   (`goal_dgo_zst.c`). The ELF fell from 6.2 to 2.0 MB, and the arena is **12 MiB**:
-  192 files use 11.45 MB, so the next files need the arena to grow again or
-  memory to shrink. Spare VRAM is not a fit for the current users (see
+  192 files use 11.45 MB, and 237 use 12.44 MB. The arena is full at ambient
+  (object 240: 12.52 of 12.58 MB, a refused 1,952-byte request), so the next files
+  need the arena to grow again or memory to shrink. The largest single item is
+  display's two PS2 DMA buffers: 3.4 MB of PS2 GIF/VIF packets that the PowerVR
+  renderer will not consume as they are. Their size is a renderer decision
+  (`DMA_BUFFER_GLOBAL_SIZE` in `dreamcast_memory_budget.gc`). Spare VRAM is not a fit for the current users (see
   [VRAM_POOL.md](VRAM_POOL.md)). A disc build would stream from the GD-ROM instead. It
   still trades against VRAM-side and audio-side buffers later.
 - **mips2c functions** need real SH-4 implementations before gameplay. A first

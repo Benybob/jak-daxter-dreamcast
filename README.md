@@ -47,7 +47,8 @@ without the lowering, by ChatGPT/Codex's independent oracle and IEEE binary32.
 **GAME.CGO (2026-10-27, AI-assisted):** files now compile in the original game.gp
 dependency order, in one frontend run covering all 331 files of the GAME.CGO
 dependency graph, and **all 331 now export**. **275 of GAME.CGO's 326 code files** lower to SH-4,
-and **the first 207 load and run their original startups** in Flycast: **307 of 307 boot checks pass**. New native
+and **the first 237 load and run their original startups** in Flycast: **342 of 342 boot checks pass**, including a
+process spawned from a file's startup (time-of-day). New native
 pieces:
 - PS2 MMI integer ops;
 - `structure` allocation;
@@ -95,10 +96,10 @@ Host validation: 470 tests passed, one optional exporter test skipped (471 total
 | Original background LODs | Source published: original LOD selection; reduced training patch passes movement and camera checks |
 | Original kernel process system | Source published: unchanged original `send-event-function`, `deactivate`, `(suspend)`, `enter-state` and `kernel-dispatcher` (including trans/post hooks) run on native SH-4 fibers |
 | Original kernel compilation | Complete: 176 of 184 original kernel functions compile to SH-4, and the other 8 (x86/ARM64 assembly thread primitives) bind to named native counterparts; whole-file startups lower; see [KERNEL_COMPILATION.md](ports/dreamcast/KERNEL_COMPILATION.md) |
-| Original kernel boot | Verified: all 8 KERNEL.CGO startups run natively in original order, and an originally spawned process runs under the original dispatcher (87/87 checks); also boots from a native KERNEL.CGO DGO and loads the first 207 GAME.CGO files (307/307); see [KERNEL_BOOT.md](ports/dreamcast/KERNEL_BOOT.md) |
+| Original kernel boot | Verified: all 8 KERNEL.CGO startups run natively in original order, and an originally spawned process runs under the original dispatcher (87/87 checks); also boots from a native KERNEL.CGO DGO and loads the first 237 GAME.CGO files (342/342); see [KERNEL_BOOT.md](ports/dreamcast/KERNEL_BOOT.md) |
 | Original process initialization | Root C-stack path verified: unchanged initializer, throw, protect exits, native catches and original deactivate/pool return; initialization to a scheduled running state verified end to end; fiber catches pending |
 | VU0 vector registers | Verified: vf ops lower to SH-4; 141/141 lane-exact cases against an independent oracle; see [VU0_LOWERING.md](ports/dreamcast/VU0_LOWERING.md) |
-| Original GAME.CGO | In progress: 275/326 code files lower to SH-4 and the first 207 load and start in Flycast under a Dreamcast memory budget; process-spawn from a startup (time-of-day) and mips2c next; see [GAME_CGO.md](ports/dreamcast/GAME_CGO.md) |
+| Original GAME.CGO | In progress: 275/326 code files lower to SH-4 and the first 237 load and start in Flycast under a Dreamcast memory budget; running spawned processes under the dispatcher (cam-start), the arena (ambient) and mips2c next; see [GAME_CGO.md](ports/dreamcast/GAME_CGO.md) |
 | Full original game | Unfinished: fiber catch lifetime, cross-stack unwinding, the rest of GAME.CGO, memory budget, GC, general gameplay, progression or release build |
 
 The playable prototypes use a **native C controller**, as a temporary milestone.
@@ -153,7 +154,7 @@ and checkpoints, not a percentage of game completion or a single full-game run.
 | Area | Locally verified scope |
 | --- | --- |
 | Host | 447 tests pass with the complete local SDK/oracle setup |
-| GOAL runtime | 24,847 native checks at its latest verified checkpoint |
+| GOAL runtime | 24,853 native checks at its latest verified checkpoint |
 | Numeric regression | 39 native checks |
 | Original kernel processes | Events, deactivation (including self-deactivation on a fiber), suspension across destroyed stacks, state transitions and four-frame scheduling with trans/post hooks, and initialization through to a scheduled running state, inside the 24,844 runtime checks |
 | Kernel compilation coverage | 166/184 original kernel functions lower; remaining refusals named in `evidence/kernel-lowering-survey.json` |

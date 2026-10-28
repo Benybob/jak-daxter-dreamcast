@@ -14,8 +14,8 @@ static uint32_t read_word(const unsigned char *p,unsigned offset) {
 static unsigned char *validate(const dc_goal_process_heap *heap,uint32_t *cur,uint32_t *top) {
   dc_goal_runtime *rt;
   unsigned char *fields;
-  uint32_t process_type,base,end;
-  dc_goal_type_fields *schema;
+  uint32_t process_type,type,base,end;
+  dc_goal_type_fields *schema,*own;
   if(!heap || !(rt=heap->runtime)) return NULL;
   if(heap->process<4 || heap->allocation_bytes<PROCESS_BYTES ||
      heap->allocation_bytes>UINT32_MAX-(heap->process-4)) {
@@ -23,17 +23,23 @@ static unsigned char *validate(const dc_goal_process_heap *heap,uint32_t *cur,ui
   }
   process_type=dc_goal_symbol_value(rt,rt->s7+DC_FIX_SYM_PROCESS_TYPE);
   if(!process_type || dc_goal_type_of(rt,process_type)!=rt->type_type ||
-     dc_goal_type_of(rt,heap->process)!=process_type) {
+     !dc_goal_is_subtype(rt,type=dc_goal_type_of(rt,heap->process),process_type)) {
     fail(rt,DC_GOAL_BAD_TYPE); return NULL;
   }
   schema=dc_goal_resolve(rt,process_type,sizeof(*schema));
   if(!schema || schema->allocated_size!=PROCESS_BYTES) {
     fail(rt,DC_GOAL_BAD_TYPE); return NULL;
   }
+  /* Original actors are process subtypes. activate starts their heap after
+   * their own fields, at (-> stack) plus the type's heap-base. */
+  own=type==process_type?schema:dc_goal_resolve(rt,type,sizeof(*own));
+  if(!own || own->heap_base>heap->allocation_bytes-PROCESS_BYTES) {
+    (DC_GOAL_NOTE_SITE(3),fail(rt,DC_GOAL_BAD_ARGUMENT)); return NULL;
+  }
   if(!dc_goal_resolve(rt,heap->process-4,heap->allocation_bytes)) return NULL;
   fields=dc_goal_resolve(rt,heap->process,PROCESS_BYTES-4);
   if(!fields) return NULL;
-  base=heap->process+DYNAMIC_OFFSET; end=heap->process-4+heap->allocation_bytes;
+  base=heap->process+DYNAMIC_OFFSET+own->heap_base; end=heap->process-4+heap->allocation_bytes;
   *cur=read_word(fields,CUR_OFFSET); *top=read_word(fields,TOP_OFFSET);
   if(read_word(fields,LENGTH_OFFSET)!=heap->allocation_bytes-PROCESS_BYTES ||
      read_word(fields,BASE_OFFSET)!=base || (base&15u) ||
