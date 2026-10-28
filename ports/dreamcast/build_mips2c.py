@@ -29,7 +29,7 @@ import sys
 DEFAULT_FILES = ('collide_cache', 'sky_tng', 'collide_edge_grab', 'collide_mesh', 'generic_effect',
                  'generic_merc', 'ripple', 'bones', 'generic_effect2', 'collide_func', 'collide_probe', 'generic_tie',
                  'joint', 'merc_blend_shape', 'ocean', 'ocean_vu0', 'shadow', 'sparticle', 'sparticle_launcher', 'tfrag',
-                 'tie_methods')
+                 'tie_methods', 'draw_string', 'texture', 'time_of_day')
 CPP_TOKEN = re.compile(r'"(?:\\.|[^"\\])*"|//[^\n]*|/\*.*?\*/', re.S)
 
 

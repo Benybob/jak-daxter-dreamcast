@@ -2,9 +2,9 @@
 
 The PC port replaced some original hand-written MIPS/VU0 assembly with C++
 translations in `game/mips2c`. jak1 has 25 such files registering 94 functions
-(`survey_mips2c_users.py`). 21 files, every file with two or more GAME.CGO
-callers, now build natively for SH-4 and run in the Dreamcast boot: 91 functions,
-returned for 73 of GAME.CGO's lookups.
+(`survey_mips2c_users.py`). All 24 files with GAME.CGO callers now build
+natively for SH-4 and run in the Dreamcast boot: 94 functions, answering all 76 of
+GAME.CGO's mips2c lookups. No lookup gets the faulting stub any more.
 
 | File | Functions | Differential case |
 | --- | --- | --- |
@@ -29,9 +29,11 @@ returned for 73 of GAME.CGO's lookups.
 | sparticle_launcher | 2 | none yet |
 | tfrag | 2 | stats-tfrag-asm (eight fragments) |
 | tie_methods | 2 | none yet |
+| draw_string | 1 | draw-string (two strings, both fonts, color/offset/newline codes) |
+| texture | 1 | adgif-shader<-texture-with-update! (four textures, every branch) |
+| time_of_day | 1 | time-of-day-interp-colors-scratch (64 colors, two scratchpad chunks) |
 
-The other four files (draw_string, texture, time_of_day and the empty test_func)
-still get the faulting stub.
+The 25th file, test_func, registers nothing.
 
 ## How it works
 
@@ -84,8 +86,8 @@ still get the faulting stub.
 - **Same arithmetic as desktop.** Built with `-ffp-contract=off`. Otherwise GCC
   fuses `a*b+c` into SH-4 `fmac` with one rounding, and the clipped sky vertices
   differ from desktop in their last bits.
-- **Size.** Built with `-Os`: 561 KB of code for 21 files instead of 837 KB at
-  `-O2`. The KOS heap holds GAME.CGO while it loads. At `-O2` it had less than
+- **Size.** Built with `-Os`: 584 KB of code for all 24 files. At `-O2`, 21 files
+  alone took 837 KB. The KOS heap holds GAME.CGO while it loads. At `-O2` it had less than
   64 KiB to spare; it now has more. All cases match at `-Os` as at `-O2`.
 
 ## Verified
@@ -101,8 +103,8 @@ paths stay in C++ (no `jalr` back into GOAL). The region is 16 KiB aligned on bo
 sides, as the PS2 scratchpad is, because translated code forms scratchpad addresses
 with `ori` (`render-ocean-quad`: `ori t4, spad, 12288`). Afterwards every pointer into the
 region becomes its offset, and `#f` becomes a marker. The boot runs the same cases
-through the native SH-4 build. All 17 match the oracle bit for bit, both the
-region CRC and each case's result (485 of 485 boot checks).
+through the native SH-4 build. All 20 match the oracle bit for bit, both the
+region CRC and each case's result (491 of 491 boot checks).
 
 Found on the way:
 
@@ -124,7 +126,8 @@ Found on the way:
   12 two-caller files it finds no `vis` candidates. Its 45 register reads are
   `ra` and `t9` (the return address and the function's own address, before
   calls), and registers a helper's caller sets (`t4`/`t5` for
-  `draw-large-polygon-ocean`).
+  `draw-large-polygon-ocean`). The 1-caller files add only `t9` in time_of_day
+  (`mov fp, t9`).
 - **Memory.** The GOAL arena is 13 MiB (it holds 10.7 MB), so the KOS heap has
   room to load GAME.CGO with all 21 files linked, at `-Os`.
 
@@ -148,7 +151,6 @@ Not covered yet:
 
 ## Next
 
-Next in the survey's order: the 1-caller files (draw_string, texture,
-time_of_day). After that come cases for the functions that call back into GOAL.
+Every file is built. Next come cases for the functions that call back into GOAL.
 Those need the oracle to stand in for the GOAL callees, such as `flush-cache` and
 the particle callbacks.

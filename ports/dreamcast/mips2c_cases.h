@@ -498,6 +498,91 @@ static inline uint32_t dc_m2c_sphere_triangle(dc_m2c_env *e) {
   return result;
 }
 
+/* ---- texture: adgif-shader<-texture-with-update! (mip counts below and from 5, and
+ * both byte-7 paths) ---- */
+static inline uint32_t dc_m2c_adgif_texture(dc_m2c_env *e) {
+  enum { TEXTURES = 0x0104, SHADERS = 0x1000 };
+  static const uint8_t mips[4] = {1, 4, 5, 7}, byte7[4] = {1, 2, 1, 3};
+  uint32_t i, k, result = 0;
+  for (i = 0; i < 4; ++i) {
+    uint32_t tex = TEXTURES + 0x100 * i, shader = SHADERS + 0x100 * i;
+    uint16_t w = (uint16_t)(16u << i), h = (uint16_t)(256u >> i);
+    memcpy(e->region + tex + 0, &w, 2); memcpy(e->region + tex + 2, &h, 2);
+    dc_m2c_b(e, tex + 4, mips[i]); dc_m2c_b(e, tex + 5, (uint8_t)(i + 1));
+    dc_m2c_b(e, tex + 6, (uint8_t)(3 * i)); dc_m2c_b(e, tex + 7, byte7[i]);
+    for (k = 0; k < 8; ++k) {  /* the mip levels' destinations and widths */
+      uint16_t v = (uint16_t)(0x1234u * (k + 1) + 0x111u * i);
+      memcpy(e->region + tex + 8 + 2 * k, &v, 2);
+    }
+    for (k = 0; k < 7; ++k) dc_m2c_b(e, tex + 26 + k, (uint8_t)(k * 9 + i + 1));
+    dc_m2c_f(e, tex + 44, 0.75f + 1.5f * (float)i);  /* uv-dist */
+    dc_m2c_u(e, shader + 0, 0x1fu); dc_m2c_u(e, shader + 16, 0x3ffu);
+    result = result << 8 |
+             ((uint32_t)dc_m2c_call(e, "adgif-shader<-texture-with-update!", dc_m2c_ptr(e, shader), dc_m2c_ptr(e, tex),
+                                    0, 0, 0, 0) - dc_m2c_ptr(e, shader));
+  }
+  return result;  /* each call returns its shader */
+}
+
+/* ---- time_of_day: time-of-day-interp-colors-scratch (64 colors, two scratchpad
+ * chunks, double-buffered) ---- */
+static inline uint32_t dc_m2c_time_of_day(dc_m2c_env *e) {
+  enum { SPAD = 0x4000, PALETTE = 0x1004, CONTEXT = 0x2004, OUT = 0x3000 };
+  static const uint16_t weight[4] = {16, 24, 8, 16};  /* the four palettes' weights, /64 */
+  uint32_t i, k;
+  e->set_symbol(e, "*fake-scratchpad-data*", dc_m2c_ptr(e, SPAD));
+  dc_m2c_u(e, PALETTE + 4, 64);
+  for (i = 0; i < 3 * 1024; ++i) dc_m2c_b(e, PALETTE + 12 + i, (uint8_t)(i * 37u + 11u));
+  for (i = 0; i < 4; ++i)
+    for (k = 0; k < 8; ++k) {
+      uint16_t v = (uint16_t)(weight[i] + (k & 1));
+      memcpy(e->region + CONTEXT + 1852 + 16 * i + 2 * k, &v, 2);
+    }
+  dc_m2c_call(e, "time-of-day-interp-colors-scratch", dc_m2c_ptr(e, OUT), dc_m2c_ptr(e, PALETTE), dc_m2c_ptr(e, CONTEXT),
+              0, 0, 0);
+  return 0;
+}
+
+/* ---- draw_string: draw-string (font12 left-aligned, then font24 with other flags),
+ * with color, offset and newline codes ---- */
+static inline uint32_t dc_m2c_draw_string(dc_m2c_env *e) {
+  enum { CAMERA = 0x0004, VIDEO = 0x0400, WORK = 0x1000, FONT12 = 0x2000, FONT24 = 0x2800, CONTEXT = 0x3004,
+         MATRIX = 0x3100, STRING = 0x3204, RESULT = 0x3300, DMA = 0x3404 };
+  static const char *const text[2] = {"Jak & Daxter\n~3Lv 12 ~+4ok", "~yPrecursor ~1orb\r~-2 x 99"};
+  static const uint32_t flags[2] = {0, 32 | 16 | 2};
+  uint32_t i, pass, state = 0xf0e1d2c3u, result = 0;
+  e->set_symbol(e, "*math-camera*", dc_m2c_ptr(e, CAMERA));
+  e->set_symbol(e, "*video-parms*", dc_m2c_ptr(e, VIDEO));
+  e->set_symbol(e, "*font-work*", dc_m2c_ptr(e, WORK));
+  e->set_symbol(e, "*font12-table*", dc_m2c_ptr(e, FONT12));
+  e->set_symbol(e, "*font24-table*", dc_m2c_ptr(e, FONT24));
+  dc_m2c_vec(e, CAMERA + 732, 2048.0f, 2048.0f, 16777000.0f, 1.0f);
+  dc_m2c_vec(e, VIDEO + 64, 1.0f, 1.0f, 1.0f, 1.0f);
+  /* positive, nonzero font-work and glyph data: no zero divisors */
+  for (i = 0; i < 3008 / 4; ++i) dc_m2c_f(e, WORK + 4 * i, 1.25f + dc_m2c_rand(&state) / 16.0f);
+  for (i = 0; i < 0x1000 / 4; ++i) dc_m2c_f(e, FONT12 + 4 * i, 1.5f + dc_m2c_rand(&state) / 16.0f);  /* both tables */
+  dc_m2c_vec(e, MATRIX + 0, 1.0f, 0.0f, 0.0f, 0.0f); dc_m2c_vec(e, MATRIX + 16, 0.0f, 1.0f, 0.0f, 0.0f);
+  dc_m2c_vec(e, MATRIX + 32, 0.0f, 0.0f, 1.0f, 0.0f); dc_m2c_vec(e, MATRIX + 48, 1792.0f, 1840.0f, 0.0f, 1.0f);
+  dc_m2c_u(e, CONTEXT + 72, dc_m2c_ptr(e, MATRIX));
+  dc_m2c_vec(e, CONTEXT + 12, 10.0f, 20.0f, 1.0f, 1.0f);
+  dc_m2c_vec(e, CONTEXT + 44, 600.0f, 400.0f, 1.0f, 1.0f);  /* the box glyphs are drawn in */
+  dc_m2c_u(e, CONTEXT + 60, 3);  /* color */
+  dc_m2c_u(e, DMA + 4, dc_m2c_ptr(e, DMA + 12));
+  for (pass = 0; pass < 2; ++pass) {
+    uint32_t before, after, n = (uint32_t)strlen(text[pass]);
+    uint64_t width;
+    memcpy(e->region + STRING + 4, text[pass], n + 1);
+    dc_m2c_u(e, STRING, n);
+    dc_m2c_u(e, CONTEXT + 68, flags[pass]);
+    memcpy(&before, e->region + DMA + 4, 4);
+    width = dc_m2c_call(e, "draw-string", dc_m2c_ptr(e, STRING), dc_m2c_ptr(e, DMA), dc_m2c_ptr(e, CONTEXT), 0, 0, 0);
+    memcpy(&after, e->region + DMA + 4, 4);
+    dc_m2c_u(e, RESULT + 4 * pass, (uint32_t)width);
+    result = result << 16 | ((after - before) & 0xffffu);
+  }
+  return result;  /* packet bytes per string */
+}
+
 typedef struct { const char *name; uint32_t (*run)(dc_m2c_env *); } dc_m2c_case;
 static const dc_m2c_case dc_m2c_cases[] = {
   {"sky_tng", dc_m2c_sky},
@@ -517,6 +602,9 @@ static const dc_m2c_case dc_m2c_cases[] = {
   {"shadow", dc_m2c_shadow},
   {"tfrag", dc_m2c_tfrag_stats},
   {"collide_func", dc_m2c_sphere_triangle},
+  {"texture", dc_m2c_adgif_texture},
+  {"time_of_day", dc_m2c_time_of_day},
+  {"draw_string", dc_m2c_draw_string},
 };
 #define DC_M2C_CASE_COUNT (sizeof dc_m2c_cases / sizeof dc_m2c_cases[0])
 
