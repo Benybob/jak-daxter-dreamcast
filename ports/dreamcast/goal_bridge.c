@@ -1038,15 +1038,17 @@ void dc_goal_format_capture_clear(void){format_length=0;}
 /* Main-thread backup floor. A suspended native SH-4 main thread needs 348
  * bytes; dreamcast_thread_context.gc makes 512 (PROCESS_STACK_SAVE_SIZE) the
  * default every activate reserves. Original stack-size-set! calls size backups
- * for PS2 frames (time-of-day asks for 128), so this counterpart passes the
- * unchanged original method max(request, 512): smaller requests keep 512, larger
- * ones still grow. */
+ * for PS2 frames (time-of-day asks for 128), and native frames are larger: a
+ * camera that asks for 512 suspends with 668 bytes in use. So this counterpart
+ * passes the unchanged original method max(2 * request, 512). */
 #define DC_MAIN_BACKUP_FLOOR 512u
+#define DC_MAIN_BACKUP_SCALE 2u
 static uint32_t original_stack_size_set;
 static uint64_t stack_size_set_floor(uint64_t thread,uint64_t bytes) {
   typedef uint64_t (*setter)(uint64_t,uint64_t);
   if(!original_stack_size_set){if(active_runtime)active_runtime->error=DC_GOAL_BAD_FUNCTION;return 0;}
-  if((int64_t)bytes<(int64_t)DC_MAIN_BACKUP_FLOOR)bytes=DC_MAIN_BACKUP_FLOOR;
+  if((int64_t)bytes<(int64_t)(DC_MAIN_BACKUP_FLOOR/DC_MAIN_BACKUP_SCALE))bytes=DC_MAIN_BACKUP_FLOOR;
+  else if(bytes<=0x10000u)bytes*=DC_MAIN_BACKUP_SCALE;
   return ((setter)(uintptr_t)original_stack_size_set)(thread,bytes);
 }
 int dc_goal_install_backup_floor(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_goal_module_result *result) {

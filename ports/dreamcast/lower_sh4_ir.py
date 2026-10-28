@@ -1852,7 +1852,19 @@ def qualify_anonymous(doc,module):
         f['instructions']=[dict(op,function=local(op['function'])) if op['kind']=='function_address' else op
                            for op in f['instructions']]
         functions.append(f)
-    return dict(doc,functions=functions)
+    # Static data reaches lambdas too: structure relocations (function:NAME)
+    # and pair atoms of kind function.
+    def relocation(r):
+        kind,_,name=r.get('symbol','').partition(':')
+        return dict(r,symbol=kind+':'+local(name)) if kind=='function' else r
+    def atom(a): return dict(a,target=local(a['target'])) if a.get('kind')=='function' else a
+    statics=[]
+    for item in doc.get('statics',[]):
+        if isinstance(item.get('relocations'),list):
+            item=dict(item,relocations=[relocation(r) for r in item['relocations']])
+        if item.get('kind')=='pair': item=dict(item,car=atom(item['car']),cdr=atom(item['cdr']))
+        statics.append(item)
+    return dict(doc,functions=functions,statics=statics)
 
 def discard_debug_segment(doc):
     """A kernel without a debug segment, as on a retail PS2 (AI-assisted).

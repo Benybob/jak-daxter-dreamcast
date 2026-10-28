@@ -233,24 +233,40 @@ Runtime:
 
 ## Where it stops
 
-- **Loading:** the first 237 compiled files load and start (347 of 347 boot checks),
-  after the memory budget in [MEMORY_BUDGET.md](MEMORY_BUDGET.md): the corrected
-  `PROCESS_HEAP_MULT`, PS2-sized DMA buffers, native `kmalloc`/`scf-get-time`, and
-  a faulting `__pc-get-mips2c` stub. The test ELF now carries GAME.CGO as zstd
-  (4.9 MB → 0.66 MB, 128 KiB window), streamed object by object through the
-  vendored zstd decompressor (`goal_dgo_zst.c`), so the ELF fell from 6.2 to
-  2.0 MB and the boot arena is 12 MiB; without the debug segment 237 files use
-  12.44 MB of it. A 13 MiB arena leaves the KOS heap too little for loading.
-- **cam-start (object 237) loads, but its cameras can't run yet.** Its startup spawns
-  the camera processes, and the dispatcher now gives each one a native fiber. Their
-  state code in cam-states then calls functions from GAME.CGO files that aren't
-  loaded yet. The real game loads all of GAME.CGO before the dispatcher runs, so this
-  is the partial prefix, not a runtime defect. With these 240 files the arena is also
-  full (next item).
-- **The arena fills at ambient (object 240)**: 12.52 of 12.58 MB, with a refused
-  1,952-byte request. Two PS2 DMA buffers of 1,712 KiB take 3.4 MB of it (see
+- **Loading:** the first 274 compiled files load and start (384 of 384 boot checks),
+  through target2: cam-start, ambient and target included. This follows the memory
+  budget in [MEMORY_BUDGET.md](MEMORY_BUDGET.md) and smaller native code (next
+  section). The test ELF carries GAME.CGO as zstd, streamed object by object through
+  the vendored decompressor (`goal_dgo_zst.c`), and the boot arena is 12 MiB. A 13 MiB
+  arena leaves the KOS heap too little for loading.
+- **Spawned processes run.** cam-start's camera processes and the other startup
+  spawns run their dispatcher frames without error. A camera asks
+  `stack-size-set!` for 512 bytes (sized for PS2 frames) but suspends with 668
+  bytes of native stack in use, so the backup counterpart now passes
+  `max(2 * request, 512)` to the original method.
+- **The arena fills at task-control (object 274)**: 12.54 of 12.58 MB, with a refused
+  720-byte request. Two PS2 DMA buffers of 1,712 KiB take 3.4 MB of it (see
   [MEMORY_BUDGET.md](MEMORY_BUDGET.md)).
 - **Lowering stops at process-taskable (object 275)**: an uninitialized read.
+
+## Smaller native code (2026-10-28, AI-assisted)
+
+The lowering keeps every value in an 8-byte stack slot, and a slot access used to
+take five instructions. These changes shrink code without changing the slot model:
+
+- A 64-bit or 128-bit slot within 60 bytes of the frame base uses
+  `MOV.L @(disp,R14)`: two instructions per 64-bit slot.
+- Float slots use `FMOV.S @(R0,R14)`. No caller holds a value in R0 across one.
+- Slot colors are numbered by access count, so hot slots land in range.
+- A slot reloaded right after its store, into the same registers and with no branch
+  target between, isn't reloaded.
+- Field accesses load only the base's 32-bit address word, skip a zero offset, and
+  use `MOV.B/W/L @(disp,Rm)` in range.
+
+The 237 files that loaded before went from 12.44 MB to 10.54 MB of arena. Anonymous
+functions referenced from static data (structure relocations and pair atoms) are now
+qualified like the functions themselves, which let target-death lower again. A
+register allocator is the larger next step.
 
 ## Process spawn from a startup (2026-10-27, AI-assisted)
 

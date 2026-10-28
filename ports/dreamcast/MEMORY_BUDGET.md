@@ -97,7 +97,10 @@ of the desktop C++ kernel:
   range). The same 237 files now use **10.91 MB** (was 12.44), and cam-states'
   module fell from 327,757 to 251,921 bytes. Projected from source size, all of
   GAME.CGO still needs about 7.5 MB of code (it was about 11), so code density stays the main memory
-  problem; a register allocator is the larger next step. The largest single item is
+  problem; a register allocator is the larger next step. With float slots, hot-first
+  slot order and store forwarding as well, the 237 files use 10.54 MB, and 274 files
+  (through target2) fit: 12.54 MB, full at task-control (object 274, a refused
+  720-byte request). The largest single item is
   display's two PS2 DMA buffers: 3.4 MB of PS2 GIF/VIF packets that the PowerVR
   renderer will not consume as they are. Their size is a renderer decision
   (`DMA_BUFFER_GLOBAL_SIZE` in `dreamcast_memory_budget.gc`).

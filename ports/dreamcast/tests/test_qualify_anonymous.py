@@ -47,6 +47,22 @@ class QualifyAnonymous(unittest.TestCase):
         self.assertEqual([f['name'] for f in qualify_anonymous(doc, 'm')['functions']],
                          ['anon-function-12x', '(method anon-function-1 foo)'])
 
+    def test_static_references_follow(self):
+        doc = dict(self.doc, statics=[
+            {'id': 's1', 'kind': 'structure', 'relocations': [
+                {'offset': 0, 'symbol': 'function:anon-function-1'},
+                {'offset': 4, 'symbol': 'function:init-time-of-day'},
+                {'offset': 8, 'symbol': 'type:anon-function-1'}]},
+            {'id': 's2', 'kind': 'pair', 'car': {'kind': 'function', 'target': 'anon-function-1'},
+             'cdr': {'kind': 'data', 'target': 's1'}}])
+        statics = qualify_anonymous(doc, 'target-death')['statics']
+        self.assertEqual([r['symbol'] for r in statics[0]['relocations']],
+                         ['function:target-death:anon-function-1', 'function:init-time-of-day',
+                          'type:anon-function-1'])
+        self.assertEqual(statics[1]['car']['target'], 'target-death:anon-function-1')
+        self.assertEqual(statics[1]['cdr'], {'kind': 'data', 'target': 's1'})
+        self.assertEqual(doc['statics'][0]['relocations'][0]['symbol'], 'function:anon-function-1')
+
     def test_input_is_not_mutated(self):
         qualify_anonymous(self.doc, 'time-of-day')
         self.assertEqual(self.doc['functions'][0]['name'], 'anon-function-1')
