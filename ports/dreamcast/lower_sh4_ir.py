@@ -216,9 +216,22 @@ def allocate_slots(function,quads=None):
             while c in occupied: c+=1
             colors[value]=c
         return colors
+    # Any permutation of colors is valid. Number eight-byte colors by integer
+    # access count so the hottest slots land in MOV.L @(disp,R14) range (0..60).
+    uses={}
+    kinds={r['id']:r.get('class') for r in function['registers']}
+    for i in reachable:
+        op=ops[i]
+        for value in op['reads']+(op['writes'] if op['kind']!='nop' else []):
+            if kinds.get(value)!='vector_float': uses[value]=uses.get(value,0)+1
+    def hot_first(colors):
+        weight={}
+        for value,c in colors.items(): weight[c]=weight.get(c,0)+uses.get(value,0)
+        rank={c:k for k,c in enumerate(sorted(weight,key=lambda c:(-weight[c],c)))}
+        return {value:rank[c] for value,c in colors.items()}
     if quads is None:
-        return {value:c*8 for value,c in color(graph).items()}
-    return ({value:c*8 for value,c in color(set(graph)-quads).items()},
+        return {value:c*8 for value,c in hot_first(color(graph)).items()}
+    return ({value:c*8 for value,c in hot_first(color(set(graph)-quads)).items()},
             {value:c*16 for value,c in color(set(graph)&quads).items()})
 
 def stack_object_reservation(function,registers,fixed,runtime):
@@ -1090,8 +1103,12 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
         if index not in slots: raise ValueError('unknown virtual register')
         offset=slots[index]
         return offset//4 if offset%4==0 and offset+size-4<=60 else None
+    stored=None  # (code position, slot value, low, high) of the last store64
     def load64(index,low=0,high=1):
         if registers[index]['class']!='gpr64': raise ValueError('expected integer virtual value')
+        # Reloading what was just stored, into the same registers, with no label
+        # between (no other path in), is a no-op.
+        if stored==(len(e.code),index,low,high) and e.last_label!=len(e.code): return
         d=near(index,8)
         if d is not None:
             e.word(0x50e0|low<<8|d); e.word(0x50e0|high<<8|(d+1)); return  # mov.l @(disp,r14),Rn
@@ -1107,11 +1124,14 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
         if -128<=offset<=127: e.add_immediate(2,offset)
         else: constant(3,offset); e.add(2,3)
     def store64(index,low=0,high=1):
+        nonlocal stored
         if registers[index]['class']!='gpr64': raise ValueError('expected integer virtual value')
         d=near(index,8)
         if d is not None:
-            e.word(0x1e00|low<<4|d); e.word(0x1e00|high<<4|(d+1)); return  # mov.l Rm,@(disp,r14)
-        address(index); e.store(8,low); e.add_immediate(8,4); e.store(8,high)
+            e.word(0x1e00|low<<4|d); e.word(0x1e00|high<<4|(d+1))  # mov.l Rm,@(disp,r14)
+        else:
+            address(index); e.store(8,low); e.add_immediate(8,4); e.store(8,high)
+        stored=(len(e.code),index,low,high)
     def stack_object_address(slot,dest):
         if stack_region is None: raise ValueError('stack address without a stack object region')
         e.mov(8,14)
@@ -1157,9 +1177,19 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
         for n in range(4):
             if n: e.add_immediate(8,4)
             e.rr(0xf00a,8,base+n)  # FMOV.S FRm,@R8
+    # Float slots index R14 by R0 (FMOV.S has no displacement form). No caller
+    # holds a value in R0 across a float slot access.
     def load_float(index,reg=0):
+        if index not in slots: raise ValueError('unknown virtual register')
+        offset=slots[index]
+        if not offset: e.word(0xf008|(reg<<8)|(14<<4)); return
+        if offset<=127: e.immediate(0,offset); e.word(0xf006|(reg<<8)|(14<<4)); return
         address(index); e.word(0xf008|(reg<<8)|(8<<4))
     def store_float(index,reg=0):
+        if index not in slots: raise ValueError('unknown virtual register')
+        offset=slots[index]
+        if not offset: e.word(0xf00a|(14<<8)|(reg<<4)); return
+        if offset<=127: e.immediate(0,offset); e.word(0xf007|(14<<8)|(reg<<4)); return
         address(index); e.word(0xf00a|(8<<8)|(reg<<4))
     def constant(reg,value):
         value&=0xffffffff
@@ -1270,8 +1300,11 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
     instructions=function['instructions']
     guarded_calls=runtime and any(op['kind']=='call' for op in instructions)
     used={value for op in instructions for value in op['reads']}
+    targets={op['target'] for op in instructions if op['kind'] in ('goto','branch')}
     for position,op in enumerate(instructions):
+        entered=e.last_label
         e.label('ir_'+str(position))
+        if position not in targets: e.last_label=entered  # fall-through only
         kind=op['kind']; reads=op['reads']; writes=op['writes']
         try:
             if kind=='nop': continue

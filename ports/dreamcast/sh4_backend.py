@@ -16,6 +16,7 @@ class Emitter:
         self.labels={}
         self.branches=[]
         self.literals=[]
+        self.last_label=-1
 
     def word(self,value): self.code+=struct.pack('<H',value)
 
@@ -64,6 +65,7 @@ class Emitter:
     def label(self,name):
         if name in self.labels: raise ValueError('duplicate label')
         self.labels[name]=len(self.code)
+        self.last_label=len(self.code)
 
     def branch(self,kind,target):
         if kind not in ('bt','bf','bra','bsr'): raise ValueError('unsupported branch')

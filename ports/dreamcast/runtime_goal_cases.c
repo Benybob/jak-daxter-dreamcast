@@ -151,7 +151,7 @@ uint32_t dc_runtime_goal_cases(void *memory,uint32_t capacity,dc_runtime_check c
                           GOAL_RUNTIME_IDENTITY_BASELINE_EXPORT_COUNT,sync_code,NULL,&baseline)) {
     CHECK(rt.error,0,"baseline original identity load"); return 0;
   }
-  CHECK(baseline.code_bytes,48,"original identity unoptimized size");  /* near slots use MOV.L @(disp,R14) */
+  CHECK(baseline.code_bytes,44,"original identity unoptimized size");  /* near slots, store-to-load forwarding */
   for (i=0;i<7;++i) CHECK(((goal_one)(uintptr_t)entry(&rt,"identity"))(values[i]),
                          ((goal_one)(uintptr_t)optimized)(values[i]),"original baseline and optimized identity agree");
   code_bytes=bootstrap.code_bytes+fixture.code_bytes+identity.code_bytes+baseline.code_bytes;
