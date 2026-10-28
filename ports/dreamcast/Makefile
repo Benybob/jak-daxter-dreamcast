@@ -747,9 +747,13 @@ kernel_dgo_cases.o: kernel_boot_cases.c goal_dgo.h goal_dgo_zst.h goal_bridge.h 
 build/kernel-dgo-romdisk.o: build/kernel-dgo-rd/KERNEL.CGO build/kernel-dgo-rd/GAME.CGO.zst
 	$(KOS_GENROMFS) -f build/kernel-dgo-romdisk.img -d build/kernel-dgo-rd
 	$(KOS_BASE)/utils/bin2c/bin2c build/kernel-dgo-romdisk.img build/kernel-dgo-romdisk.c romdisk
+	# Linked high in main RAM, then staged into VRAM by romdisk_stage.c.
+	sed -i 's/^const unsigned char romdisk_data\[/const unsigned char __attribute__((section(".dc_stage"),aligned(32))) romdisk_data[/' build/kernel-dgo-romdisk.c
 	$(KOS_CC) $(KOS_CFLAGS) -c build/kernel-dgo-romdisk.c -o build/kernel-dgo-romdisk-tmp.o
 	$(KOS_CC) -o $@ -r build/kernel-dgo-romdisk-tmp.o $(KOS_LIB_PATHS) -Wl,--whole-archive -lromdiskbase
 kernel_vf_fixture.o: kernel_vf_fixture.c goal_module.h build/vf_fixture.h
 	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -I. -c kernel_vf_fixture.c -o $@
-jak-dc-kernel-dgo.elf: kernel_boot_main.o kernel_dgo_cases.o kernel_vf_fixture.o goal_dgo.o goal_dgo_zst.o $(ZSTD_OBJS) build/kernel-dgo-romdisk.o $(KERNEL_BOOT_LIBS)
-	kos-cc -o $@ $^
+romdisk_stage.o: romdisk_stage.c
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -c romdisk_stage.c -o $@
+jak-dc-kernel-dgo.elf: kernel_boot_main.o kernel_dgo_cases.o kernel_vf_fixture.o goal_dgo.o goal_dgo_zst.o romdisk_stage.o $(ZSTD_OBJS) build/kernel-dgo-romdisk.o $(KERNEL_BOOT_LIBS)
+	kos-cc -o $@ $^ -Wl,--section-start=.dc_stage=0x8cd80000

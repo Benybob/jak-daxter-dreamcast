@@ -23,7 +23,7 @@ class RuntimeTest(unittest.TestCase):
         executable=ROOT/'build'/('module-check.exe' if os.name=='nt' else 'module-check')
         result=subprocess.run([str(executable)],check=True,text=True,capture_output=True)
         report=json.loads(result.stdout)
-        self.assertEqual(report,{'tests':85,'passed':85})
+        self.assertEqual(report,{'tests':100,'passed':100})
 
     def test_layout_is_derived_from_current_original_headers(self):
         self.assertEqual((ROOT/'goal_layout.h').read_text(),generate(ROOT.parents[1]))

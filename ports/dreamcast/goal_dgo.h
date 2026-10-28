@@ -10,6 +10,8 @@
 typedef struct {
   char name[60];
   uint32_t objects,completed,failed_object,code_bytes,initializers;
+  /* startup code freed after it ran, as the original top-level segment */
+  uint32_t temporary_bytes;
   /* runtime arena use before the first object and after each completed one */
   uint32_t arena_before,arena_after[DC_GOAL_DGO_MAX_OBJECTS];
   char object_names[DC_GOAL_DGO_MAX_OBJECTS][60];

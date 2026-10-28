@@ -26,6 +26,11 @@ typedef struct {
   /* Private plain-arena records of exact loader-installed code entries. */
   uint32_t code_registry_head,code_registry_count;
   enum dc_goal_error error;
+  /* One temporary top-of-arena allocation (AI-assisted): a DGO object's
+   * top-level startup, like GOAL's top-level segment, which the original
+   * linker places at the top of the heap and frees after it runs. Bytes taken
+   * from the top, and the startup's exact code entry while it is resident. */
+  uint32_t temporary,temporary_entry,temporary_bytes,temporary_symbol;
 } dc_goal_runtime;
 
 int dc_goal_init(dc_goal_runtime *rt,void *memory,uint32_t capacity,uint32_t virtual_base);
@@ -34,6 +39,11 @@ int dc_goal_init_native(dc_goal_runtime *rt,void *memory,uint32_t capacity);
 #endif
 void *dc_goal_resolve(dc_goal_runtime *rt,uint32_t address,uint32_t size);
 uint32_t dc_goal_alloc(dc_goal_runtime *rt,uint32_t bytes);
+/* Zeroed 16-byte-aligned memory below the arena's top, released all at once by
+ * dc_goal_release_temporary. Ordinary allocations stop below it. */
+uint32_t dc_goal_alloc_temporary(dc_goal_runtime *rt,uint32_t bytes);
+/* Frees the temporary region; a resident startup's symbol becomes #f. */
+void dc_goal_release_temporary(dc_goal_runtime *rt);
 /* Size of the most recent arena request that did not fit (diagnostics only). */
 extern uint32_t dc_goal_last_failed_alloc;
 /* First failure of a GOAL-called type bridge (type new, method-set!) since the

@@ -13,6 +13,8 @@ static int valid_name(const unsigned char *name) {
   return 1;
 }
 static int fail(dc_goal_runtime *rt,dc_goal_dgo_result *result,uint32_t index,enum dc_goal_error error) {
+  enum dc_goal_error prior=rt->error;
+  dc_goal_release_temporary(rt);rt->error=prior;  /* never leave a startup resident */
   result->failed_object=index;
   if(rt->error==DC_GOAL_OK)rt->error=error;
   return 0;
@@ -36,7 +38,7 @@ int dc_goal_load_dgo(dc_goal_runtime *rt,FILE *file,dc_goal_cache_sync sync,void
     if(fread(header,1,64,file)!=64 || !valid_name(header+4))return fail(rt,result,i,DC_GOAL_BAD_MODULE);
     memcpy(result->object_names[i],header+4,60);
     size=word(header);
-    if(!dc_goal_load_native_stream(rt,file,size,sync,context,&object))return fail(rt,result,i,DC_GOAL_BAD_MODULE);
+    if(!dc_goal_load_native_stream_temporary(rt,file,size,sync,context,&object))return fail(rt,result,i,DC_GOAL_BAD_MODULE);
     result->code_bytes+=object.module.code_bytes;
     pad=(16u-(size&15u))&15u;
     if(fread(padding,1,pad,file)!=pad)return fail(rt,result,i,DC_GOAL_BAD_MODULE);
@@ -49,6 +51,9 @@ int dc_goal_load_dgo(dc_goal_runtime *rt,FILE *file,dc_goal_cache_sync sync,void
       if(!dc_goal_run_initializer_void(rt,object.initializer))return fail(rt,result,i,DC_GOAL_BAD_FUNCTION);
       ++result->initializers;
     }
+    /* The startup ran once; like the original top-level segment, its code is
+     * freed (its symbol becomes #f). */
+    result->temporary_bytes+=rt->temporary;dc_goal_release_temporary(rt);
     if(rt->error!=DC_GOAL_OK)return fail(rt,result,i,rt->error);
     if(dc_goal_sticky_error!=DC_GOAL_OK)return fail(rt,result,i,dc_goal_sticky_error);
     result->arena_after[i]=rt->used;

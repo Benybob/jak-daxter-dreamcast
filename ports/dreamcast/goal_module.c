@@ -40,6 +40,12 @@ int dc_goal_code_entry(dc_goal_runtime *rt,uint32_t entry,dc_goal_code_entry_inf
     at=record.next;
   }
   if(at) return code_error(rt,DC_GOAL_BAD_MODULE);
+  /* A resident temporary startup is an exact entry outside the chain. */
+  if(!found.entry && entry==rt->temporary_entry && rt->temporary_symbol &&
+     dc_goal_resolve(rt,entry-4u,rt->temporary_bytes+4u) &&
+     dc_goal_type_of(rt,rt->temporary_symbol)==rt->symbol_type) {
+    found.entry=entry;found.bytes=rt->temporary_bytes;found.symbol=rt->temporary_symbol;
+  }
   if(!found.entry || dc_goal_type_of(rt,entry)!=rt->function_type ||
      dc_goal_symbol_value(rt,found.symbol)!=entry)
     return code_error(rt,DC_GOAL_BAD_FUNCTION);
@@ -151,6 +157,11 @@ invalid:
 int dc_goal_load_module_data(dc_goal_runtime *rt,const dc_goal_code_export *functions,uint32_t count,
                               const dc_goal_data_export *data,uint32_t data_count,
                               dc_goal_cache_sync sync,void *context,dc_goal_module_result *result) {
+  return dc_goal_load_module_temporary(rt,functions,count,data,data_count,NULL,sync,context,result);
+}
+int dc_goal_load_module_temporary(dc_goal_runtime *rt,const dc_goal_code_export *functions,uint32_t count,
+                                  const dc_goal_data_export *data,uint32_t data_count,const char *temporary,
+                                  dc_goal_cache_sync sync,void *context,dc_goal_module_result *result) {
   dc_goal_runtime saved;
   unsigned char *snapshot;
   uint32_t i,j,total_code=0,total_data=0,*data_addresses;
@@ -183,7 +194,16 @@ int dc_goal_load_module_data(dc_goal_runtime *rt,const dc_goal_code_export *func
     if (old && dc_goal_type_of(rt,old)!=rt->function_type) {
       rt->error=DC_GOAL_BAD_MODULE; goto rollback;
     }
-    function=dc_goal_new_basic(rt,rt->function_type,functions[i].bytes+4u);
+    if (temporary && !strcmp(functions[i].name,temporary)) {
+      /* The top-level startup goes to the top of the arena, freed once it ran. */
+      uint32_t allocation,type=rt->function_type;
+      if (rt->temporary) { rt->error=DC_GOAL_BAD_MODULE; goto rollback; }
+      allocation=dc_goal_alloc_temporary(rt,functions[i].bytes+4u);
+      if (!allocation) goto rollback;
+      memcpy(dc_goal_resolve(rt,allocation,4),&type,4);
+      function=allocation+4u;
+      rt->temporary_entry=function;rt->temporary_bytes=functions[i].bytes;rt->temporary_symbol=symbol;
+    } else function=dc_goal_new_basic(rt,rt->function_type,functions[i].bytes+4u);
     if (!function || !dc_goal_set_symbol(rt,symbol,function)) goto rollback;
     memcpy(dc_goal_resolve(rt,function,functions[i].bytes),functions[i].code,functions[i].bytes);
     total_code+=functions[i].bytes;
@@ -228,7 +248,9 @@ int dc_goal_load_module_data(dc_goal_runtime *rt,const dc_goal_code_export *func
    * used on any failure, with no older record modified. */
   for(i=0;i<count;++i) {
     code_record record;
-    uint32_t allocation=dc_goal_alloc(rt,sizeof record);
+    uint32_t allocation;
+    if(temporary && !strcmp(functions[i].name,temporary)) continue;  /* rt->temporary_* */
+    allocation=dc_goal_alloc(rt,sizeof record);
     if(!allocation) goto rollback;
     record.symbol=dc_goal_find(rt,functions[i].name);
     record.entry=dc_goal_symbol_value(rt,record.symbol);

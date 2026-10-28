@@ -32,6 +32,13 @@ typedef struct { uint32_t entry,bytes,symbol; } dc_goal_code_entry_info;
  * must be pinned and quiescent; out is separate caller-owned C storage.
  * Clears out on failure. Successful lookup never executes the function. */
 int dc_goal_code_entry(dc_goal_runtime *rt,uint32_t entry,dc_goal_code_entry_info *out);
+/* As dc_goal_load_module_data, with the export named temporary (a top-level
+ * startup) placed in the arena's temporary top region (dc_goal_alloc_temporary)
+ * and known through rt->temporary_* instead of the code registry. At most one
+ * may be resident; dc_goal_release_temporary frees it. NULL loads normally. */
+int dc_goal_load_module_temporary(dc_goal_runtime *rt,const dc_goal_code_export *functions,uint32_t count,
+                                  const dc_goal_data_export *data,uint32_t data_count,const char *temporary,
+                                  dc_goal_cache_sync sync,void *context,dc_goal_module_result *result);
 int dc_goal_load_module(dc_goal_runtime *rt,const dc_goal_code_export *functions,uint32_t count,
                          dc_goal_cache_sync sync,void *context,dc_goal_module_result *result);
 int dc_goal_load_module_data(dc_goal_runtime *rt,const dc_goal_code_export *functions,uint32_t count,

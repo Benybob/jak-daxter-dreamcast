@@ -149,6 +149,35 @@ int main(void) {
     CHECK(!memcmp(snapshot,dc_goal_resolve(&rt,rt.table,DC_GOAL_SYMBOL_BYTES),DC_GOAL_SYMBOL_BYTES));
     CHECK(word_at(&rt,forward)==object);
   }
+  { /* A temporary startup: top of the arena, outside the registry, freed once. */
+    dc_goal_code_export startup[2]={{"module-startup",code,8,NULL,0},{"module-kept",code,4,NULL,0}};
+    dc_goal_code_entry_info info;
+    uint32_t top=rt.base+rt.capacity,entry,kept,low;
+    used=rt.used; count=rt.code_registry_count;
+    CHECK(dc_goal_load_module_temporary(&rt,startup,2,NULL,0,"module-startup",NULL,NULL,&result));
+    entry=dc_goal_symbol_value(&rt,dc_goal_find(&rt,"module-startup"));
+    kept=dc_goal_symbol_value(&rt,dc_goal_find(&rt,"module-kept"));
+    CHECK(rt.temporary==16 && entry==top-12u && rt.temporary_entry==entry && rt.temporary_bytes==8);
+    CHECK(kept<rt.base+rt.used && rt.code_registry_count==count+1);
+    CHECK(dc_goal_type_of(&rt,entry)==rt.function_type && dc_goal_resolve(&rt,entry,8));
+    CHECK(dc_goal_code_entry(&rt,entry,&info) && info.entry==entry && info.bytes==8);
+    CHECK(dc_goal_code_entry(&rt,kept,&info) && info.entry==kept);
+    /* One resident at a time: a second temporary load rolls back whole. */
+    used=rt.used;
+    CHECK(!dc_goal_load_module_temporary(&rt,startup+1,1,NULL,0,"module-kept",NULL,NULL,&result));
+    CHECK(rt.used==used && rt.temporary==16 && rt.temporary_entry==entry);
+    /* Ordinary allocations stop below the region. */
+    low=rt.capacity-rt.temporary-rt.used;
+    CHECK(!dc_goal_alloc(&rt,low+16u) && rt.error==DC_GOAL_OUT_OF_MEMORY && rt.used==used);
+    dc_goal_release_temporary(&rt);
+    CHECK(rt.temporary==0 && rt.temporary_entry==0 && rt.temporary_symbol==0);
+    CHECK(dc_goal_symbol_value(&rt,dc_goal_find(&rt,"module-startup"))==rt.s7);
+    CHECK(!dc_goal_code_entry(&rt,entry,&info) && !dc_goal_resolve(&rt,entry,4));
+    CHECK(dc_goal_code_entry(&rt,kept,&info) && info.entry==kept);
+    CHECK(dc_goal_alloc_temporary(&rt,1)==top-16u && rt.temporary==16);
+    dc_goal_release_temporary(&rt);
+    CHECK(rt.temporary==0 && !dc_goal_alloc_temporary(&rt,0));
+  }
   CHECK(dc_goal_bind_fixed(&rt,DC_FIX_SYM_GLOBAL_HEAP,"global",0));
   CHECK(dc_goal_find(&rt,"global")==rt.s7+DC_FIX_SYM_GLOBAL_HEAP);
   CHECK(dc_goal_bind_fixed(&rt,DC_FIX_SYM_GLOBAL_HEAP,"global",123));

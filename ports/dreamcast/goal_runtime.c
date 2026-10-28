@@ -16,11 +16,15 @@ static uint32_t fail(dc_goal_runtime *rt,enum dc_goal_error error) {
   return 0;
 }
 void *dc_goal_resolve(dc_goal_runtime *rt,uint32_t address,uint32_t size) {
-  uint32_t offset;
-  if (!rt || !rt->memory || rt->used>rt->capacity || address<rt->base) { fail(rt,DC_GOAL_BOUNDS); return NULL; }
+  uint32_t offset,low;
+  if (!rt || !rt->memory || rt->temporary>rt->capacity || rt->used>rt->capacity-rt->temporary ||
+      address<rt->base) { fail(rt,DC_GOAL_BOUNDS); return NULL; }
   offset=address-rt->base;
-  if (offset>rt->used || size>rt->used-offset) { fail(rt,DC_GOAL_BOUNDS); return NULL; }
-  return rt->memory+offset;
+  if (offset<=rt->used && size<=rt->used-offset) return rt->memory+offset;
+  low=rt->capacity-rt->temporary;  /* the temporary region, [low, capacity) */
+  if (rt->temporary && offset>=low && offset<=rt->capacity && size<=rt->capacity-offset)
+    return rt->memory+offset;
+  fail(rt,DC_GOAL_BOUNDS); return NULL;
 }
 static int read32(dc_goal_runtime *rt,uint32_t at,uint32_t *value) {
   void *p=dc_goal_resolve(rt,at,4);
@@ -40,13 +44,33 @@ uint32_t dc_goal_alloc(dc_goal_runtime *rt,uint32_t bytes) {
   if (!rt || !rt->memory || !bytes || bytes>UINT32_MAX-15u)
     return (DC_GOAL_NOTE_SITE(2),fail(rt,DC_GOAL_BAD_ARGUMENT));
   size=(bytes+15u)&~15u;
-  if (rt->used>rt->capacity || size>rt->capacity-rt->used) {
+  if (rt->temporary>rt->capacity || rt->used>rt->capacity-rt->temporary ||
+      size>rt->capacity-rt->temporary-rt->used) {
     dc_goal_last_failed_alloc=size;
     return fail(rt,DC_GOAL_OUT_OF_MEMORY);
   }
   address=rt->base+rt->used;
   memset(rt->memory+rt->used,0,size); rt->used+=size;
   return address;
+}
+uint32_t dc_goal_alloc_temporary(dc_goal_runtime *rt,uint32_t bytes) {
+  uint32_t size;
+  if (!rt || !rt->memory || !bytes || bytes>UINT32_MAX-15u || (rt->capacity&15u))
+    return (DC_GOAL_NOTE_SITE(2),fail(rt,DC_GOAL_BAD_ARGUMENT));
+  size=(bytes+15u)&~15u;
+  if (rt->temporary>rt->capacity || rt->used>rt->capacity-rt->temporary ||
+      size>rt->capacity-rt->temporary-rt->used) {
+    dc_goal_last_failed_alloc=size;
+    return fail(rt,DC_GOAL_OUT_OF_MEMORY);
+  }
+  rt->temporary+=size;
+  memset(rt->memory+(rt->capacity-rt->temporary),0,size);
+  return rt->base+(rt->capacity-rt->temporary);
+}
+void dc_goal_release_temporary(dc_goal_runtime *rt) {
+  if (!rt) return;
+  if (rt->temporary_symbol) dc_goal_set_symbol(rt,rt->temporary_symbol,rt->s7);
+  rt->temporary=rt->temporary_entry=rt->temporary_bytes=rt->temporary_symbol=0;
 }
 uint32_t dc_goal_hash(const char *name) {
   uint32_t crc=0;

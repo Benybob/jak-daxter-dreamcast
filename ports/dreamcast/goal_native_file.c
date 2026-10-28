@@ -17,8 +17,8 @@ static const char *name(const unsigned char *strings,uint32_t bytes,uint32_t off
   if (offset>=bytes || !strings[offset] || (offset && strings[offset-1])) return NULL;
   return memchr(strings+offset,0,bytes-offset)?(const char*)strings+offset:NULL;
 }
-int dc_goal_load_native_module(dc_goal_runtime *rt,const void *source,uint32_t bytes,
-                                dc_goal_cache_sync sync,void *context,dc_native_file_result *result) {
+static int load_native(dc_goal_runtime *rt,const void *source,uint32_t bytes,dc_goal_cache_sync sync,
+                       void *context,dc_native_file_result *result,int temporary) {
   const unsigned char *input=source,*rows,*relocations,*strings,*payload;
   uint32_t count,data_count,reloc_count,string_bytes,payload_bytes,init_offset,init_kind;
   uint32_t expected,metadata_bytes,i,next=0,init_found=0;
@@ -82,7 +82,8 @@ int dc_goal_load_native_module(dc_goal_runtime *rt,const void *source,uint32_t b
     }
   }
   if (next!=reloc_count || (init_kind && !init_found)) goto invalid;
-  if (!dc_goal_load_module_data(rt,functions,count,data,data_count,sync,context,&linked)) {
+  if (!dc_goal_load_module_temporary(rt,functions,count,data,data_count,temporary?initializer:NULL,
+                                     sync,context,&linked)) {
     free(storage); return 0;
   }
   result->module=linked; result->decoder_bytes=metadata_bytes; result->initializer_kind=init_kind;
@@ -91,8 +92,12 @@ int dc_goal_load_native_module(dc_goal_runtime *rt,const void *source,uint32_t b
 invalid:
   free(storage); rt->error=DC_GOAL_BAD_MODULE; return 0;
 }
-int dc_goal_load_native_stream(dc_goal_runtime *rt,FILE *file,uint32_t bytes,
-                              dc_goal_cache_sync sync,void *context,dc_native_file_result *result) {
+int dc_goal_load_native_module(dc_goal_runtime *rt,const void *source,uint32_t bytes,
+                                dc_goal_cache_sync sync,void *context,dc_native_file_result *result) {
+  return load_native(rt,source,bytes,sync,context,result,0);
+}
+static int load_stream(dc_goal_runtime *rt,FILE *file,uint32_t bytes,dc_goal_cache_sync sync,
+                       void *context,dc_native_file_result *result,int temporary) {
   unsigned char *source; int loaded;
   if (result) memset(result,0,sizeof(*result));
   if (!rt || !file || !result) { if (rt) rt->error=DC_GOAL_BAD_ARGUMENT; return 0; }
@@ -101,6 +106,14 @@ int dc_goal_load_native_stream(dc_goal_runtime *rt,FILE *file,uint32_t bytes,
   source=malloc(bytes);
   if (!source) { rt->error=DC_GOAL_OUT_OF_MEMORY; return 0; }
   if (fread(source,1,bytes,file)!=bytes) { free(source); return 0; }
-  loaded=dc_goal_load_native_module(rt,source,bytes,sync,context,result);
+  loaded=load_native(rt,source,bytes,sync,context,result,temporary);
   free(source); return loaded;
+}
+int dc_goal_load_native_stream(dc_goal_runtime *rt,FILE *file,uint32_t bytes,
+                              dc_goal_cache_sync sync,void *context,dc_native_file_result *result) {
+  return load_stream(rt,file,bytes,sync,context,result,0);
+}
+int dc_goal_load_native_stream_temporary(dc_goal_runtime *rt,FILE *file,uint32_t bytes,
+                                         dc_goal_cache_sync sync,void *context,dc_native_file_result *result) {
+  return load_stream(rt,file,bytes,sync,context,result,1);
 }

@@ -11,6 +11,9 @@ uint32_t dc_runtime_goal_cases(void *,uint32_t,dc_runtime_check,void *,char *,si
 #endif
 #ifdef DC_KERNEL_BOOT
 uint32_t dc_kernel_boot_cases(void *,uint32_t,dc_runtime_check,void *,char *,size_t);
+/* romdisk_stage.c (DGO boot only) moves the romdisk to VRAM and sizes the arena. */
+int __attribute__((weak)) dc_stage_romdisk(void) { return 1; }
+uint32_t __attribute__((weak)) dc_kernel_arena_bytes(void) { return 12u*1024u*1024u; }
 #endif
 
 KOS_INIT_FLAGS(INIT_DEFAULT);
@@ -38,7 +41,8 @@ int main(void) {
 #ifdef DC_KERNEL_BOOT
   /* The original kernel startup builds its pools, stacks and listener here;
    * GAME.CGO's engine files load into the same arena. */
-  const uint32_t capacity=12u*1024u*1024u;
+  const int staged=dc_stage_romdisk();  /* before any large allocation */
+  const uint32_t capacity=dc_kernel_arena_bytes();
 #else
   const uint32_t capacity=1024u*1024u;
 #endif
@@ -48,6 +52,11 @@ int main(void) {
   if (!allocation) {
     check(0,1,1000,"runtime arena allocation",NULL); dc_backend.state=3; return 1;
   }
+#ifdef DC_KERNEL_BOOT
+  if (!staged) {
+    check(0,1,1001,"romdisk staged into VRAM",NULL); dc_backend.state=3; return 1;
+  }
+#endif
 #ifndef DC_KERNEL_BOOT
   dc_runtime_cases(allocation+16,capacity,(uint32_t)(uintptr_t)(allocation+16),check,NULL,&stats);
 #else

@@ -19,4 +19,9 @@ int dc_goal_load_native_module(dc_goal_runtime *,const void *source,uint32_t byt
  * trailing bytes are allowed for archive embedding. Short reads never link. */
 int dc_goal_load_native_stream(dc_goal_runtime *,FILE *,uint32_t bytes,
                               dc_goal_cache_sync,void *context,dc_native_file_result *);
+/* As dc_goal_load_native_stream, with the file's initializer placed in the
+ * arena's temporary top region (dc_goal_load_module_temporary): the DGO loader
+ * runs it, then frees it with dc_goal_release_temporary. */
+int dc_goal_load_native_stream_temporary(dc_goal_runtime *,FILE *,uint32_t bytes,
+                                         dc_goal_cache_sync,void *context,dc_native_file_result *);
 #endif
