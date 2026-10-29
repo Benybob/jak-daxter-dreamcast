@@ -180,7 +180,11 @@ Found on the way:
   room to load GAME.CGO with all 24 files linked, at `-Os`.
 
 Not covered yet:
-- the merc conversion functions, which call back into GOAL;
+- the generic merc functions (`generic-merc-init-asm`, `generic-merc-execute-asm`,
+  `mercneric-convert`) and `generic-tie-convert`. On the PC port
+  `generic-merc-execute-all` runs only after `*merc-globals*` gets a first
+  fragment, which only the commented-out `draw-bones-merc` path does, and
+  generic TIE runs only while `*use-etie*` is #f (its default is #t);
 - the hardware window. bones-mtx-calc forms the DMA channel addresses
   (0x1000d000, 0x1000d400), but its waits on them are commented out, so no
   case reads them. On the PC port `bones-mtx-calc-execute` calls the GOAL
@@ -194,8 +198,9 @@ Not covered yet:
   120-vertex one, whose blend overwrote the chunk header before the write-back
   on both sides with the case's hand-made blend control. The PC port skips
   `blerc-execute` while `*use-fp-blerc*` is #t, its default;
-- `collide-probe-instance-tie` and `generic-tie-convert`. They call GOAL, or need
-  a level's data;
+- `collide-probe-instance-tie`, which needs a level's TIE tree, and collide-edge-work
+  method 18 (`find-best-grab!`), which needs hold items over real edges and calls
+  GOAL methods 17 and 19 through the type;
 - `draw-bones-merc` and `draw-inline-array-tfrag`, like tie_methods (below):
   the PC port's GOAL code never calls them. `pc-merc-draw-request` replaces the
   first in `bones.gc`, and the second's calls in `tfrag-methods.gc` are
