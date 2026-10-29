@@ -67,6 +67,9 @@ FLAG_ALLOWED = FLAG_MASK | FLAG_WRAP
 BASE_FLAG_ALLOWED = FLAG_ALLOWED | FLAG_UNLIT | FLAG_DOUBLE_SIDED | FLAG_NEAREST
 
 PER_SECTOR_CAP = 4096
+# zlib level for sector payloads. 0 writes stored blocks only, which
+# sector_inflate_stored.c decodes without zlib (SDKs lacking a native zlib).
+ZLIB_LEVEL = 9
 GLOBAL_CAP = 4096
 WINDOW_UNIQUE_CAP = 8192
 MAX_REPLICAS_PER_TRIANGLE = 36
@@ -806,7 +809,7 @@ def encode_sector(records, ix=0, iz=0, is_global=False):
         raise RenderSectorError("malformed sector")
     if len(uncompressed) > RAW_SECTOR_LIMIT:
         raise RenderSectorError("malformed sector")
-    compressed = zlib.compress(uncompressed, 9)
+    compressed = zlib.compress(uncompressed, ZLIB_LEVEL)
     if len(compressed) > len(uncompressed) + COMPRESS_SLACK or len(compressed) > COMPRESSED_INPUT_LIMIT:
         raise RenderSectorError("compressed size exceeds bound")
     header = SECTOR_HEADER_STRUCT.pack(
@@ -2254,7 +2257,11 @@ def main(argv=None):
     parser.add_argument("output", type=Path)
     parser.add_argument("--cell-size", type=float, default=DEFAULT_CELL_SIZE_M)
     parser.add_argument("--texture-size", type=int, default=DEFAULT_TEXTURE_SIZE)
+    parser.add_argument("--zlib-level", type=int, choices=(0, 9), default=9,
+                        help="0: stored blocks only, for sector_inflate_stored.c")
     args = parser.parse_args(argv)
+    global ZLIB_LEVEL
+    ZLIB_LEVEL = args.zlib_level
     try:
         summary = prepare(args.input, args.output, args.cell_size, args.texture_size)
     except (RenderSectorError, OSError) as error:

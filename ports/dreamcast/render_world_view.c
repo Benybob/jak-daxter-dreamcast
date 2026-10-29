@@ -1,7 +1,9 @@
 /* One matrix borrow for the complete packed face batch (AI-assisted), ISC. */
 #include "render_world_view.h"
+#ifndef DC_RENDER_WORLD_SCALAR
 #include <sh4zam/shz_matrix.h>
 #include <sh4zam/shz_xmtrx.h>
+#endif
 #include <math.h>
 #include <string.h>
 
@@ -13,6 +15,41 @@ static int target32(float value) {
  uint32_t bits;__builtin_memcpy(&bits,&value,4);
  return (bits&UINT32_C(0x7fffffff))<=UINT32_C(0x49742400); /* 1,000,000 */
 }
+#ifdef DC_RENDER_WORLD_SCALAR
+/* Scalar build for SDKs without SH4ZAM (village_main.c's diagnostic): the same
+ * matrix applied with ordinary float arithmetic, no XMTRX borrow. */
+int dc_render_world_prepare_sh4zam(const dc_render_window *window,dc_render_vertex *out,
+                                  uint32_t capacity,const dc_render_camera *camera) {
+ uint32_t face,vertex;float cy,sy,cp,sp,m[12];const float scale=DC_RENDER_WORLD_SCALE;
+ if(!window||!camera||window->valid!=1||window->ready!=1||window->count>DC_RENDER_WINDOW_CAP||
+    (window->count?(!window->faces||!out||((uintptr_t)out&3u)):window->faces!=NULL)||
+    capacity<window->count*3u)return 0;
+ if(!target32(camera->target.x)||!target32(camera->target.y)||!target32(camera->target.z)||
+    !finite32(camera->yaw)||!finite32(camera->pitch)||!finite32(camera->distance)||
+    camera->distance<0.f||camera->distance>1000000.f)return 0;
+ if(!window->count)return 1;
+ cy=cosf(camera->yaw);sy=sinf(camera->yaw);cp=cosf(camera->pitch);sp=sinf(camera->pitch);
+ /* rows of the column-major matrix the SH4ZAM build loads */
+ m[0]=cy*scale;m[1]=0;m[2]=sy*scale;m[3]=0;
+ m[4]=sp*sy*scale;m[5]=cp*scale;m[6]=-sp*cy*scale;m[7]=0;
+ m[8]=-cp*sy*scale;m[9]=sp*scale;m[10]=cp*cy*scale;m[11]=camera->distance*scale;
+ for(face=0;face<window->count;++face) {
+  const unsigned char *record=window->faces+(size_t)face*DC_RENDER_FACE_BYTES+8u;
+  for(vertex=0;vertex<3u;++vertex,record+=DC_RENDER_VERTEX_BYTES,++out) {
+   float point[3],x,y,z,rx,ry,rz;
+   __builtin_memcpy(point,__builtin_assume_aligned(record,4),sizeof point);
+   x=point[0]-camera->target.x;y=point[1]-camera->target.y;z=point[2]-camera->target.z;
+   rx=m[0]*x+m[1]*y+m[2]*z+m[3];ry=m[4]*x+m[5]*y+m[6]*z+m[7];rz=m[8]*x+m[9]*y+m[10]*z+m[11];
+   out->view=(dc_view_vertex){rx,ry,rz};
+   if(rz>=DC_SCENE_NEAR) {
+    float inv=1.f/rz;
+    out->projected=(dc_projected_vertex){320.f+390.f*rx*inv,260.f-390.f*ry*inv,inv};
+   }else out->projected=(dc_projected_vertex){0,0,0};
+  }
+ }
+ return 1;
+}
+#else
 int dc_render_world_prepare_sh4zam(const dc_render_window *window,dc_render_vertex *out,
                                   uint32_t capacity,const dc_render_camera *camera) {
  uint32_t face,vertex;shz_mat4x4_t saved,matrix;
@@ -48,3 +85,4 @@ int dc_render_world_prepare_sh4zam(const dc_render_window *window,dc_render_vert
  }
  shz_xmtrx_load_4x4(&saved);return 1;
 }
+#endif

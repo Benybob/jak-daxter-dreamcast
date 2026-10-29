@@ -637,6 +637,26 @@ build/instance-romdisk.o: build/instance_fixture.h
 	$(KOS_CC) -o $@ -r build/instance-romdisk-tmp.o $(KOS_LIB_PATHS) -Wl,--whole-archive -lromdiskbase
 jak-dc-instances.elf: instances_main.o instance_pass.o render_frustum.o build/instance-romdisk.o
 	kos-cc -o $@ $^ -lm
+VILLAGE_ASSET_DIR ?= build/private-village-assets
+# Staged by make_village_fixture.py from private sectors and a private package.
+build/village_base_fixture.h build/village_instance_fixture.h: $(VILLAGE_ASSET_DIR)/VILLAGE.json
+	@test -f $@ || (echo 'run make_village_fixture.py first' && false)
+$(VILLAGE_ASSET_DIR)/VILLAGE.json:
+	@echo 'run make_village_fixture.py SECTORS PACKAGE $(VILLAGE_ASSET_DIR) first' && false
+village_main.o: village_main.c render_base.h instance_pass.h build/village_base_fixture.h build/village_instance_fixture.h
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -c $< -o $@
+build/village-romdisk.o: $(VILLAGE_ASSET_DIR)/VILLAGE.json
+	mkdir -p build
+	$(KOS_GENROMFS) -f build/village-romdisk.img -d $(VILLAGE_ASSET_DIR) -x '*.json'
+	$(KOS_BASE)/utils/bin2c/bin2c build/village-romdisk.img build/village-romdisk.c romdisk
+	$(KOS_CC) $(KOS_CFLAGS) -c build/village-romdisk.c -o build/village-romdisk-tmp.o
+	$(KOS_CC) -o $@ -r build/village-romdisk-tmp.o $(KOS_LIB_PATHS) -Wl,--whole-archive -lromdiskbase
+# The scalar world transform and stored-block zlib: this diagnostic builds
+# without SH4ZAM or a native zlib (its sectors are written with --zlib-level 0).
+render_world_view_scalar.o: render_world_view.c render_world_view.h render_cache.h scene_projection.h
+	$(KOS_CC) $(KOS_CFLAGS) -std=gnu17 -Wall -Wextra -Werror -DDC_RENDER_WORLD_SCALAR -c $< -o $@
+jak-dc-village.elf: village_main.o render_base.o render_gpu.o render_cache.o render_package.o sector_inflate_stored.o render_world_view_scalar.o render_world_view_gate.o render_frustum.o instance_pass.o build/village-romdisk.o
+	kos-cc -o $@ $^ -lm
 TRAINING_STREAM_ASSET_DIR ?= build/private-training-stream-assets
 training_render.o: training_render.c training_render.h render_base.h render_block_cache.h
 training_stream_main.o: training_main.c training_render.h build/training_render_fixture.h private-romdisk-refresh

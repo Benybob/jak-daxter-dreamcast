@@ -283,6 +283,50 @@ above is what LOD does across the level.
 
     python tie_lods.py build/private-instance-assets/package.dci DGO DUMP_DIR --out PACKAGE.dci2
 
+## Terrain under the instances, one frame
+
+`jak-dc-village.elf` (`village_main.c`) draws the cached-terrain base pass and the
+instance pass into the same scene from one camera: the terrain's opaque faces,
+then the instances, in the opaque list, then the terrain's alpha-masked faces in
+the punch-through list.
+
+- **Terrain only in the sectors.** `tfrag_glb.py` keeps the GLB's
+  `tfrag-normal` and `tfrag-lowres` roots (64,184 tris for village1); TIE and
+  shrub come from the DCI package instead. That removes both earlier refusals
+  (the wind instances' m[15] and the sector face cap). `tfrag-trans` (the
+  oracle's eyes, 80 tris) and `tfrag-dirt` (the beach's blended sand, 140) are
+  BLEND only and wait for a translucent list.
+- **One window.** At village1's centre a 36.8 m window exceeds the cache's 8,192
+  unique faces; a 28 m one holds 7,032. `make_village_fixture.py` stages that
+  window around the instance fixture's target with the same camera, plus the
+  package (DCI2, with LODs).
+- **This SDK has neither SH4ZAM nor a native zlib.** The diagnostic links a
+  scalar build of the world transform (`render_world_view.c` with
+  `-DDC_RENDER_WORLD_SCALAR`, the same matrix in ordinary float arithmetic) and
+  `sector_inflate_stored.c`, which accepts only stored-block zlib streams and
+  supplies `crc32`; its sectors are written with
+  `prepare_render_sectors.py --zlib-level 0`. Stored sectors for the whole
+  level are 9.7 MB, over the package budget, so the GLB is first cropped with
+  `tfrag_glb.py --crop` to every 16 m cell the window can touch (12,644 faces,
+  2.0 MB). The cropped window holds the same 7,032 faces as the whole level's,
+  byte for byte apart from the renumbered source and material indices.
+
+In Flycast, 34 of 34 checks: 7,032 terrain faces visited and 6,969 triangles
+sent; 765 instances at the 80 m draw distance with LODs as the host predicts
+(567, 81, 88, 29) and 53,942 instance triangles sent. Against
+`dci1_reference.py` drawing the flattened package plus the window's faces
+(vertex colours, double-sided), geometry coverage agrees on 99.97% of the frame
+(2 pixels only in Flycast, 81 only in the reference: single-sided and
+alpha-masked terrain). The TA vertex buffer is 2.5 MiB, double-buffered beside
+the bins, framebuffers and textures; KOS keeps its usage statistic only for DMA
+submission, so whether it holds on hardware is not measured.
+
+    python tfrag_glb.py BACKGROUND.glb tfrag.glb --crop X0,X1,Z0,Z1
+    python prepare_render_sectors.py tfrag.glb SECTORS --zlib-level 0
+    python make_village_fixture.py SECTORS PACKAGE.dci2 build/private-village-assets --reference ref.dci
+    python build_dreamcast.py --target jak-dc-village.elf --village-assets build/private-village-assets
+    python verify_backend.py FLYCAST jak-dc-village.elf --nm NM --output OUT --suite village --tests 34         --capture --dump dc_village_metrics 60
+
 ## Proposed design
 
 1. **Resident per level: what gameplay needs everywhere.** Code (0.25 MiB),
@@ -310,7 +354,9 @@ above is what LOD does across the level.
 
 - The 0.3% of TIE and shrub triangles the cuts miss, and textures for the
   package's materials.
-- Textures on the instance pass, and tfrag drawn under it in the same frame.
+- Textures on the instance pass, and a translucent list for BLEND terrain.
+- A native zlib and SH4ZAM in this SDK again, so the village diagnostic can use
+  the compressed sectors and the SH4ZAM transform the other targets use.
 - A draw distance chosen against the LOD table above, and the 16 prototypes
   whose cut and dump geometry 0 differ.
 - Village1's textures converted to PowerVR formats, and their VRAM total.

@@ -1,0 +1,96 @@
+"""Stage terrain sectors and an instance package for one camera (AI-assisted), ISC.
+
+    python make_village_fixture.py SECTORS_DIR PACKAGE OUT_DIR [--half 14] [--reference REF.dci]
+
+SECTORS_DIR is a prepare_render_sectors.py package of the level's tfrag (see
+tfrag_glb.py) and PACKAGE a DCI1/DCI2 instance package (prototype_geometry.py,
+tie_lods.py); both are private and land only in OUT_DIR (under build/). The
+camera is make_instance_fixture's, aimed at the package's densest cell; the
+terrain window is the square of half-width --half meters around its target
+(14 m keeps the window within the render cache's 8,192 unique faces near
+village1's centre). Writes build/village_base_fixture.h and
+build/village_instance_fixture.h for village_main.c.
+"""
+import argparse
+import json
+from pathlib import Path
+import shutil
+
+import struct
+from types import SimpleNamespace
+
+import make_instance_fixture as mf
+import make_render_base_fixture as mb
+import prepare_render_sectors as rs
+import tie_lods
+
+
+def make(sectors, package, out, half=14.0, draw_distance=mf.DRAW_DISTANCE, base_header='build/village_base_fixture.h',
+         instance_header='build/village_instance_fixture.h'):
+    out = Path(out)
+    if out.exists():
+        shutil.rmtree(out)
+    blob = Path(package).read_bytes()
+    target = mf.camera(*mf.read(blob))
+    camera = (target[0], target[1], target[2], mf.YAW, mf.PITCH, mf.DISTANCE)
+    query = (target[0] - half, target[0] + half, target[2] - half, target[2] + half)
+    base = mb.make(out, base_header, sectors, query, camera)
+    (out / 'package.dci').write_bytes(blob)
+    inst = mf.make(out, Path(instance_header), draw_distance)
+    if inst['target_m'] != [mf.f32(v) for v in target]:
+        raise ValueError('instance fixture chose another target')
+    report = {'ai_assisted': True, 'terrain_faces': base['faces'], 'query': list(query),
+              'instances': inst['expected_drawn_instances'], 'instance_triangles': inst['expected_triangles'],
+              'lod_instances': inst['expected_lod_instances'], 'camera': list(camera)}
+    (out / 'VILLAGE.json').write_text(json.dumps(report, indent=1), newline='\n')
+    return report
+
+
+def window_faces(sectors, query):
+    """The terrain window's faces, as the native cache assembles them."""
+    real = Path(sectors)
+    manifest = (real / 'manifest.drm').read_bytes()
+    head = rs.parse_manifest(manifest)
+    packet = SimpleNamespace(manifest=manifest, global_sector=(real / 'global.drs').read_bytes(),
+                             sectors={(e['ix'], e['iz']): (real / 'sectors' / f"{e['ix']}_{e['iz']}.drs").read_bytes()
+                                      for e in head['entries']})
+    return [rs.unpack_face(f['raw']) for f in rs.assemble_window(packet, query)]
+
+
+def reference(sectors, package, half=14.0):
+    """A DCI1 for dci1_reference.py of the same frame: the package resolved to
+    the camera's LODs, plus the terrain window as one more geometry placed at the
+    target (vertex colours only; the native pass also multiplies textures)."""
+    blob = Path(package).read_bytes()
+    target = mf.camera(*mf.read(blob))
+    tx, tz = target[0], target[2]
+    flat = tie_lods.flatten(blob, tx, tz) if blob[:4] == b'DCI2' else blob
+    geoms, instances = tie_lods.read_dci1(flat)
+    faces = window_faces(sectors, (tx - half, tx + half, tz - half, tz + half))
+    verts = [(v[0] - tx, v[1], v[2] - tz, v[3], v[4], v[8]) for f in faces for v in f['vertices']]
+    geoms.append({'name': 'terrain-window', 'material': 0, 'verts': verts, 'indices': list(range(len(verts)))})
+    rows = [1.0, 0, 0, 0, 1.0, 0, 0, 0, 1.0, tx, 0.0, tz]
+    table = [((i, tie_lods.NONE, tie_lods.NONE, tie_lods.NONE), (tie_lods.NO_SWITCH,) * 3) for i in range(len(geoms))]
+    dci2 = tie_lods.pack(geoms, table, list(instances) + [(len(geoms) - 1, 0, *rows)])
+    return tie_lods.flatten(dci2, tx, tz), len(faces)
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument('sectors', type=Path)
+    ap.add_argument('package', type=Path)
+    ap.add_argument('out', type=Path)
+    ap.add_argument('--half', type=float, default=14.0)
+    ap.add_argument('--draw-distance', type=float, default=mf.DRAW_DISTANCE)
+    ap.add_argument('--reference', type=Path, help='also write the DCI1 dci1_reference.py draws for this frame')
+    a = ap.parse_args()
+    report = make(a.sectors, a.package, a.out, a.half, a.draw_distance)
+    if a.reference:
+        blob, faces = reference(a.sectors, a.package, a.half)
+        a.reference.write_bytes(blob)
+        report['reference_terrain_faces'] = faces
+    print(json.dumps(report, indent=1))
+
+
+if __name__ == '__main__':
+    main()
