@@ -200,7 +200,7 @@ static inline uint32_t dc_m2c_edge_grab(dc_m2c_env *e) {
 }
 
 /* ---- generic_effect: generic-light-proc (index stream -> lit colors) ----
- * The two prepare-dma functions are reached through mercneric-convert. */
+ * The two prepare-dma functions have their own case, below. */
 static inline uint32_t dc_m2c_generic_light(dc_m2c_env *e) {
   enum { SPAD = 0x4000, STREAM = 0x0100, INDICES = 0x0200, TABLE = 0x0400, OUT1 = 0x1000, OUT2 = 0x2000 };
   uint32_t i, state = 0x0badf00du;
@@ -1218,6 +1218,44 @@ static inline uint32_t dc_m2c_collide_cache_prims(dc_m2c_env *e) {
   return prim_count << 16 | tri_count;
 }
 
+/* ---- generic_effect: generic-prepare-dma-single and -double, which
+ * mercneric-convert reaches through the generic work's function table. They only
+ * move words: the generic work's DMA templates (11744 and up) and a fragment's
+ * header and source records into a packet. Each runs three ways: source records
+ * (+64) with flag +72 clear, the flag set (records from +68), and no source. ---- */
+static inline uint32_t dc_m2c_prepare_dma(dc_m2c_env *e) {
+  enum { SPAD = 0x4000, HDR = 0x0100, SRC = 0x0200, SRC2 = 0x0400, OUT = 0x8000, OUT_BYTES = 0x0800 };
+  static const uint8_t counts[8] = {7, 12, 3, 9, 5, 1, 4, 2};
+  uint32_t i, k, x = 0x9e3779b9u, end = 0;
+  e->set_symbol(e, "*fake-scratchpad-data*", dc_m2c_ptr(e, SPAD));
+  for (k = 0; k < 6; ++k) {
+    const char *name = k < 3 ? "generic-prepare-dma-single" : "generic-prepare-dma-double";
+    uint16_t verts = (uint16_t)(10 + k);
+    /* Templates and tags: words that look like nothing in the region. */
+    for (i = 11744; i < 12048; i += 4) { x ^= x << 13; x ^= x >> 17; x ^= x << 5; dc_m2c_u(e, SPAD + i, x & 0x7fff7fffu); }
+    for (i = 0; i < 3 * 80; i += 4) {
+      dc_m2c_u(e, SRC + i, 0x51000000u | (k << 16) | i);
+      dc_m2c_u(e, SRC2 + i, 0x52000000u | (k << 16) | i);
+    }
+    /* The fragment header: a record count byte, a vertex count, per-record counts. */
+    dc_m2c_b(e, HDR + 16, 3); memcpy(e->region + HDR + 18, &verts, 2);
+    memcpy(e->region + HDR + 22, counts, sizeof counts);
+    dc_m2c_u(e, SPAD + 40, dc_m2c_ptr(e, OUT + OUT_BYTES * k));
+    dc_m2c_u(e, SPAD + 60, dc_m2c_ptr(e, HDR));
+    dc_m2c_u(e, SPAD + 64, k % 3 == 2 ? 0 : dc_m2c_ptr(e, SRC));
+    dc_m2c_u(e, SPAD + 68, dc_m2c_ptr(e, SRC2));
+    dc_m2c_u(e, SPAD + 72, k % 3 == 1);
+    dc_m2c_u(e, SPAD + 76, 0x100); dc_m2c_u(e, SPAD + 84, 5 + k); dc_m2c_u(e, SPAD + 88, 7 * k);
+    dc_m2c_call0(e, name);
+    {
+      uint16_t qwc;
+      memcpy(&qwc, e->region + OUT + OUT_BYTES * k, 2);  /* the packet's length, stored at its start */
+      end = end * 3 + qwc;
+    }
+  }
+  return end;
+}
+
 typedef struct { const char *name; uint32_t (*run)(dc_m2c_env *); } dc_m2c_case;
 static const dc_m2c_case dc_m2c_cases[] = {
   {"sky_tng", dc_m2c_sky},
@@ -1249,6 +1287,7 @@ static const dc_m2c_case dc_m2c_cases[] = {
   {"collide_cache", dc_m2c_collide_cache_query},
   {"collide_cache_fill", dc_m2c_collide_cache_fill},
   {"collide_cache_prims", dc_m2c_collide_cache_prims},
+  {"generic-prepare-dma", dc_m2c_prepare_dma},
 };
 #define DC_M2C_CASE_COUNT (sizeof dc_m2c_cases / sizeof dc_m2c_cases[0])
 
