@@ -213,6 +213,11 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
       CHECK(game.objects,DC_GAME_PREFIX,"GAME.CGO holds the compiled prefix of original engine files");
       CHECK(game.initializers,DC_GAME_PREFIX,"each engine file runs its top-level startup");
       CHECK(dc_goal_mips2c_native(),76,"all 76 of GAME.CGO's mips2c lookups return native code");
+      /* gkernel.gc aligns it to 64 KiB, and translated code relies on that:
+       * setup-blerc-chains-for-one-fragment ends each chain with its address as a
+       * DMA tag, an empty refe only when the low 16 bits are 0. */
+      {uint32_t spad=dc_goal_symbol_value(&rt,dc_goal_find(&rt,"*fake-scratchpad-data*"));
+       CHECK(spad!=0 && spad!=rt.s7 && (spad&0xffffu)==0,1,"*fake-scratchpad-data* is 64 KiB aligned");}
       /* The differential cases (mips2c_cases.h) through the native SH-4 build,
        * compared with the host oracle: the same C++ as desktop runs it. */
       {dc_m2c_env env;dc_boot_m2c_saved saved;uint32_t region=dc_goal_alloc_temporary(&rt,2u*DC_M2C_REGION);unsigned k;

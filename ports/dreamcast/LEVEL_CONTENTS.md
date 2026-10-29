@@ -104,5 +104,6 @@ which this scan cannot attribute.
 - At these sizes no level fits beside the engine as the PS2 lays it out: the
   arena has about 2.8 MiB free after GAME.CGO (10,673,360 of 13,631,488 bytes
   used). A level design has to start from converted geometry and VRAM textures,
-  and measure again. Nothing here shows that a converted level fits; that is the
-  next measurement.
+  and measure again. The native walking prototype already streams windows of
+  training's converted terrain ([TRAINING_STREAM.md](TRAINING_STREAM.md)); a whole
+  converted level, beside the GOAL engine, is the next measurement.

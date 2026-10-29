@@ -113,7 +113,8 @@ with the scratchpad's address as a DMA tag, which is an empty `refe` only when t
 address's low 16 bits are 0. On the PS2 it was `0x70000000`, an `end` tag. Afterwards every pointer into the
 region becomes its offset, and `#f` and `#t` become markers. The boot runs the same cases
 through the native SH-4 build. All 40 match the oracle bit for bit, both the
-region CRC and each case's result (531 of 531 boot checks).
+region CRC and each case's result (531 of 531 boot checks; the boot's 532nd checks that
+`*fake-scratchpad-data*` is 64 KiB aligned).
 
 **GOAL stand-ins.** A case can give a function symbol a stand-in for the GOAL
 function the translated code calls with `jalr` (`env->goal_function`). On SH-4 the
