@@ -8,7 +8,7 @@ GAME.CGO's mips2c lookups. No lookup gets the faulting stub any more.
 
 | File | Functions | Differential case |
 | --- | --- | --- |
-| collide_cache | 14 | none yet |
+| collide_cache | 14 | all 14: the queries (puyp-mesh, resolve-moving-sphere-tri/-sphere, collide-puss-work 9 and 10) over hand-placed tris; the background fill (upload, unpack with and without an instance, methods 26 to 29); the foreground fill (collide-shape-prim-mesh 12 to 14); both tri limits |
 | sky_tng | 13 | init-sky-regs, set-sky-vf27/vf23, render-sky-tri (clipping) |
 | collide_edge_grab | 4 | edge-work methods 16 and 15, hold-list add-to-list! |
 | collide_mesh | 4 | methods 14 and 15 |
@@ -55,7 +55,10 @@ The 25th file, test_func, registers nothing.
   result is returned from v0's bits. Signatures come from each file's
   `def-mips2c` type, or a method's `;; N` entry in `all-types.gc` (searching
   ancestors for inherited methods). Helpers typed only `function` are called from
-  other mips2c code with integer registers.
+  other mips2c code with integer registers. Methods 27 and 28 of collide-cache
+  are declared `(_type_) none`, but `fill-from-background` calls them through a
+  cast as its `import-mesh-func`, with the mesh in a1, so they get that type
+  (`CALLED_AS`). They are the only mips2c functions `goal_src` casts this way.
 - **Lookups.** `__pc-get-mips2c` asks `dc_mips2c_find` for the name and loads a
   12-byte GOAL function (`dc-mips2c:NAME`) that jumps to the wrapper, made once
   per name. GAME.CGO's 43 lookups of these names now get native code.
@@ -103,8 +106,8 @@ paths stay in C++ (no `jalr` back into GOAL). The region is 16 KiB aligned on bo
 sides, as the PS2 scratchpad is, because translated code forms scratchpad addresses
 with `ori` (`render-ocean-quad`: `ori t4, spad, 12288`). Afterwards every pointer into the
 region becomes its offset, and `#f` and `#t` become markers. The boot runs the same cases
-through the native SH-4 build. All 26 match the oracle bit for bit, both the
-region CRC and each case's result (503 of 503 boot checks).
+through the native SH-4 build. All 29 match the oracle bit for bit, both the
+region CRC and each case's result (509 of 509 boot checks).
 
 **GOAL stand-ins.** A case can give a function symbol a stand-in for the GOAL
 function the translated code calls with `jalr` (`env->goal_function`). On SH-4 the
@@ -120,6 +123,15 @@ clears it before the region is hashed, because it differs between the sides.
 
 Found on the way:
 
+- **A port bug, found by the collide-cache fill case.** The SH-4 entries for
+  collide-cache methods 27 and 28 took only a0, from their declared type, so
+  the line-sphere and y-probe background fills would have read their mesh from
+  address 0. The host oracle crashed the same way, because it calls through the
+  same entries. Fixed in `build_mips2c.py` (above).
+- **The original's tri limit.** When `collide-shape-prim-mesh` methods 12 to 14
+  reach `*collide-cache-max-tris*`, they have already written one tri past the
+  count and return without storing the count or a prim. The case keeps that
+  behavior, which desktop has too.
 - **A real translation bug, fixed in the shared source.**
   `high_speed_reject::vcallms_454` wrote `vis[5]` twice and never wrote `vis[6]`,
   so `high-speed-reject` read `vis[6]` uninitialized, on desktop too. ChatGPT's
@@ -149,7 +161,6 @@ Found on the way:
   room to load GAME.CGO with all 24 files linked, at `-Os`.
 
 Not covered yet:
-- the 14 collide-cache functions, which need a cache filled from collision data;
 - the merc conversion functions, which call back into GOAL;
 - the two `generic-prepare-dma-*` functions, which mercneric-convert reaches;
 - the hardware window. bones-mtx-calc forms the DMA channel addresses

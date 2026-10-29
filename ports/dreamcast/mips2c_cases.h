@@ -969,6 +969,255 @@ static inline uint32_t dc_m2c_bones_mtx_calc(dc_m2c_env *e) {
   return nonzero;  /* output words written */
 }
 
+/* ---- collide_cache: the queries over a filled cache. puyp-mesh (method 30),
+ * resolve-moving-sphere-tri and -sphere (collide-cache-prim methods 9 and 10) and
+ * collide-puss-work methods 9 and 10, over seven triangles placed by hand. The GOAL
+ * intersection routines are stand-ins: moving-sphere-triangle-intersect returns
+ * the u a triangle carries in user32 and reports its first vertex as the contact
+ * point, so the translated code's own ordering, direction and best-u logic
+ * decides. ---- */
+enum { DC_M2C_CC_CACHE = 0x1004, DC_M2C_CC_TRIS = 0x1000 + 4912 };
+static uint64_t dc_m2c_cc_sphere_tri(dc_m2c_env *e, const uint64_t *a) {
+  static const uint32_t up[4] = {0, 0x3f800000u, 0, 0};
+  uint32_t tri = dc_m2c_off(e, a[3]), u;
+  dc_m2c_log(e, 0x57 << 24 | tri);
+  memcpy(e->memory(e, (uint32_t)a[4]), e->region + tri, 16);  /* contact: the first vertex */
+  memcpy(e->memory(e, (uint32_t)a[5]), up, 16);              /* normal: +y */
+  memcpy(&u, e->region + tri + 56, 4);
+  return u;
+}
+static uint64_t dc_m2c_cc_sphere_sphere(dc_m2c_env *e, const uint64_t *a) {
+  static const float point[4] = {1.5f, 2.0f, -0.5f, 1.0f};
+  dc_m2c_log(e, 0x55 << 24 | dc_m2c_off(e, a[2]));
+  memcpy(e->memory(e, (uint32_t)a[3]), point, 16);
+  return 0x3e99999au;  /* 0.3 */
+}
+static uint64_t dc_m2c_cc_closest_pt(dc_m2c_env *e, const uint64_t *a) {
+  uint32_t tri = dc_m2c_off(e, a[2]);
+  dc_m2c_log(e, 0xc1 << 24 | tri);
+  memcpy(e->region + dc_m2c_off(e, a[0]), e->region + tri, 16);  /* the first vertex */
+  return 0;
+}
+static inline void dc_m2c_cc_tri(dc_m2c_env *e, unsigned i, const float v[9], uint32_t pat, uint32_t u) {
+  uint32_t at = DC_M2C_CC_TRIS + 64 * i, k;
+  for (k = 0; k < 3; ++k) dc_m2c_vec(e, at + 16 * k, v[3 * k], v[3 * k + 1], v[3 * k + 2], 1.0f);
+  dc_m2c_u(e, at + 48, pat);
+  dc_m2c_u(e, at + 52, i << 16);  /* prim-index 0, user16 i */
+  dc_m2c_u(e, at + 56, u);
+}
+static inline void dc_m2c_cc_sphere(dc_m2c_env *e, uint32_t at, float x, float y, float z, float r,
+                                    const int32_t box[6]) {
+  unsigned k;
+  dc_m2c_vec(e, at, x, y, z, r);
+  for (k = 0; k < 3; ++k) { dc_m2c_u(e, at + 16 + 4 * k, (uint32_t)box[k]); dc_m2c_u(e, at + 32 + 4 * k, (uint32_t)box[3 + k]); }
+}
+static inline uint32_t dc_m2c_collide_cache_query(dc_m2c_env *e) {
+  enum { PRIM = 0x1000 + 112, FAR = PRIM + 48, SHAPE = 0x0104, PUYP = 0x0200, PCORE = 0x0300, MOVE = 0x0320,
+         RESULTS = 0x0340, OUT = 0x0400, WORK = 0x4000, PARAMS = 0x0380 };
+  /* Floors wound so their normal is +y: v0, v0 + z, v0 + x. */
+#define DC_M2C_CC_UP(y) {-4, y, -4, -4, y, 8, 8, y, -4}
+  static const float below[9] = DC_M2C_CC_UP(-3), floor_down[9] = {-4, 0, -4, 8, 0, -4, -4, 0, 8},
+                     floor_up[9] = DC_M2C_CC_UP(0), ignored[9] = DC_M2C_CC_UP(1),
+                     wall[9] = {2, -4, -4, 2, -4, 8, 2, 8, -4}, small[9] = {4, 2, 4, 4, 2, 7, 7, 2, 4},
+                     above[9] = DC_M2C_CC_UP(6);
+#undef DC_M2C_CC_UP
+  static const int32_t box0[6] = {19, -1, -1, 21, 1, 1}, box1[6] = {-6, -1, -6, -2, 3, -2},
+                       box2[6] = {1, 1, 1, 3, 3, 3};
+  uint32_t i, mask = 0;
+  uint64_t r;
+  e->set_symbol(e, "moving-sphere-triangle-intersect", dc_m2c_goal(e, 0, dc_m2c_cc_sphere_tri));
+  e->set_symbol(e, "moving-sphere-sphere-intersect", dc_m2c_goal(e, 1, dc_m2c_cc_sphere_sphere));
+  e->set_symbol(e, "closest-pt-in-triangle", dc_m2c_goal(e, 2, dc_m2c_cc_closest_pt));
+  dc_m2c_cc_tri(e, 0, below, 1, 0x3f4ccccdu);      /* u 0.8 */
+  dc_m2c_cc_tri(e, 1, floor_down, 1, 0xbf800000u); /* u -1: behind */
+  dc_m2c_cc_tri(e, 2, floor_up, 1, 0x3f000000u);   /* u 0.5 */
+  dc_m2c_cc_tri(e, 3, ignored, 9, 0x3e800000u);    /* u 0.25, a pat puyp ignores */
+  dc_m2c_cc_tri(e, 4, wall, 1, 0x3ecccccdu);       /* u 0.4 */
+  dc_m2c_cc_tri(e, 5, small, 1, 0x40000000u);      /* u 2 */
+  dc_m2c_cc_tri(e, 6, above, 1, 0x3e000000u);      /* u 0.125, contact above the sphere */
+  dc_m2c_u(e, DC_M2C_CC_CACHE + 0, 7); dc_m2c_u(e, DC_M2C_CC_CACHE + 4, 2);
+  /* The prim: a world sphere, the cache, its shape (pat at +68) and tris 0..6. */
+  dc_m2c_vec(e, PRIM, 1.0f, 1.0f, 1.0f, 2.0f);
+  dc_m2c_u(e, PRIM + 32, dc_m2c_ptr(e, DC_M2C_CC_CACHE)); dc_m2c_u(e, PRIM + 36, dc_m2c_ptr(e, SHAPE));
+  dc_m2c_u(e, PRIM + 40, 7u << 16);
+  dc_m2c_u(e, SHAPE + 68, 0x1234);
+  dc_m2c_vec(e, FAR, 50.0f, 50.0f, 50.0f, 1.0f);
+  /* puyp-mesh: a downward probe onto the floors, then one onto the small tri. */
+  dc_m2c_f(e, PUYP + 0, 1.0f); dc_m2c_u(e, PUYP + 4, 8); dc_m2c_u(e, PUYP + 8, dc_m2c_ptr(e, OUT));
+  dc_m2c_vec(e, PUYP + 16, 0.5f, 5.0f, 0.25f, 1.0f); dc_m2c_vec(e, PUYP + 32, 0.0f, -10.0f, 0.0f, 0.0f);
+  dc_m2c_call(e, "(method 30 collide-cache)", dc_m2c_ptr(e, DC_M2C_CC_CACHE), dc_m2c_ptr(e, PUYP),
+              dc_m2c_ptr(e, PRIM), 0, 0, 0);
+  memcpy(e->region + RESULTS, e->region + PUYP, 4);
+  dc_m2c_f(e, PUYP + 0, 1.0f); dc_m2c_u(e, PUYP + 8, dc_m2c_ptr(e, OUT + 96));
+  dc_m2c_vec(e, PUYP + 16, 4.5f, 5.0f, 4.75f, 1.0f);
+  dc_m2c_call(e, "(method 30 collide-cache)", dc_m2c_ptr(e, DC_M2C_CC_CACHE), dc_m2c_ptr(e, PUYP),
+              dc_m2c_ptr(e, PRIM), 0, 0, 0);
+  /* resolve-moving-sphere-tri: checking direction (action 1), then not (max-u
+   * negative: 2), then a max-u every tri exceeds (a miss). */
+  dc_m2c_vec(e, PCORE, 0.5f, 5.0f, 0.25f, 0.5f); dc_m2c_vec(e, MOVE, 0.0f, -10.0f, 0.0f, 0.0f);
+  {
+    static const struct { uint32_t max_u, action; } run[3] = {{0x3f800000u, 1}, {0xbf800000u, 0}, {0x3dcccccdu, 0}};
+    for (i = 0; i < 3; ++i) {
+      r = dc_m2c_call(e, "(method 9 collide-cache-prim)", dc_m2c_ptr(e, PRIM), dc_m2c_ptr(e, OUT + 192 + 96 * i),
+                      dc_m2c_ptr(e, PCORE), dc_m2c_ptr(e, MOVE), run[i].max_u, run[i].action);
+      dc_m2c_u(e, RESULTS + 4 + 4 * i, (uint32_t)r);
+    }
+  }
+  /* resolve-moving-sphere-sphere: within max-u, then beyond it. */
+  r = dc_m2c_call(e, "(method 10 collide-cache-prim)", dc_m2c_ptr(e, PRIM), dc_m2c_ptr(e, OUT + 480),
+                  dc_m2c_ptr(e, PCORE), dc_m2c_ptr(e, MOVE), 0x3f000000u, 1);
+  dc_m2c_u(e, RESULTS + 16, (uint32_t)r);
+  r = dc_m2c_call(e, "(method 10 collide-cache-prim)", dc_m2c_ptr(e, PRIM), dc_m2c_ptr(e, OUT + 576),
+                  dc_m2c_ptr(e, PCORE), dc_m2c_ptr(e, MOVE), 0x3e4ccccdu, 1);
+  dc_m2c_u(e, RESULTS + 20, (uint32_t)r);
+  /* collide-puss-work: three spheres (far, near the floors' corner, overlapping
+   * the prim's sphere) in a box from (-6, -1, -6) to (21, 3, 3). */
+  dc_m2c_u(e, WORK + 64, (uint32_t)-6); dc_m2c_u(e, WORK + 68, (uint32_t)-1); dc_m2c_u(e, WORK + 72, (uint32_t)-6);
+  dc_m2c_u(e, WORK + 80, 21); dc_m2c_u(e, WORK + 84, 3); dc_m2c_u(e, WORK + 88, 3);
+  dc_m2c_cc_sphere(e, WORK + 96, 20.0f, 0.0f, 0.0f, 1.0f, box0);
+  dc_m2c_cc_sphere(e, WORK + 144, -4.0f, 1.0f, -4.0f, 1.5f, box1);
+  dc_m2c_cc_sphere(e, WORK + 192, 2.0f, 2.0f, 2.0f, 1.0f, box2);
+  {
+    static const struct { const char *method; uint32_t prim, count; } run[5] = {
+      {"(method 10 collide-puss-work)", PRIM, 3}, {"(method 10 collide-puss-work)", PRIM, 2},
+      {"(method 10 collide-puss-work)", FAR, 3}, {"(method 9 collide-puss-work)", PRIM, 3},
+      {"(method 9 collide-puss-work)", PRIM, 1}};
+    for (i = 0; i < 5; ++i) {
+      dc_m2c_u(e, PARAMS + 4, run[i].count);
+      r = dc_m2c_call(e, run[i].method, dc_m2c_ptr(e, WORK), dc_m2c_ptr(e, run[i].prim), dc_m2c_ptr(e, PARAMS),
+                      0, 0, 0);
+      mask |= (uint32_t)((uint32_t)r == e->s7 + 8) << i;
+    }
+  }
+  return mask;  /* which puss-work calls found an overlap */
+}
+
+/* ---- collide_cache: filling the cache from a background mesh, the way
+ * fill-from-background does. __pc-upload-collide-frag puts the packed vertices in
+ * VU0 memory; unpack-background-collide-mesh (method 32) writes them to the
+ * scratchpad, without an instance and then through one; methods 26 and 28 (box and
+ * y-probe) and 27 (line-sphere, which runs method 29 through the type's method
+ * table) turn the strips into cache triangles. A last fill reaches the tri limit. ---- */
+static inline uint32_t dc_m2c_collide_cache_fill(dc_m2c_env *e) {
+  enum { TYPE = 0x0100, MESH = 0x0204, INST = 0x0284, PACKED = 0x0300, PATS = 0x0380, WORK = 0x0400,
+         SPAD = 0x8000, VERTS = 8, QWC = 3, STRIP_LEN = 17 };
+  /* Strip 1 zigzags over a 4 x 2 grid; strip 2 takes a fan step (-7). */
+  static const int8_t strips[STRIP_LEN + 2] = {0, 1, 2, 4, 5, 6, 7, 8, 0, 0, 2, 4, -7, 0, -128, 0, 0, 0, 0};
+  static const uint8_t pat_index[8] = {0, 1, 2, 3, 0, 1, 3, 0};
+  static const uint32_t pats[4] = {1, 2, 0x10, 4};  /* 0x10: the cache's ignore mask */
+  static const int16_t rows[16] = {3277, 0, -2458, 0, 0, 4096, 0, 0, 2458, 0, 3277, 0, 10, 20, -30, 0};
+  uint32_t i, method29 = e->mips2c_function(e, "(method 29 collide-cache)"), tris;
+  e->set_symbol(e, "*fake-scratchpad-data*", dc_m2c_ptr(e, SPAD));
+  e->set_symbol(e, "*collide-cache-max-tris*", 461);
+  e->set_symbol(e, "*already-printed-exeeded-max-cache-tris*", e->s7 + 8);  /* no message */
+  e->set_symbol(e, "*collide-work*", dc_m2c_ptr(e, WORK));
+  dc_m2c_u(e, DC_M2C_CC_CACHE - 4, dc_m2c_ptr(e, TYPE));
+  dc_m2c_u(e, TYPE + 132, method29);
+  dc_m2c_u(e, DC_M2C_CC_CACHE + 8, 0x10);  /* ignore-mask */
+  /* collide-box4w: x up to 1000, so the tris over the last two columns fall outside. */
+  dc_m2c_u(e, DC_M2C_CC_CACHE + 60, (uint32_t)-3000); dc_m2c_u(e, DC_M2C_CC_CACHE + 64, (uint32_t)-1000);
+  dc_m2c_u(e, DC_M2C_CC_CACHE + 68, 0);
+  dc_m2c_u(e, DC_M2C_CC_CACHE + 76, 1000); dc_m2c_u(e, DC_M2C_CC_CACHE + 80, 5000); dc_m2c_u(e, DC_M2C_CC_CACHE + 84, 5000);
+  /* The mesh: packed u16 vertices (16 units each from base-trans), strips, pat indices. */
+  for (i = 0; i < VERTS; ++i) {
+    const uint16_t v[3] = {(uint16_t)(100 * (i / 2)), (uint16_t)(3 * i), (uint16_t)(100 * (i & 1))};
+    memcpy(e->region + PACKED + 6 * i, v, 6);
+  }
+  memcpy(e->region + PACKED + 16 * QWC, strips, sizeof strips);
+  memcpy(e->region + PACKED + 16 * QWC + STRIP_LEN, pat_index, sizeof pat_index);
+  memcpy(e->region + PATS, pats, sizeof pats);
+  dc_m2c_u(e, MESH + 0, dc_m2c_ptr(e, PACKED)); dc_m2c_u(e, MESH + 4, dc_m2c_ptr(e, PATS));
+  dc_m2c_u(e, MESH + 8, 8u << 16 | STRIP_LEN);
+  dc_m2c_u(e, MESH + 12, (uint32_t)-2048); dc_m2c_u(e, MESH + 16, 100); dc_m2c_u(e, MESH + 20, 1024);
+  dc_m2c_u(e, MESH + 24, (QWC + 2) << 16 | QWC << 8 | VERTS);
+  /* The instance: an origin, then a 4.12 rotation about y and a translation (x 64). */
+  dc_m2c_vec(e, INST + 12, 100.0f, 0.0f, 200.0f, 0.0f);
+  memcpy(e->region + INST + 28, rows, sizeof rows);
+  /* *collide-work* for line-sphere: a box from (-5000, -5000, -5000) to (600, 5000,
+   * 5000) in the space of the matrix at +48 (x scaled by a half, then moved). */
+  dc_m2c_u(e, WORK + 16, (uint32_t)-5000); dc_m2c_u(e, WORK + 20, (uint32_t)-5000); dc_m2c_u(e, WORK + 24, (uint32_t)-5000);
+  dc_m2c_u(e, WORK + 32, 600); dc_m2c_u(e, WORK + 36, 5000); dc_m2c_u(e, WORK + 40, 5000);
+  dc_m2c_vec(e, WORK + 48, 0.5f, 0.0f, 0.0f, 0.0f); dc_m2c_vec(e, WORK + 64, 0.0f, 1.0f, 0.0f, 0.0f);
+  dc_m2c_vec(e, WORK + 80, 0.0f, 0.0f, 1.0f, 0.0f); dc_m2c_vec(e, WORK + 96, 100.0f, 0.0f, -50.0f, 1.0f);
+  {
+    static const struct { const char *method; int instance; } run[3] = {
+      {"(method 26 collide-cache)", 0}, {"(method 28 collide-cache)", 1}, {"(method 27 collide-cache)", 0}};
+    for (i = 0; i < 4; ++i) {
+      if (i == 3) e->set_symbol(e, "*collide-cache-max-tris*", 17);  /* two short of what this fill adds */
+      dc_m2c_call(e, "__pc-upload-collide-frag", dc_m2c_ptr(e, PACKED), QWC, VERTS, 0, 0, 0);
+      dc_m2c_call(e, "(method 32 collide-cache)", dc_m2c_ptr(e, DC_M2C_CC_CACHE), dc_m2c_ptr(e, MESH),
+                  run[i % 3].instance ? dc_m2c_ptr(e, INST) : e->s7, 0, 0, 0);
+      dc_m2c_call(e, run[i % 3].method, dc_m2c_ptr(e, DC_M2C_CC_CACHE), dc_m2c_ptr(e, MESH), 0, 0, 0, 0);
+      memcpy(&tris, e->region + DC_M2C_CC_CACHE, 4);
+      dc_m2c_u(e, DC_M2C_LOG + 0x100 + 4 * i, tris);
+    }
+  }
+  dc_m2c_u(e, TYPE + 132, 0);  /* the native entry's address differs between the sides */
+  return tris;
+}
+
+/* ---- collide_cache: foreground meshes into the cache. Methods 12 and 14 of
+ * collide-shape-prim-mesh (box and y-probe) transform the mesh with its joint's
+ * matrix through the mesh type's method 14, method 13 (line-sphere) through method
+ * 15 with *collide-work*'s matrix too; each adds the tris inside the box and a
+ * cache prim. A last fill reaches the tri limit. ---- */
+static inline uint32_t dc_m2c_collide_cache_prims(dc_m2c_env *e) {
+  enum { PM = 0x0204, CSHAPE = 0x0284, PROC = 0x0304, NODES = 0x0380, MATRIX = 0x0400, MESH = 0x0504,
+         TYPE = 0x0600, VERTS = 0x0700, WORK = 0x0800, SPAD = 0x8000 };
+  static const float verts[7][3] = {{0, 0, 0},       {4096, 0, 0},       {0, 0, 4096},     {4096, 0, 4096},
+                                    {8192, 0, 0},    {8192, 1024, 4096}, {9000, 512, 2000}};
+  static const uint8_t tris[4][3] = {{0, 1, 2}, {1, 3, 2}, {1, 4, 3}, {4, 5, 6}};
+  static const uint32_t pats[4] = {1, 2, 0x10, 1};  /* 0x10 is ignored; tri 3 lies outside the box */
+  uint32_t i, tri_count, prim_count;
+  e->set_symbol(e, "*fake-scratchpad-data*", dc_m2c_ptr(e, SPAD));
+  e->set_symbol(e, "*collide-cache-max-tris*", 461);
+  e->set_symbol(e, "*already-printed-exeeded-max-cache-tris*", e->s7 + 8);
+  e->set_symbol(e, "*collide-work*", dc_m2c_ptr(e, WORK));
+  dc_m2c_u(e, DC_M2C_CC_CACHE + 8, 0x10);
+  dc_m2c_u(e, DC_M2C_CC_CACHE + 60, (uint32_t)-10000); dc_m2c_u(e, DC_M2C_CC_CACHE + 64, (uint32_t)-10000);
+  dc_m2c_u(e, DC_M2C_CC_CACHE + 68, (uint32_t)-10000);
+  dc_m2c_u(e, DC_M2C_CC_CACHE + 76, 6000); dc_m2c_u(e, DC_M2C_CC_CACHE + 80, 10000); dc_m2c_u(e, DC_M2C_CC_CACHE + 84, 10000);
+  /* The prim: its collide-shape, whose process's node list holds joint 1's matrix. */
+  dc_m2c_u(e, PM + 0, dc_m2c_ptr(e, CSHAPE)); dc_m2c_b(e, PM + 8, 1);
+  dc_m2c_vec(e, PM + 12, 3000.0f, 200.0f, 1000.0f, 6000.0f); dc_m2c_u(e, PM + 28, 0x55aa);
+  dc_m2c_u(e, PM + 68, dc_m2c_ptr(e, MESH));
+  dc_m2c_u(e, CSHAPE + 136, dc_m2c_ptr(e, PROC)); dc_m2c_u(e, PROC + 112, dc_m2c_ptr(e, NODES));
+  dc_m2c_u(e, NODES + 32 + 28, dc_m2c_ptr(e, MATRIX));
+  dc_m2c_vec(e, MATRIX + 0, 0.8f, 0.0f, -0.6f, 0.0f); dc_m2c_vec(e, MATRIX + 16, 0.0f, 1.0f, 0.0f, 0.0f);
+  dc_m2c_vec(e, MATRIX + 32, 0.6f, 0.0f, 0.8f, 0.0f); dc_m2c_vec(e, MATRIX + 48, 1000.0f, 500.0f, -2000.0f, 1.0f);
+  /* The mesh: its type's methods 14 and 15, 7 vertices, 4 tris. */
+  dc_m2c_u(e, MESH - 4, dc_m2c_ptr(e, TYPE));
+  dc_m2c_u(e, TYPE + 72, e->mips2c_function(e, "(method 14 collide-mesh)"));
+  dc_m2c_u(e, TYPE + 76, e->mips2c_function(e, "(method 15 collide-mesh)"));
+  dc_m2c_u(e, MESH + 4, 4); dc_m2c_u(e, MESH + 8, 7); dc_m2c_u(e, MESH + 12, dc_m2c_ptr(e, VERTS));
+  for (i = 0; i < 7; ++i) dc_m2c_vec(e, VERTS + 16 * i, verts[i][0], verts[i][1], verts[i][2], 1.0f);
+  for (i = 0; i < 4; ++i) {
+    memcpy(e->region + MESH + 28 + 8 * i, tris[i], 3);
+    dc_m2c_u(e, MESH + 28 + 8 * i + 4, pats[i]);
+  }
+  /* *collide-work* for line-sphere: a box up to x 3000 in the space of a second
+   * matrix (x halved, then moved). */
+  dc_m2c_u(e, WORK + 16, (uint32_t)-10000); dc_m2c_u(e, WORK + 20, (uint32_t)-10000); dc_m2c_u(e, WORK + 24, (uint32_t)-10000);
+  dc_m2c_u(e, WORK + 32, 3000); dc_m2c_u(e, WORK + 36, 10000); dc_m2c_u(e, WORK + 40, 10000);
+  dc_m2c_vec(e, WORK + 48, 0.5f, 0.0f, 0.0f, 0.0f); dc_m2c_vec(e, WORK + 64, 0.0f, 1.0f, 0.0f, 0.0f);
+  dc_m2c_vec(e, WORK + 80, 0.0f, 0.0f, 1.0f, 0.0f); dc_m2c_vec(e, WORK + 96, 100.0f, 0.0f, -50.0f, 1.0f);
+  {
+    static const char *const method[4] = {"(method 12 collide-shape-prim-mesh)", "(method 14 collide-shape-prim-mesh)",
+                                          "(method 13 collide-shape-prim-mesh)", "(method 12 collide-shape-prim-mesh)"};
+    for (i = 0; i < 4; ++i) {
+      /* The limit: the fill writes a seventh tri, then stops at the second without
+       * storing its count or a prim, as the original does. */
+      if (i == 3) e->set_symbol(e, "*collide-cache-max-tris*", 7);
+      dc_m2c_call(e, method[i], dc_m2c_ptr(e, PM), dc_m2c_ptr(e, DC_M2C_CC_CACHE), 0, 0, 0, 0);
+      memcpy(&tri_count, e->region + DC_M2C_CC_CACHE, 4);
+      memcpy(&prim_count, e->region + DC_M2C_CC_CACHE + 4, 4);
+      dc_m2c_u(e, DC_M2C_LOG + 0x100 + 4 * i, prim_count << 16 | tri_count);
+    }
+  }
+  dc_m2c_u(e, TYPE + 72, 0); dc_m2c_u(e, TYPE + 76, 0);  /* native entries differ between the sides */
+  return prim_count << 16 | tri_count;
+}
+
 typedef struct { const char *name; uint32_t (*run)(dc_m2c_env *); } dc_m2c_case;
 static const dc_m2c_case dc_m2c_cases[] = {
   {"sky_tng", dc_m2c_sky},
@@ -997,6 +1246,9 @@ static const dc_m2c_case dc_m2c_cases[] = {
   {"sp-launch-particles-var", dc_m2c_launch_particles},
   {"ripple-create-wave-table", dc_m2c_ripple_wave_table},
   {"bones-mtx-calc", dc_m2c_bones_mtx_calc},
+  {"collide_cache", dc_m2c_collide_cache_query},
+  {"collide_cache_fill", dc_m2c_collide_cache_fill},
+  {"collide_cache_prims", dc_m2c_collide_cache_prims},
 };
 #define DC_M2C_CASE_COUNT (sizeof dc_m2c_cases / sizeof dc_m2c_cases[0])
 
