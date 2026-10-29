@@ -202,7 +202,15 @@ With village1's package, 16 MiB stock Flycast, the camera at yaw 2.2, pitch
 
 The captured frame was compared with an independent host render of the same
 package and camera (painter's algorithm, flat colours): the pixels covered by
-geometry agree on 99.4% of a half-resolution sample. There is no ground in the
+geometry agree on 99.4% of a half-resolution sample. The exact check is
+`dci1_reference.py` (a z-buffered, perspective-correct Gouraud rasterizer with
+the same camera, draw rule and near clipping) and `frame_compare.py`: against
+the Flycast capture, quantised to RGB565, coverage agrees on 99.998% of the
+frame (5 of 307,200 pixels differ), the mean colour error is about 2.5 levels a
+channel, and it visits the same 765 instances and 59,815 triangles.
+
+    python dci1_reference.py PACKAGE --camera=TX,TY,TZ,YAW,PITCH,DIST,DRAW --out ref.ppm
+    python frame_compare.py OUT/frame.ppm ref.ppm --quantize565 --min-agreement 0.99 There is no ground in the
 picture, since tfrag is a separate pass, and no textures. The time the pass
 reports (about 0.45 s a frame for 60k triangles, all on the CPU) is Flycast's
 and says nothing about the hardware; it does say the next work is LOD and a
