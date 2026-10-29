@@ -136,9 +136,10 @@ Found on the way:
   through the same entries. gcov on the oracle then showed `collide-do-primitives`
   never ran, and its entry took no arguments at all: the edge-and-vertex case of
   every swept-sphere test would have read address 0. Both are fixed in
-  `build_mips2c.py` (above). A scan of every function's argument registers read
-  before written, against its entry's count, finds no others (the rest of its
-  hits are helpers only called directly, or writes it does not parse).
+  `build_mips2c.py` (above), which now fails the build if any entry takes fewer
+  arguments than its `execute()` reads before writing them
+  (`tests/test_mips2c_entry_args.py`). The only other function that reads more,
+  `draw-large-polygon-ocean`, is entered by a direct C call alone (`DIRECT_ONLY`).
 - **The original's tri limit.** When `collide-shape-prim-mesh` methods 12 to 14
   reach `*collide-cache-max-tris*`, they have already written one tri past the
   count and return without storing the count or a prim. The case keeps that

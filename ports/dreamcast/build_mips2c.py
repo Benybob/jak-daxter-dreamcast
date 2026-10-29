@@ -10,6 +10,8 @@ the SSE intrinsics vu.h uses). This script:
   goal_src, a method's entry in all-types.gc (by its ";; N" id), or a
   define-extern there. Helpers typed only `function` are called by other mips2c
   code through jalr with integer registers, so all eight arguments are u64;
+- fails if an entry would take fewer arguments than its execute() reads before
+  writing them (CALLED_AS gives such functions the type they are called with);
 - writes build/mips2c/mips2c_dc_table.inc: one C wrapper per name with that
   native signature (float where GOAL has float, u64 otherwise), the link()
   list, and the name -> wrapper table;
@@ -96,6 +98,63 @@ CALLED_AS = {
     '(method 28 collide-cache)': (['u64', 'u64'], 'u64'),
     'collide-do-primitives': (['u64'] * 5, 'float'),
 }
+
+
+ARG_REGS = ('a0', 'a1', 'a2', 'a3', 't0', 't1', 't2', 't3')
+STORE_OPS = {'sb', 'sh', 'sw', 'sd', 'sq', 'swc1', 'sqc2'}
+# Entered only by a direct C call from another translated function (render-ocean-quad
+# returns draw_large_polygon_ocean::execute(c)), so what it reads from the caller's
+# registers never passes through its entry.
+DIRECT_ONLY = {'draw-large-polygon-ocean'}
+
+
+def argument_reads(body):
+    """Argument registers an execute() body reads before writing them, in textual
+    order. It ignores control flow, so it can only over-report a read."""
+    written, read = set(), set()
+    for line in body.splitlines():
+        code = line.split('//')[0]
+        for m in re.finditer(r'get_fake_spad_addr2?\((\w+),|gprs\[(\w+)\]\.\w+(?:\[\d+\])? =', code):
+            written.add(m[1] or m[2])
+        for m in re.finditer(r'\b(?:sgpr64|gpr_src)\((\w+)\)', code):
+            if m[1] in ARG_REGS and m[1] not in written:
+                read.add(m[1])
+        for m in re.finditer(r'c->(\w+)\(([^;]*)\);', code):
+            operands = [x.strip() for x in m[2].split(',')]
+            sources = operands if m[1] in STORE_OPS else operands[1:]
+            read.update(r for r in sources if r in ARG_REGS and r not in written)
+            if m[1] not in STORE_OPS and operands[0] in ARG_REGS:
+                written.add(operands[0])
+    return read
+
+
+def execute_bodies(path):
+    """namespace -> its execute() body, for the namespaces that define one."""
+    code = cpp_code(path.read_text(encoding='utf-8'))
+    out = {}
+    for m in re.finditer(r'\bnamespace\s+(\w+)\s*\{', code):
+        start = code.find('u64 execute(void* ctxt) {', m.end())
+        if start < 0:
+            continue
+        nxt = re.compile(r'\bnamespace\s+\w+\s*\{').search(code, m.end())
+        if nxt and nxt.start() < start:
+            continue
+        end = code.find('void link()', start)
+        out[m[1]] = code[start:end if end > 0 else len(code)]
+    return out
+
+
+def check_arguments(path, entries):
+    """Raise if a generated entry takes fewer arguments than its code reads."""
+    bodies = execute_bodies(path)
+    for namespace, name, (args, _) in entries:
+        if name in DIRECT_ONLY or namespace not in bodies:
+            continue
+        reads = argument_reads(bodies[namespace])
+        need = max((ARG_REGS.index(r) + 1 for r in reads), default=0)
+        if need > len(args):
+            raise ValueError(f'{name}: reads {",".join(sorted(reads, key=ARG_REGS.index))} '
+                             f'but its entry takes {len(args)}; give it CALLED_AS or DIRECT_ONLY')
 
 
 def signature(name, goal_text, all_types):
@@ -189,8 +248,9 @@ def main():
     sources = [root / 'game/mips2c/jak1_functions' / f'{name}.cpp' for name in args.files]
     entries = []
     for source in sources:
-        for namespace, name in registrations(source):
-            entries.append((namespace, name, signature(name, goal_text, all_types)))
+        found = [(namespace, name, signature(name, goal_text, all_types)) for namespace, name in registrations(source)]
+        check_arguments(source, found)
+        entries += found
     out = port / 'build/mips2c'
     out.mkdir(parents=True, exist_ok=True)
     (out / 'mips2c_dc_table.inc').write_bytes(table(entries).encode())
