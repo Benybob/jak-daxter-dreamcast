@@ -1848,6 +1848,70 @@ static inline uint32_t dc_m2c_probe_instance_tie(dc_m2c_env *e) {
   return count;  /* collide-list entries */
 }
 
+/* ---- joint: calc-animation-from-spr and its decompressors over two of Jak's
+ * animations from the user's own GAME.CGO (anim_case_data.py writes them to
+ * build/mips2c/anim_case.h, which is not committed; without it this case is left
+ * out). The scratchpad is set up as flatten-joint-control-to-spr and
+ * make-joint-jump-tables would: the jump tables at 1632, the uploads at 1824 and
+ * their count at 2400. Each animation runs alone and as an interpolated pair, then
+ * two are blended. ---- */
+#if defined(__has_include)
+#if __has_include("build/mips2c/anim_case.h")
+#include "build/mips2c/anim_case.h"
+#endif
+#endif
+#ifdef DC_M2C_ANIM_COUNT
+static inline uint32_t dc_m2c_crc32(const unsigned char *p, uint32_t n);
+static inline uint32_t dc_m2c_calc_animation(dc_m2c_env *e) {
+  enum { SPAD = 0x0000, RESULTS = 0x3f00, FIXED = 0x4000, FRAMES = 0x6000, OUT = 0xa000, OUT_BYTES = 0x1800, JOINTS = 81 };
+  static const uint32_t jump[48] = {
+    0x3ee6b6f9u, 0x3ee6b6ffu, 0x3ee6b6e2u, 0x3ee6b6e4u, 0x3ee6b6e5u, 0x3ee6b6ebu, 0x3ee6b6eeu, 0x3ee6b6f6u,
+    0x3ee6b6fcu, 0x3ee6b6ffu, 0x3ee6b6e3u, 0x3ee6b6e4u, 0x3ee6b6e8u, 0x3ee6b6ebu, 0x3ee6b6efu, 0x3ee6b6f6u,
+    0x07b2191bu, 0x07b21914u, 0x07b21916u, 0x07b21913u, 0x07b21909u, 0x07b21908u, 0x07b2190au, 0x07b21907u,
+    0x07b2191bu, 0x07b21917u, 0x07b21916u, 0x07b2190cu, 0x07b21909u, 0x07b2190bu, 0x07b2190au, 0x07b21900u,
+    0x4d7666dfu, 0x4d7666d0u, 0x4d7666d2u, 0x4d7666d7u, 0x4d7666cdu, 0x4d7666ccu, 0x4d7666ceu, 0x4d7666c3u,
+    0x4d7666dfu, 0x4d7666d3u, 0x4d7666d2u, 0x4d7666c8u, 0x4d7666cdu, 0x4d7666cfu, 0x4d7666ceu, 0x4d7666c4u};
+  uint32_t fixed_at[DC_M2C_ANIM_COUNT], frames_at[DC_M2C_ANIM_COUNT], at_fixed = FIXED, at_frames = FRAMES;
+  uint32_t i, run, sum = 0;
+  e->set_symbol(e, "*fake-scratchpad-data*", dc_m2c_ptr(e, SPAD));
+  for (i = 0; i < DC_M2C_ANIM_COUNT; ++i) {
+    fixed_at[i] = at_fixed; frames_at[i] = at_frames;
+    memcpy(e->region + at_fixed, dc_m2c_anims[i].fixed, 16 * dc_m2c_anims[i].fixed_qwc);
+    memcpy(e->region + at_frames, dc_m2c_anims[i].frame, 16 * dc_m2c_anims[i].frame_qwc * dc_m2c_anims[i].frames);
+    at_fixed += 16 * dc_m2c_anims[i].fixed_qwc;
+    at_frames += 16 * dc_m2c_anims[i].frame_qwc * dc_m2c_anims[i].frames;
+  }
+  for (i = 0; i < 48; ++i) dc_m2c_u(e, SPAD + 1632 + 4 * i, jump[i]);
+  /* Each animation alone at frame 0, then as a pair of frames 0 and 1 (interp
+   * 0.5), then the first two blended half and half. Each run's output is hashed
+   * into the region, since the next one overwrites it. */
+  for (run = 0; run < 2 * DC_M2C_ANIM_COUNT + 1; ++run) {
+    const unsigned blend = run == 2 * DC_M2C_ANIM_COUNT, count = blend ? 2 : 1;
+    for (i = 0; i < count; ++i) {
+      const unsigned a = blend ? i : run / 2;
+      const float interp = !blend && (run & 1) ? 0.5f : 0.0f;
+      const uint32_t rec = SPAD + 1824 + 24 * i, qwc = dc_m2c_anims[a].frame_qwc;
+      dc_m2c_u(e, rec + 0, dc_m2c_ptr(e, fixed_at[a]));
+      dc_m2c_u(e, rec + 4, dc_m2c_anims[a].fixed_qwc);
+      dc_m2c_u(e, rec + 8, dc_m2c_ptr(e, frames_at[a]));
+      dc_m2c_u(e, rec + 12, interp == 0.0f ? qwc : 2 * qwc);
+      dc_m2c_f(e, rec + 16, blend ? 0.5f : 1.0f);
+      dc_m2c_f(e, rec + 20, interp);
+    }
+    dc_m2c_u(e, SPAD + 2400, count);
+    memset(e->region + OUT, 0, OUT_BYTES);
+    dc_m2c_call(e, "calc-animation-from-spr", dc_m2c_ptr(e, OUT), JOINTS, 0, 0, 0, 0);
+    dc_m2c_u(e, RESULTS + 4 * run, dc_m2c_crc32(e->region + OUT, OUT_BYTES));
+    for (i = 0; i < OUT_BYTES; i += 4) {
+      uint32_t w;
+      memcpy(&w, e->region + OUT + i, 4);
+      sum += w != 0;
+    }
+  }
+  return sum;  /* output words written, over all runs */
+}
+#endif
+
 typedef struct { const char *name; uint32_t (*run)(dc_m2c_env *); } dc_m2c_case;
 static const dc_m2c_case dc_m2c_cases[] = {
   {"sky_tng", dc_m2c_sky},
@@ -1890,6 +1954,9 @@ static const dc_m2c_case dc_m2c_cases[] = {
   {"blerc-execute", dc_m2c_blerc_run},
   {"find-best-grab", dc_m2c_find_best_grab},
   {"collide-probe-instance-tie", dc_m2c_probe_instance_tie},
+#ifdef DC_M2C_ANIM_COUNT
+  {"calc-animation-from-spr", dc_m2c_calc_animation},
+#endif
 };
 #define DC_M2C_CASE_COUNT (sizeof dc_m2c_cases / sizeof dc_m2c_cases[0])
 

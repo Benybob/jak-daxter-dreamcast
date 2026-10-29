@@ -22,7 +22,7 @@ GAME.CGO's mips2c lookups. No lookup gets the faulting stub any more.
 | collide_func | 2 | moving-sphere-triangle-intersect, called through `jalr` (two misses, a face hit); collide-do-primitives, directly and through moving-sphere-triangle-intersect's edge path; spheres starting in contact |
 | collide_probe | 2 | collide-probe-node (a two-level node tree); collide-probe-instance-tie over nested nodes, instances and frags, five wide (30 hits) |
 | generic_tie | 2 | generic-tie-dma-to-spad-sync (cnt, ref, next and refe tags) |
-| joint | 2 | cspace<-parented-transformq-joint! (unscaled and scaled parent) |
+| joint | 2 | cspace<-parented-transformq-joint! (unscaled and scaled parent); calc-animation-from-spr over five of Jak's animations from the user's disc (alone, as pairs, blended), when present |
 | merc_blend_shape | 2 | setup-blerc-chains-for-one-fragment (two fragments); blerc-execute (one fragment) |
 | ocean_vu0 | 2 | ocean-interp-wave (two frame pairs); ocean-generate-verts (draw-ocean's every frame) |
 | sparticle | 2 | sp-process-block-2d and -3d (each running and paused, with a relaunch), GOAL stand-ins for the callbacks |
@@ -130,9 +130,21 @@ clears it before the region is hashed, because it differs between the sides.
 
 **Coverage.** `mips2c_coverage.py` builds the oracle with gcov, runs every case
 and lists each translated function's share of lines run. Every function the PC
-port's GOAL code calls runs in a case, most of them over 85% of their lines,
-except `calc-animation-from-spr` and its decompressors (below). The rest at 0%
-are functions the port never calls (below).
+port's GOAL code calls runs in a case, most of them over 85% of their lines.
+The rest at 0% are functions the port never calls (below).
+
+**Real animation data.** `calc-animation-from-spr` and its decompressors read
+compressed joint animations, and a hand-made stream would only test noise. So
+when the user's own GAME.CGO is there (`$DC_JAK_CGO_DIR`, or `iso_data/jak1/CGO`),
+`anim_case_data.py` copies the first two frames of five of Jak's animations from
+the eichar art group into `build/mips2c/anim_case.h`, which is never committed.
+They are two that between them use every per-joint codec value in his control
+bits, and one of each matrix-bits setting (0, 1 and 3). The case sets the
+scratchpad up as `flatten-joint-control-to-spr` and `make-joint-jump-tables`
+would, and runs each animation alone and as an interpolated pair, then a blend
+of two. Without the disc the case is left out and the boot expects two checks
+fewer (532 instead of 534). With it, decompressing Jak's animations on SH-4
+matches desktop bit for bit.
 
 Found on the way:
 
@@ -198,10 +210,10 @@ Not covered yet:
   case reads them. On the PC port `bones-mtx-calc-execute` calls the GOAL
   `new-bones-mtx-calc-asm` unless `*use-new-bones*` is #f, so bones-mtx-calc
   runs only then;
-- `calc-animation-from-spr` and its five decompressors. They read a joint
-  control flattened to the scratchpad, the jump tables `make-joint-jump-tables`
-  builds there, and compressed animation data; a hand-made stream would test
-  nothing a real one does, and the port does not commit extracted assets;
+- the decompressors' per-joint codecs that Jak's animations never use (values
+  5, 10, 11, 13, 14 and 15 of the 4-bit control fields): with five of his
+  animations they run 63 to 66% of their lines. The animation case needs the
+  user's GAME.CGO (below);
 - `blerc-execute` over two fragments (its double-buffered path) and over a
   120-vertex one, whose blend overwrote the chunk header before the write-back
   on both sides with the case's hand-made blend control. The PC port skips

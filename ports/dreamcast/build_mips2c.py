@@ -278,6 +278,14 @@ def main():
     library.unlink(missing_ok=True)
     subprocess.run([str(args.ar), 'rcs', str(library), *map(str, objects)], check=True)
     print(f'{len(entries)} functions from {len(sources)} files -> {library.relative_to(port)}')
+    # The animation case's data, from the user's own GAME.CGO when it is there
+    # (anim_case_data.py); mips2c_cases.h leaves the case out without it.
+    import anim_case_data
+    cgo = anim_case_data.find_cgo()
+    if cgo:
+        anim_case_data.write_header(cgo)
+    else:
+        anim_case_data.HEADER.unlink(missing_ok=True)
     # The desktop-equivalent oracle for the differential cases (mips2c_cases.h).
     oracle = out / 'mips2c-oracle.exe'
     env = dict(os.environ, PATH=str(args.host_gxx.parent) + os.pathsep + os.environ.get('PATH', ''))
