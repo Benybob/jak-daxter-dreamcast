@@ -12,11 +12,11 @@ GAME.CGO's mips2c lookups. No lookup gets the faulting stub any more.
 | sky_tng | 13 | init-sky-regs, set-sky-vf27/vf23, render-sky-tri (clipping); set-tex-offset, render-sky-quad, and the load-boundary renderers (init-boundary-regs, render-boundary-tri and -quad, draw-boundary-polygon) |
 | collide_edge_grab | 4 | edge-work methods 16 and 15, hold-list add-to-list! |
 | collide_mesh | 4 | methods 14 and 15; should-push-away-test and sphere-on-platform-test (methods 11 and 12) |
-| generic_effect | 4 | generic-light-proc; generic-prepare-dma-single and -double (three paths each) |
+| generic_effect | 4 | generic-light-proc; generic-prepare-dma-single and -double (three paths each); generic-envmap-proc |
 | generic_merc | 4 | high-speed-reject (reject and keep) |
 | ripple | 4 | ripple-execute-init, apply-wave-table, matrix-scale; create-wave-table (ntsc, pal and already converted, GOAL stand-ins for sin, cos and atan) |
 | bones | 3 | draw-bones-check-longest-edge-asm (four radii); bones-mtx-calc (20 bones, both scratchpad buffers) |
-| generic_effect2 | 3 | generic-no-light-dproc |
+| generic_effect2 | 3 | generic-no-light-dproc; generic-envmap-dproc and generic-interp-dproc |
 | shadow | 15 | shadow-init-vars, shadow-xform-verts, shadow-calc-dual-verts; shadow-execute over a tetrahedron (all 13 helpers, GOAL stand-ins) |
 | ocean | 3 | init-ocean-far-regs, render-ocean-quad (two quads, one clipped) |
 | collide_func | 2 | moving-sphere-triangle-intersect, called through `jalr` (two misses, a face hit) |
@@ -106,8 +106,8 @@ paths stay in C++ (no `jalr` back into GOAL). The region is 16 KiB aligned on bo
 sides, as the PS2 scratchpad is, because translated code forms scratchpad addresses
 with `ori` (`render-ocean-quad`: `ori t4, spad, 12288`). Afterwards every pointer into the
 region becomes its offset, and `#f` and `#t` become markers. The boot runs the same cases
-through the native SH-4 build. All 32 match the oracle bit for bit, both the
-region CRC and each case's result (515 of 515 boot checks).
+through the native SH-4 build. All 33 match the oracle bit for bit, both the
+region CRC and each case's result (517 of 517 boot checks).
 
 **GOAL stand-ins.** A case can give a function symbol a stand-in for the GOAL
 function the translated code calls with `jalr` (`env->goal_function`). On SH-4 the

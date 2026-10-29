@@ -1353,6 +1353,62 @@ static inline uint32_t dc_m2c_collide_mesh_tests(dc_m2c_env *e) {
   return r[0] ^ r[1] ^ r[2] ^ r[3];
 }
 
+/* ---- generic_effect and generic_effect2: generic-envmap-proc, generic-envmap-dproc
+ * and generic-interp-dproc over one 64-entry vertex table (32 bytes each: a
+ * position, then a normal whose w the envmap dproc divides by). ---- */
+static inline uint32_t dc_m2c_generic_envmap_interp(dc_m2c_env *e) {
+  enum { SPAD = 0x4000, STREAM = 0x0100, INTERP = 0x0140, INDICES = 0x0200, LERP = 0x0300, TABLE = 0x1000,
+         OUT1 = 0x2000, OUT2 = 0x2800, COUNT = 12 };
+  uint32_t i, state = 0x13572468u, crc = 0;
+  int16_t h;
+  e->set_symbol(e, "*fake-scratchpad-data*", dc_m2c_ptr(e, SPAD));
+  for (i = 0; i < 64; ++i) {
+    float nx = dc_m2c_rand(&state), ny = dc_m2c_rand(&state), nz = dc_m2c_rand(&state);
+    dc_m2c_rand_vec(e, TABLE + 32 * i, &state, 1.0f);
+    /* A normal well away from zero; w (byte 24 of the entry is z) stays off 1. */
+    dc_m2c_vec(e, TABLE + 32 * i + 16, nx + (nx < 0 ? -1.0f : 1.0f), ny + (ny < 0 ? -1.0f : 1.0f),
+               2.0f + (nz < 0 ? -nz : nz) / 8.0f, 1.0f);
+  }
+  for (i = 0; i < COUNT + 8; ++i) {
+    uint16_t index = (uint16_t)(((i * 11u + 2u) & 63u) | ((i % 3u == 1u) << 8));
+    memcpy(e->region + INDICES + 2 * i, &index, 2);
+  }
+  dc_m2c_u(e, SPAD + 60, dc_m2c_ptr(e, STREAM));
+  dc_m2c_u(e, STREAM + 0, dc_m2c_ptr(e, INDICES)); dc_m2c_u(e, STREAM + 4, dc_m2c_ptr(e, TABLE));
+  {
+    uint16_t count = COUNT;
+    memcpy(e->region + STREAM + 20, &count, 2);
+  }
+  dc_m2c_vec(e, SPAD + 12016, 0.5f, 0.25f, 64.0f, 2048.0f);
+  /* envmap-proc: fills OUT1 with the template at 12048, then writes per index. */
+  dc_m2c_u(e, SPAD + 52, COUNT);
+  dc_m2c_u(e, SPAD + 32, dc_m2c_ptr(e, OUT1)); dc_m2c_u(e, SPAD + 36, dc_m2c_ptr(e, OUT2));
+  dc_m2c_u(e, SPAD + 12048, 0x01020304u); dc_m2c_u(e, SPAD + 12052, 0x05060708u);
+  dc_m2c_u(e, SPAD + 12056, 0x090a0b0cu); dc_m2c_u(e, SPAD + 12060, 0x0d0e0f10u);
+  dc_m2c_call0(e, "generic-envmap-proc");
+  /* envmap-dproc: rewrites the table in place; the word at 12048 goes into each
+   * vertex's +20. */
+  dc_m2c_u(e, SPAD + 12048, 0x00c0ffeeu);
+  dc_m2c_call0(e, "generic-envmap-dproc");
+  /* interp-dproc: 16 vertices from entry 8 blended with the ones their index
+   * bytes name, weights 0x60 and 0xa0. */
+  dc_m2c_u(e, SPAD + 80, dc_m2c_ptr(e, INTERP));
+  h = 0; memcpy(e->region + INTERP + 0, &h, 2);
+  h = 12; memcpy(e->region + INTERP + 2, &h, 2);
+  h = 8; memcpy(e->region + INTERP + 4, &h, 2);
+  dc_m2c_u(e, INTERP + 8, dc_m2c_ptr(e, LERP));
+  h = 0x60; memcpy(e->region + INTERP + 12, &h, 2);
+  h = 0xa0; memcpy(e->region + INTERP + 14, &h, 2);
+  for (i = 0; i < 40; ++i) dc_m2c_b(e, LERP + i, (uint8_t)((i * 7u + 3u) & 63u));
+  dc_m2c_call0(e, "generic-interp-dproc");
+  for (i = 0; i < 64; ++i) {
+    uint32_t w;
+    memcpy(&w, e->region + TABLE + 32 * i + 16, 4);
+    crc = (crc << 1 | crc >> 31) ^ w;
+  }
+  return crc;  /* the table's +16 words after both dprocs */
+}
+
 typedef struct { const char *name; uint32_t (*run)(dc_m2c_env *); } dc_m2c_case;
 static const dc_m2c_case dc_m2c_cases[] = {
   {"sky_tng", dc_m2c_sky},
@@ -1387,6 +1443,7 @@ static const dc_m2c_case dc_m2c_cases[] = {
   {"generic-prepare-dma", dc_m2c_prepare_dma},
   {"sky-quad-boundary", dc_m2c_sky_quad_boundary},
   {"collide-mesh-tests", dc_m2c_collide_mesh_tests},
+  {"generic-envmap-interp", dc_m2c_generic_envmap_interp},
 };
 #define DC_M2C_CASE_COUNT (sizeof dc_m2c_cases / sizeof dc_m2c_cases[0])
 
