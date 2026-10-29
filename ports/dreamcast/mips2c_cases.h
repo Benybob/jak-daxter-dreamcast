@@ -255,23 +255,29 @@ static inline uint32_t dc_m2c_high_speed_reject(dc_m2c_env *e) {
   return result;  /* the reject byte after each plane set */
 }
 
-/* ---- bones: draw-bones-check-longest-edge-asm (a float argument) ----
- * bones-mtx-calc follows pointers inside its joint records; it needs real joints. */
+/* ---- bones: draw-bones-check-longest-edge-asm (a float argument), a sphere at
+ * seven positions and four radii. bones-mtx-calc has its own case, below. */
 static inline uint32_t dc_m2c_bones(dc_m2c_env *e) {
   enum { SPAD = 0x4000, CAMERA = 0x0104, DRAW = 0x0404 };
   static const float radius[4] = {0.5f, 4.0f, 40.0f, 400.0f};
-  uint32_t i, result = 0;
+  uint32_t i, k, result = 0;
   e->set_symbol(e, "*fake-scratchpad-data*", dc_m2c_ptr(e, SPAD));
   e->set_symbol(e, "*math-camera*", dc_m2c_ptr(e, CAMERA));
   for (i = 0; i < 32; ++i) dc_m2c_f(e, CAMERA + 4 * i, 1.0f + 0.5f * (float)i);  /* fov, clip planes, ... */
   dc_m2c_f(e, DRAW + 64, 12.0f); dc_m2c_f(e, DRAW + 136, 3.0f);
-  dc_m2c_f(e, SPAD + 176, 2.0f); dc_m2c_f(e, SPAD + 180, -1.5f); dc_m2c_f(e, SPAD + 184, 30.0f);
-  for (i = 0; i < 4; ++i) {
-    uint64_t r = dc_m2c_call(e, "draw-bones-check-longest-edge-asm", dc_m2c_ptr(e, DRAW), dc_m2c_fbits(radius[i]),
-                             0, 0, 0, 0);
-    result = result << 1 | (uint32_t)((uint32_t)r != e->s7);
+  for (k = 0; k < 7; ++k) {
+    /* In view, then beyond each side, behind and far, so each plane's test runs. */
+    static const float at[7][3] = {{2.0f, -1.5f, 30.0f}, {40.0f, 0.0f, 30.0f}, {-40.0f, 0.0f, 30.0f},
+                                   {0.0f, 40.0f, 30.0f}, {0.0f, -40.0f, 30.0f}, {0.0f, 0.0f, -30.0f},
+                                   {0.0f, 0.0f, 500.0f}};
+    dc_m2c_f(e, SPAD + 176, at[k][0]); dc_m2c_f(e, SPAD + 180, at[k][1]); dc_m2c_f(e, SPAD + 184, at[k][2]);
+    for (i = 0; i < 4; ++i) {
+      uint64_t r = dc_m2c_call(e, "draw-bones-check-longest-edge-asm", dc_m2c_ptr(e, DRAW),
+                               dc_m2c_fbits(radius[i]), 0, 0, 0, 0);
+      result = result << 1 | (uint32_t)((uint32_t)r != e->s7);
+    }
   }
-  return result;  /* one bit per radius: the check's answer was not #f */
+  return result;  /* one bit per position and radius: the answer was not #f */
 }
 
 /* ---- generic_effect2: generic-no-light-dproc (the light-proc work layout) ---- */

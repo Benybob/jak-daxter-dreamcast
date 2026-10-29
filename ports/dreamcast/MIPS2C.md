@@ -15,7 +15,7 @@ GAME.CGO's mips2c lookups. No lookup gets the faulting stub any more.
 | generic_effect | 4 | generic-light-proc; generic-prepare-dma-single and -double (three paths each); generic-envmap-proc |
 | generic_merc | 4 | high-speed-reject (reject and keep) |
 | ripple | 4 | ripple-execute-init, apply-wave-table, matrix-scale; create-wave-table (ntsc, pal and already converted, GOAL stand-ins for sin, cos and atan) |
-| bones | 3 | draw-bones-check-longest-edge-asm (four radii); bones-mtx-calc (20 bones, both scratchpad buffers) |
+| bones | 3 | draw-bones-check-longest-edge-asm (seven positions, four radii); bones-mtx-calc (20 bones, both scratchpad buffers) |
 | generic_effect2 | 3 | generic-no-light-dproc; generic-envmap-dproc and generic-interp-dproc |
 | shadow | 15 | shadow-init-vars, shadow-xform-verts, shadow-calc-dual-verts; shadow-execute over a tetrahedron (all 13 helpers, GOAL stand-ins); a chain of two objects, the first with double-sided tris and edges, the second skipped |
 | ocean | 3 | init-ocean-far-regs, render-ocean-quad (two quads, one clipped) |
