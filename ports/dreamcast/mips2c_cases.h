@@ -1706,6 +1706,56 @@ static inline uint32_t dc_m2c_blerc_run(dc_m2c_env *e) {
   return sum;  /* destination words blended */
 }
 
+/* ---- collide_edge_grab: find-best-grab! (method 18 of collide-edge-work), Jak's
+ * ledge-grab search. One hold item on a long edge is split forward and back by
+ * the split distances at work +168; each piece goes to should-add-to-list?
+ * (method 17, a stand-in that sets its edge and a rating, and turns one down) and
+ * the built add-to-list!, which keeps the list sorted by rating. A stand-in
+ * check-grab-for-collisions (method 19) takes the fourth candidate, the last
+ * piece the search would offer. Both GOAL
+ * methods are reached through stand-in type objects. ---- */
+static uint32_t dc_m2c_grab_calls[2];
+static uint64_t dc_m2c_should_add(dc_m2c_env *e, const uint64_t *a) {
+  static const uint32_t rating[8] = {0x3f000000u, 0x3e800000u, 0x3f400000u, 0x3e000000u,
+                                     0x3f200000u, 0x3d800000u, 0x3f600000u, 0x3ec00000u};
+  uint32_t item = dc_m2c_off(e, a[1]), n = dc_m2c_grab_calls[0]++;
+  dc_m2c_log(e, 0x17 << 24 | item);
+  if (n == 2) return e->s7;  /* turned down */
+  dc_m2c_u(e, item + 12, (uint32_t)a[2]);
+  dc_m2c_u(e, item + 4, rating[n % 8]);
+  return e->s7 + 8;
+}
+static uint64_t dc_m2c_check_grab(dc_m2c_env *e, const uint64_t *a) {
+  uint32_t item = dc_m2c_off(e, a[1]), n = dc_m2c_grab_calls[1]++;
+  dc_m2c_log(e, 0x19 << 24 | item);
+  return n == 3 ? e->s7 + 8 : e->s7;
+}
+static inline uint32_t dc_m2c_find_best_grab(dc_m2c_env *e) {
+  enum { WORK = 0x0100, LIST = 0x0400, INFO = 0x0d00, EDGE = 0x1000, VERTS = 0x1040, WORK_TYPE = 0x1100,
+         LIST_TYPE = 0x1200 };
+  uint64_t r;
+  memset(dc_m2c_grab_calls, 0, sizeof dc_m2c_grab_calls);
+  e->set_symbol(e, "collide-edge-work", dc_m2c_ptr(e, WORK_TYPE));
+  e->set_symbol(e, "collide-edge-hold-list", dc_m2c_ptr(e, LIST_TYPE));
+  dc_m2c_u(e, WORK_TYPE + 84, dc_m2c_goal(e, 0, dc_m2c_should_add));
+  dc_m2c_u(e, WORK_TYPE + 92, dc_m2c_goal(e, 1, dc_m2c_check_grab));
+  dc_m2c_u(e, LIST_TYPE + 56, e->mips2c_function(e, "(method 10 collide-edge-hold-list)"));
+  dc_m2c_f(e, WORK + 168, 3000.0f); dc_m2c_f(e, WORK + 172, 6000.0f);  /* split distances */
+  /* The edge: from the origin 20000 along x. */
+  dc_m2c_vec(e, VERTS, 0.0f, 0.0f, 0.0f, 1.0f); dc_m2c_vec(e, VERTS + 16, 20000.0f, 0.0f, 0.0f, 1.0f);
+  dc_m2c_u(e, EDGE + 8, dc_m2c_ptr(e, VERTS)); dc_m2c_u(e, EDGE + 12, dc_m2c_ptr(e, VERTS + 16));
+  dc_m2c_vec(e, EDGE + 16, 0.0f, 0.0f, 1.0f, 0.0f); dc_m2c_vec(e, EDGE + 32, 1.0f, 0.0f, 0.0f, 0.0f);
+  /* The hold list: one item at 5000 along the edge, unsplit. */
+  dc_m2c_u(e, LIST + 0, 1); dc_m2c_u(e, LIST + 8, dc_m2c_ptr(e, LIST + 16));
+  dc_m2c_u(e, LIST + 16 + 0, e->s7); dc_m2c_f(e, LIST + 16 + 4, 0.375f);
+  dc_m2c_u(e, LIST + 16 + 12, dc_m2c_ptr(e, EDGE));
+  dc_m2c_vec(e, LIST + 16 + 16, 5000.0f, 0.0f, 0.0f, 1.0f);
+  r = dc_m2c_call(e, "(method 18 collide-edge-work)", dc_m2c_ptr(e, WORK), dc_m2c_ptr(e, LIST),
+                  dc_m2c_ptr(e, INFO), 0, 0, 0);
+  dc_m2c_u(e, LIST_TYPE + 56, 0);  /* the native entry's address differs between the sides */
+  return ((uint32_t)r == e->s7 + 8) << 16 | dc_m2c_grab_calls[0] << 8 | dc_m2c_grab_calls[1];
+}
+
 typedef struct { const char *name; uint32_t (*run)(dc_m2c_env *); } dc_m2c_case;
 static const dc_m2c_case dc_m2c_cases[] = {
   {"sky_tng", dc_m2c_sky},
@@ -1746,6 +1796,7 @@ static const dc_m2c_case dc_m2c_cases[] = {
   {"collide-do-primitives", dc_m2c_collide_primitives},
   {"ocean-generate-verts", dc_m2c_ocean_verts},
   {"blerc-execute", dc_m2c_blerc_run},
+  {"find-best-grab", dc_m2c_find_best_grab},
 };
 #define DC_M2C_CASE_COUNT (sizeof dc_m2c_cases / sizeof dc_m2c_cases[0])
 
