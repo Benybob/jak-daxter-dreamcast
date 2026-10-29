@@ -20,7 +20,7 @@ GAME.CGO's mips2c lookups. No lookup gets the faulting stub any more.
 | shadow | 15 | shadow-init-vars, shadow-xform-verts, shadow-calc-dual-verts; shadow-execute over a tetrahedron (all 13 helpers, GOAL stand-ins); a chain of two objects, the first with double-sided tris and edges, the second skipped |
 | ocean | 3 | init-ocean-far-regs, render-ocean-quad (two quads, one clipped) |
 | collide_func | 2 | moving-sphere-triangle-intersect, called through `jalr` (two misses, a face hit); collide-do-primitives, directly and through moving-sphere-triangle-intersect's edge path |
-| collide_probe | 2 | collide-probe-node (a two-level node tree) |
+| collide_probe | 2 | collide-probe-node (a two-level node tree); collide-probe-instance-tie over a node, instance and frag tree |
 | generic_tie | 2 | generic-tie-dma-to-spad-sync (cnt, ref, next and refe tags) |
 | joint | 2 | cspace<-parented-transformq-joint! (unscaled and scaled parent) |
 | merc_blend_shape | 2 | setup-blerc-chains-for-one-fragment (two fragments); blerc-execute (one fragment) |
@@ -112,8 +112,8 @@ code relies on it: it forms scratchpad addresses with `ori` (`render-ocean-quad`
 with the scratchpad's address as a DMA tag, which is an empty `refe` only when the
 address's low 16 bits are 0. On the PS2 it was `0x70000000`, an `end` tag. Afterwards every pointer into the
 region becomes its offset, and `#f` and `#t` become markers. The boot runs the same cases
-through the native SH-4 build. All 39 match the oracle bit for bit, both the
-region CRC and each case's result (529 of 529 boot checks).
+through the native SH-4 build. All 40 match the oracle bit for bit, both the
+region CRC and each case's result (531 of 531 boot checks).
 
 **GOAL stand-ins.** A case can give a function symbol a stand-in for the GOAL
 function the translated code calls with `jalr` (`env->goal_function`). On SH-4 the
@@ -198,7 +198,6 @@ Not covered yet:
   120-vertex one, whose blend overwrote the chunk header before the write-back
   on both sides with the case's hand-made blend control. The PC port skips
   `blerc-execute` while `*use-fp-blerc*` is #t, its default;
-- `collide-probe-instance-tie`, which needs a level's TIE tree;
 - `draw-bones-merc` and `draw-inline-array-tfrag`, like tie_methods (below):
   the PC port's GOAL code never calls them. `pc-merc-draw-request` replaces the
   first in `bones.gc`, and the second's calls in `tfrag-methods.gc` are

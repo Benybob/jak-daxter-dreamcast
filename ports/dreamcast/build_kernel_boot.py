@@ -26,7 +26,7 @@ BINDINGS = {
     'set-to-run-bootstrap': 'set-to-run-bootstrap',
 }
 EXPECTED_CHECKS = 90  # verified in Flycast; never weakened afterwards
-EXPECTED_DGO_CHECKS = 529  # KERNEL.CGO + 326 GAME.CGO files + 141 vf cases, verified in Flycast
+EXPECTED_DGO_CHECKS = 531  # KERNEL.CGO + 326 GAME.CGO files + 141 vf cases, verified in Flycast
 GAME_PREFIX = 326  # all of GAME.CGO
 
 
