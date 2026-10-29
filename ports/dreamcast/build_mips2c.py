@@ -286,6 +286,12 @@ def main():
         anim_case_data.write_header(cgo)
     else:
         anim_case_data.HEADER.unlink(missing_ok=True)
+    import mesh_case_data  # village1's collision meshes, the same way
+    dgo = mesh_case_data.find_dgo()
+    if dgo:
+        mesh_case_data.write_header(dgo)
+    else:
+        mesh_case_data.HEADER.unlink(missing_ok=True)
     # The desktop-equivalent oracle for the differential cases (mips2c_cases.h).
     oracle = out / 'mips2c-oracle.exe'
     env = dict(os.environ, PATH=str(args.host_gxx.parent) + os.pathsep + os.environ.get('PATH', ''))

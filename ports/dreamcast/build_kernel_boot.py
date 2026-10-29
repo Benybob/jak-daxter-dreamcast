@@ -43,7 +43,7 @@ def main():
     parser.add_argument('--nm', type=Path, default=work / 'dc-sdk/sh-elf/bin/sh-elf-nm.exe')
     parser.add_argument('--output', type=Path, default=work / 'flycast-kernel-boot')
     parser.add_argument('--dgo-tests', type=int,
-                        help=f'default {EXPECTED_DGO_CHECKS}, 2 more with the animation case (anim_case_data.py)')
+                        help=f'default {EXPECTED_DGO_CHECKS}, 2 more for each disc case (anim_case_data.py, mesh_case_data.py)')
     parser.add_argument('--dgo-output', type=Path, default=work / 'flycast-kernel-dgo')
     args = parser.parse_args()
     compiler = [sys.executable, str(port / 'compile_goal_subset.py'), '--frontend', str(args.frontend),
@@ -88,7 +88,8 @@ def main():
     # The PC port's mips2c functions, built natively for SH-4 into the DGO ELF.
     subprocess.run([sys.executable, str(port / 'build_mips2c.py')], check=True, stdout=subprocess.DEVNULL)
     if args.dgo_tests is None:
-        args.dgo_tests = EXPECTED_DGO_CHECKS + (2 if (port / 'build/mips2c/anim_case.h').is_file() else 0)
+        args.dgo_tests = EXPECTED_DGO_CHECKS + sum(2 for h in ('anim_case.h', 'mesh_case.h')
+                                                   if (port / 'build/mips2c' / h).is_file())
     # The compiled prefix of the original GAME.CGO.
     subprocess.run([sys.executable, str(port / 'build_game_cgo.py'), '--frontend', str(args.frontend),
                     '--msys', str(args.msys), '--count', str(GAME_PREFIX)], check=True)

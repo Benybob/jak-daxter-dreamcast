@@ -8,7 +8,7 @@ GAME.CGO's mips2c lookups. No lookup gets the faulting stub any more.
 
 | File | Functions | Differential case |
 | --- | --- | --- |
-| collide_cache | 14 | all 14: the queries (puyp-mesh, resolve-moving-sphere-tri/-sphere, collide-puss-work 9 and 10) over hand-placed tris; the background fill (upload, unpack with and without an instance, methods 26 to 29); the foreground fill (collide-shape-prim-mesh 12 to 14); both tri limits |
+| collide_cache | 14 | village1's own collision meshes through the background fill, when present; all 14: the queries (puyp-mesh, resolve-moving-sphere-tri/-sphere, collide-puss-work 9 and 10) over hand-placed tris; the background fill (upload, unpack with and without an instance, methods 26 to 29); the foreground fill (collide-shape-prim-mesh 12 to 14); both tri limits |
 | sky_tng | 13 | init-sky-regs, set-sky-vf27/vf23, render-sky-tri (clipping); set-tex-offset, render-sky-quad, and the load-boundary renderers (init-boundary-regs, render-boundary-tri and -quad, draw-boundary-polygon) |
 | collide_edge_grab | 4 | edge-work methods 16 and 15, hold-list add-to-list!; find-best-grab! (method 18): splits forward and back, a declined piece, the edge's ends, a grab found |
 | collide_mesh | 4 | methods 14 and 15; should-push-away-test and sphere-on-platform-test (methods 11 and 12) |
@@ -142,9 +142,16 @@ They are two that between them use every per-joint codec value in his control
 bits, and one of each matrix-bits setting (0, 1 and 3). The case sets the
 scratchpad up as `flatten-joint-control-to-spr` and `make-joint-jump-tables`
 would, and runs each animation alone and as an interpolated pair, then a blend
-of two. Without the disc the case is left out and the boot expects two checks
-fewer (532 instead of 534). With it, decompressing Jak's animations on SH-4
-matches desktop bit for bit.
+of two. With it, decompressing Jak's animations on SH-4 matches desktop bit for
+bit.
+
+**Real collision meshes.** In the same way, when the user's VI1.DGO is there
+(`$DC_JAK_DGO_DIR`, or `iso_data/jak1/DGO`), `mesh_case_data.py` copies the three
+largest collide-frag-meshes of village1's BSP (96 tris each, 79 to 90 vertices)
+and the level's pat array into `build/mips2c/mesh_case.h`. The case uploads and
+unpacks each as `fill-from-background` does and fills the cache through methods
+26 (288 tris), 28 with a box cut halfway across the first mesh (128) and 27/29
+(288). Each disc case adds two boot checks: 532 without the disc, 536 with both.
 
 Found on the way:
 

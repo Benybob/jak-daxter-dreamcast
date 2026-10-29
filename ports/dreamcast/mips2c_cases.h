@@ -1912,6 +1912,78 @@ static inline uint32_t dc_m2c_calc_animation(dc_m2c_env *e) {
 }
 #endif
 
+/* ---- collide_cache: the background fill over three of village1's own collide-frag
+ * meshes from the user's disc (mesh_case_data.py writes them to
+ * build/mips2c/mesh_case.h, which is not committed; without it this case is left
+ * out). Each mesh is uploaded and unpacked as fill-from-background does, then
+ * turned into cache tris by method 26 (a box around everything), method 28 (a box
+ * cutting through the middle of the first mesh) and method 27 (line-sphere, through method 29). ---- */
+#if defined(__has_include)
+#if __has_include("build/mips2c/mesh_case.h")
+#include "build/mips2c/mesh_case.h"
+#endif
+#endif
+#ifdef DC_M2C_MESH_COUNT
+static inline uint32_t dc_m2c_real_meshes(dc_m2c_env *e) {
+  enum { TYPE = 0x0100, MESHES = 0x0204, WORK = 0x0400, SPAD = 0x8000, PACKED = 0xa000, PATS = 0xb800 };
+  static const char *const method[3] = {"(method 26 collide-cache)", "(method 28 collide-cache)",
+                                        "(method 27 collide-cache)"};
+  uint32_t i, pass, at = PACKED, tris, sum = 0, low_x = 0xffff, high_x = 0;
+  for (i = 0; i < dc_m2c_meshes[0].verts; ++i) {
+    uint16_t x;
+    memcpy(&x, dc_m2c_meshes[0].packed + 6 * i, 2);
+    low_x = x < low_x ? x : low_x; high_x = x > high_x ? x : high_x;
+  }
+  e->set_symbol(e, "*fake-scratchpad-data*", dc_m2c_ptr(e, SPAD));
+  e->set_symbol(e, "*collide-cache-max-tris*", 461);
+  e->set_symbol(e, "*already-printed-exeeded-max-cache-tris*", e->s7 + 8);
+  e->set_symbol(e, "*collide-work*", dc_m2c_ptr(e, WORK));
+  dc_m2c_u(e, DC_M2C_CC_CACHE - 4, dc_m2c_ptr(e, TYPE));
+  dc_m2c_u(e, TYPE + 132, e->mips2c_function(e, "(method 29 collide-cache)"));
+  memcpy(e->region + PATS, dc_m2c_mesh_pats, sizeof dc_m2c_mesh_pats);
+  for (i = 0; i < DC_M2C_MESH_COUNT; ++i) {
+    const uint32_t mesh = MESHES + 32 * i;
+    memcpy(e->region + at, dc_m2c_meshes[i].packed, 16u * dc_m2c_meshes[i].total_qwc);
+    dc_m2c_u(e, mesh + 0, dc_m2c_ptr(e, at)); dc_m2c_u(e, mesh + 4, dc_m2c_ptr(e, PATS));
+    dc_m2c_u(e, mesh + 8, (uint32_t)dc_m2c_meshes[i].polys << 16 | dc_m2c_meshes[i].strip_len);
+    dc_m2c_u(e, mesh + 12, (uint32_t)dc_m2c_meshes[i].base[0]); dc_m2c_u(e, mesh + 16, (uint32_t)dc_m2c_meshes[i].base[1]);
+    dc_m2c_u(e, mesh + 20, (uint32_t)dc_m2c_meshes[i].base[2]);
+    dc_m2c_u(e, mesh + 24, (uint32_t)dc_m2c_meshes[i].total_qwc << 16 | (uint32_t)dc_m2c_meshes[i].vertex_qwc << 8 |
+                               dc_m2c_meshes[i].verts);
+    at += 16u * dc_m2c_meshes[i].total_qwc;
+  }
+  /* *collide-work* for line-sphere: an identity frame and a box around everything. */
+  dc_m2c_u(e, WORK + 16, 0xc0000000u); dc_m2c_u(e, WORK + 20, 0xc0000000u); dc_m2c_u(e, WORK + 24, 0xc0000000u);
+  dc_m2c_u(e, WORK + 32, 0x3fffffffu); dc_m2c_u(e, WORK + 36, 0x3fffffffu); dc_m2c_u(e, WORK + 40, 0x3fffffffu);
+  dc_m2c_vec(e, WORK + 48, 1.0f, 0.0f, 0.0f, 0.0f); dc_m2c_vec(e, WORK + 64, 0.0f, 1.0f, 0.0f, 0.0f);
+  dc_m2c_vec(e, WORK + 80, 0.0f, 0.0f, 1.0f, 0.0f); dc_m2c_vec(e, WORK + 96, 0.0f, 0.0f, 0.0f, 1.0f);
+  for (pass = 0; pass < 3; ++pass) {
+    /* The cache's box: around everything, or (pass 1) ending halfway across the first
+     * mesh (a vertex is 16 units a step from its mesh's base). */
+    const uint32_t max_x = pass == 1 ? (uint32_t)(dc_m2c_meshes[0].base[0] + 8 * (int32_t)(low_x + high_x)) : 0x3fffffffu;
+    dc_m2c_u(e, DC_M2C_CC_CACHE + 0, 0); dc_m2c_u(e, DC_M2C_CC_CACHE + 8, 0);
+    dc_m2c_u(e, DC_M2C_CC_CACHE + 60, 0xc0000000u); dc_m2c_u(e, DC_M2C_CC_CACHE + 64, 0xc0000000u);
+    dc_m2c_u(e, DC_M2C_CC_CACHE + 68, 0xc0000000u);
+    dc_m2c_u(e, DC_M2C_CC_CACHE + 76, max_x); dc_m2c_u(e, DC_M2C_CC_CACHE + 80, 0x3fffffffu);
+    dc_m2c_u(e, DC_M2C_CC_CACHE + 84, 0x3fffffffu);
+    for (i = 0; i < DC_M2C_MESH_COUNT; ++i) {
+      const uint32_t mesh = MESHES + 32 * i;
+      uint32_t packed;
+      memcpy(&packed, e->region + mesh, 4);
+      dc_m2c_call(e, "__pc-upload-collide-frag", packed, dc_m2c_meshes[i].vertex_qwc, dc_m2c_meshes[i].verts, 0, 0, 0);
+      dc_m2c_call(e, "(method 32 collide-cache)", dc_m2c_ptr(e, DC_M2C_CC_CACHE), dc_m2c_ptr(e, mesh), e->s7, 0, 0, 0);
+      dc_m2c_call(e, method[pass], dc_m2c_ptr(e, DC_M2C_CC_CACHE), dc_m2c_ptr(e, mesh), 0, 0, 0, 0);
+      memcpy(&tris, e->region + DC_M2C_CC_CACHE, 4);
+      dc_m2c_u(e, DC_M2C_LOG + 4 + 4 * (3 * pass + i), tris);
+    }
+    sum = sum << 10 | tris;
+    if (pass < 2) memset(e->region + DC_M2C_CC_TRIS, 0, 64u * tris);  /* the next pass starts empty */
+  }
+  dc_m2c_u(e, TYPE + 132, 0);  /* the native entry's address differs between the sides */
+  return sum;  /* tris in the cache after each pass, 10 bits apiece */
+}
+#endif
+
 typedef struct { const char *name; uint32_t (*run)(dc_m2c_env *); } dc_m2c_case;
 static const dc_m2c_case dc_m2c_cases[] = {
   {"sky_tng", dc_m2c_sky},
@@ -1956,6 +2028,9 @@ static const dc_m2c_case dc_m2c_cases[] = {
   {"collide-probe-instance-tie", dc_m2c_probe_instance_tie},
 #ifdef DC_M2C_ANIM_COUNT
   {"calc-animation-from-spr", dc_m2c_calc_animation},
+#endif
+#ifdef DC_M2C_MESH_COUNT
+  {"village1-collide-meshes", dc_m2c_real_meshes},
 #endif
 };
 #define DC_M2C_CASE_COUNT (sizeof dc_m2c_cases / sizeof dc_m2c_cases[0])
