@@ -12,6 +12,7 @@ import argparse
 from pathlib import Path
 import subprocess
 import json
+import re
 import sys
 from pack_native_dgo import write_dgo
 
@@ -88,8 +89,10 @@ def main():
     # The PC port's mips2c functions, built natively for SH-4 into the DGO ELF.
     subprocess.run([sys.executable, str(port / 'build_mips2c.py')], check=True, stdout=subprocess.DEVNULL)
     if args.dgo_tests is None:
-        args.dgo_tests = EXPECTED_DGO_CHECKS + sum(2 for h in ('anim_case.h', 'mesh_case.h')
-                                                   if (port / 'build/mips2c' / h).is_file())
+        # Each disc case header says how many cases it adds; each case is two checks.
+        args.dgo_tests = EXPECTED_DGO_CHECKS + sum(
+            2 * int(re.search(r'/\* disc cases: (\d+) \*/', h.read_text())[1])
+            for h in (port / 'build/mips2c').glob('*_case.h'))
     # The compiled prefix of the original GAME.CGO.
     subprocess.run([sys.executable, str(port / 'build_game_cgo.py'), '--frontend', str(args.frontend),
                     '--msys', str(args.msys), '--count', str(GAME_PREFIX)], check=True)

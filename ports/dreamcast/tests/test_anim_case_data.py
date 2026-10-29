@@ -1,7 +1,7 @@
 """anim_case_data.py: where it looks for GAME.CGO and what it writes (AI-assisted), ISC.
 
-Synthetic data only: the real animations come from the user's disc and are
-never committed.
+Synthetic data only: the real animations and shadow come from the user's disc and
+are never committed.
 """
 import os
 from pathlib import Path
@@ -23,12 +23,15 @@ class AnimCaseDataTest(unittest.TestCase):
 
     def test_header_layout(self):
         anims = {name: (2, 1, 1, bytes(range(16)), bytes(32)) for name in anim_case_data.ANIMS}
-        with tempfile.TemporaryDirectory() as directory, \
-                mock.patch.object(anim_case_data, 'animations', return_value=anims):
-            path = Path(directory) / 'anim_case.h'
-            anim_case_data.write_header(Path('unused'), path)
-            text = path.read_text()
+        with tempfile.TemporaryDirectory() as directory:
+            with mock.patch.object(anim_case_data, 'animations', return_value=anims), \
+                    mock.patch.object(anim_case_data, 'shadow', return_value=(bytes(16), 35)):
+                path = Path(directory) / 'anim_case.h'
+                anim_case_data.write_header(Path('unused'), path)
+                text = path.read_text()
+        self.assertIn('/* disc cases: 2 */', text)
         self.assertIn('#define DC_M2C_ANIM_COUNT %du' % len(anim_case_data.ANIMS), text)
+        self.assertIn('#define DC_M2C_JAK_SHADOW_JOINTS 35u', text)
         self.assertIn('dc_m2c_anim0_fixed[16] = {\n  0x00, 0x01, 0x02', text)
         self.assertIn('{"%s", 2u, 1u, 1u, dc_m2c_anim0_fixed, dc_m2c_anim0_frames},' % anim_case_data.ANIMS[0], text)
 

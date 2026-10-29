@@ -2001,6 +2001,48 @@ static inline uint32_t dc_m2c_real_meshes(dc_m2c_env *e) {
 }
 #endif
 
+/* ---- shadow: shadow-execute over Jak's own shadow geometry from the user's
+ * GAME.CGO (anim_case_data.py, with the animations): 35 joints, 118 vertices, 153
+ * single and 14 double tris. The packet is draw-bones-shadow's: a cnt tag over
+ * the settings, a ref to the geometry, a ref to the joint matrices, an end tag.
+ * The settings are the synthetic case's, in game units (4096 a meter). ---- */
+#ifdef DC_M2C_JAK_SHADOW_JOINTS
+static inline uint32_t dc_m2c_jak_shadow_case(dc_m2c_env *e) {
+  enum { CAMERA = 0x0004, SDATA = 0x0600, PACKET = 0x1000, GEO = 0x1100, MTX = 0x2100, SPAD = 0x4000,
+         GSF = 0x8000, OUT = 0xa000 };
+  uint32_t i, k, state = 0x5ade6u;
+  uint64_t end;
+  e->set_symbol(e, "*math-camera*", dc_m2c_ptr(e, CAMERA));
+  e->set_symbol(e, "*fake-scratchpad-data*", dc_m2c_ptr(e, SPAD));
+  e->set_symbol(e, "*gsf-buffer*", dc_m2c_ptr(e, GSF));
+  e->set_symbol(e, "flush-cache", dc_m2c_goal(e, 0, dc_m2c_flush_cache));
+  e->set_symbol(e, "camera-pos", dc_m2c_goal(e, 1, dc_m2c_camera_pos));
+  e->set_symbol(e, "*shadow-data*", dc_m2c_ptr(e, SDATA));
+  for (i = 0; i < 64; ++i) dc_m2c_u(e, SDATA + 4 * i, 0x10000000u * (i & 7) + 0x101u * i);
+  dc_m2c_f(e, CAMERA + 0, 1.0f);
+  for (i = 0; i < 16; ++i) dc_m2c_f(e, CAMERA + 364 + 4 * i, (i % 5 == 0) ? 1.0f : dc_m2c_rand(&state) * 0.0625f);
+  dc_m2c_vec(e, DC_M2C_SHADOW_CAMPOS, 0.0f, 40960.0f, 81920.0f, 1.0f);
+  /* The packet. */
+  dc_m2c_u(e, PACKET + 0, 1u << 28 | 5);  /* cnt over the settings; +12 is the next packet (none) */
+  dc_m2c_vec(e, PACKET + 16, 0.0f, 4096.0f, 0.0f, 0.0f); dc_m2c_u(e, PACKET + 28, 1 | 8);  /* camera check, scissor top */
+  dc_m2c_vec(e, PACKET + 32, 0.25f, -1.0f, 0.125f, 32768.0f);
+  dc_m2c_vec(e, PACKET + 48, 0.0f, 1.0f, 0.0f, -2048.0f);
+  dc_m2c_vec(e, PACKET + 64, 0.0f, 1.0f, 0.0f, 16384.0f);
+  dc_m2c_vec(e, PACKET + 80, 0.0f, -1.0f, 0.0f, 24576.0f);
+  dc_m2c_u(e, PACKET + 96, 3u << 28 | (uint32_t)(sizeof dc_m2c_jak_shadow / 16)); dc_m2c_u(e, PACKET + 100, dc_m2c_ptr(e, GEO));
+  dc_m2c_u(e, PACKET + 112, 3u << 28 | 8 * DC_M2C_JAK_SHADOW_JOINTS); dc_m2c_u(e, PACKET + 116, dc_m2c_ptr(e, MTX));
+  dc_m2c_u(e, PACKET + 128, 7u << 28);
+  memcpy(e->region + GEO, dc_m2c_jak_shadow, sizeof dc_m2c_jak_shadow);
+  /* Joint matrices, 128 bytes a joint: near-identity rows, raised 1.5 m. */
+  for (i = 0; i < DC_M2C_JAK_SHADOW_JOINTS; ++i) {
+    for (k = 0; k < 12; ++k) dc_m2c_f(e, MTX + 128 * i + 4 * k, (k % 5 == 0) ? 1.0f : dc_m2c_rand(&state) * 0.03125f);
+    dc_m2c_vec(e, MTX + 128 * i + 48, 0.0f, 6144.0f, 0.0f, 1.0f);
+  }
+  end = dc_m2c_call(e, "shadow-execute", dc_m2c_ptr(e, PACKET), dc_m2c_ptr(e, OUT), 0, 0, 0, 0);
+  return dc_m2c_off(e, end) - OUT;  /* packet bytes */
+}
+#endif
+
 typedef struct { const char *name; uint32_t (*run)(dc_m2c_env *); } dc_m2c_case;
 static const dc_m2c_case dc_m2c_cases[] = {
   {"sky_tng", dc_m2c_sky},
@@ -2048,6 +2090,9 @@ static const dc_m2c_case dc_m2c_cases[] = {
 #endif
 #ifdef DC_M2C_MESH_COUNT
   {"village1-collide-meshes", dc_m2c_real_meshes},
+#endif
+#ifdef DC_M2C_JAK_SHADOW_JOINTS
+  {"jak-shadow", dc_m2c_jak_shadow_case},
 #endif
 };
 #define DC_M2C_CASE_COUNT (sizeof dc_m2c_cases / sizeof dc_m2c_cases[0])

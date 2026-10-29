@@ -152,7 +152,14 @@ and the level's pat array into `build/mips2c/mesh_case.h`. The case uploads and
 unpacks each as `fill-from-background` does and fills the cache through methods
 26 (288 tris), 28 with a box cut halfway across the first mesh (128) and 27/29
 (288). After the first fill, `puyp-mesh` drops a probe onto the first tri and
-hits halfway down (u = 0.5). Each disc case adds two boot checks: 532 without the disc, 536 with both.
+hits halfway down (u = 0.5).
+
+**Jak's shadow.** From the same GAME.CGO, `anim_case_data.py` also copies the
+eichar art group's `shadow-geo` (35 joints, 118 vertices, 24 of them two-joint,
+153 single and 14 double tris, 236 and 36 edges). The case builds the packet as
+`draw-bones-shadow` does (a cnt tag over the settings, refs to the geometry and
+to the joint matrices, an end tag) and runs `shadow-execute` over it: 4,832
+bytes of output, matching desktop. Each disc case adds two boot checks: 532 without the disc, 538 with it.
 
 Found on the way:
 
