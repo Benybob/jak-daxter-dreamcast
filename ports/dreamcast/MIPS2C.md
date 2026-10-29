@@ -29,7 +29,7 @@ GAME.CGO's mips2c lookups. No lookup gets the faulting stub any more.
 | sparticle_launcher | 2 | particle-adgif (cache miss, hit and search); sp-launch-particles-var (three particles, sp-init-fields! modelled, particle-adgif through `jalr`); sp-launch-particles-var again: 3d, launch state and control, rotation, sound, aux list, disabled and queued |
 | tfrag | 2 | stats-tfrag-asm (eight fragments) at four LOD distance sets |
 | tie_methods | 2 | none: never called on PC (below) |
-| draw_string | 1 | draw-string (two strings, both fonts, color/offset/newline codes) |
+| draw_string | 1 | draw-string with four flag sets (left; large, right, kerning; shadow, middle; shadow, middle-vert, large) and color, offset, signed and multi-digit codes |
 | texture | 1 | adgif-shader<-texture-with-update! (four textures, every branch) |
 | time_of_day | 1 | time-of-day-interp-colors-scratch (64 colors, two scratchpad chunks) |
 

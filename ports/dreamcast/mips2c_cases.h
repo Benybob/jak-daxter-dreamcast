@@ -578,13 +578,16 @@ static inline uint32_t dc_m2c_time_of_day(dc_m2c_env *e) {
   return 0;
 }
 
-/* ---- draw_string: draw-string (font12 left-aligned, then font24 with other flags),
- * with color, offset and newline codes ---- */
+/* ---- draw_string: draw-string with four flag sets (left; large, right and
+ * kerning; shadow and middle; shadow, middle-vert and large), with color, offset,
+ * signed and multi-digit codes and newlines ---- */
 static inline uint32_t dc_m2c_draw_string(dc_m2c_env *e) {
   enum { CAMERA = 0x0004, VIDEO = 0x0400, WORK = 0x1000, FONT12 = 0x2000, FONT24 = 0x2800, CONTEXT = 0x3004,
          MATRIX = 0x3100, STRING = 0x3204, RESULT = 0x3300, DMA = 0x3404 };
-  static const char *const text[2] = {"Jak & Daxter\n~3Lv 12 ~+4ok", "~yPrecursor ~1orb\r~-2 x 99"};
-  static const uint32_t flags[2] = {0, 32 | 16 | 2};
+  static const char *const text[4] = {"Jak & Daxter\n~3Lv 12 ~+4ok", "~yPrecursor ~1orb\r~-2 x 99",
+                                       "~12L~+10H~-3Vmid ~0k~1K\nsh~Ydow ~[~]", "~h~v~25Y~-18V Big\n~2ll ~33xx"};
+  /* left; large|right|kerning; shadow|middle; shadow|middle-vert|large */
+  static const uint32_t flags[4] = {0, 32 | 16 | 2, 1 | 4, 1 | 8 | 32};
   uint32_t i, pass, state = 0xf0e1d2c3u, result = 0;
   e->set_symbol(e, "*math-camera*", dc_m2c_ptr(e, CAMERA));
   e->set_symbol(e, "*video-parms*", dc_m2c_ptr(e, VIDEO));
@@ -603,7 +606,7 @@ static inline uint32_t dc_m2c_draw_string(dc_m2c_env *e) {
   dc_m2c_vec(e, CONTEXT + 44, 600.0f, 400.0f, 1.0f, 1.0f);  /* the box glyphs are drawn in */
   dc_m2c_u(e, CONTEXT + 60, 3);  /* color */
   dc_m2c_u(e, DMA + 4, dc_m2c_ptr(e, DMA + 12));
-  for (pass = 0; pass < 2; ++pass) {
+  for (pass = 0; pass < 4; ++pass) {
     uint32_t before, after, n = (uint32_t)strlen(text[pass]);
     uint64_t width;
     memcpy(e->region + STRING + 4, text[pass], n + 1);
@@ -613,9 +616,10 @@ static inline uint32_t dc_m2c_draw_string(dc_m2c_env *e) {
     width = dc_m2c_call(e, "draw-string", dc_m2c_ptr(e, STRING), dc_m2c_ptr(e, DMA), dc_m2c_ptr(e, CONTEXT), 0, 0, 0);
     memcpy(&after, e->region + DMA + 4, 4);
     dc_m2c_u(e, RESULT + 4 * pass, (uint32_t)width);
-    result = result << 16 | ((after - before) & 0xffffu);
+    dc_m2c_u(e, RESULT + 16 + 4 * pass, after - before);
+    result = result * 31 + (after - before);
   }
-  return result;  /* packet bytes per string */
+  return result;  /* a hash of each string's packet bytes (also at RESULT + 16) */
 }
 
 /* ---- GOAL stand-ins (env->goal_function) for the cases below. They log their calls
