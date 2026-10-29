@@ -208,6 +208,38 @@ reports (about 0.45 s a frame for 60k triangles, all on the CPU) is Flycast's
 and says nothing about the hardware; it does say the next work is LOD and a
 tighter draw distance, not more triangles.
 
+## Draw distance and LOD, budgeted
+
+`instance_budget.py` puts the camera target at the centre of each of village1's
+414 16 m cells that hold an instance and applies the instance pass's draw rule
+there (the same single-precision test as `make_instance_fixture.expected`). With
+the DGO it also estimates LOD: each TIE prototype's bucket carries its own
+switch planes (`dists`: near, mid and far, from 5/6.5/10 m for small props to
+90/105/140 m), geometry 0 being the tie-near renderer's and 1 to 3 normal TIE's,
+and a lower LOD is taken as the package's LOD 0 triangles scaled by the BSP's
+LOD n / LOD 0 ratio. Shrubs stay at LOD 0: their four geometry slots are the
+same plant in different shrub formats, not reductions.
+
+TIE and shrub triangles drawn, village1:
+
+| Draw distance | Worst cell, LOD 0 | Worst cell, game LOD | Median, game LOD | 90th percentile, game LOD |
+| ---: | ---: | ---: | ---: | ---: |
+| 20 m | 27,753 | 27,753 | 4,087 | 12,760 |
+| 30 m | 43,217 | 41,381 | 10,506 | 27,131 |
+| 40 m | 66,617 | 60,031 | 18,629 | 42,885 |
+| 60 m | 129,448 | 102,353 | 38,980 | 72,788 |
+| 80 m | 184,461 | 129,570 | 52,894 | 96,837 |
+
+The game's own LOD planes take about 30% off at 80 m and almost nothing inside
+30 m, where most prototypes are still at geometry 0. So LOD alone does not bring
+the dense centre of the village down to a small budget: the draw distance has
+to be short there (30 m is about 41k triangles at worst), or the near geometry
+itself has to be cheaper. The pass cannot draw the lower LODs yet: the package
+holds LOD 0 only, because the GLB does, and the lower geometries still have to
+be decoded from the tie fragments. The planes' meaning follows the field names
+and `tie-methods.gc`'s per-geometry stats; the instance-TIE asm's comparisons
+are not checked against it.
+
 ## Proposed design
 
 1. **Resident per level: what gameplay needs everywhere.** Code (0.25 MiB),
@@ -236,7 +268,8 @@ tighter draw distance, not more triangles.
 - The 0.3% of TIE and shrub triangles the cuts miss, and textures for the
   package's materials.
 - Textures on the instance pass, and tfrag drawn under it in the same frame.
-- LOD selection and draw distance against the 41,312-tri densest window.
+- TIE's lower LOD geometries decoded from the tie fragments, so the pass can
+  draw them; then a draw distance chosen against the table above.
 - Village1's textures converted to PowerVR formats, and their VRAM total.
 - The decompiler fixes, if wanted upstream of this port: BLEND support in the
   sector builder, and the wind instances' m[15].
