@@ -122,6 +122,9 @@ uint32_t mips2c_function(dc_m2c_env*, const char* name) {
   fprintf(stderr, "%s is not built\n", name);
   exit(2);
 }
+uint32_t symbol_at(dc_m2c_env*, const char* name) {
+  return cell(name);
+}
 void* memory_at(dc_m2c_env*, uint32_t address) {
   return host_ptr(address);
 }
@@ -177,6 +180,7 @@ int main() {
   env.goal_function = goal_function;
   env.mips2c_function = mips2c_function;
   env.memory = memory_at;
+  env.symbol = symbol_at;
   g_env = &env;
   env.context = nullptr;
   printf("#define DC_M2C_EXPECT_COUNT %uu\n", (unsigned)DC_M2C_CASE_COUNT);

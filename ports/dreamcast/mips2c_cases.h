@@ -43,6 +43,8 @@ typedef struct dc_m2c_env {
   uint32_t (*mips2c_function)(struct dc_m2c_env *, const char *name);
   /* Memory at a GOAL address outside the region (the translated code's stack). */
   void *(*memory)(struct dc_m2c_env *, uint32_t address);
+  /* A symbol's address, which load_symbol_addr gives translated code (ntsc, pal). */
+  uint32_t (*symbol)(struct dc_m2c_env *, const char *name);
   void *context;
 } dc_m2c_env;
 
@@ -107,7 +109,7 @@ static inline uint32_t dc_m2c_sky(dc_m2c_env *e) {
 }
 
 /* ---- ripple: ripple-execute-init, ripple-apply-wave-table, ripple-matrix-scale ----
- * create-wave-table calls GOAL's sin/cos/atan and is left to gameplay. */
+ * create-wave-table calls GOAL's sin/cos/atan and has its own case, below. */
 static inline uint32_t dc_m2c_ripple(dc_m2c_env *e) {
   enum { POLY = 0x0010, SPAD = 0x4000, ARGS = 0x0100, HEADERS = 0x0200, INDICES = 0x0300, COUNTS = 0x0400,
          DEST = 0x1000, SRC = 0x2000, DST = 0x3000 };
@@ -871,6 +873,61 @@ static inline uint32_t dc_m2c_launch_particles(dc_m2c_env *e) {
   return used;  /* particles launched */
 }
 
+/* ---- ripple: ripple-create-wave-table over two waveforms, with sin, cos and atan
+ * standing in for GOAL (fixed results, so no float math happens outside the
+ * translated code). One waveform is ntsc, one pal; a third call finds its
+ * waveform already converted and only rebuilds the table. ---- */
+static uint64_t dc_m2c_ripple_atan(dc_m2c_env *e, const uint64_t *a) {
+  dc_m2c_log(e, (uint32_t)a[0]); dc_m2c_log(e, (uint32_t)a[1]);
+  return 0x46800000u;  /* 16384.0: an eighth of a turn */
+}
+static uint64_t dc_m2c_ripple_cos(dc_m2c_env *e, const uint64_t *a) {
+  dc_m2c_log(e, 0xc0 << 24 | ((uint32_t)a[0] >> 8));
+  return 0x3f400000u;  /* 0.75 */
+}
+static uint64_t dc_m2c_ripple_sin(dc_m2c_env *e, const uint64_t *a) {
+  dc_m2c_log(e, 0x51 << 24 | ((uint32_t)a[0] >> 8));
+  return 0xbf200000u;  /* -0.625 */
+}
+static uint64_t dc_m2c_ripple_offs(dc_m2c_env *e, const uint64_t *a) {
+  dc_m2c_log(e, 0x0f << 24 | dc_m2c_off(e, a[0]));
+  return 0;
+}
+static inline void dc_m2c_ripple_wave(dc_m2c_env *e, uint32_t at, float scale, float offset, int16_t xdiv,
+                                      int16_t zdiv, float speed) {
+  dc_m2c_f(e, at + 0, scale); dc_m2c_f(e, at + 4, offset);
+  memcpy(e->region + at + 8, &xdiv, 2); memcpy(e->region + at + 10, &zdiv, 2);
+  dc_m2c_f(e, at + 12, speed);
+}
+static inline uint32_t dc_m2c_ripple_wave_table(dc_m2c_env *e) {
+  enum { POLY = 0x0010, SETTINGS = 0x0104, NTSC = 0x0200, PAL = 0x0300, SPAD = 0x4000 };
+  uint32_t i, sum = 0;
+  dc_m2c_vec(e, POLY, -0.49999788f, 0.041664604f, -0.0013868269f, 0.000023717716f);
+  e->set_symbol(e, "*cos-poly-vec*", dc_m2c_ptr(e, POLY));
+  e->set_symbol(e, "*fake-scratchpad-data*", dc_m2c_ptr(e, SPAD));
+  e->set_symbol(e, "*setting-control*", dc_m2c_ptr(e, SETTINGS));
+  e->set_symbol(e, "atan", dc_m2c_goal(e, 0, dc_m2c_ripple_atan));
+  e->set_symbol(e, "cos", dc_m2c_goal(e, 1, dc_m2c_ripple_cos));
+  e->set_symbol(e, "sin", dc_m2c_goal(e, 2, dc_m2c_ripple_sin));
+  e->set_symbol(e, "ripple-update-waveform-offs", dc_m2c_goal(e, 3, dc_m2c_ripple_offs));
+  dc_m2c_call0(e, "ripple-execute-init");  /* the table create-wave-table samples */
+  /* Waveforms: count, converted (#f), falloff, then 28-byte waves. |(3, 4)| = 5 and
+   * |(-5, 12)| = 13, so the square roots are exact. */
+  dc_m2c_u(e, NTSC + 0, 2); dc_m2c_u(e, NTSC + 4, e->s7); dc_m2c_f(e, NTSC + 12, 0.75f);
+  dc_m2c_ripple_wave(e, NTSC + 16, 0.5f, 1024.0f, 3, 4, 2.0f);
+  dc_m2c_ripple_wave(e, NTSC + 44, 0.25f, -512.0f, -5, 12, 1.5f);
+  dc_m2c_u(e, PAL + 0, 1); dc_m2c_u(e, PAL + 4, e->s7); dc_m2c_f(e, PAL + 12, 1.5f);
+  dc_m2c_ripple_wave(e, PAL + 16, 1.25f, 300.0f, 4, 3, -3.0f);
+  dc_m2c_u(e, SETTINGS + 80, e->symbol(e, "ntsc"));
+  dc_m2c_call(e, "ripple-create-wave-table", dc_m2c_ptr(e, NTSC), 0, 0, 0, 0, 0);
+  dc_m2c_u(e, SETTINGS + 80, e->symbol(e, "pal"));
+  dc_m2c_call(e, "ripple-create-wave-table", dc_m2c_ptr(e, PAL), 0, 0, 0, 0, 0);
+  dc_m2c_call(e, "ripple-create-wave-table", dc_m2c_ptr(e, NTSC), 0, 0, 0, 0, 0);
+  dc_m2c_u(e, SETTINGS + 80, 0);  /* the symbol's address differs between the sides */
+  for (i = 0; i < 256; ++i) sum += e->region[SPAD + 1024 + i];
+  return sum;  /* the byte table's sum */
+}
+
 typedef struct { const char *name; uint32_t (*run)(dc_m2c_env *); } dc_m2c_case;
 static const dc_m2c_case dc_m2c_cases[] = {
   {"sky_tng", dc_m2c_sky},
@@ -897,6 +954,7 @@ static const dc_m2c_case dc_m2c_cases[] = {
   {"sparticle", dc_m2c_sparticle},
   {"sparticle_launcher", dc_m2c_particle_adgif},
   {"sp-launch-particles-var", dc_m2c_launch_particles},
+  {"ripple-create-wave-table", dc_m2c_ripple_wave_table},
 };
 #define DC_M2C_CASE_COUNT (sizeof dc_m2c_cases / sizeof dc_m2c_cases[0])
 

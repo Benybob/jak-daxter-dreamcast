@@ -56,6 +56,7 @@ static uint32_t boot_m2c_goal_function(dc_m2c_env *e,unsigned slot,dc_m2c_goal_f
 }
 static uint32_t boot_m2c_mips2c_function(dc_m2c_env *e,const char *name){(void)e;return dc_mips2c_stub(name);}
 static void *boot_m2c_memory(dc_m2c_env *e,uint32_t address){(void)e;return (void *)(uintptr_t)address;}
+static uint32_t boot_m2c_symbol(dc_m2c_env *e,const char *name){return dc_goal_intern(((dc_boot_m2c_saved *)e->context)->rt,name);}
 static void boot_m2c_restore(dc_boot_m2c_saved *saved){
   memset(boot_m2c_goal,0,sizeof boot_m2c_goal);
   while(saved->count){--saved->count;dc_goal_set_symbol(saved->rt,saved->symbol[saved->count],saved->value[saved->count]);}
@@ -223,7 +224,7 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
          memset(&saved,0,sizeof saved);saved.rt=&rt;
          env.region=dc_goal_resolve(&rt,region,DC_M2C_REGION);env.base=region;env.s7=rt.s7;
          env.set_symbol=boot_m2c_set_symbol;env.call=boot_m2c_call;env.call_jalr=boot_m2c_call_jalr;env.goal_function=boot_m2c_goal_function;
-         env.mips2c_function=boot_m2c_mips2c_function;env.memory=boot_m2c_memory;env.context=&saved;
+         env.mips2c_function=boot_m2c_mips2c_function;env.memory=boot_m2c_memory;env.symbol=boot_m2c_symbol;env.context=&saved;
          for(k=0;k<DC_M2C_CASE_COUNT;++k){
            uint32_t result,crc=dc_m2c_run_case(&env,k,&result);
            boot_m2c_restore(&saved);

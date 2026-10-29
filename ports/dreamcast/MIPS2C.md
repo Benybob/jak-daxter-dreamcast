@@ -14,7 +14,7 @@ GAME.CGO's mips2c lookups. No lookup gets the faulting stub any more.
 | collide_mesh | 4 | methods 14 and 15 |
 | generic_effect | 4 | generic-light-proc |
 | generic_merc | 4 | high-speed-reject |
-| ripple | 4 | ripple-execute-init, apply-wave-table, matrix-scale |
+| ripple | 4 | ripple-execute-init, apply-wave-table, matrix-scale; create-wave-table (ntsc, pal and already converted, GOAL stand-ins for sin, cos and atan) |
 | bones | 3 | draw-bones-check-longest-edge-asm (four radii) |
 | generic_effect2 | 3 | generic-no-light-dproc |
 | shadow | 15 | shadow-init-vars, shadow-xform-verts, shadow-calc-dual-verts; shadow-execute over a tetrahedron (all 13 helpers, GOAL stand-ins) |
@@ -103,8 +103,8 @@ paths stay in C++ (no `jalr` back into GOAL). The region is 16 KiB aligned on bo
 sides, as the PS2 scratchpad is, because translated code forms scratchpad addresses
 with `ori` (`render-ocean-quad`: `ori t4, spad, 12288`). Afterwards every pointer into the
 region becomes its offset, and `#f` and `#t` become markers. The boot runs the same cases
-through the native SH-4 build. All 24 match the oracle bit for bit, both the
-region CRC and each case's result (499 of 499 boot checks).
+through the native SH-4 build. All 25 match the oracle bit for bit, both the
+region CRC and each case's result (501 of 501 boot checks).
 
 **GOAL stand-ins.** A case can give a function symbol a stand-in for the GOAL
 function the translated code calls with `jalr` (`env->goal_function`). On SH-4 the
@@ -114,7 +114,9 @@ built mips2c function reaches its generic entry on both sides
 (`env->mips2c_function`). Nested calls get their own stack below the caller's, as
 `alloca` gives them on SH-4. The stand-ins log each call in the region and only
 move bits, never doing float arithmetic, which could round differently on the two
-sides. Their addresses become markers in the normalization.
+sides. Their addresses become markers in the normalization. A case that compares a
+field with a symbol's address (`ntsc`, `pal`) gets it from `env->symbol`, and
+clears it before the region is hashed, because it differs between the sides.
 
 Found on the way:
 
@@ -148,8 +150,7 @@ Found on the way:
 
 Not covered yet:
 - the 14 collide-cache functions, which need a cache filled from collision data;
-- `ripple-create-wave-table` and the merc conversion functions, which call back
-  into GOAL;
+- the merc conversion functions, which call back into GOAL;
 - the two `generic-prepare-dma-*` functions, which mercneric-convert reaches;
 - `bones-mtx-calc`, which follows the joint records' pointers (the oracle asserts
   16-byte alignment on them) and needs a real skeleton, and the hardware window,
