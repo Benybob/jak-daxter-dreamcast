@@ -1292,6 +1292,67 @@ static inline uint32_t dc_m2c_sky_quad_boundary(dc_m2c_env *e) {
   return total;  /* packet bytes written by each, 10 bits apiece */
 }
 
+/* ---- collide_mesh: should-push-away-test and sphere-on-platform-test (methods 11
+ * and 12) over six cache tris around a sphere. closest-pt-in-triangle stands in
+ * with the point below or above the sphere's centre at the tri's first vertex's
+ * height, which is the true closest point for the level tris here. ---- */
+static uint64_t dc_m2c_cm_closest_pt(dc_m2c_env *e, const uint64_t *a) {
+  unsigned char *out = (unsigned char *)e->memory(e, (uint32_t)a[0]);
+  const unsigned char *sphere = e->region + dc_m2c_off(e, a[1]), *tri = e->region + dc_m2c_off(e, a[2]);
+  static const float one = 1.0f;
+  dc_m2c_log(e, 0xc1 << 24 | dc_m2c_off(e, a[2]));
+  memcpy(out, sphere, 4); memcpy(out + 4, tri + 4, 4); memcpy(out + 8, sphere + 8, 4); memcpy(out + 12, &one, 4);
+  return 0;
+}
+static inline void dc_m2c_cm_tri(dc_m2c_env *e, uint32_t at, const float v[9], float nx, float ny, float nz,
+                                 uint32_t pat) {
+  unsigned k;
+  int32_t lo, hi;
+  for (k = 0; k < 3; ++k) dc_m2c_vec(e, at + 16 * k, v[3 * k], v[3 * k + 1], v[3 * k + 2], 1.0f);
+  dc_m2c_vec(e, at + 48, nx, ny, nz, 0.0f); dc_m2c_u(e, at + 60, pat);
+  for (k = 0; k < 3; ++k) {  /* bbox4w: the vertices' integer extent */
+    float a0 = v[k], a1 = v[3 + k], a2 = v[6 + k];
+    float mn = a0 < a1 ? (a0 < a2 ? a0 : a2) : (a1 < a2 ? a1 : a2), mx = a0 > a1 ? (a0 > a2 ? a0 : a2) : (a1 > a2 ? a1 : a2);
+    lo = (int32_t)mn; hi = (int32_t)mx;
+    dc_m2c_u(e, at + 64 + 4 * k, (uint32_t)lo); dc_m2c_u(e, at + 80 + 4 * k, (uint32_t)hi);
+  }
+}
+static inline uint32_t dc_m2c_collide_mesh_tests(dc_m2c_env *e) {
+  enum { MESH = 0x0104, SPHERE = 0x0200, TRIS = 0x1000, OUT = 0x2000 };
+  /* A floor below the sphere (penetrating), the ground, a floor just under the
+   * centre with a pat the platform test skips, a wall, a far floor, a ceiling. */
+  static const float floor60[9] = {-200, 60, -200, -200, 60, 200, 200, 60, -200},
+                     ground[9] = {-200, 0, -200, -200, 0, 200, 200, 0, -200},
+                     floor90[9] = {-200, 90, -200, -200, 90, 200, 200, 90, -200},
+                     wall[9] = {30, 120, -200, 30, 120, 200, 30, -200, 0},
+                     far_floor[9] = {1000, 80, 1000, 1000, 80, 1200, 1200, 80, 1000},
+                     ceiling[9] = {-200, 140, -200, 200, 140, -200, -200, 140, 200};
+  uint32_t r[4], i;
+  e->set_symbol(e, "closest-pt-in-triangle", dc_m2c_goal(e, 0, dc_m2c_cm_closest_pt));
+  dc_m2c_cm_tri(e, TRIS + 0, floor60, 0, 1, 0, 0);
+  dc_m2c_cm_tri(e, TRIS + 96, ground, 0, 1, 0, 16);
+  dc_m2c_cm_tri(e, TRIS + 192, floor90, 0, 1, 0, 8);
+  dc_m2c_cm_tri(e, TRIS + 288, wall, 1, 0, 0, 0);
+  dc_m2c_cm_tri(e, TRIS + 384, far_floor, 0, 1, 0, 0);
+  dc_m2c_cm_tri(e, TRIS + 480, ceiling, 0, -1, 0, 0);
+  dc_m2c_u(e, MESH + 4, 6);
+  dc_m2c_vec(e, SPHERE, 0.0f, 100.0f, 0.0f, 50.0f);
+  r[0] = (uint32_t)dc_m2c_call(e, "(method 11 collide-mesh)", dc_m2c_ptr(e, MESH), dc_m2c_ptr(e, TRIS),
+                               dc_m2c_ptr(e, OUT), dc_m2c_ptr(e, SPHERE), dc_m2c_fbits(0.0f), 0);
+  r[1] = (uint32_t)dc_m2c_call(e, "(method 12 collide-mesh)", dc_m2c_ptr(e, MESH), dc_m2c_ptr(e, TRIS),
+                               dc_m2c_ptr(e, OUT + 96), dc_m2c_ptr(e, SPHERE), dc_m2c_fbits(200.0f), 0);
+  /* Raised to 160: the platform test takes the floor at 60 (50 below the sphere)
+   * over the ground (110), the ceiling faces it the wrong way, and nothing
+   * penetrates for the push-away test. */
+  dc_m2c_vec(e, SPHERE, 0.0f, 160.0f, 0.0f, 50.0f);
+  r[2] = (uint32_t)dc_m2c_call(e, "(method 12 collide-mesh)", dc_m2c_ptr(e, MESH), dc_m2c_ptr(e, TRIS),
+                               dc_m2c_ptr(e, OUT + 192), dc_m2c_ptr(e, SPHERE), dc_m2c_fbits(200.0f), 0);
+  r[3] = (uint32_t)dc_m2c_call(e, "(method 11 collide-mesh)", dc_m2c_ptr(e, MESH), dc_m2c_ptr(e, TRIS),
+                               dc_m2c_ptr(e, OUT + 288), dc_m2c_ptr(e, SPHERE), dc_m2c_fbits(0.0f), 0);
+  for (i = 0; i < 4; ++i) dc_m2c_u(e, OUT + 0x400 + 4 * i, r[i]);
+  return r[0] ^ r[1] ^ r[2] ^ r[3];
+}
+
 typedef struct { const char *name; uint32_t (*run)(dc_m2c_env *); } dc_m2c_case;
 static const dc_m2c_case dc_m2c_cases[] = {
   {"sky_tng", dc_m2c_sky},
@@ -1325,6 +1386,7 @@ static const dc_m2c_case dc_m2c_cases[] = {
   {"collide_cache_prims", dc_m2c_collide_cache_prims},
   {"generic-prepare-dma", dc_m2c_prepare_dma},
   {"sky-quad-boundary", dc_m2c_sky_quad_boundary},
+  {"collide-mesh-tests", dc_m2c_collide_mesh_tests},
 };
 #define DC_M2C_CASE_COUNT (sizeof dc_m2c_cases / sizeof dc_m2c_cases[0])
 
