@@ -85,8 +85,19 @@ def balanced(text, start):
     raise ValueError('unbalanced type')
 
 
+# Methods GOAL calls through a cast to another function type: their declared type
+# leaves out arguments the code reads. fill-from-background calls these two as
+# its import-mesh-func, (function collide-cache object none), with the mesh in a1.
+CALLED_AS = {
+    '(method 27 collide-cache)': (['u64', 'u64'], 'u64'),
+    '(method 28 collide-cache)': (['u64', 'u64'], 'u64'),
+}
+
+
 def signature(name, goal_text, all_types):
     """(argument kinds, result kind); kinds are 'float' or 'u64'."""
+    if name in CALLED_AS:
+        return CALLED_AS[name]
     def kinds(types):
         out = []
         for t in types:
