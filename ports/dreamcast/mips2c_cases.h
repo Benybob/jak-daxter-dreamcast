@@ -1117,7 +1117,7 @@ static inline uint32_t dc_m2c_collide_cache_query(dc_m2c_env *e) {
  * table) turn the strips into cache triangles. A last fill reaches the tri limit. ---- */
 static inline uint32_t dc_m2c_collide_cache_fill(dc_m2c_env *e) {
   enum { TYPE = 0x0100, MESH = 0x0204, INST = 0x0284, PACKED = 0x0300, PATS = 0x0380, WORK = 0x0400,
-         SPAD = 0x8000, VERTS = 8, QWC = 3, STRIP_LEN = 17 };
+         SPAD = 0x8000, VERTS = 16, QWC = 6, STRIP_LEN = 17 };
   /* Strip 1 zigzags over a 4 x 2 grid; strip 2 takes a fan step (-7). */
   static const int8_t strips[STRIP_LEN + 2] = {0, 1, 2, 4, 5, 6, 7, 8, 0, 0, 2, 4, -7, 0, -128, 0, 0, 0, 0};
   static const uint8_t pat_index[8] = {0, 1, 2, 3, 0, 1, 3, 0};
@@ -1135,7 +1135,9 @@ static inline uint32_t dc_m2c_collide_cache_fill(dc_m2c_env *e) {
   dc_m2c_u(e, DC_M2C_CC_CACHE + 60, (uint32_t)-3000); dc_m2c_u(e, DC_M2C_CC_CACHE + 64, (uint32_t)-1000);
   dc_m2c_u(e, DC_M2C_CC_CACHE + 68, 0);
   dc_m2c_u(e, DC_M2C_CC_CACHE + 76, 1000); dc_m2c_u(e, DC_M2C_CC_CACHE + 80, 5000); dc_m2c_u(e, DC_M2C_CC_CACHE + 84, 5000);
-  /* The mesh: packed u16 vertices (16 units each from base-trans), strips, pat indices. */
+  /* The mesh: packed u16 vertices (16 units each from base-trans), strips, pat
+   * indices. Sixteen vertices, so the unpack loop runs past its first eight; the
+   * strips use the first eight. */
   for (i = 0; i < VERTS; ++i) {
     const uint16_t v[3] = {(uint16_t)(100 * (i / 2)), (uint16_t)(3 * i), (uint16_t)(100 * (i & 1))};
     memcpy(e->region + PACKED + 6 * i, v, 6);
