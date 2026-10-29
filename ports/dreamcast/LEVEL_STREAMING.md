@@ -123,6 +123,43 @@ instancing changes memory, not the renderer's per-frame load. That load, about
 41,000 TIE and shrub tris in the densest window at LOD 0 before tfrag, is what
 LOD and the draw distance have to bring down.
 
+## Village1's prototypes, decoded
+
+`prototype_geometry.py` cuts each TIE and shrub prototype out of the GLB: it
+takes the triangles of the GLB nodes named after the prototype (the wind-swayed
+TIE, palms and fish, is exported one `wind-group-*` node an instance, so those
+are pooled), keeps the ones inside an instance's bounding sphere, and maps them
+into the prototype's frame with the inverse of that instance's matrix, decoded as
+the decompiler's `extract_tie_matrix` builds it (rows 0 to 2 in 4.12 fixed point,
+row 3 an s16 shifted left 6 plus the bounding-sphere centre). Where instances
+crowd together a sphere also takes in neighbours' triangles, so it keeps only
+the triangles two instances' cuts share in the prototype frame (within 2 mm),
+confirmed by the BSP's LOD 0 count for TIE and by a third instance for shrubs.
+
+All 116 prototypes with instances decode: 102 confirmed by two instances, 14 that
+have a single instance. The result is a DCI1 package (described in the tool):
+indexed prototypes with 24-byte vertices (float position in meters, float UV,
+ARGB8888) and u16 indices, and an instance table of a prototype index and a 3x4
+float matrix each.
+
+| | Value |
+| --- | ---: |
+| prototypes | 116 |
+| vertices | 17,977 (431 KB) |
+| indices | 59,841 (120 KB) |
+| instances | 7,342 (382 KB) |
+| package | 938,958 bytes |
+
+Expanding every instance from the package gives 504,814 triangles, and every one
+of them matches a GLB triangle within 2 mm. The GLB has 506,462 TIE and shrub
+triangles, so the package reproduces 99.7% of them; about 1,650 fall outside the
+cuts (a prototype's triangles that reach past 1% beyond its instance's sphere).
+Textures are referenced by GLB material and not converted yet.
+
+The same tool also fixed a scan error: an `array`'s content-type field is a type
+link too, so `level_contents.basics` now keeps only 16-byte-aligned type slots
+(a basic's pointer is 16n + 4), which drops three phantom TIE buckets.
+
 ## Proposed design
 
 1. **Resident per level: what gameplay needs everywhere.** Code (0.25 MiB),
@@ -148,10 +185,10 @@ LOD and the draw distance have to bring down.
 
 ## Next measurements
 
-- The prototypes' own geometry in a PowerVR form. `instanced_level.py` gives
-  the instanced model (prototypes, LOD counts, placements), not vertices;
-  decoding the tie-fragment and shrub data, or cutting one instance of each
-  prototype out of the GLB, comes next.
+- The 0.3% of TIE and shrub triangles the cuts miss, and textures for the
+  package's materials.
+- The package drawn on the Dreamcast: the existing cached-terrain renderer
+  extended with an instance pass.
 - LOD selection and draw distance against the 41,312-tri densest window.
 - Village1's textures converted to PowerVR formats, and their VRAM total.
 - The decompiler fixes, if wanted upstream of this port: BLEND support in the

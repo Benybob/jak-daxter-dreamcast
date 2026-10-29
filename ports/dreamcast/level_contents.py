@@ -123,6 +123,9 @@ def basics(obj):
             if obj[p] == 0:
                 break
         p += 1
+    # A basic's type slot is 16-byte aligned (its pointer is 16n + 4). An array's
+    # content-type field (pointer + 8, so 16n + 12) is a type link too, not a basic.
+    out = [(at, name) for at, name in out if at % 16 == 0]
     return code_size, sorted(out)
 
 

@@ -115,9 +115,23 @@ def model(obj):
             raise ValueError(f'{t} at {p:#x} names no prototype')
         x, y, z, r = struct.unpack_from('<4f', data, p + 12)
         prototypes[proto]['instances'] += 1
+        # origin (type offset 32): 16 s16, as the decompiler's extract_tie_matrix reads
+        # them; the bsphere centre is added to row 3.
+        origin = list(struct.unpack_from('<16h', data, p + 28))
         instances.append({'proto': proto, 'x': x / UNITS_PER_M, 'y': y / UNITS_PER_M, 'z': z / UNITS_PER_M,
-                          'r': r / UNITS_PER_M})
+                          'r': r / UNITS_PER_M, 'origin': origin})
     return prototypes, instances
+
+
+def instance_matrix(inst):
+    """An instance's 4x4 row-major matrix in game units: rows 0-2 are 4.12 fixed
+    point, row 3 is the translation (an s16 shifted left 6) plus the bsphere
+    centre, as extract_tie_matrix and extract_shrub_matrix build it."""
+    o = inst['origin']
+    rows = [[o[4 * r + c] / 4096.0 for c in range(4)] for r in range(3)]
+    centre = [inst['x'] * UNITS_PER_M, inst['y'] * UNITS_PER_M, inst['z'] * UNITS_PER_M, 0.0]
+    rows.append([o[12 + c] * 64.0 + centre[c] for c in range(4)])
+    return rows
 
 
 def density(prototypes, instances, cell):
