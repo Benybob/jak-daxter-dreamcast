@@ -623,6 +623,20 @@ build/render-base-romdisk.o: $(RENDER_BASE_ASSET_DIR)/BASE_CASE.json
 	$(KOS_CC) -o $@ -r build/render-base-romdisk-tmp.o $(KOS_LIB_PATHS) -Wl,--whole-archive -lromdiskbase
 jak-dc-render-base.elf: render_base_main.o render_base_test.o render_gpu.o render_cache.o render_package.o sector_inflate.o render_world_view.o render_world_view_gate.o render_frustum.o build/render-base-romdisk.o | render_base.o
 	kos-cc -o $@ $^ -lsh4zam -lz -lm
+INSTANCE_ASSET_DIR ?= build/private-instance-assets
+build/instance_fixture.h: make_instance_fixture.py prototype_geometry.py private-romdisk-refresh
+	$(PYTHON) make_instance_fixture.py $(INSTANCE_ASSET_DIR) --header $@
+instance_pass.o: instance_pass.c instance_pass.h render_frustum.h scene_clip.h
+instances_main.o: instances_main.c instance_pass.h build/instance_fixture.h
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -c $< -o $@
+build/instance-romdisk.o: build/instance_fixture.h
+	mkdir -p build
+	$(KOS_GENROMFS) -f build/instance-romdisk.img -d $(INSTANCE_ASSET_DIR) -x '*.json'
+	$(KOS_BASE)/utils/bin2c/bin2c build/instance-romdisk.img build/instance-romdisk.c romdisk
+	$(KOS_CC) $(KOS_CFLAGS) -c build/instance-romdisk.c -o build/instance-romdisk-tmp.o
+	$(KOS_CC) -o $@ -r build/instance-romdisk-tmp.o $(KOS_LIB_PATHS) -Wl,--whole-archive -lromdiskbase
+jak-dc-instances.elf: instances_main.o instance_pass.o render_frustum.o build/instance-romdisk.o
+	kos-cc -o $@ $^ -lm
 TRAINING_STREAM_ASSET_DIR ?= build/private-training-stream-assets
 training_render.o: training_render.c training_render.h render_base.h render_block_cache.h
 training_stream_main.o: training_main.c training_render.h build/training_render_fixture.h private-romdisk-refresh
@@ -654,7 +668,9 @@ render_frustum_cases.o: render_frustum_cases.c render_frustum_cases.h build/frus
 render_frustum_main.o: render_frustum_main.c render_frustum_cases.h
 jak-dc-frustum.elf: render_frustum.o render_frustum_cases.o render_frustum_main.o
 	kos-cc -o $@ $^ -lm
-host: build/render-frustum-check$(HOST_SHARED) build/render-frustum-cases$(HOST_EXE)
+host: build/render-frustum-check$(HOST_SHARED) build/render-frustum-cases$(HOST_EXE) build/instance-pass-check$(HOST_SHARED)
+build/instance-pass-check$(HOST_SHARED): instance_pass.c instance_pass.h
+	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -pedantic -fPIC -shared instance_pass.c -o $@ -lm
 build/render-frustum-check$(HOST_SHARED): render_frustum.c render_frustum.h scene_clip.h
 	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -pedantic -fPIC -shared render_frustum.c -o $@ -lm
 build/render-frustum-cases$(HOST_EXE): host_render_frustum.c render_frustum.c render_frustum_cases.c build/frustum_fixture.h

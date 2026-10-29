@@ -12,7 +12,7 @@ placeholders and the original pad services on the Dreamcast controller. All 25 j
 mips2c C++ files pass an SH-4 syntax check ([MEMORY_BUDGET.md](MEMORY_BUDGET.md)). `(& var)` locals
 and the kscheme asize-of/copy defaults are native too, as are `go` from a method and the
 float ABI for `meters`/`degrees`, behaviors with arguments, and a zstd-streamed GAME.CGO.
-Next: level loading and heaps (what a level holds: [LEVEL_CONTENTS.md](LEVEL_CONTENTS.md); village1 converted and a streaming design: [LEVEL_STREAMING.md](LEVEL_STREAMING.md)), a PowerVR renderer and AICA sound.
+Next: level loading and heaps (what a level holds: [LEVEL_CONTENTS.md](LEVEL_CONTENTS.md); village1 converted, a streaming design and its TIE/shrub prototypes drawn instanced in Flycast: [LEVEL_STREAMING.md](LEVEL_STREAMING.md)), a PowerVR renderer and AICA sound.
 Spare VRAM as a data pool is a design note only ([VRAM_POOL.md](VRAM_POOL.md)).
 
 **2026-10-27 (AI-assisted):** [VU0 vector registers](VU0_LOWERING.md) now lower to

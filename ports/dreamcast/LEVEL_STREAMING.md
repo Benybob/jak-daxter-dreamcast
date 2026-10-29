@@ -148,7 +148,7 @@ float matrix each.
 | vertices | 17,977 (431 KB) |
 | indices | 59,841 (120 KB) |
 | instances | 7,342 (382 KB) |
-| package | 938,958 bytes |
+| package | 938,960 bytes (the index run now pads to 4 bytes) |
 
 Expanding every instance from the package gives 504,814 triangles, and every one
 of them matches a GLB triangle within 2 mm. The GLB has 506,462 TIE and shrub
@@ -159,6 +159,54 @@ Textures are referenced by GLB material and not converted yet.
 The same tool also fixed a scan error: an `array`'s content-type field is a type
 link too, so `level_contents.basics` now keeps only 16-byte-aligned type slots
 (a basic's pointer is 16n + 4), which drops three phantom TIE buckets.
+
+## Village1's prototypes drawn in Flycast
+
+`instance_pass.c` draws a DCI1 package on the PowerVR, and `jak-dc-instances.elf`
+is its diagnostic. The pass shares the cached-terrain renderer's pieces: the
+camera of `render_world_view.c` (yaw, pitch and boom distance around a target,
+four meters a view unit), `dc_render_clip_viewport` for the near plane and the
+viewport, and `render_base.c`'s projection and batched vertex submission. Each
+instance whose translation lies within the draw distance has its prototype's
+vertices taken to view space once (the instance matrix, then the camera), and
+each triangle is clipped, projected and sent as untextured, double-sided Gouraud
+in the package's vertex colours. The loader checks the whole package before
+anything uses it (sizes, ranges, indices, finite values) and leaves its output
+alone on a refusal.
+
+The package stays out of the repository: `make_instance_fixture.py` stages
+`build/private-instance-assets/package.dci` (written there by
+`prototype_geometry.py --out`, or a synthetic one when it is missing) and a
+header with its size, CRC, a camera aimed at its densest 16 m cell and the
+instance and triangle counts the pass must visit, worked out on the host in
+single precision.
+
+    python prototype_geometry.py DGO GLB --out build/private-instance-assets/package.dci
+    python build_dreamcast.py --target jak-dc-instances.elf --instance-assets build/private-instance-assets
+    python verify_backend.py FLYCAST jak-dc-instances.elf --nm NM --output OUT --suite instances \
+        --tests 29 --capture --dump dc_instance_metrics 40
+
+With village1's package, 16 MiB stock Flycast, the camera at yaw 2.2, pitch
+-0.45 and 55 m over the village's densest cell, and an 80 m draw distance:
+
+| | Value |
+| --- | ---: |
+| checks | 29 of 29 |
+| instances visited | 7,342 |
+| instances within the draw distance | 765 (host: 765) |
+| triangles visited | 59,815 (host: 59,815) |
+| triangles sent to the PowerVR | 56,672 |
+| culled by the viewport | 3,515 |
+| invalid clips | 0 |
+| TA vertex buffer | 3 MiB |
+
+The captured frame was compared with an independent host render of the same
+package and camera (painter's algorithm, flat colours): the pixels covered by
+geometry agree on 99.4% of a half-resolution sample. There is no ground in the
+picture, since tfrag is a separate pass, and no textures. The time the pass
+reports (about 0.45 s a frame for 60k triangles, all on the CPU) is Flycast's
+and says nothing about the hardware; it does say the next work is LOD and a
+tighter draw distance, not more triangles.
 
 ## Proposed design
 
@@ -187,8 +235,7 @@ link too, so `level_contents.basics` now keeps only 16-byte-aligned type slots
 
 - The 0.3% of TIE and shrub triangles the cuts miss, and textures for the
   package's materials.
-- The package drawn on the Dreamcast: the existing cached-terrain renderer
-  extended with an instance pass.
+- Textures on the instance pass, and tfrag drawn under it in the same frame.
 - LOD selection and draw distance against the 41,312-tri densest window.
 - Village1's textures converted to PowerVR formats, and their VRAM total.
 - The decompiler fixes, if wanted upstream of this port: BLEND support in the

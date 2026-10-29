@@ -14,6 +14,8 @@ New-Item -ItemType Directory -Force $build | Out-Null
 $flags = @('-std=c99', '-O2', '-Wall', '-Wextra', '-Werror', '-pedantic')
 & $Compiler @flags -shared (Join-Path $port 'render_frustum.c') -o (Join-Path $build 'render-frustum-check.dll') -lm
 if ($LASTEXITCODE -ne 0) { throw 'Viewport clip library compilation failed' }
+& $Compiler @flags -shared (Join-Path $port 'instance_pass.c') -o (Join-Path $build 'instance-pass-check.dll') -lm
+if ($LASTEXITCODE -ne 0) { throw 'Instance pass library compilation failed' }
 & $pythonCommand (Join-Path $port 'make_frustum_fixture.py') (Join-Path $build 'frustum_fixture.h') | Out-Null
 if ($LASTEXITCODE -ne 0) { throw 'Viewport oracle generation failed' }
 & $Compiler @flags (Join-Path $port 'host_render_frustum.c') (Join-Path $port 'render_frustum.c') (Join-Path $port 'render_frustum_cases.c') -o (Join-Path $build 'render-frustum-cases.exe') -lm

@@ -16,7 +16,7 @@ The package, DCI1 (little endian):
               of each triangle run (see below), name (32 bytes)
   vertex      24 bytes: float x, y, z (meters, prototype frame), float u, v,
               ARGB8888: the PowerVR's float-colour-free vertex layout
-  index       u16, three a triangle
+  index       u16, three a triangle; the run pads to 4 bytes
   instance    u16 prototype, u16 pad, then a 3x4 float matrix (rows 0-2 and the
               translation, meters): what the renderer multiplies by
 
@@ -253,6 +253,8 @@ def package(results, instances):
             rows = [x for row in m[:3] for x in row[:3]] + [x / instanced_level.UNITS_PER_M for x in m[3][:3]]
             inst_bytes += struct.pack('<2H12f', remap[inst['proto']], 0, *rows)
             count += 1
+    if len(idx) % 4:
+        idx += b'\0\0'  # the instance table stays 4-byte aligned
     head = struct.pack('<4s2I', b'DCI1', len(keep), count)
     return head + protos + verts + idx + inst_bytes, {'prototypes': len(keep), 'instances': count,
                                                       'vertices': nverts, 'indices': nidx}
