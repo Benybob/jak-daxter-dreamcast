@@ -67,7 +67,7 @@ Converted sizes, from those counts:
 | Flattened, in the cache's 116-byte faces | 63 MiB |
 | Flattened, indexed (24-byte vertex: float position, UV, ARGB; 2-byte indices) | 20 MiB |
 | tfrag alone, indexed (about a vertex a tri) | about 1.9 MiB |
-| TIE kept instanced: prototypes indexed, plus a 64-byte matrix an instance | about 1.4 MiB |
+| TIE and shrub kept instanced, at LOD 0 (measured below) | 1.1 MB |
 
 ## What has to fit
 
@@ -84,8 +84,44 @@ So, at the measured sizes:
   the PS2 lays it out (10.8 MiB of DGO).
 - **Flattened geometry is out of the question.** At 20 MiB or more for one level,
   any converter must keep TIE and shrub instancing.
-- **Even instanced, one level's background (about 3.6 MiB) exceeds the free
-  arena.** It has to stream, or live outside the arena, or both.
+- **Instanced, one level's background is about 2.9 MiB**: tfrag about 1.8 MiB,
+  TIE and shrub prototypes 0.6 MB, instance records 0.5 MB. That is still more
+  than the free arena, but only the prototypes have to stay resident; tfrag and
+  the instance records divide into cells.
+
+## Village1 kept instanced
+
+`instanced_level.py` reads the BSP from the user's DGO and keeps instancing: each
+TIE and shrub prototype once, with its vertices and triangles per LOD, and each
+instance as a reference to it with its position. Expanding TIE at LOD 0
+reproduces the GLB's TIE count exactly (405,043 tris), which checks the instance
+links and shows the GLB holds LOD 0.
+
+| | Prototypes | Instances | LOD 0 vertices | LOD 0 tris | Indexed LOD 0 | Instance records |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| TIE | 100 | 3,853 | 20,239 | 19,195 (exact) | 600,906 bytes | 246,592 bytes |
+| shrub | 19 | 3,489 | 1,066 | 1,066 (estimate) | 31,980 bytes | 223,296 bytes |
+
+Shrub prototypes record no triangle count: their vertices come from the generic
+shrub fragments' `vtx-cnt`, and one triangle a vertex is an upper bound. Expanded,
+it gives 146,719 shrub tris against the GLB's 101,419. Instance records are
+64 bytes (a 4x4 matrix); 116 of the 119 prototypes have instances.
+
+Per 16 m cell, TIE and shrub instances only:
+
+| Measure | Value |
+| --- | ---: |
+| cells with instances | 408 |
+| instance records in the busiest cell | 153 (9,792 bytes) |
+| median records a cell | 9 |
+| LOD 0 tris drawn in the busiest cell | 9,954 |
+| LOD 0 tris drawn in the busiest 3 x 3 window | 41,312 |
+
+Kept instanced, the busiest cell streams under 10 KB of instance records instead
+of copies of its geometry; the triangles it draws are the same as flattened, so
+instancing changes memory, not the renderer's per-frame load. That load, about
+41,000 TIE and shrub tris in the densest window at LOD 0 before tfrag, is what
+LOD and the draw distance have to bring down.
 
 ## Proposed design
 
@@ -112,10 +148,11 @@ So, at the measured sizes:
 
 ## Next measurements
 
-- A converter that keeps instancing: TIE and shrub prototypes plus instance
-  matrices, from the BSP directly or by recognising repeated meshes in the GLB.
-  Then the instanced per-cell density, which decides the cell size and caps.
-- Which LODs the GLB holds (the BSP's 35,269 TIE prototype tris span all LODs).
+- The prototypes' own geometry in a PowerVR form. `instanced_level.py` gives
+  the instanced model (prototypes, LOD counts, placements), not vertices;
+  decoding the tie-fragment and shrub data, or cutting one instance of each
+  prototype out of the GLB, comes next.
+- LOD selection and draw distance against the 41,312-tri densest window.
 - Village1's textures converted to PowerVR formats, and their VRAM total.
 - The decompiler fixes, if wanted upstream of this port: BLEND support in the
   sector builder, and the wind instances' m[15].
