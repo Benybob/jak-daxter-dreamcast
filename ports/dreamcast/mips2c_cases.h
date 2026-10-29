@@ -1623,6 +1623,49 @@ static inline uint32_t dc_m2c_collide_primitives(dc_m2c_env *e) {
   return r[0] ^ r[1] ^ r[2];
 }
 
+/* ---- ocean_vu0: ocean-generate-verts, which draw-ocean runs every frame, over a
+ * wave-info of small random heights. upload-vu0-program and
+ * vu-lights<-light-group! stand in (the second copies the time-of-day lights);
+ * *ocean-generate-verts-vector* is all ones, so vector*! stands in as a copy. ---- */
+static uint64_t dc_m2c_ocean_upload(dc_m2c_env *e, const uint64_t *a) {
+  dc_m2c_log(e, 0x0b << 24 | dc_m2c_off(e, a[1])); return 0;
+}
+static uint64_t dc_m2c_ocean_lights(dc_m2c_env *e, const uint64_t *a) {
+  dc_m2c_log(e, 0x11 << 24 | dc_m2c_off(e, a[0]));
+  memmove(e->region + dc_m2c_off(e, a[0]), e->region + dc_m2c_off(e, a[1]), 112);
+  return 0;
+}
+static uint64_t dc_m2c_vector_times_ones(dc_m2c_env *e, const uint64_t *a) {
+  dc_m2c_log(e, 0x7e << 24 | dc_m2c_off(e, a[0]));
+  memmove(e->region + dc_m2c_off(e, a[0]), e->region + dc_m2c_off(e, a[1]), 16);
+  return a[0];
+}
+static inline uint32_t dc_m2c_ocean_verts(dc_m2c_env *e) {
+  enum { WORK = 0x0100, ONES = 0x0200, TOD = 0x0300, WAVES = 0x1000, VERTS = 0x2000, VERT_BYTES = 0x8000 };
+  uint32_t i, state = 0x0cea4u, sum = 0;
+  e->set_symbol(e, "*ocean-vu0-work*", dc_m2c_ptr(e, WORK));
+  e->set_symbol(e, "*time-of-day-context*", dc_m2c_ptr(e, TOD));
+  e->set_symbol(e, "*ocean-generate-verts-vector*", dc_m2c_ptr(e, ONES));
+  e->set_symbol(e, "upload-vu0-program", dc_m2c_goal(e, 0, dc_m2c_ocean_upload));
+  e->set_symbol(e, "vu-lights<-light-group!", dc_m2c_goal(e, 1, dc_m2c_ocean_lights));
+  e->set_symbol(e, "vector*!", dc_m2c_goal(e, 2, dc_m2c_vector_times_ones));
+  dc_m2c_vec(e, ONES, 1.0f, 1.0f, 1.0f, 1.0f);
+  dc_m2c_vec(e, WORK + 0, 0.125f, 255.0f, 0.25f, 1.0f);  /* slope scale, clamp */
+  /* The lights: three direction rows, then colours and ambient. */
+  dc_m2c_vec(e, TOD + 156, 0.0f, -0.8f, 0.6f, 0.0f); dc_m2c_vec(e, TOD + 172, 0.6f, 0.0f, 0.8f, 0.0f);
+  dc_m2c_vec(e, TOD + 188, 0.0f, 0.6f, -0.8f, 0.0f);
+  dc_m2c_vec(e, TOD + 204, 96.0f, 80.0f, 64.0f, 0.0f); dc_m2c_vec(e, TOD + 220, 32.0f, 48.0f, 64.0f, 0.0f);
+  dc_m2c_vec(e, TOD + 236, 16.0f, 16.0f, 24.0f, 0.0f); dc_m2c_vec(e, TOD + 252, 40.0f, 40.0f, 48.0f, 128.0f);
+  for (i = 0; i < 4096; i += 4) dc_m2c_f(e, WAVES + i, dc_m2c_rand(&state) * 0.25f);
+  dc_m2c_call(e, "ocean-generate-verts", dc_m2c_ptr(e, VERTS), dc_m2c_ptr(e, WAVES), 0, 0, 0, 0);
+  for (i = 0; i < VERT_BYTES; i += 4) {
+    uint32_t w;
+    memcpy(&w, e->region + VERTS + i, 4);
+    sum += w != 0;
+  }
+  return sum;  /* vertex words written */
+}
+
 typedef struct { const char *name; uint32_t (*run)(dc_m2c_env *); } dc_m2c_case;
 static const dc_m2c_case dc_m2c_cases[] = {
   {"sky_tng", dc_m2c_sky},
@@ -1661,6 +1704,7 @@ static const dc_m2c_case dc_m2c_cases[] = {
   {"shadow-double", dc_m2c_shadow_double},
   {"sp-launch-3d", dc_m2c_launch_3d},
   {"collide-do-primitives", dc_m2c_collide_primitives},
+  {"ocean-generate-verts", dc_m2c_ocean_verts},
 };
 #define DC_M2C_CASE_COUNT (sizeof dc_m2c_cases / sizeof dc_m2c_cases[0])
 

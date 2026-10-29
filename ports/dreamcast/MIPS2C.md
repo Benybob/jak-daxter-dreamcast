@@ -24,7 +24,7 @@ GAME.CGO's mips2c lookups. No lookup gets the faulting stub any more.
 | generic_tie | 2 | generic-tie-dma-to-spad-sync (cnt, ref, next and refe tags) |
 | joint | 2 | cspace<-parented-transformq-joint! (unscaled and scaled parent) |
 | merc_blend_shape | 2 | setup-blerc-chains-for-one-fragment (two fragments) |
-| ocean_vu0 | 2 | ocean-interp-wave (two frame pairs) |
+| ocean_vu0 | 2 | ocean-interp-wave (two frame pairs); ocean-generate-verts (draw-ocean's every frame) |
 | sparticle | 2 | sp-process-block-2d (running and paused) and -3d, GOAL stand-ins for the callbacks |
 | sparticle_launcher | 2 | particle-adgif (cache miss, hit and search); sp-launch-particles-var (three particles, sp-init-fields! modelled, particle-adgif through `jalr`); sp-launch-particles-var again: 3d, launch state and control, rotation, sound, aux list, disabled and queued |
 | tfrag | 2 | stats-tfrag-asm (eight fragments) |
@@ -109,8 +109,8 @@ paths stay in C++ (no `jalr` back into GOAL). The region is 16 KiB aligned on bo
 sides, as the PS2 scratchpad is, because translated code forms scratchpad addresses
 with `ori` (`render-ocean-quad`: `ori t4, spad, 12288`). Afterwards every pointer into the
 region becomes its offset, and `#f` and `#t` become markers. The boot runs the same cases
-through the native SH-4 build. All 36 match the oracle bit for bit, both the
-region CRC and each case's result (523 of 523 boot checks).
+through the native SH-4 build. All 37 match the oracle bit for bit, both the
+region CRC and each case's result (525 of 525 boot checks).
 
 **GOAL stand-ins.** A case can give a function symbol a stand-in for the GOAL
 function the translated code calls with `jalr` (`env->goal_function`). On SH-4 the
@@ -186,9 +186,12 @@ Not covered yet:
   control flattened to the scratchpad, the jump tables `make-joint-jump-tables`
   builds there, and compressed animation data; a hand-made stream would test
   nothing a real one does, and the port does not commit extracted assets;
-- `blerc-execute`, `ocean-generate-verts`,
-  `collide-probe-instance-tie`, `generic-tie-convert`
-  and `draw-inline-array-tfrag`. They call GOAL, or need a level's data;
+- `blerc-execute`, `collide-probe-instance-tie` and `generic-tie-convert`. They
+  call GOAL, or need a level's data;
+- `draw-bones-merc` and `draw-inline-array-tfrag`, like tie_methods (below):
+  the PC port's GOAL code never calls them. `pc-merc-draw-request` replaces the
+  first in `bones.gc`, and the second's calls in `tfrag-methods.gc` are
+  commented out;
 - `sp-launch-particles-var`'s random ranges. Both cases use specs with every
   random range 0, and the `sp-init-fields!` stand-in mirrors the GOAL loop in
   `sparticle-launcher.gc` for the int, float, object and copy-from-other specs
