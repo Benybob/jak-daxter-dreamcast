@@ -127,6 +127,12 @@ sides. Their addresses become markers in the normalization. A case that compares
 field with a symbol's address (`ntsc`, `pal`) gets it from `env->symbol`, and
 clears it before the region is hashed, because it differs between the sides.
 
+**Coverage.** `mips2c_coverage.py` builds the oracle with gcov, runs every case
+and lists each translated function's share of lines run. Every function the PC
+port's GOAL code calls runs in a case, most of them over 85% of their lines,
+except `calc-animation-from-spr` and its decompressors (below). The rest at 0%
+are functions the port never calls (below).
+
 Found on the way:
 
 - **Two port bugs of one kind.** The SH-4 entries for collide-cache methods 27
