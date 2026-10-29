@@ -85,12 +85,16 @@ def balanced(text, start):
     raise ValueError('unbalanced type')
 
 
-# Methods GOAL calls through a cast to another function type: their declared type
-# leaves out arguments the code reads. fill-from-background calls these two as
-# its import-mesh-func, (function collide-cache object none), with the mesh in a1.
+# Functions whose declared type leaves out arguments the code reads.
+# fill-from-background calls methods 27 and 28 as its import-mesh-func,
+# (function collide-cache object none), with the mesh in a1.
+# collide-do-primitives is declared (function float), but
+# moving-sphere-triangle-intersect jumps to it with its own a0-t0 (sphere, move,
+# radius, tri, out point) still in place.
 CALLED_AS = {
     '(method 27 collide-cache)': (['u64', 'u64'], 'u64'),
     '(method 28 collide-cache)': (['u64', 'u64'], 'u64'),
+    'collide-do-primitives': (['u64'] * 5, 'float'),
 }
 
 
