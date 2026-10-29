@@ -151,7 +151,8 @@ largest collide-frag-meshes of village1's BSP (96 tris each, 79 to 90 vertices)
 and the level's pat array into `build/mips2c/mesh_case.h`. The case uploads and
 unpacks each as `fill-from-background` does and fills the cache through methods
 26 (288 tris), 28 with a box cut halfway across the first mesh (128) and 27/29
-(288). Each disc case adds two boot checks: 532 without the disc, 536 with both.
+(288). After the first fill, `puyp-mesh` drops a probe onto the first tri and
+hits halfway down (u = 0.5). Each disc case adds two boot checks: 532 without the disc, 536 with both.
 
 Found on the way:
 

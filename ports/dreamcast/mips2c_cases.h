@@ -1917,7 +1917,9 @@ static inline uint32_t dc_m2c_calc_animation(dc_m2c_env *e) {
  * build/mips2c/mesh_case.h, which is not committed; without it this case is left
  * out). Each mesh is uploaded and unpacked as fill-from-background does, then
  * turned into cache tris by method 26 (a box around everything), method 28 (a box
- * cutting through the middle of the first mesh) and method 27 (line-sphere, through method 29). ---- */
+ * cutting through the middle of the first mesh) and method 27 (line-sphere,
+ * through method 29). After the first fill, puyp-mesh (method 30) drops a probe
+ * onto the first tri. ---- */
 #if defined(__has_include)
 #if __has_include("build/mips2c/mesh_case.h")
 #include "build/mips2c/mesh_case.h"
@@ -1925,7 +1927,8 @@ static inline uint32_t dc_m2c_calc_animation(dc_m2c_env *e) {
 #endif
 #ifdef DC_M2C_MESH_COUNT
 static inline uint32_t dc_m2c_real_meshes(dc_m2c_env *e) {
-  enum { TYPE = 0x0100, MESHES = 0x0204, WORK = 0x0400, SPAD = 0x8000, PACKED = 0xa000, PATS = 0xb800 };
+  enum { TYPE = 0x0100, MESHES = 0x0204, WORK = 0x0400, PRIM = 0x0500, PUYP = 0x0600, SPAD = 0x8000, PACKED = 0xa000,
+         PATS = 0xb800 };
   static const char *const method[3] = {"(method 26 collide-cache)", "(method 28 collide-cache)",
                                         "(method 27 collide-cache)"};
   uint32_t i, pass, at = PACKED, tris, sum = 0, low_x = 0xffff, high_x = 0;
@@ -1977,6 +1980,20 @@ static inline uint32_t dc_m2c_real_meshes(dc_m2c_env *e) {
       dc_m2c_u(e, DC_M2C_LOG + 4 + 4 * (3 * pass + i), tris);
     }
     sum = sum << 10 | tris;
+    if (pass == 0) {
+      /* puyp-mesh (method 30): a probe dropped from 4096 above the first tri's
+       * centroid onto all of them. */
+      float v[3][3], c[3];
+      unsigned k, n;
+      for (k = 0; k < 3; ++k)
+        for (n = 0; n < 3; ++n) memcpy(&v[k][n], e->region + DC_M2C_CC_TRIS + 16 * k + 4 * n, 4);
+      for (n = 0; n < 3; ++n) c[n] = (v[0][n] + v[1][n] + v[2][n]) / 3.0f;
+      dc_m2c_u(e, PRIM + 32, dc_m2c_ptr(e, DC_M2C_CC_CACHE)); dc_m2c_u(e, PRIM + 40, tris << 16);
+      dc_m2c_f(e, PUYP + 0, 1.0f); dc_m2c_u(e, PUYP + 4, 0); dc_m2c_u(e, PUYP + 8, dc_m2c_ptr(e, PUYP + 48));
+      dc_m2c_vec(e, PUYP + 16, c[0], c[1] + 4096.0f, c[2], 1.0f); dc_m2c_vec(e, PUYP + 32, 0.0f, -8192.0f, 0.0f, 0.0f);
+      dc_m2c_call(e, "(method 30 collide-cache)", dc_m2c_ptr(e, DC_M2C_CC_CACHE), dc_m2c_ptr(e, PUYP),
+                  dc_m2c_ptr(e, PRIM), 0, 0, 0);
+    }
     if (pass < 2) memset(e->region + DC_M2C_CC_TRIS, 0, 64u * tris);  /* the next pass starts empty */
   }
   dc_m2c_u(e, TYPE + 132, 0);  /* the native entry's address differs between the sides */
