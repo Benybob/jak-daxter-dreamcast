@@ -76,17 +76,21 @@ static inline void dc_m2c_rand_vec(dc_m2c_env *e, uint32_t at, uint32_t *state, 
 }
 
 /* ---- sky_tng: init-sky-regs, set-sky-vf27/vf23, render-sky-tri (clipping) ---- */
+static inline void dc_m2c_sky_camera(dc_m2c_env *e, uint32_t camera) {
+  dc_m2c_vec(e, camera + 572, 1.0f, 0.0f, 0.0f, 0.0f);
+  dc_m2c_vec(e, camera + 588, 0.0f, 1.0f, 0.0f, 0.0f);
+  dc_m2c_vec(e, camera + 604, 0.0f, 0.0f, 1.0f, 0.25f);
+  dc_m2c_vec(e, camera + 620, 0.0f, 0.0f, -8.0f, 1.0f);
+  dc_m2c_vec(e, camera + 700, 256.0f, 224.0f, 1.0f, 1.0f);
+  dc_m2c_vec(e, camera + 732, 2048.0f, 2048.0f, 16777000.0f, 1.0f);
+  dc_m2c_f(e, camera + 124, 0.5f); dc_m2c_f(e, camera + 128, 0.75f);
+  dc_m2c_f(e, camera + 828, 3.0f); dc_m2c_f(e, camera + 848, 1.0f);
+  e->set_symbol(e, "*math-camera*", dc_m2c_ptr(e, camera));
+}
 static inline uint32_t dc_m2c_sky(dc_m2c_env *e) {
   enum { CAMERA = 0x0004, DATA = 0x0404, VF27 = 0x0600, VERTS = 0x0700, DMA = 0x0804, SPAD = 0x4000 };
   uint32_t base_after;
-  dc_m2c_vec(e, CAMERA + 572, 1.0f, 0.0f, 0.0f, 0.0f);
-  dc_m2c_vec(e, CAMERA + 588, 0.0f, 1.0f, 0.0f, 0.0f);
-  dc_m2c_vec(e, CAMERA + 604, 0.0f, 0.0f, 1.0f, 0.25f);
-  dc_m2c_vec(e, CAMERA + 620, 0.0f, 0.0f, -8.0f, 1.0f);
-  dc_m2c_vec(e, CAMERA + 700, 256.0f, 224.0f, 1.0f, 1.0f);
-  dc_m2c_vec(e, CAMERA + 732, 2048.0f, 2048.0f, 16777000.0f, 1.0f);
-  dc_m2c_f(e, CAMERA + 124, 0.5f); dc_m2c_f(e, CAMERA + 128, 0.75f);
-  dc_m2c_f(e, CAMERA + 828, 3.0f); dc_m2c_f(e, CAMERA + 848, 1.0f);
+  dc_m2c_sky_camera(e, CAMERA);
   dc_m2c_vec(e, VF27, 0.125f, 0.25f, 0.5f, 1.0f);
   /* One vertex behind the near plane, so both hyperplane clippers run. */
   dc_m2c_vec(e, VERTS + 0, -1.0f, -1.0f, 4.0f, 1.0f);   dc_m2c_vec(e, VERTS + 16, 0.0f, 0.0f, 1.0f, 0.0f);
@@ -97,7 +101,6 @@ static inline uint32_t dc_m2c_sky(dc_m2c_env *e) {
   dc_m2c_vec(e, VERTS + 128, 32.0f, 64.0f, 128.0f, 128.0f);
   dc_m2c_u(e, DMA + 0, 0x1000); dc_m2c_u(e, DMA + 4, dc_m2c_ptr(e, DMA + 12));
   dc_m2c_u(e, DMA + 8, dc_m2c_ptr(e, DMA + 12 + 0x1000));
-  e->set_symbol(e, "*math-camera*", dc_m2c_ptr(e, CAMERA));
   e->set_symbol(e, "*sky-tng-data*", dc_m2c_ptr(e, DATA));
   e->set_symbol(e, "*fake-scratchpad-data*", dc_m2c_ptr(e, SPAD));
   dc_m2c_call0(e, "init-sky-regs");
@@ -1256,6 +1259,39 @@ static inline uint32_t dc_m2c_prepare_dma(dc_m2c_env *e) {
   return end;
 }
 
+/* ---- sky_tng: render-sky-quad after set-tex-offset, and the load-boundary
+ * renderers (init-boundary-regs, render-boundary-tri and -quad, which run
+ * draw-boundary-polygon), each with a vertex behind the near plane. ---- */
+static inline void dc_m2c_sky_vertex(dc_m2c_env *e, uint32_t at, float x, float y, float z, float s, float t) {
+  dc_m2c_vec(e, at, x, y, z, 1.0f); dc_m2c_vec(e, at + 16, s, t, 1.0f, 0.0f);
+  dc_m2c_vec(e, at + 32, 128.0f - 16.0f * s, 64.0f + 32.0f * t, 32.0f, 128.0f);
+}
+static inline void dc_m2c_sky_dma(dc_m2c_env *e, uint32_t dma) {
+  dc_m2c_u(e, dma + 0, 0x1000); dc_m2c_u(e, dma + 4, dc_m2c_ptr(e, dma + 12));
+  dc_m2c_u(e, dma + 8, dc_m2c_ptr(e, dma + 12 + 0x1000));
+}
+static inline uint32_t dc_m2c_sky_quad_boundary(dc_m2c_env *e) {
+  enum { CAMERA = 0x0004, DATA = 0x0404, VERTS = 0x0600, DMA = 0x1004, SPAD = 0x4000, DMA_BYTES = 0x1010 };
+  static const float quad[4][5] = {{-1, -1, 4, 0, 0}, {3, -1, 5, 1, 0}, {3, 2, -3, 1, 1}, {-1, 2, 6, 0, 1}};
+  uint32_t i, k, total = 0, base_after;
+  dc_m2c_sky_camera(e, CAMERA);
+  e->set_symbol(e, "*sky-tng-data*", dc_m2c_ptr(e, DATA));
+  e->set_symbol(e, "*fake-scratchpad-data*", dc_m2c_ptr(e, SPAD));
+  for (i = 0; i < 4; ++i) dc_m2c_sky_vertex(e, VERTS + 48 * i, quad[i][0], quad[i][1], quad[i][2], quad[i][3], quad[i][4]);
+  for (k = 0; k < 3; ++k) dc_m2c_sky_dma(e, DMA + DMA_BYTES * k);
+  dc_m2c_call0(e, "init-sky-regs");
+  dc_m2c_call(e, "set-tex-offset", 0x8000, 0x4000, 0, 0, 0, 0);  /* a half and a quarter in 16.16 */
+  dc_m2c_call(e, "render-sky-quad", dc_m2c_ptr(e, VERTS), dc_m2c_ptr(e, DMA), 0, 0, 0, 0);
+  dc_m2c_call0(e, "init-boundary-regs");
+  dc_m2c_call(e, "render-boundary-tri", dc_m2c_ptr(e, VERTS), dc_m2c_ptr(e, DMA + DMA_BYTES), 0, 0, 0, 0);
+  dc_m2c_call(e, "render-boundary-quad", dc_m2c_ptr(e, VERTS), dc_m2c_ptr(e, DMA + 2 * DMA_BYTES), 0, 0, 0, 0);
+  for (k = 0; k < 3; ++k) {
+    memcpy(&base_after, e->region + DMA + DMA_BYTES * k + 4, 4);
+    total = total << 10 | (base_after - dc_m2c_ptr(e, DMA + DMA_BYTES * k + 12));
+  }
+  return total;  /* packet bytes written by each, 10 bits apiece */
+}
+
 typedef struct { const char *name; uint32_t (*run)(dc_m2c_env *); } dc_m2c_case;
 static const dc_m2c_case dc_m2c_cases[] = {
   {"sky_tng", dc_m2c_sky},
@@ -1288,6 +1324,7 @@ static const dc_m2c_case dc_m2c_cases[] = {
   {"collide_cache_fill", dc_m2c_collide_cache_fill},
   {"collide_cache_prims", dc_m2c_collide_cache_prims},
   {"generic-prepare-dma", dc_m2c_prepare_dma},
+  {"sky-quad-boundary", dc_m2c_sky_quad_boundary},
 };
 #define DC_M2C_CASE_COUNT (sizeof dc_m2c_cases / sizeof dc_m2c_cases[0])
 

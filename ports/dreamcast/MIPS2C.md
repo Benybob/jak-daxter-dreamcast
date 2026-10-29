@@ -9,7 +9,7 @@ GAME.CGO's mips2c lookups. No lookup gets the faulting stub any more.
 | File | Functions | Differential case |
 | --- | --- | --- |
 | collide_cache | 14 | all 14: the queries (puyp-mesh, resolve-moving-sphere-tri/-sphere, collide-puss-work 9 and 10) over hand-placed tris; the background fill (upload, unpack with and without an instance, methods 26 to 29); the foreground fill (collide-shape-prim-mesh 12 to 14); both tri limits |
-| sky_tng | 13 | init-sky-regs, set-sky-vf27/vf23, render-sky-tri (clipping) |
+| sky_tng | 13 | init-sky-regs, set-sky-vf27/vf23, render-sky-tri (clipping); set-tex-offset, render-sky-quad, and the load-boundary renderers (init-boundary-regs, render-boundary-tri and -quad, draw-boundary-polygon) |
 | collide_edge_grab | 4 | edge-work methods 16 and 15, hold-list add-to-list! |
 | collide_mesh | 4 | methods 14 and 15 |
 | generic_effect | 4 | generic-light-proc; generic-prepare-dma-single and -double (three paths each) |
@@ -106,8 +106,8 @@ paths stay in C++ (no `jalr` back into GOAL). The region is 16 KiB aligned on bo
 sides, as the PS2 scratchpad is, because translated code forms scratchpad addresses
 with `ori` (`render-ocean-quad`: `ori t4, spad, 12288`). Afterwards every pointer into the
 region becomes its offset, and `#f` and `#t` become markers. The boot runs the same cases
-through the native SH-4 build. All 30 match the oracle bit for bit, both the
-region CRC and each case's result (511 of 511 boot checks).
+through the native SH-4 build. All 31 match the oracle bit for bit, both the
+region CRC and each case's result (513 of 513 boot checks).
 
 **GOAL stand-ins.** A case can give a function symbol a stand-in for the GOAL
 function the translated code calls with `jalr` (`env->goal_function`). On SH-4 the
