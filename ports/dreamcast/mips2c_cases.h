@@ -739,7 +739,7 @@ static inline uint32_t dc_m2c_sparticle(dc_m2c_env *e) {
   e->set_symbol(e, "sp-relaunch-particle-3d", dc_m2c_goal(e, 4, dc_m2c_sp_relaunch));
   e->set_symbol(e, "quaternion*!", dc_m2c_goal(e, 5, dc_m2c_quaternion_mul));
   dc_m2c_u(e, TIME, 2);  /* frames this tick */
-  for (pass = 0; pass < 3; ++pass) {  /* 2d running, 2d paused, 3d */
+  for (pass = 0; pass < 4; ++pass) {  /* 2d running, 2d paused, 3d running, 3d paused */
     uint32_t cpu = CPU + 0x1000 * pass, sprites = SPRITES + 0x1000 * pass;
     uint64_t r;
     for (i = 0; i < 6; ++i) {
@@ -747,9 +747,9 @@ static inline uint32_t dc_m2c_sparticle(dc_m2c_env *e) {
       for (k = 0; k < 6; ++k) dc_m2c_rand_vec(e, p + 16 + 16 * k, &state, dc_m2c_rand(&state) / 8.0f);
       dc_m2c_f(e, p + 96, i & 1 ? 0.0f : 0.875f);  /* friction, or none */
       dc_m2c_u(e, p + 100, (uint32_t)timer[i]);
-      dc_m2c_u(e, p + 104, flags[i] | (pass == 1 && i == 0 ? 8192u : 0u));
+      dc_m2c_u(e, p + 104, flags[i] | (pass % 2 == 1 && i == 0 ? 8192u : 0u));
       dc_m2c_u(e, p + 112, callback[i] ? callback_fn : 0);
-      dc_m2c_u(e, p + 116, relaunch[i] ? 2 : 0);
+      dc_m2c_u(e, p + 116, relaunch[i] ? (pass >= 2 ? 1 : 2) : 0);  /* 3d: runs out this tick */
       dc_m2c_u(e, p + 120, relaunch[i] ? dc_m2c_ptr(e, RELAUNCH) : 0);
       dc_m2c_u(e, p + 124, 0x40000000u + (i << 16));  /* a normal float: SH-4 flushes denormals, x86 does not */
       dc_m2c_u(e, p + 128, alive[i] ? dc_m2c_ptr(e, SYS) : e->s7);
@@ -757,8 +757,8 @@ static inline uint32_t dc_m2c_sparticle(dc_m2c_env *e) {
     }
     {
       const uint64_t args[8] = {dc_m2c_ptr(e, SYS), dc_m2c_ptr(e, cpu), dc_m2c_ptr(e, sprites), 0, 6,
-                                pass == 1 ? (uint64_t)e->s7 + 8 : e->s7, 0, 0};
-      r = e->call(e, pass == 2 ? "sp-process-block-3d" : "sp-process-block-2d", args);
+                                pass % 2 == 1 ? (uint64_t)e->s7 + 8 : e->s7, 0, 0};
+      r = e->call(e, pass >= 2 ? "sp-process-block-3d" : "sp-process-block-2d", args);
     }
     result = result << 8 | (uint32_t)(r & 0xff);
   }
