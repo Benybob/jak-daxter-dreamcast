@@ -303,10 +303,12 @@ static inline uint32_t dc_m2c_generic_no_light(dc_m2c_env *e) {
  * and sky_tng's hyperplane clippers directly, in C++) ---- */
 static inline uint32_t dc_m2c_ocean(dc_m2c_env *e) {
   enum { CAMERA = 0x0004, DATA = 0x0404, QUAD = 0x0500, DMA = 0x0804, SPAD = 0x4000 };
-  static const float corner[2][4][3] = {
+  static const float corner[3][4][3] = {
     {{-1.0f, -1.0f, 4.0f}, {1.0f, -1.0f, 4.0f}, {1.0f, 1.0f, 5.0f}, {-1.0f, 1.0f, 5.0f}},
     /* two corners behind the near plane, so both hyperplane clippers cut */
-    {{-2.0f, -1.0f, 6.0f}, {3.0f, -1.0f, -3.0f}, {2.0f, 2.0f, -2.0f}, {-1.0f, 1.5f, 3.0f}}};
+    {{-2.0f, -1.0f, 6.0f}, {3.0f, -1.0f, -3.0f}, {2.0f, 2.0f, -2.0f}, {-1.0f, 1.5f, 3.0f}},
+    /* well inside every plane (x and y are scaled by 256 and 224): nothing is cut */
+    {{-0.002f, -0.002f, 4.0f}, {0.002f, -0.002f, 4.0f}, {0.002f, 0.002f, 5.0f}, {-0.002f, 0.002f, 5.0f}}};
   uint32_t q, v, result = 0, before, after;
   dc_m2c_vec(e, CAMERA + 572, 1.0f, 0.0f, 0.0f, 0.0f);
   dc_m2c_vec(e, CAMERA + 588, 0.0f, 1.0f, 0.0f, 0.0f);
@@ -322,7 +324,7 @@ static inline uint32_t dc_m2c_ocean(dc_m2c_env *e) {
   e->set_symbol(e, "*fake-scratchpad-data*", dc_m2c_ptr(e, SPAD));
   dc_m2c_u(e, DMA + 4, dc_m2c_ptr(e, DMA + 12)); dc_m2c_u(e, DMA + 8, dc_m2c_ptr(e, DMA + 12 + 0x1000));
   dc_m2c_call0(e, "init-ocean-far-regs");
-  for (q = 0; q < 2; ++q) {
+  for (q = 0; q < 3; ++q) {
     uint32_t quad = QUAD + 0x100 * q;
     for (v = 0; v < 4; ++v) {
       dc_m2c_vec(e, quad + 48 * v, corner[q][v][0], corner[q][v][1], corner[q][v][2], 1.0f);
@@ -333,7 +335,8 @@ static inline uint32_t dc_m2c_ocean(dc_m2c_env *e) {
     result = result << 1 |
              (uint32_t)((uint32_t)dc_m2c_call(e, "render-ocean-quad", dc_m2c_ptr(e, quad), dc_m2c_ptr(e, DMA), 0, 0, 0, 0) != e->s7);
     memcpy(&after, e->region + DMA + 4, 4);
-    result = result << 12 | ((after - before) & 0xfffu);
+    if (q == 2) dc_m2c_u(e, QUAD + 0x2f0, after - before);  /* the uncut quad's packet bytes */
+    else result = result << 12 | ((after - before) & 0xfffu);
   }
   return result;  /* per quad: drawn bit, packet bytes */
 }
