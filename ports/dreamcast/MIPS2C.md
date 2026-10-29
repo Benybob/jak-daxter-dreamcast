@@ -20,7 +20,7 @@ GAME.CGO's mips2c lookups. No lookup gets the faulting stub any more.
 | shadow | 15 | shadow-init-vars, shadow-xform-verts, shadow-calc-dual-verts; shadow-execute over a tetrahedron (all 13 helpers, GOAL stand-ins); a chain of two objects, the first with double-sided tris and edges, the second skipped |
 | ocean | 3 | init-ocean-far-regs, render-ocean-quad (two quads, one clipped) |
 | collide_func | 2 | moving-sphere-triangle-intersect, called through `jalr` (two misses, a face hit); collide-do-primitives, directly and through moving-sphere-triangle-intersect's edge path; spheres starting in contact |
-| collide_probe | 2 | collide-probe-node (a two-level node tree); collide-probe-instance-tie over a node, instance and frag tree |
+| collide_probe | 2 | collide-probe-node (a two-level node tree); collide-probe-instance-tie over nested nodes, instances and frags, five wide (30 hits) |
 | generic_tie | 2 | generic-tie-dma-to-spad-sync (cnt, ref, next and refe tags) |
 | joint | 2 | cspace<-parented-transformq-joint! (unscaled and scaled parent) |
 | merc_blend_shape | 2 | setup-blerc-chains-for-one-fragment (two fragments); blerc-execute (one fragment) |

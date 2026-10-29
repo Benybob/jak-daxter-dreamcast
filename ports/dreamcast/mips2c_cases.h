@@ -1777,14 +1777,23 @@ static inline uint32_t dc_m2c_find_best_grab(dc_m2c_env *e) {
 }
 
 /* ---- collide_probe: collide-probe-instance-tie over a TIE tree in the box
- * *collide-work* describes. Two nodes (one far), the near one's three
- * instances (one far), each instance's two collide frags (one far, in the
- * instance's frame: a 4.12 matrix and a translation). The near frags of the near
- * instances land in the collide list. ---- */
+ * *collide-work* describes. Five root nodes (two far); the first holds two more
+ * nodes, the others instance arrays: five instances (one far) or one. Each
+ * instance's prototype has five collide frags (two far) in the instance's frame (a
+ * 4.12 matrix and a translation). The near frags of the near instances land in the
+ * collide list. Five of each runs the four-at-a-time loops twice. ---- */
+static inline void dc_m2c_tie_node(dc_m2c_env *e, uint32_t at, float x, uint32_t child, uint8_t count,
+                                   uint8_t nodes) {
+  dc_m2c_vec(e, at + 12, x, 0.0f, 0.0f, 4000.0f);
+  dc_m2c_u(e, at + 4, child); dc_m2c_b(e, at + 2, count); dc_m2c_b(e, at + 3, nodes);
+}
 static inline uint32_t dc_m2c_probe_instance_tie(dc_m2c_env *e) {
-  enum { WORK = 0x0100, STACK = 0x0200, NODES = 0x0404, INSTS = 0x0504, BUCKET = 0x0704, FRAGS = 0x0804,
-         MESH = 0x0904, LIST = 0x1000 };
+  enum { WORK = 0x0100, STACK = 0x0200, NODES = 0x0404, NODES2 = 0x04c4, INSTS = 0x0504, INSTS2 = 0x0684,
+         BUCKET = 0x0704, FRAGS = 0x0804, MESH = 0x0904, LIST = 0x1000 };
   static const int16_t rows[16] = {4096, 0, 0, 0, 0, 4096, 0, 0, 0, 0, 4096, 0, 10, 20, -30, 0};
+  static const float node_x[5] = {0.0f, 50000.0f, 1000.0f, -1000.0f, -60000.0f};
+  static const float inst_x[6] = {0.0f, 40000.0f, 1000.0f, 2000.0f, -1500.0f, 500.0f};
+  static const float frag_x[5] = {200.0f, 30000.0f, -300.0f, -30000.0f, 400.0f};
   uint32_t i, count;
   e->set_symbol(e, "*collide-work*", dc_m2c_ptr(e, WORK));
   e->set_symbol(e, "*collide-probe-stack*", dc_m2c_ptr(e, STACK));
@@ -1796,33 +1805,31 @@ static inline uint32_t dc_m2c_probe_instance_tie(dc_m2c_env *e) {
   dc_m2c_u(e, WORK + 28, (uint32_t)-1000000); dc_m2c_u(e, WORK + 44, 1000000);
   dc_m2c_vec(e, WORK + 48, 1.0f, 0.0f, 0.0f, 0.0f); dc_m2c_vec(e, WORK + 64, 0.0f, 1.0f, 0.0f, 0.0f);
   dc_m2c_vec(e, WORK + 80, 0.0f, 0.0f, 1.0f, 0.0f); dc_m2c_vec(e, WORK + 96, 0.0f, 0.0f, 0.0f, 1.0f);
-  /* Nodes: the near one holds the instance array (3 instances, flag 0). */
-  dc_m2c_vec(e, NODES + 12, 0.0f, 0.0f, 0.0f, 8000.0f);
-  dc_m2c_u(e, NODES + 4, dc_m2c_ptr(e, INSTS)); dc_m2c_b(e, NODES + 2, 3); dc_m2c_b(e, NODES + 3, 0);
-  dc_m2c_vec(e, NODES + 32 + 12, 50000.0f, 0.0f, 0.0f, 1000.0f);
-  dc_m2c_u(e, NODES + 32 + 4, dc_m2c_ptr(e, INSTS)); dc_m2c_b(e, NODES + 32 + 2, 3);
-  for (i = 0; i < 3; ++i) {
-    uint32_t inst = INSTS + 64 * i;
-    dc_m2c_vec(e, inst + 12, i == 1 ? 40000.0f : 1000.0f * (float)i, 100.0f, -500.0f, 2000.0f);
+  for (i = 0; i < 5; ++i)
+    dc_m2c_tie_node(e, NODES + 32 * i, node_x[i], dc_m2c_ptr(e, i == 0 ? NODES2 : i == 3 ? INSTS2 : INSTS),
+                    i == 0 ? 2 : i == 3 ? 1 : 5, i == 0);
+  dc_m2c_tie_node(e, NODES2, 500.0f, dc_m2c_ptr(e, INSTS), 5, 0);
+  dc_m2c_tie_node(e, NODES2 + 32, -500.0f, dc_m2c_ptr(e, INSTS2), 1, 0);
+  for (i = 0; i < 6; ++i) {
+    uint32_t inst = i < 5 ? INSTS + 64 * i : INSTS2;
+    uint16_t scale = 4096, flags = 0;
+    dc_m2c_vec(e, inst + 12, inst_x[i], 100.0f, -500.0f, 2000.0f);
     dc_m2c_u(e, inst + 8, dc_m2c_ptr(e, BUCKET));
     memcpy(e->region + inst + 28, rows, sizeof rows);
-    {
-      uint16_t scale = 4096, flags = 0;
-      memcpy(e->region + inst + 34, &scale, 2);  /* overlays row 0's w: 1.0 in 4.12 */
-      memcpy(e->region + inst + 42, &flags, 2);
-    }
+    memcpy(e->region + inst + 34, &scale, 2);  /* overlays row 0's w: 1.0 in 4.12 */
+    memcpy(e->region + inst + 42, &flags, 2);
   }
-  /* The prototype's collide frags: one near the instance's origin, one far. */
+  /* The prototype's collide frags. */
   dc_m2c_u(e, BUCKET + 136, dc_m2c_ptr(e, FRAGS));
   {
-    uint16_t n = 2;
+    uint16_t n = 5;
     memcpy(e->region + FRAGS + 2, &n, 2);
   }
-  dc_m2c_vec(e, FRAGS + 32 + 12, 200.0f, 0.0f, 100.0f, 500.0f);
-  dc_m2c_u(e, FRAGS + 32 + 4, dc_m2c_ptr(e, MESH));
-  dc_m2c_vec(e, FRAGS + 64 + 12, 30000.0f, 0.0f, 0.0f, 500.0f);
-  dc_m2c_u(e, FRAGS + 64 + 4, dc_m2c_ptr(e, MESH + 64));
-  dc_m2c_call(e, "collide-probe-instance-tie", dc_m2c_ptr(e, NODES), 2, dc_m2c_ptr(e, LIST), 1, 0, 0);
+  for (i = 0; i < 5; ++i) {
+    dc_m2c_vec(e, FRAGS + 32 + 32 * i + 12, frag_x[i], 0.0f, 100.0f, 500.0f);
+    dc_m2c_u(e, FRAGS + 32 + 32 * i + 4, dc_m2c_ptr(e, MESH + 16 * i));
+  }
+  dc_m2c_call(e, "collide-probe-instance-tie", dc_m2c_ptr(e, NODES), 5, dc_m2c_ptr(e, LIST), 1, 0, 0);
   memcpy(&count, e->region + LIST, 4);
   return count;  /* collide-list entries */
 }
