@@ -16,7 +16,6 @@ import argparse
 import os
 from pathlib import Path
 import re
-import shutil
 import subprocess
 import sys
 
@@ -33,8 +32,9 @@ def main():
     bin_dir = args.msys / 'mingw64/bin'
     env = dict(os.environ, PATH=str(bin_dir) + os.pathsep + os.environ['PATH'])
     out = PORT / 'build/mips2c/coverage'
-    shutil.rmtree(out, ignore_errors=True)
-    out.mkdir(parents=True)
+    out.mkdir(parents=True, exist_ok=True)
+    for stale in [*out.glob('*.gcda'), *out.glob('*.gcno'), *out.glob('*.gcov')]:
+        stale.unlink()  # counts from an earlier run would add up
     root = PORT.parents[1]
     sources = [root / 'game/mips2c/jak1_functions' / f'{f}.cpp' for f in build_mips2c.DEFAULT_FILES]
     flags = ['-std=gnu++20', '-O0', '--coverage', '-msse4.1', '-include', 'mips2c_dc/host_prefix.h', '-I.', '-I../..',

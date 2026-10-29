@@ -481,9 +481,8 @@ static inline uint32_t dc_m2c_shadow(dc_m2c_env *e) {
 /* ---- tfrag: stats-tfrag-asm over fragments of each visibility/LOD kind ---- */
 static inline uint32_t dc_m2c_tfrag_stats(dc_m2c_env *e) {
   enum { REGS = 0x0100, WORK = 0x0300, STATS = 0x0400, DMA = 0x0480, FRAGS = 0x0504 };
-  uint32_t i, state = 0x7f4a7c15u, result = 0;
+  uint32_t i, k, state = 0x7f4a7c15u, result = 0;
   for (i = 0; i < 31 * 4; ++i) dc_m2c_f(e, REGS + 4 * i, dc_m2c_rand(&state));
-  dc_m2c_vec(e, WORK + 80, 1.0f, 1.0f, 1.0f, 1.0f);
   dc_m2c_u(e, WORK + 144, dc_m2c_ptr(e, STATS)); dc_m2c_u(e, WORK + 148, dc_m2c_ptr(e, STATS + 32));
   for (i = 0; i < 16; ++i) dc_m2c_b(e, DMA + i, (uint8_t)(3 * i + 2));
   e->set_symbol(e, "*transform-regs*", dc_m2c_ptr(e, REGS));
@@ -494,7 +493,12 @@ static inline uint32_t dc_m2c_tfrag_stats(dc_m2c_env *e) {
     dc_m2c_rand_vec(e, frag + 12, &state, 1.0f + (float)i);
     dc_m2c_b(e, frag + 49, (uint8_t)(i & 1)); dc_m2c_b(e, frag + 50, (uint8_t)(i >> 1 & 1));
     dc_m2c_b(e, frag + 51, (uint8_t)(i >> 2 & 1));
-    dc_m2c_call(e, "stats-tfrag-asm", dc_m2c_ptr(e, frag), 0, 0, 0, 0, 0);
+  }
+  /* The LOD distances at +80, near to far, so each distance band is taken. */
+  for (k = 0; k < 4; ++k) {
+    static const float lod[4] = {1.0f, -40.0f, 40.0f, -400.0f};
+    dc_m2c_vec(e, WORK + 80, lod[k], lod[k] * 2.0f, lod[k] * 3.0f, lod[k] * 4.0f);
+    for (i = 0; i < 8; ++i) dc_m2c_call(e, "stats-tfrag-asm", dc_m2c_ptr(e, FRAGS + 64 * i), 0, 0, 0, 0, 0);
   }
   for (i = 0; i < 2; ++i) {
     uint16_t n;

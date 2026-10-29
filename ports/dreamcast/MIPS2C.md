@@ -27,7 +27,7 @@ GAME.CGO's mips2c lookups. No lookup gets the faulting stub any more.
 | ocean_vu0 | 2 | ocean-interp-wave (two frame pairs); ocean-generate-verts (draw-ocean's every frame) |
 | sparticle | 2 | sp-process-block-2d (running and paused) and -3d, GOAL stand-ins for the callbacks |
 | sparticle_launcher | 2 | particle-adgif (cache miss, hit and search); sp-launch-particles-var (three particles, sp-init-fields! modelled, particle-adgif through `jalr`); sp-launch-particles-var again: 3d, launch state and control, rotation, sound, aux list, disabled and queued |
-| tfrag | 2 | stats-tfrag-asm (eight fragments) |
+| tfrag | 2 | stats-tfrag-asm (eight fragments) at four LOD distance sets |
 | tie_methods | 2 | none: never called on PC (below) |
 | draw_string | 1 | draw-string (two strings, both fonts, color/offset/newline codes) |
 | texture | 1 | adgif-shader<-texture-with-update! (four textures, every branch) |
