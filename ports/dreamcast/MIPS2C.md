@@ -15,7 +15,7 @@ GAME.CGO's mips2c lookups. No lookup gets the faulting stub any more.
 | generic_effect | 4 | generic-light-proc |
 | generic_merc | 4 | high-speed-reject |
 | ripple | 4 | ripple-execute-init, apply-wave-table, matrix-scale; create-wave-table (ntsc, pal and already converted, GOAL stand-ins for sin, cos and atan) |
-| bones | 3 | draw-bones-check-longest-edge-asm (four radii) |
+| bones | 3 | draw-bones-check-longest-edge-asm (four radii); bones-mtx-calc (20 bones, both scratchpad buffers) |
 | generic_effect2 | 3 | generic-no-light-dproc |
 | shadow | 15 | shadow-init-vars, shadow-xform-verts, shadow-calc-dual-verts; shadow-execute over a tetrahedron (all 13 helpers, GOAL stand-ins) |
 | ocean | 3 | init-ocean-far-regs, render-ocean-quad (two quads, one clipped) |
@@ -103,8 +103,8 @@ paths stay in C++ (no `jalr` back into GOAL). The region is 16 KiB aligned on bo
 sides, as the PS2 scratchpad is, because translated code forms scratchpad addresses
 with `ori` (`render-ocean-quad`: `ori t4, spad, 12288`). Afterwards every pointer into the
 region becomes its offset, and `#f` and `#t` become markers. The boot runs the same cases
-through the native SH-4 build. All 25 match the oracle bit for bit, both the
-region CRC and each case's result (501 of 501 boot checks).
+through the native SH-4 build. All 26 match the oracle bit for bit, both the
+region CRC and each case's result (503 of 503 boot checks).
 
 **GOAL stand-ins.** A case can give a function symbol a stand-in for the GOAL
 function the translated code calls with `jalr` (`env->goal_function`). On SH-4 the
@@ -152,9 +152,11 @@ Not covered yet:
 - the 14 collide-cache functions, which need a cache filled from collision data;
 - the merc conversion functions, which call back into GOAL;
 - the two `generic-prepare-dma-*` functions, which mercneric-convert reaches;
-- `bones-mtx-calc`, which follows the joint records' pointers (the oracle asserts
-  16-byte alignment on them) and needs a real skeleton, and the hardware window,
-  which only its DMA wait reaches;
+- the hardware window. bones-mtx-calc forms the DMA channel addresses
+  (0x1000d000, 0x1000d400), but its waits on them are commented out, so no
+  case reads them. On the PC port `bones-mtx-calc-execute` calls the GOAL
+  `new-bones-mtx-calc-asm` unless `*use-new-bones*` is #f, so bones-mtx-calc
+  runs only then;
 - shadow geometry with double-sided verts, tris and edges (the case's tetrahedron
   has none), and shadow objects chained by the next pointer;
 - `calc-animation-from-spr`, `blerc-execute`, `ocean-generate-verts`,

@@ -928,6 +928,47 @@ static inline uint32_t dc_m2c_ripple_wave_table(dc_m2c_env *e) {
   return sum;  /* the byte table's sum */
 }
 
+/* ---- bones: bones-mtx-calc over 20 bones, so both scratchpad buffers and the
+ * second batch run. The PC port's bones-mtx-calc-execute calls the GOAL
+ * new-bones-mtx-calc-asm while *use-new-bones* is #t (its default), and this
+ * function when it is #f. The scratchpad layout is the one that
+ * bones-mtx-calc-execute sets up. ---- */
+static inline uint32_t dc_m2c_bones_mtx_calc(dc_m2c_env *e) {
+  enum { CAMERA = 0x0100, JOINTS = 0x1000, BONES = 0x2000, OUT = 0x3000, SPAD = 0x4000, COUNT = 20 };
+  uint32_t i, k, state = 0x0badf00du, nonzero = 0, w;
+  e->set_symbol(e, "*fake-scratchpad-data*", dc_m2c_ptr(e, SPAD));
+  /* bone-memory's work layout at scratchpad + 16: joint, bone, output buffers. */
+  dc_m2c_u(e, SPAD + 16, dc_m2c_ptr(e, SPAD + 256)); dc_m2c_u(e, SPAD + 20, dc_m2c_ptr(e, SPAD + 4864));
+  dc_m2c_u(e, SPAD + 24, dc_m2c_ptr(e, SPAD + 1280)); dc_m2c_u(e, SPAD + 28, dc_m2c_ptr(e, SPAD + 5888));
+  dc_m2c_u(e, SPAD + 32, dc_m2c_ptr(e, SPAD + 2816)); dc_m2c_u(e, SPAD + 36, dc_m2c_ptr(e, SPAD + 7424));
+  /* The camera: a rotation about y and a translation. */
+  dc_m2c_vec(e, CAMERA + 0, 0.6f, 0.0f, -0.8f, 0.0f); dc_m2c_vec(e, CAMERA + 16, 0.0f, 1.0f, 0.0f, 0.0f);
+  dc_m2c_vec(e, CAMERA + 32, 0.8f, 0.0f, 0.6f, 0.0f); dc_m2c_vec(e, CAMERA + 48, 5.0f, -2.0f, 30.0f, 1.0f);
+  /* Joints are 80 bytes, their bind pose 16 bytes in; bones are 96 bytes with
+   * their transform first. Affine matrices of random rows. */
+  for (i = 0; i < COUNT; ++i) {
+    for (k = 0; k < 3; ++k) dc_m2c_rand_vec(e, JOINTS + 80 * i + 16 * k, &state, 0.0f);
+    dc_m2c_rand_vec(e, JOINTS + 80 * i + 48, &state, 1.0f);
+    dc_m2c_u(e, JOINTS + 80 * i + 64, 0xa0000000u | i);  /* the next joint's header: skipped */
+    for (k = 0; k < 3; ++k) dc_m2c_rand_vec(e, BONES + 96 * i + 16 * k, &state, 0.0f);
+    dc_m2c_rand_vec(e, BONES + 96 * i + 48, &state, 1.0f);
+    dc_m2c_rand_vec(e, BONES + 96 * i + 64, &state, 1.0f);
+    dc_m2c_rand_vec(e, BONES + 96 * i + 80, &state, 1.0f);
+  }
+  {
+    /* joints points 68 bytes past the first bind pose (a basic at 16n+4, its
+     * matrix 12 bytes in, one joint along). */
+    const uint64_t args[8] = {dc_m2c_ptr(e, OUT), dc_m2c_ptr(e, JOINTS + 68), dc_m2c_ptr(e, BONES), COUNT,
+                              dc_m2c_ptr(e, CAMERA), 0, 0, 0};
+    e->call(e, "bones-mtx-calc", args);
+  }
+  for (i = 0; i < COUNT * 128; i += 4) {
+    memcpy(&w, e->region + OUT + i, 4);
+    nonzero += w != 0;
+  }
+  return nonzero;  /* output words written */
+}
+
 typedef struct { const char *name; uint32_t (*run)(dc_m2c_env *); } dc_m2c_case;
 static const dc_m2c_case dc_m2c_cases[] = {
   {"sky_tng", dc_m2c_sky},
@@ -955,6 +996,7 @@ static const dc_m2c_case dc_m2c_cases[] = {
   {"sparticle_launcher", dc_m2c_particle_adgif},
   {"sp-launch-particles-var", dc_m2c_launch_particles},
   {"ripple-create-wave-table", dc_m2c_ripple_wave_table},
+  {"bones-mtx-calc", dc_m2c_bones_mtx_calc},
 };
 #define DC_M2C_CASE_COUNT (sizeof dc_m2c_cases / sizeof dc_m2c_cases[0])
 
