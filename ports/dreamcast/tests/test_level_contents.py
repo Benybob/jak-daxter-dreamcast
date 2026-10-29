@@ -30,19 +30,23 @@ def dgo(entries):
     return out
 
 
-# Two basics: type 'aaa' at offset 0 (16 bytes), 'bbb' at offset 16 (32 bytes).
-CODE = struct.pack('<12I', 0xffffffff, 1, 2, 3, 0xffffffff, 4, 5, 6, 7, 8, 9, 10)
-# No pointer table (0), then two type links (0x81: one method) each with one seek.
-LINK = b'\0' + b'\x81aaa\0' + b'\x00\0' + b'\x81bbb\0' + b'\x10\0' + b'\0'
+def two_basics(first, second):
+    """Data with basics of type `first` at offset 0 (16 bytes) and `second` at 16
+    (32 bytes): no pointer table (0), then two type links (0x81: one method),
+    each with one seek."""
+    code = struct.pack('<12I', 0xffffffff, 1, 2, 3, 0xffffffff, 4, 5, 6, 7, 8, 9, 10)
+    link = (b'\0' + b'\x81' + first.encode() + b'\0' + b'\x00\0' +
+            b'\x81' + second.encode() + b'\0' + b'\x10\0' + b'\0')
+    return v4_object(code, link)
 
 
 class LevelContentsTest(unittest.TestCase):
     def setUp(self):
         self.dir = tempfile.TemporaryDirectory()
         self.path = Path(self.dir.name) / 'TEST.DGO'
-        bsp = v4_object(CODE, LINK)
         self.path.write_bytes(dgo([('thing', v3_object(64)), ('tpage-1', v4_object(bytes(32), b'\0\0')),
-                                   ('thing', v4_object(bytes(48), b'\0\0')), ('test-vis', bsp)]))
+                                   ('thing', two_basics('merc-ctrl', 'joint-anim-compressed')),
+                                   ('test-vis', two_basics('aaa', 'bbb'))]))
 
     def tearDown(self):
         self.dir.cleanup()
@@ -56,6 +60,9 @@ class LevelContentsTest(unittest.TestCase):
         self.assertEqual(lc.basics(obj), (48, [(0, 'aaa'), (16, 'bbb')]))
         self.assertEqual(lc.by_type(obj), (48, {'aaa': 16, 'bbb': 32}))
         self.assertEqual(lc.bsp_categories(obj)['other'], 48)
+
+    def test_art_categories(self):
+        self.assertEqual(lc.art_categories(self.path), {'models': 16, 'animations': 32, 'joints': 0, 'other': 0})
 
 
 if __name__ == '__main__':

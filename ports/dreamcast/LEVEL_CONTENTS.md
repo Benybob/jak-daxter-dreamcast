@@ -86,6 +86,48 @@ actors, ambients and nav meshes, tree the `draw-node`s. "other" is mostly float,
 string, symbol, vector and int32 arrays, likely the entities' res properties,
 which this scan cannot attribute.
 
+## Inside the art groups
+
+`--art` splits art groups the same way, and reads the CGOs too: the disc's
+GAME.CGO carries Jak's own art group, which the port's GAME.CGO (compiled from
+`goal_src`) does not have. Models are merc models with their shadow and collide
+meshes; animations are the compressed joint animations calc-animation-from-spr
+decompresses.
+
+| Archive | Art | models | animations | joints | other |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| GAME.CGO | 2,085 | 280 | 1,732 | 15 | 58 |
+| L1.CGO | 1,415 | 0 | 1,367 | 0 | 48 |
+| RACERP.CGO | 363 | 0 | 356 | 0 | 6 |
+| SUNKEN.CGO | 62 | 0 | 58 | 0 | 4 |
+| JUNGLE.CGO | 25 | 0 | 22 | 0 | 3 |
+| CIT.DGO | 2,555 | 1,952 | 498 | 63 | 41 |
+| SNO.DGO | 2,130 | 1,008 | 1,045 | 32 | 44 |
+| VI2.DGO | 2,023 | 1,478 | 466 | 49 | 31 |
+| FIN.DGO | 2,006 | 1,009 | 929 | 43 | 25 |
+| MIS.DGO | 1,861 | 1,157 | 625 | 40 | 39 |
+| OGR.DGO | 1,677 | 785 | 835 | 29 | 27 |
+| BEA.DGO | 1,626 | 1,231 | 316 | 48 | 31 |
+| VI1.DGO | 1,548 | 1,252 | 229 | 38 | 30 |
+| SUN.DGO | 1,506 | 967 | 469 | 35 | 35 |
+| JUN.DGO | 1,426 | 1,073 | 282 | 38 | 33 |
+| SWA.DGO | 1,319 | 497 | 765 | 25 | 32 |
+| VI3.DGO | 1,263 | 1,094 | 104 | 43 | 21 |
+| ROL.DGO | 1,186 | 551 | 592 | 21 | 21 |
+| JUB.DGO | 1,181 | 200 | 939 | 12 | 30 |
+| LAV.DGO | 1,111 | 667 | 406 | 18 | 20 |
+| FIC.DGO | 950 | 436 | 481 | 16 | 17 |
+| MAI.DGO | 855 | 502 | 316 | 21 | 17 |
+| ROB.DGO | 839 | 448 | 356 | 16 | 19 |
+| SUB.DGO | 728 | 528 | 168 | 16 | 16 |
+| TRA.DGO | 552 | 417 | 119 | 7 | 8 |
+| TIT.DGO | 446 | 389 | 25 | 24 | 7 |
+| DAR.DGO | 341 | 190 | 131 | 10 | 10 |
+| INT.DGO | 283 | 261 | 6 | 12 | 4 |
+
+ART.CGO holds the same art as GAME.CGO (2,085 KiB, the same split), so it is
+left out. L1.CGO and the other small CGOs are animation only.
+
 ## What it means for level loading
 
 - **Background geometry is most of a level.** tfrag, TIE and shrub together are
@@ -98,9 +140,10 @@ which this scan cannot attribute.
 - **The rest of a level is small.** Collision is 0.04 to 0.6 MiB, entities under
   0.1 MiB (plus their share of "other"), code under 0.5 MiB. Visibility data is
   up to 0.9 MiB and lighting palettes up to 0.6 MiB.
-- **Art groups are 0.3 to 2.6 MiB per level**: models and their animations, which
-  calc-animation-from-spr decompresses (the one live mips2c function without a
-  case).
+- **Art groups are 0.3 to 2.6 MiB per level**, mostly merc models; compressed
+  animations are 0.01 to 1 MiB. Jak's own art, which stays resident, is 2 MiB on
+  the disc, 1.7 MiB of it animations. calc-animation-from-spr decompresses them
+  (the one live mips2c function without a case).
 - At these sizes no level fits beside the engine as the PS2 lays it out: the
   arena has about 2.8 MiB free after GAME.CGO (10,673,360 of 13,631,488 bytes
   used). A level design has to start from converted geometry and VRAM textures,

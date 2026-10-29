@@ -15,11 +15,12 @@ time; the Dreamcast has 16 MiB of main RAM in all. These are file sizes, not
 resident sizes: linking drops headers and link tables, and nothing here is
 decompressed or converted.
 
-  python level_contents.py DGO_DIR [--markdown | --bsp]
+  python level_contents.py DIR [--markdown | --bsp | --art]
 
 --bsp splits each level's BSP object by basic type, from the type links in its
 v4 link table (each basic owns the bytes up to the next one), grouped into
-categories.
+categories. --art does the same for art groups (models, animations, joints), and
+also reads .CGO archives, where the disc keeps Jak's own art.
 """
 import argparse
 from pathlib import Path
@@ -166,6 +167,31 @@ def bsp_categories(obj):
     return out
 
 
+ART_CATEGORIES = (
+    ('models', ('merc-ctrl', 'art-joint-geo', 'shadow-geo', 'collide-mesh')),
+    ('animations', ('joint-anim-compressed', 'art-joint-anim', 'joint-anim-compressed-control')),
+    ('joints', ('joint',)),
+)
+
+
+def art_categories(path):
+    """All of a DGO's art groups by category (bytes); unlisted types go to 'other'."""
+    out = {name: 0 for name, _ in ART_CATEGORIES}
+    out['other'] = 0
+    data = path.read_bytes()
+    count, = struct.unpack_from('<I', data, 0)
+    offset = 64
+    kinds = [kind for _, _, kind in objects(path)]
+    for i in range(count):
+        size, = struct.unpack_from('<I', data, offset)
+        if kinds[i] == 'art':
+            _, sizes = by_type(data[offset + 64:offset + 64 + size])
+            for type_name, n in sizes.items():
+                out[next((c for c, members in ART_CATEGORIES if type_name in members), 'other')] += n
+        offset += 64 + size
+    return out
+
+
 def summarize(path):
     rows = objects(path)
     totals = {k: sum(s for _, s, kind in rows if kind == k) for k in KINDS}
@@ -182,10 +208,20 @@ def main():
     parser.add_argument('dgo_dir', type=Path)
     parser.add_argument('--markdown', action='store_true', help='print a Markdown table (KiB)')
     parser.add_argument('--bsp', action='store_true', help="split each level's BSP object by category instead")
+    parser.add_argument('--art', action='store_true', help="split each archive's art groups by category instead")
     args = parser.parse_args()
-    paths = sorted(args.dgo_dir.glob('*.DGO'))
+    paths = sorted([*args.dgo_dir.glob('*.DGO'), *(args.dgo_dir.glob('*.CGO') if args.art else [])])
     if not paths:
-        sys.exit(f'no .DGO files in {args.dgo_dir}')
+        sys.exit(f'no archives in {args.dgo_dir}')
+    if args.art:
+        names = [name for name, _ in ART_CATEGORIES] + ['other']
+        print('| Archive | Art | ' + ' | '.join(names) + ' |')
+        print('| --- | ---: |' + ' ---: |' * len(names))
+        for path in paths:
+            cats = art_categories(path)
+            if sum(cats.values()):
+                print(f'| {path.name} | {kib(sum(cats.values()))} | ' + ' | '.join(kib(cats[n]) for n in names) + ' |')
+        return
     if args.bsp:
         names = [name for name, _ in CATEGORIES] + ['other']
         print('| Level | BSP | ' + ' | '.join(names) + ' |')
