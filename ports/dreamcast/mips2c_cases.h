@@ -1606,7 +1606,7 @@ static uint64_t dc_m2c_ray_cylinder(dc_m2c_env *e, const uint64_t *a) {
 }
 static inline uint32_t dc_m2c_collide_primitives(dc_m2c_env *e) {
   enum { SPHERE = 0x0100, MOVE = 0x0200, OUT = 0x0400, NORMAL = 0x0500, RESULT = 0x0600 };
-  uint32_t i, r[3];
+  uint32_t i, r[6];
   e->set_symbol(e, "ray-sphere-intersect", dc_m2c_goal(e, 0, dc_m2c_ray_sphere));
   e->set_symbol(e, "ray-cylinder-intersect", dc_m2c_goal(e, 1, dc_m2c_ray_cylinder));
   e->set_symbol(e, "collide-do-primitives", e->mips2c_function(e, "collide-do-primitives"));
@@ -1626,8 +1626,22 @@ static inline uint32_t dc_m2c_collide_primitives(dc_m2c_env *e) {
   }
   r[2] = (uint32_t)dc_m2c_call(e, "collide-do-primitives", dc_m2c_ptr(e, SPHERE), dc_m2c_ptr(e, MOVE),
                                dc_m2c_fbits(1.0f), dc_m2c_ptr(e, DC_M2C_PRIM_TRI2), dc_m2c_ptr(e, OUT + 32), 0);
-  for (i = 0; i < 3; ++i) dc_m2c_u(e, RESULT + 4 * i, r[i]);
-  return r[0] ^ r[1] ^ r[2];
+  /* Starting already touching the plane: inside the tri, beside its edge (which
+   * jumps to collide-do-primitives again), and from behind. */
+  {
+    static const float start[3][3] = {{0.5f, -1.0f, 0.5f}, {4.0f, 2.0f, 0.5f}, {0.0f, -1.0f, -0.5f}};
+    for (i = 0; i < 3; ++i) {
+      dc_m2c_vec(e, SPHERE + 16 * (i + 1), start[i][0], start[i][1], start[i][2], 1.0f);
+      {
+        const uint64_t args[8] = {dc_m2c_ptr(e, SPHERE + 16 * (i + 1)), dc_m2c_ptr(e, MOVE), dc_m2c_fbits(1.0f),
+                                  dc_m2c_ptr(e, DC_M2C_PRIM_TRI), dc_m2c_ptr(e, OUT + 48 + 16 * i),
+                                  dc_m2c_ptr(e, NORMAL + 16 * (i + 1)), 0, 0};
+        r[3 + i] = (uint32_t)e->call_jalr(e, "moving-sphere-triangle-intersect", args);
+      }
+    }
+  }
+  for (i = 0; i < 6; ++i) dc_m2c_u(e, RESULT + 4 * i, r[i]);
+  return r[0] ^ r[1] ^ r[2] ^ r[3] ^ r[4] ^ r[5];
 }
 
 /* ---- ocean_vu0: ocean-generate-verts, which draw-ocean runs every frame, over a
