@@ -11,7 +11,7 @@ KOS_INIT_FLAGS(INIT_DEFAULT);
 typedef struct {uint32_t magic,version,state,total,passed,failed_case,system_ram,code_bytes;
  uint32_t observed_lo,observed_hi,expected_lo,expected_hi;char description[80];} telemetry;
 volatile telemetry dc_backend={.magic=0x34485347u,.version=1};
-typedef struct {uint32_t frames,instances,drawn_instances,triangles,submitted,near_clipped,culled,invalid,frame_us,package_bytes;} instance_metrics;
+typedef struct {uint32_t frames,instances,drawn_instances,triangles,submitted,near_clipped,culled,invalid,frame_us,package_bytes,lod_instances[4];} instance_metrics;
 volatile instance_metrics dc_instance_metrics;
 /* zlib's CRC-32, which make_instance_fixture.py records (no zlib in this SDK). */
 static uint32_t crc_table[256];
@@ -43,7 +43,7 @@ int main(void) {
   check(dc_instance_package_open(data,INSTANCE_PACKAGE_BYTES-1,&pkg)!=NULL&&!memcmp(&pkg,&untouched,sizeof pkg),"instance truncated package refused");
   check(dc_instance_package_open(data+2,INSTANCE_PACKAGE_BYTES-2,&pkg)!=NULL,"instance unaligned package refused");}
  error=dc_instance_package_open(data,INSTANCE_PACKAGE_BYTES,&pkg);if(!check(error==NULL,error))goto release;
- if(!check(pkg.proto_count==INSTANCE_PROTOTYPES&&pkg.instance_count==INSTANCE_COUNT,"instance package counts"))goto release;
+ if(!check(pkg.proto_count==INSTANCE_PROTOTYPES&&pkg.instance_count==INSTANCE_COUNT&&(pkg.lods!=NULL)==INSTANCE_LODS,"instance package counts"))goto release;
  view=memalign(32,(size_t)pkg.max_proto_verts*sizeof *view);if(!check(view!=NULL,"instance view scratch"))goto release;
  {dc_instance_camera bad=instance_camera;bad.draw_distance=NAN;
   check(dc_instance_draw(&pkg,&bad,view,&stats)==0&&stats.instances==0,"instance invalid camera refused");}
@@ -61,10 +61,12 @@ int main(void) {
  check(stats.drawn_instances==INSTANCE_EXPECTED_DRAWN,"instance draw-distance selection matches the host");
  check(stats.triangles==INSTANCE_EXPECTED_TRIANGLES,"instance triangles visited match the host");
  check(stats.invalid==0,"instance no invalid clips");
+ check(!memcmp(stats.lod_instances,instance_expected_lods,sizeof instance_expected_lods),"instance LOD choice matches the host");
  check(stats.submitted>0,"instance visible triangles submitted");
  check(crc32(0,data,INSTANCE_PACKAGE_BYTES)==INSTANCE_PACKAGE_CRC,"instance package unchanged by drawing");
  dc_instance_metrics.instances=stats.instances;dc_instance_metrics.drawn_instances=stats.drawn_instances;
  dc_instance_metrics.triangles=stats.triangles;dc_instance_metrics.submitted=stats.submitted;
+ memcpy((void *)dc_instance_metrics.lod_instances,stats.lod_instances,sizeof stats.lod_instances);
  dc_instance_metrics.near_clipped=stats.near_clipped;dc_instance_metrics.culled=stats.culled;dc_instance_metrics.invalid=stats.invalid;
  dc_backend.observed_lo=stats.drawn_instances;dc_backend.observed_hi=stats.submitted;
  dc_backend.expected_lo=INSTANCE_EXPECTED_DRAWN;dc_backend.expected_hi=INSTANCE_EXPECTED_TRIANGLES;

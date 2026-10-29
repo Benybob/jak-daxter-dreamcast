@@ -10,36 +10,53 @@
 static uint32_t rd32(const unsigned char *p){uint32_t v;memcpy(&v,p,4);return v;}
 
 const char *dc_instance_package_open(const void *data,size_t size,dc_instance_package *out) {
- const unsigned char *p=data;dc_instance_package made;uint32_t np,ni,i,nv=0,nx=0,maxv=0;size_t at,need;
+ const unsigned char *p=data;dc_instance_package made;uint32_t np,ng,ni,i,nv=0,nx=0,maxv=0;size_t head,at,need;int v2;
  if(!data||!out||((uintptr_t)data&3))return "DCI1 arguments";
- if(size<12||memcmp(p,"DCI1",4))return "DCI1 magic";
- np=rd32(p+4);ni=rd32(p+8);
- if(np==0||np>65535u||ni>1000000u)return "DCI1 counts";
- if(size<12u+52u*(size_t)np)return "DCI1 prototype table";
- for(i=0;i<np;++i){
-  const unsigned char *q=p+12+52*i;uint32_t vc=rd32(q),ic=rd32(q+4),fv=rd32(q+8),fi=rd32(q+12);
+ if(size<12)return "DCI1 magic";
+ v2=!memcmp(p,"DCI2",4);
+ if(!v2&&memcmp(p,"DCI1",4))return "DCI1 magic";
+ if(v2&&size<16)return "DCI1 magic";
+ np=rd32(p+4);ng=v2?rd32(p+8):np;ni=rd32(p+(v2?12:8));head=v2?16u:12u;
+ if(np==0||np>65535u||ng==0||ng>65535u||ni>1000000u)return "DCI1 counts";
+ if(size<head+52u*(size_t)ng+(v2?24u*(size_t)np:0u))return "DCI1 prototype table";
+ for(i=0;i<ng;++i){
+  const unsigned char *q=p+head+52*i;uint32_t vc=rd32(q),ic=rd32(q+4),fv=rd32(q+8),fi=rd32(q+12);
   if(fv!=nv||fi!=nx||vc==0||vc>65536u||ic==0||ic%3)return "DCI1 prototype ranges";
   if(q[20+31])return "DCI1 prototype name";
   nv+=vc;nx+=ic;if(vc>maxv)maxv=vc;
   if(nv>(1u<<24)||nx>(1u<<26))return "DCI1 prototype ranges";
  }
- at=12u+52u*np;need=at+24u*(size_t)nv+2u*(size_t)nx;
+ at=head+52u*ng+(v2?24u*np:0u);need=at+24u*(size_t)nv+2u*(size_t)nx;
  need=(need+3u)&~(size_t)3u;/* indices pad to 4 bytes */
  if(size<need||size-need!=52u*(size_t)ni)return "DCI1 size";
- made.protos=(const dc_instance_proto *)(p+12);
+ made.protos=(const dc_instance_proto *)(p+head);
+ made.lods=v2?(const dc_instance_lod *)(p+head+52u*ng):NULL;made.lod_count=v2?np:0;
  made.verts=(const dc_instance_vertex *)(p+at);
  made.indices=(const uint16_t *)(p+at+24u*nv);
  made.instances=(const dc_instance *)(p+need);
  for(i=0;i<nv;++i){const dc_instance_vertex *v=&made.verts[i];
   if(!isfinite(v->x)||!isfinite(v->y)||!isfinite(v->z)||!isfinite(v->u)||!isfinite(v->v))return "DCI1 vertex value";}
- for(i=0;i<np;++i){const dc_instance_proto *q=&made.protos[i];uint32_t k;
+ for(i=0;i<ng;++i){const dc_instance_proto *q=&made.protos[i];uint32_t k;
   for(k=0;k<q->indices;++k)if(made.indices[q->first_index+k]>=q->verts)return "DCI1 index range";}
+ for(i=0;v2&&i<np;++i){const dc_instance_lod *l=&made.lods[i];unsigned k;
+  if(l->geometry[0]>=ng||l->pad)return "DCI2 prototype LODs";
+  for(k=1;k<4;++k)if(l->geometry[k]!=0xffffu&&l->geometry[k]>=ng)return "DCI2 prototype LODs";
+  for(k=0;k<3;++k)if(!isfinite(l->plane[k])||!(l->plane[k]>=0)||l->plane[k]>1e18f||(k&&l->plane[k]<l->plane[k-1]))return "DCI2 prototype planes";}
  for(i=0;i<ni;++i){const dc_instance *q=&made.instances[i];unsigned k;
   if(q->proto>=np)return "DCI1 instance prototype";
   for(k=0;k<12;++k)if(!isfinite(q->m[k])||fabsf(q->m[k])>1e6f)return "DCI1 instance matrix";}
- made.proto_count=np;made.instance_count=ni;made.vert_count=nv;made.index_count=nx;made.max_proto_verts=maxv;
+ made.proto_count=ng;made.instance_count=ni;made.vert_count=nv;made.index_count=nx;made.max_proto_verts=maxv;
  *out=made;
  return NULL;
+}
+
+uint32_t dc_instance_geometry(const dc_instance_package *pkg,const dc_instance *in,float d2,unsigned *lod) {
+ const dc_instance_lod *l;unsigned n=0,k;
+ if(!pkg->lods){*lod=0;return in->proto;}
+ l=&pkg->lods[in->proto];
+ for(k=0;k<3;++k){float p=l->plane[k]*l->plane[k];if(d2>p)++n;}
+ while(l->geometry[n]==0xffffu)--n;
+ *lod=n;return l->geometry[n];
 }
 
 void dc_instance_view(const dc_instance_camera *c,float b[10]) {
@@ -64,11 +81,12 @@ int dc_instance_draw(const dc_instance_package *pkg,const dc_instance_camera *ca
  pvr_poly_cxt_col(&cxt,PVR_LIST_OP_POLY);cxt.gen.culling=PVR_CULLING_NONE;pvr_poly_compile(&hdr,&cxt);
  pvr_prim(&hdr,sizeof hdr);
  for(i=0;i<pkg->instance_count;++i){
-  const dc_instance *in=&pkg->instances[i];const dc_instance_proto *p=&pkg->protos[in->proto];
-  const float *m=in->m;float dx=m[9]-cam->tx,dz=m[11]-cam->tz;uint32_t k;
+  const dc_instance *in=&pkg->instances[i];const dc_instance_proto *p;
+  const float *m=in->m;float dx=m[9]-cam->tx,dz=m[11]-cam->tz,dx2=dx*dx,dz2=dz*dz,d2=dx2+dz2;uint32_t k;unsigned lod;
   ++st->instances;
-  if(dx*dx+dz*dz>cam->draw_distance*cam->draw_distance)continue;
-  ++st->drawn_instances;
+  if(d2>cam->draw_distance*cam->draw_distance)continue;
+  p=&pkg->protos[dc_instance_geometry(pkg,in,d2,&lod)];
+  ++st->drawn_instances;++st->lod_instances[lod];
   for(k=0;k<p->verts;++k){const dc_instance_vertex *v=&pkg->verts[p->first_vert+k];float w[3];
    w[0]=v->x*m[0]+v->y*m[3]+v->z*m[6]+m[9];w[1]=v->x*m[1]+v->y*m[4]+v->z*m[7]+m[10];w[2]=v->x*m[2]+v->y*m[5]+v->z*m[8]+m[11];
    dc_instance_to_view(b,cam,w,view[k]);}

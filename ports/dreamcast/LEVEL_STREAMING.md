@@ -248,6 +248,41 @@ be decoded from the tie fragments. The planes' meaning follows the field names
 and `tie-methods.gc`'s per-geometry stats; the instance-TIE asm's comparisons
 are not checked against it.
 
+## TIE's lower LODs, decoded and drawn
+
+The GLB holds TIE geometry 0 only, but the decompiler's `extract_tie` emulates
+all four geometries, and with its level dump on (the `dump_level` argument that
+`extract_level.cpp` passes, `false` upstream; flipped in a local, uncommitted
+build) it writes each prototype's strips per geometry as an OBJ in the
+prototype frame at 1/16 m. Geometry 0 there lines up with the cut prototypes
+exactly (village1's `lil-rock-06`: the same 80 triangles and bounds).
+
+`tie_lods.py` turns a DCI1 package and that dump into DCI2: the geometry table
+gains each TIE prototype's geometries 1 to 3 (a geometry identical to the one
+before it is shared), and a prototype table gives every prototype its geometry
+per LOD and its BSP near, mid and far planes. The OBJ has no colours, so a lower
+LOD's vertex takes the colour of the nearest geometry-0 vertex. `instance_pass.c`
+reads DCI1 and DCI2 and picks an instance's LOD with the same single-precision
+distance as the draw rule; `tie_lods.flatten` resolves the same choice for one
+target and gives the DCI1 that `dci1_reference.py` draws.
+
+| Village1 | Value |
+| --- | ---: |
+| TIE prototypes with LODs | 97 |
+| geometries added | 148 (142 LOD slots shared) |
+| geometries in all | 264 |
+| package | 1,182,128 bytes (from 938,960) |
+| prototypes whose cut has more tris than the dump's geometry 0 | 16, by up to 13% |
+
+The same camera as above, 80 m draw distance, in Flycast: 30 of 30 checks,
+instances at LOD 0 to 3 567, 81, 88 and 29 (as the host predicts), 56,565
+triangles visited (from 59,815) and 53,942 sent; against `dci1_reference.py` on
+the flattened package, coverage agrees on 99.998% (5 pixels). From the village
+centre most instances are close, so this view only saves 5%; the per-cell table
+above is what LOD does across the level.
+
+    python tie_lods.py build/private-instance-assets/package.dci DGO DUMP_DIR --out PACKAGE.dci2
+
 ## Proposed design
 
 1. **Resident per level: what gameplay needs everywhere.** Code (0.25 MiB),
@@ -276,8 +311,8 @@ are not checked against it.
 - The 0.3% of TIE and shrub triangles the cuts miss, and textures for the
   package's materials.
 - Textures on the instance pass, and tfrag drawn under it in the same frame.
-- TIE's lower LOD geometries decoded from the tie fragments, so the pass can
-  draw them; then a draw distance chosen against the table above.
+- A draw distance chosen against the LOD table above, and the 16 prototypes
+  whose cut and dump geometry 0 differ.
 - Village1's textures converted to PowerVR formats, and their VRAM total.
 - The decompiler fixes, if wanted upstream of this port: BLEND support in the
   sector builder, and the wind instances' m[15].

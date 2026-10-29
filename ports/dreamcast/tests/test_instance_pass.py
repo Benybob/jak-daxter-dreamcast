@@ -12,12 +12,17 @@ import unittest
 PORT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PORT))
 import prototype_geometry as pg  # noqa: E402
+import tie_lods  # noqa: E402
+
+
+def mf_f32(x):
+    return struct.unpack('<f', struct.pack('<f', x))[0]
 
 
 class Package(ctypes.Structure):
     _fields_ = [(n, ctypes.c_void_p) for n in ('protos', 'verts', 'indices', 'instances')] + \
                [(n, ctypes.c_uint32) for n in ('proto_count', 'instance_count', 'vert_count', 'index_count',
-                                                'max_proto_verts')]
+                                                'max_proto_verts')] +                [('lods', ctypes.c_void_p), ('lod_count', ctypes.c_uint32)]
 
 
 class Camera(ctypes.Structure):
@@ -93,7 +98,7 @@ class InstancePassTest(unittest.TestCase):
             struct.pack_into(fmt, b, at, *values)
             return bytes(b)
         cases = {
-            'DCI1 magic': b'DCI2' + blob[4:],
+            'DCI1 magic': b'DCI3' + blob[4:],
             'DCI1 counts': patched(4, '<I', 0),
             'DCI1 size': blob[:-1],
             'DCI1 prototype ranges': patched(12 + 52 + 8, '<I', 2),        # second prototype's first vertex
@@ -127,6 +132,61 @@ class InstancePassTest(unittest.TestCase):
         self.assertIsNone(err)
         self.assertEqual((out.proto_count, out.instance_count), (1, 25))
         self.assertEqual(report['expected_triangles'], 12 * report['expected_drawn_instances'])
+
+    def lod_package(self):
+        """'post' gains a 1-triangle LOD 2 (LOD 1 identical, so shared), 'fence' none."""
+        blob, _ = sample()
+        post0 = [((0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0))]
+        small = [((0.0, 0.0, 0.0), (0.5, 0.0, 0.0), (0.0, 0.5, 0.0))]
+        lods = {'post': [post0, post0, small, None]}
+        return tie_lods.build(blob, lods, {'post': (10.0, 20.0, 30.0), 'fence': (1.0, 2.0, 3.0)})
+
+    def test_dci2_loads_and_picks_lods_like_the_python(self):
+        blob, summary = self.lod_package()
+        self.assertEqual((summary['geometries'], summary['lod_geometries_added'], summary['shared']), (3, 1, 1))
+        err, out, buf = self.load(blob)
+        self.assertIsNone(err)
+        self.assertEqual((out.proto_count, out.lod_count, out.instance_count), (3, 2, 3))
+        pick = self.lib.dc_instance_geometry
+        pick.argtypes = [ctypes.POINTER(Package), ctypes.c_void_p, ctypes.c_float, ctypes.POINTER(ctypes.c_uint)]
+        pick.restype = ctypes.c_uint32
+        _, table, _, _, instances = tie_lods.read_dci2(blob)
+        lod = ctypes.c_uint()
+        for k, (proto, *_rest) in enumerate(instances):
+            row = table[proto]
+            for d in (0.0, 9.9, 10.5, 20.0, 25.0, 31.0, 1000.0):
+                d2 = mf_f32(d * d)
+                got = pick(ctypes.byref(out), out.instances + 52 * k, d2, ctypes.byref(lod))
+                self.assertEqual(got, tie_lods.lod_of(row[:4], row[4:7], d2), (k, d))
+        # past the far plane 'post' draws its LOD 2 (LOD 3 missing); 'fence' has one geometry
+        self.assertEqual(pick(ctypes.byref(out), out.instances, 1e6, ctypes.byref(lod)), 2)
+        self.assertEqual(lod.value, 2)
+
+    def test_flatten_gives_the_dci1_a_dci1_reader_draws(self):
+        blob, _ = self.lod_package()
+        flat = tie_lods.flatten(blob, -20.0, 0.0)  # both posts 21-29 m away: LOD 2; the fence keeps LOD 0
+        err, out, buf = self.load(flat)
+        self.assertIsNone(err)
+        self.assertIsNone(out.lods)
+        self.assertEqual(out.proto_count, 3)
+        protos = [struct.unpack_from('<2H', flat, out.instances - ctypes.addressof(buf) + 52 * k)[0] for k in range(3)]
+        self.assertEqual(protos, [2, 1, 2])
+        self.assertEqual(tie_lods.flatten(blob, 1.0, 3.0)[:len(flat) - 156], flat[:len(flat) - 156])
+
+    def test_dci2_refusals(self):
+        blob, _ = self.lod_package()
+        lod_at = 16 + 52 * 3
+
+        def patched(at, fmt, *values):
+            b = bytearray(blob)
+            struct.pack_into(fmt, b, at, *values)
+            return bytes(b)
+        for bad in (patched(lod_at, '<H', 3), patched(lod_at, '<H', 0xffff), patched(lod_at + 2, '<H', 7),
+                    patched(lod_at + 20, '<I', 1)):
+            self.assertEqual(self.load(bad)[0].decode(), 'DCI2 prototype LODs')
+        for bad in (patched(lod_at + 8, '<f', math.nan), patched(lod_at + 8, '<f', -1.0),
+                    patched(lod_at + 12, '<f', 5.0)):
+            self.assertEqual(self.load(bad)[0].decode(), 'DCI2 prototype planes')
 
     def test_camera_matches_render_world_view(self):
         # render_world_view.c's columns, applied to (point - target), then z + distance, scaled 0.25.
