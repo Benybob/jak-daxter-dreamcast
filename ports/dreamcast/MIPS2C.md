@@ -26,7 +26,7 @@ GAME.CGO's mips2c lookups. No lookup gets the faulting stub any more.
 | merc_blend_shape | 2 | setup-blerc-chains-for-one-fragment (two fragments) |
 | ocean_vu0 | 2 | ocean-interp-wave (two frame pairs) |
 | sparticle | 2 | sp-process-block-2d (running and paused) and -3d, GOAL stand-ins for the callbacks |
-| sparticle_launcher | 2 | particle-adgif (cache miss, hit and search); sp-launch-particles-var (three particles, sp-init-fields! modelled, particle-adgif through `jalr`) |
+| sparticle_launcher | 2 | particle-adgif (cache miss, hit and search); sp-launch-particles-var (three particles, sp-init-fields! modelled, particle-adgif through `jalr`); sp-launch-particles-var again: 3d, launch state and control, rotation, sound, aux list, disabled and queued |
 | tfrag | 2 | stats-tfrag-asm (eight fragments) |
 | tie_methods | 2 | none: never called on PC (below) |
 | draw_string | 1 | draw-string (two strings, both fonts, color/offset/newline codes) |
@@ -106,8 +106,8 @@ paths stay in C++ (no `jalr` back into GOAL). The region is 16 KiB aligned on bo
 sides, as the PS2 scratchpad is, because translated code forms scratchpad addresses
 with `ori` (`render-ocean-quad`: `ori t4, spad, 12288`). Afterwards every pointer into the
 region becomes its offset, and `#f` and `#t` become markers. The boot runs the same cases
-through the native SH-4 build. All 34 match the oracle bit for bit, both the
-region CRC and each case's result (519 of 519 boot checks).
+through the native SH-4 build. All 35 match the oracle bit for bit, both the
+region CRC and each case's result (521 of 521 boot checks).
 
 **GOAL stand-ins.** A case can give a function symbol a stand-in for the GOAL
 function the translated code calls with `jalr` (`env->goal_function`). On SH-4 the
@@ -181,12 +181,11 @@ Not covered yet:
 - `blerc-execute`, `ocean-generate-verts`,
   `collide-do-primitives`, `collide-probe-instance-tie`, `generic-tie-convert`
   and `draw-inline-array-tfrag`. They call GOAL, or need a level's data;
-- the rest of `sp-launch-particles-var`. Its case launches from a 2d system with
-  no launch state or control, without sound, with every random range 0. So the 3d
-  path (`sp-euler-convert`), `sp-rotate-system`, the `cos`/`sin`/`quaternion-axis-angle!`
-  rotation and the launch queue are not reached. The `sp-init-fields!` stand-in
-  mirrors the GOAL loop in `sparticle-launcher.gc` for the int, float, object and
-  copy-from-other specs it uses;
+- `sp-launch-particles-var`'s random ranges. Both cases use specs with every
+  random range 0, and the `sp-init-fields!` stand-in mirrors the GOAL loop in
+  `sparticle-launcher.gc` for the int, float, object and copy-from-other specs
+  only. The locked call with arguments, which the original crashes on purpose
+  (`sd r0, 2(r0)`), is left out;
 - tie_methods, deliberately. Neither function ever runs on the PC port, so neither
   runs here, since the port runs the PC port's GOAL code.
   `draw-inline-array-instance-tie`'s call in `tie-methods.gc` is commented out,

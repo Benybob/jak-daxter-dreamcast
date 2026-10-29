@@ -1467,6 +1467,112 @@ static inline uint32_t dc_m2c_shadow_double(dc_m2c_env *e) {
   return dc_m2c_off(e, end) - OUT;  /* packet bytes */
 }
 
+/* ---- sparticle_launcher: sp-launch-particles-var's other paths. A 3d system
+ * with a launch state (a counter, a rotation, a group id) and a launch control
+ * whose second entry matches the group; flags 128 (rotation through cos, sin and
+ * quaternion-axis-angle!), 256 (the sprite aux list) and 512; a sound spec; the
+ * launcher in level 1's heap. Before that, a call while *sp-launcher-enable* is
+ * #f and one while *sp-launcher-lock* is set, which queues the launch. ---- */
+/* Their stack arguments (the launch info on sp-launch-particles-var's stack) differ
+ * between the sides, so they log only region addresses and values. */
+static uint64_t dc_m2c_sp_queue(dc_m2c_env *e, const uint64_t *a) {
+  dc_m2c_log(e, 0x9a << 24 | dc_m2c_off(e, a[0])); dc_m2c_log(e, dc_m2c_off(e, a[1]));
+  return 0;
+}
+static uint64_t dc_m2c_sp_euler(dc_m2c_env *e, const uint64_t *a) { dc_m2c_log(e, 0xe1 << 24 | dc_m2c_off(e, a[1])); return 0; }
+static uint64_t dc_m2c_sp_rotate(dc_m2c_env *e, const uint64_t *a) { dc_m2c_log(e, 0x40 << 24 | dc_m2c_off(e, a[1])); return 0; }
+static uint64_t dc_m2c_sp_cos(dc_m2c_env *e, const uint64_t *a) { dc_m2c_log(e, (uint32_t)a[0]); return 0x3f5db3d7u; }
+static uint64_t dc_m2c_sp_sin(dc_m2c_env *e, const uint64_t *a) { dc_m2c_log(e, (uint32_t)a[0]); return 0x3f000000u; }
+static uint64_t dc_m2c_sp_quat(dc_m2c_env *e, const uint64_t *a) {
+  dc_m2c_log(e, 0x9b << 24 | dc_m2c_off(e, a[0]));
+  dc_m2c_log(e, (uint32_t)a[1]); dc_m2c_log(e, (uint32_t)a[2]); dc_m2c_log(e, (uint32_t)a[3]);
+  memcpy(e->region + dc_m2c_off(e, a[0]), &a[1], 4);  /* the quaternion's x: the cos it was given */
+  return a[0];
+}
+static uint64_t dc_m2c_sp_sound_id(dc_m2c_env *e, const uint64_t *a) { (void)a; dc_m2c_log(e, 0x5d << 24); return 0x1234; }
+static uint64_t dc_m2c_sp_sound(dc_m2c_env *e, const uint64_t *a) {
+  dc_m2c_log(e, 0x5e << 24 | dc_m2c_off(e, a[0])); dc_m2c_log(e, (uint32_t)a[1]);
+  return 0;
+}
+static inline uint32_t dc_m2c_launch_3d(dc_m2c_env *e) {
+  enum { SYSTEM = 0x0104, LAUNCHER = 0x0204, POS = 0x0300, SPECS = 0x0400, LEVEL = 0x0800, STATE = 0x0f04,
+         CONTROL = 0x1004, GROUP = 0x1104, ID = 0x1184, NO_ID = 0x11a4, ROT = 0x11c4, WORD = 0x11e4,
+         SOUND = 0x1204, TOD = 0x1804, CACHE = 0x3004, SPRITES = 0x5000, ADGIFS = 0x5400 };
+  static const struct { uint16_t field, flags; uint32_t value; } spec[] = {
+    {1, 0, 0x00123400u}, {4, 4, 0}, {6, 1, 0x40000000u},  /* texture, birth, num 2.0 */
+    {7, 0, 0},                                              /* sound spec: below */
+    {10, 1, 0x3e800000u}, {11, 1, 0x3f400000u}, {12, 1, 0xbf000000u}, {13, 1, 0x3f000000u}, {17, 3, (uint32_t)-4},
+    {18, 1, 0x42800000u}, {21, 1, 0x43000000u}, {25, 1, 0x3e000000u}, {46, 0, 150},
+    {47, 0, 128 | 256 | 512 | 16},                          /* rotation, aux list, 512, adgif 66 */
+    {54, 1, 0x3dcccccdu}, {70, 0, 0}};
+  uint32_t i, used;
+  e->set_symbol(e, "*level*", dc_m2c_ptr(e, LEVEL));
+  e->set_symbol(e, "*time-of-day-context*", dc_m2c_ptr(e, TOD));
+  e->set_symbol(e, "*particle-adgif-cache*", dc_m2c_ptr(e, CACHE));
+  e->set_symbol(e, "sp-init-fields!", dc_m2c_goal(e, 0, dc_m2c_sp_init_fields));
+  e->set_symbol(e, "sp-get-particle", dc_m2c_goal(e, 1, dc_m2c_sp_get_particle));
+  e->set_symbol(e, "sp-adjust-launch", dc_m2c_goal(e, 2, dc_m2c_sp_adjust_launch));
+  e->set_symbol(e, "particle-setup-adgif", dc_m2c_goal(e, 3, dc_m2c_setup_adgif));
+  e->set_symbol(e, "particle-adgif", e->mips2c_function(e, "particle-adgif"));
+  e->set_symbol(e, "sp-euler-convert", dc_m2c_goal(e, 5, dc_m2c_sp_euler));
+  e->set_symbol(e, "sp-rotate-system", dc_m2c_goal(e, 6, dc_m2c_sp_rotate));
+  e->set_symbol(e, "cos", dc_m2c_goal(e, 7, dc_m2c_sp_cos));
+  e->set_symbol(e, "sin", dc_m2c_goal(e, 8, dc_m2c_sp_sin));
+  e->set_symbol(e, "quaternion-axis-angle!", dc_m2c_goal(e, 9, dc_m2c_sp_quat));
+  e->set_symbol(e, "new-sound-id", dc_m2c_goal(e, 10, dc_m2c_sp_sound_id));
+  /* Stored, never called: the birth stand-in's slot gives it a marked address. */
+  e->set_symbol(e, "add-to-sprite-aux-list", dc_m2c_goal(e, 4, dc_m2c_sp_birth));
+  for (i = 0; i < sizeof spec / sizeof spec[0]; ++i) {
+    memcpy(e->region + SPECS + 16 * i, &spec[i].field, 2);
+    memcpy(e->region + SPECS + 16 * i + 2, &spec[i].flags, 2);
+    dc_m2c_u(e, SPECS + 16 * i + 4, spec[i].field == 4 ? dc_m2c_goal(e, 4, dc_m2c_sp_birth)
+                                    : spec[i].field == 7 ? dc_m2c_ptr(e, SOUND) : spec[i].value);
+  }
+  dc_m2c_f(e, SOUND + 4, 1.5f);
+  dc_m2c_u(e, SYSTEM + 24, 1);  /* 3d */
+  dc_m2c_u(e, LAUNCHER + 8, dc_m2c_ptr(e, SPECS));
+  dc_m2c_vec(e, POS, -4.0f, 8.0f, 2.0f, 1.0f);
+  /* Level 0's heap elsewhere, level 1's around the launcher. */
+  dc_m2c_u(e, LEVEL + 124, dc_m2c_ptr(e, 0x8000)); dc_m2c_u(e, LEVEL + 128, dc_m2c_ptr(e, 0x9000));
+  dc_m2c_u(e, LEVEL + 2732, dc_m2c_ptr(e, 0)); dc_m2c_u(e, LEVEL + 2736, dc_m2c_ptr(e, 0x1000));
+  dc_m2c_vec(e, TOD + 108, 1.0f, 0.5f, 0.25f, 1.0f);
+  for (i = 0; i < DC_M2C_LAUNCH_POOL_SIZE; ++i) {
+    uint32_t cpu = DC_M2C_LAUNCH_POOL + 0x10 + 144 * i;
+    dc_m2c_u(e, cpu + 0, dc_m2c_ptr(e, SPRITES + 48 * i));
+    dc_m2c_u(e, cpu + 4, dc_m2c_ptr(e, ADGIFS + 0x60 * i));
+  }
+  /* The launch state: group id 0x77 (through +0), a rotation, a word, a counter. */
+  dc_m2c_u(e, STATE + 0, dc_m2c_ptr(e, ID)); dc_m2c_u(e, ID + 24, 0x77);
+  dc_m2c_u(e, STATE + 12, dc_m2c_ptr(e, ROT)); dc_m2c_u(e, STATE + 16, dc_m2c_ptr(e, WORD));
+  dc_m2c_u(e, WORD, 0xabc);
+  /* The launch control: a group with flags 4 and 8, two entries, the second ours. */
+  dc_m2c_u(e, CONTROL + 0, 2); dc_m2c_u(e, CONTROL + 12, dc_m2c_ptr(e, GROUP)); dc_m2c_u(e, CONTROL + 28, 5);
+  {
+    uint16_t flags = 4 | 8;
+    memcpy(e->region + GROUP + 6, &flags, 2);
+  }
+  dc_m2c_u(e, NO_ID, 0x99);
+  dc_m2c_u(e, CONTROL + 60, dc_m2c_ptr(e, NO_ID)); dc_m2c_u(e, CONTROL + 92, dc_m2c_ptr(e, ID + 24));
+  {
+    /* Disabled, then locked (queued): both leave before launching anything. */
+    const uint64_t plain[8] = {dc_m2c_ptr(e, SYSTEM), dc_m2c_ptr(e, LAUNCHER), dc_m2c_ptr(e, POS), e->s7, e->s7,
+                               dc_m2c_fbits(1.0f), 0, 0};
+    const uint64_t args[8] = {dc_m2c_ptr(e, SYSTEM), dc_m2c_ptr(e, LAUNCHER), dc_m2c_ptr(e, POS),
+                              dc_m2c_ptr(e, STATE), dc_m2c_ptr(e, CONTROL), dc_m2c_fbits(1.0f), 0, 0};
+    e->set_symbol(e, "sp-queue-launch", dc_m2c_goal(e, 11, dc_m2c_sp_queue));
+    e->set_symbol(e, "*sp-launcher-enable*", e->s7);
+    e->call(e, "sp-launch-particles-var", plain);
+    e->set_symbol(e, "*sp-launcher-enable*", e->s7 + 8);
+    e->set_symbol(e, "*sp-launcher-lock*", e->s7 + 8);
+    e->call(e, "sp-launch-particles-var", plain);
+    e->set_symbol(e, "*sp-launcher-lock*", e->s7);
+    e->set_symbol(e, "sound-play-by-spec", dc_m2c_goal(e, 11, dc_m2c_sp_sound));
+    e->call(e, "sp-launch-particles-var", args);
+  }
+  memcpy(&used, e->region + DC_M2C_LAUNCH_POOL, 4);
+  return used;  /* particles launched */
+}
+
 typedef struct { const char *name; uint32_t (*run)(dc_m2c_env *); } dc_m2c_case;
 static const dc_m2c_case dc_m2c_cases[] = {
   {"sky_tng", dc_m2c_sky},
@@ -1503,6 +1609,7 @@ static const dc_m2c_case dc_m2c_cases[] = {
   {"collide-mesh-tests", dc_m2c_collide_mesh_tests},
   {"generic-envmap-interp", dc_m2c_generic_envmap_interp},
   {"shadow-double", dc_m2c_shadow_double},
+  {"sp-launch-3d", dc_m2c_launch_3d},
 };
 #define DC_M2C_CASE_COUNT (sizeof dc_m2c_cases / sizeof dc_m2c_cases[0])
 
