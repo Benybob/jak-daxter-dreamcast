@@ -102,6 +102,7 @@ which this scan cannot attribute.
   calc-animation-from-spr decompresses (the one live mips2c function without a
   case).
 - At these sizes no level fits beside the engine as the PS2 lays it out: the
-  arena has about 2.8 MiB free after GAME.CGO (10,673,360 of 13,631,488 bytes used). A level design has to start from
-  converted geometry and VRAM textures, and measure again. Nothing here shows
-  that a converted level fits; that is the next measurement.
+  arena has about 2.8 MiB free after GAME.CGO (10,673,360 of 13,631,488 bytes
+  used). A level design has to start from converted geometry and VRAM textures,
+  and measure again. Nothing here shows that a converted level fits; that is the
+  next measurement.
