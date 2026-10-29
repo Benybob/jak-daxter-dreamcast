@@ -1435,17 +1435,18 @@ static inline uint32_t dc_m2c_generic_envmap_interp(dc_m2c_env *e) {
  * skip flag (32). ---- */
 static inline uint32_t dc_m2c_shadow_double(dc_m2c_env *e) {
   enum { CAMERA = 0x0004, SDATA = 0x0600, CHAIN = 0x1000, CHAIN2 = 0x2000, GSF = 0x8000, OUT = 0xa000,
-         SPAD = 0x4000, GEO_BYTES = 704 };
-  static const float vert[10][3] = {{0, 0, 0}, {2, 0, 0}, {0, 0, 2}, {0, 2, 0},  {3, 1, -1},
-                                    {5, 1, -1}, {5, 3, 0}, {3, 3, 0}, {7, 1, -1}, {7, 3, 0}};
+         SPAD = 0x4000, GEO_BYTES = 720 };
+  /* Eleven vertices (the last in no tri), so shadow-add-verts' tail copies three. */
+  static const float vert[11][3] = {{0, 0, 0}, {2, 0, 0}, {0, 0, 2}, {0, 2, 0},  {3, 1, -1}, {5, 1, -1},
+                                    {5, 3, 0}, {3, 3, 0}, {7, 1, -1}, {7, 3, 0}, {8, 2, 1}};
   static const uint8_t tris[16] = {0, 1, 2, 0, 0, 3, 1, 0, 1, 3, 2, 0, 2, 3, 0, 0};
   static const uint8_t edges[24] = {0, 1, 0, 1, 1, 2, 0, 2, 2, 0, 0, 3, 0, 3, 1, 3, 3, 1, 1, 2, 3, 2, 2, 3};
   /* Five double tris, so the four-at-a-time loop runs once and the tail once. */
   static const uint8_t double_tris[20] = {4, 5, 6, 0, 4, 6, 7, 0, 5, 8, 9, 0, 5, 9, 6, 0, 6, 9, 7, 0};
   static const uint8_t double_edges[32] = {4, 5, 0, 0, 5, 6, 0, 3, 6, 7, 1, 4, 7, 4, 1, 1,
                                            4, 6, 0, 1, 5, 8, 2, 2, 8, 9, 2, 2, 9, 6, 3, 4};
-  static const uint16_t counts[6] = {10, 0, 4, 6, 5, 8};
-  static const uint32_t offsets[6] = {400, 560, 592, 608, 640, 672};
+  static const uint16_t counts[6] = {11, 0, 4, 6, 5, 8};
+  static const uint32_t offsets[6] = {400, 576, 608, 624, 656, 688};
   uint32_t i, k, state = 0xd0b1eu;
   uint64_t end;
   e->set_symbol(e, "*math-camera*", dc_m2c_ptr(e, CAMERA));
@@ -1474,14 +1475,14 @@ static inline uint32_t dc_m2c_shadow_double(dc_m2c_env *e) {
     }
     for (i = 0; i < 2 * 32; ++i)
       dc_m2c_f(e, geo + 144 + 4 * i, (i % 32 < 16) ? ((i % 5 == 0) ? 1.0f : dc_m2c_rand(&state) * 0.125f) : 0.0f);
-    for (i = 0; i < 10; ++i) {
+    for (i = 0; i < 11; ++i) {
       dc_m2c_vec(e, geo + 400 + 16 * i, vert[i][0], vert[i][1], vert[i][2], 1.0f);
-      dc_m2c_b(e, geo + 560 + 2 * i, (uint8_t)(i & 1));
+      dc_m2c_b(e, geo + 576 + 2 * i, (uint8_t)(i & 1));
     }
-    memcpy(e->region + geo + 592, tris, sizeof tris);
-    memcpy(e->region + geo + 608, edges, sizeof edges);
-    memcpy(e->region + geo + 640, double_tris, sizeof double_tris);
-    memcpy(e->region + geo + 672, double_edges, sizeof double_edges);
+    memcpy(e->region + geo + 608, tris, sizeof tris);
+    memcpy(e->region + geo + 624, edges, sizeof edges);
+    memcpy(e->region + geo + 656, double_tris, sizeof double_tris);
+    memcpy(e->region + geo + 688, double_edges, sizeof double_edges);
   }
   end = dc_m2c_call(e, "shadow-execute", dc_m2c_ptr(e, CHAIN), dc_m2c_ptr(e, OUT), 0, 0, 0, 0);
   return dc_m2c_off(e, end) - OUT;  /* packet bytes */
