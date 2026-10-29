@@ -19,7 +19,7 @@ GAME.CGO's mips2c lookups. No lookup gets the faulting stub any more.
 | generic_effect2 | 3 | generic-no-light-dproc; generic-envmap-dproc and generic-interp-dproc |
 | shadow | 15 | shadow-init-vars, shadow-xform-verts, shadow-calc-dual-verts; shadow-execute over a tetrahedron (all 13 helpers, GOAL stand-ins); a chain of two objects, the first with double-sided tris and edges, the second skipped |
 | ocean | 3 | init-ocean-far-regs, render-ocean-quad (two quads, one clipped) |
-| collide_func | 2 | moving-sphere-triangle-intersect, called through `jalr` (two misses, a face hit) |
+| collide_func | 2 | moving-sphere-triangle-intersect, called through `jalr` (two misses, a face hit); collide-do-primitives, directly and through moving-sphere-triangle-intersect's edge path |
 | collide_probe | 2 | collide-probe-node (a two-level node tree) |
 | generic_tie | 2 | generic-tie-dma-to-spad-sync (cnt, ref, next and refe tags) |
 | joint | 2 | cspace<-parented-transformq-joint! (unscaled and scaled parent) |
@@ -59,6 +59,9 @@ The 25th file, test_func, registers nothing.
   are declared `(_type_) none`, but `fill-from-background` calls them through a
   cast as its `import-mesh-func`, with the mesh in a1, so they get that type
   (`CALLED_AS`). They are the only mips2c functions `goal_src` casts this way.
+  `collide-do-primitives` is declared `(function float)`, but
+  `moving-sphere-triangle-intersect` jumps to it with its own a0 to t0 in place,
+  so it gets those five.
 - **Lookups.** `__pc-get-mips2c` asks `dc_mips2c_find` for the name and loads a
   12-byte GOAL function (`dc-mips2c:NAME`) that jumps to the wrapper, made once
   per name. GAME.CGO's 43 lookups of these names now get native code.
@@ -106,8 +109,8 @@ paths stay in C++ (no `jalr` back into GOAL). The region is 16 KiB aligned on bo
 sides, as the PS2 scratchpad is, because translated code forms scratchpad addresses
 with `ori` (`render-ocean-quad`: `ori t4, spad, 12288`). Afterwards every pointer into the
 region becomes its offset, and `#f` and `#t` become markers. The boot runs the same cases
-through the native SH-4 build. All 35 match the oracle bit for bit, both the
-region CRC and each case's result (521 of 521 boot checks).
+through the native SH-4 build. All 36 match the oracle bit for bit, both the
+region CRC and each case's result (523 of 523 boot checks).
 
 **GOAL stand-ins.** A case can give a function symbol a stand-in for the GOAL
 function the translated code calls with `jalr` (`env->goal_function`). On SH-4 the
@@ -123,11 +126,16 @@ clears it before the region is hashed, because it differs between the sides.
 
 Found on the way:
 
-- **A port bug, found by the collide-cache fill case.** The SH-4 entries for
-  collide-cache methods 27 and 28 took only a0, from their declared type, so
-  the line-sphere and y-probe background fills would have read their mesh from
-  address 0. The host oracle crashed the same way, because it calls through the
-  same entries. Fixed in `build_mips2c.py` (above).
+- **Two port bugs of one kind.** The SH-4 entries for collide-cache methods 27
+  and 28 took only a0, from their declared type, so the line-sphere and y-probe
+  background fills would have read their mesh from address 0; the collide-cache
+  fill case found it, and the host oracle crashed the same way, because it calls
+  through the same entries. gcov on the oracle then showed `collide-do-primitives`
+  never ran, and its entry took no arguments at all: the edge-and-vertex case of
+  every swept-sphere test would have read address 0. Both are fixed in
+  `build_mips2c.py` (above). A scan of every function's argument registers read
+  before written, against its entry's count, finds no others (the rest of its
+  hits are helpers only called directly, or writes it does not parse).
 - **The original's tri limit.** When `collide-shape-prim-mesh` methods 12 to 14
   reach `*collide-cache-max-tris*`, they have already written one tri past the
   count and return without storing the count or a prim. The case keeps that
@@ -179,7 +187,7 @@ Not covered yet:
   builds there, and compressed animation data; a hand-made stream would test
   nothing a real one does, and the port does not commit extracted assets;
 - `blerc-execute`, `ocean-generate-verts`,
-  `collide-do-primitives`, `collide-probe-instance-tie`, `generic-tie-convert`
+  `collide-probe-instance-tie`, `generic-tie-convert`
   and `draw-inline-array-tfrag`. They call GOAL, or need a level's data;
 - `sp-launch-particles-var`'s random ranges. Both cases use specs with every
   random range 0, and the `sp-init-fields!` stand-in mirrors the GOAL loop in

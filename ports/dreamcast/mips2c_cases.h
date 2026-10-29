@@ -495,8 +495,8 @@ static inline uint32_t dc_m2c_tfrag_stats(dc_m2c_env *e) {
 }
 
 /* ---- collide_func: moving-sphere-triangle-intersect, called through jalr on its
- * stub (float argument and result as GPR bits). Face hits only: an edge hit
- * calls collide-do-primitives, which calls GOAL. ---- */
+ * stub (float argument and result as GPR bits). Face hits only; the
+ * collide-do-primitives case below takes the edge path. ---- */
 static inline uint32_t dc_m2c_sphere_triangle(dc_m2c_env *e) {
   enum { SPHERE = 0x0100, VELOCITY = 0x0200, TRI = 0x0300, POS = 0x0400, NORMAL = 0x0500, RESULT = 0x0600 };
   static const float velocity[3][3] = {{0.0f, 0.0f, -20.0f}, {0.5f, 0.25f, -8.0f}, {0.0f, 0.0f, 20.0f}};
@@ -1573,6 +1573,56 @@ static inline uint32_t dc_m2c_launch_3d(dc_m2c_env *e) {
   return used;  /* particles launched */
 }
 
+/* ---- collide_func: collide-do-primitives (a sphere swept past a triangle's
+ * vertices and edges), called directly and through
+ * moving-sphere-triangle-intersect when the face point falls outside the tri.
+ * ray-sphere-intersect and ray-cylinder-intersect stand in, with a u for each
+ * vertex and edge by where it sits in its tri; the cylinder reports the edge's
+ * start as the contact point. ---- */
+enum { DC_M2C_PRIM_TRI = 0x0300, DC_M2C_PRIM_TRI2 = 0x0340 };
+static uint32_t dc_m2c_prim_u(dc_m2c_env *e, uint64_t at, const uint32_t near_u[3], const uint32_t far_u[3]) {
+  uint32_t off = dc_m2c_off(e, at);
+  return off >= DC_M2C_PRIM_TRI2 ? far_u[(off - DC_M2C_PRIM_TRI2) / 16 % 3] : near_u[(off - DC_M2C_PRIM_TRI) / 16 % 3];
+}
+static uint64_t dc_m2c_ray_sphere(dc_m2c_env *e, const uint64_t *a) {
+  static const uint32_t near_u[3] = {0x3f666666u, 0x3ecccccdu, 0x40000000u};  /* 0.9, 0.4, 2 */
+  static const uint32_t far_u[3] = {0xbf800000u, 0x3fc00000u, 0xbf000000u};   /* -1, 1.5, -0.5 */
+  dc_m2c_log(e, 0x5f << 24 | dc_m2c_off(e, a[2]));
+  return dc_m2c_prim_u(e, a[2], near_u, far_u);
+}
+static uint64_t dc_m2c_ray_cylinder(dc_m2c_env *e, const uint64_t *a) {
+  static const uint32_t near_u[3] = {0x3f333333u, 0x3e99999au, 0xbf800000u};  /* 0.7, 0.3, -1 */
+  static const uint32_t far_u[3] = {0x40400000u, 0xbe800000u, 0x3f900000u};   /* 3, -0.25, 1.125 */
+  dc_m2c_log(e, 0xcc << 24 | dc_m2c_off(e, a[2]));
+  memcpy(e->region + dc_m2c_off(e, a[6]), e->region + dc_m2c_off(e, a[2]), 16);
+  return dc_m2c_prim_u(e, a[2], near_u, far_u);
+}
+static inline uint32_t dc_m2c_collide_primitives(dc_m2c_env *e) {
+  enum { SPHERE = 0x0100, MOVE = 0x0200, OUT = 0x0400, NORMAL = 0x0500, RESULT = 0x0600 };
+  uint32_t i, r[3];
+  e->set_symbol(e, "ray-sphere-intersect", dc_m2c_goal(e, 0, dc_m2c_ray_sphere));
+  e->set_symbol(e, "ray-cylinder-intersect", dc_m2c_goal(e, 1, dc_m2c_ray_cylinder));
+  e->set_symbol(e, "collide-do-primitives", e->mips2c_function(e, "collide-do-primitives"));
+  dc_m2c_vec(e, DC_M2C_PRIM_TRI + 0, -5.0f, -5.0f, 0.0f, 1.0f);
+  dc_m2c_vec(e, DC_M2C_PRIM_TRI + 16, 5.0f, -5.0f, 0.0f, 1.0f);
+  dc_m2c_vec(e, DC_M2C_PRIM_TRI + 32, 0.0f, 5.0f, 0.0f, 1.0f);
+  for (i = 0; i < 3; ++i) memcpy(e->region + DC_M2C_PRIM_TRI2 + 16 * i, e->region + DC_M2C_PRIM_TRI + 16 * i, 16);
+  /* Beside the tri's right edge, moving straight at its plane. */
+  dc_m2c_vec(e, SPHERE, 4.0f, 2.0f, 10.0f, 1.0f);
+  dc_m2c_vec(e, MOVE, 0.0f, 0.0f, -20.0f, 0.0f);
+  r[0] = (uint32_t)dc_m2c_call(e, "collide-do-primitives", dc_m2c_ptr(e, SPHERE), dc_m2c_ptr(e, MOVE),
+                               dc_m2c_fbits(1.0f), dc_m2c_ptr(e, DC_M2C_PRIM_TRI), dc_m2c_ptr(e, OUT), 0);
+  {
+    const uint64_t args[8] = {dc_m2c_ptr(e, SPHERE), dc_m2c_ptr(e, MOVE), dc_m2c_fbits(1.0f),
+                              dc_m2c_ptr(e, DC_M2C_PRIM_TRI), dc_m2c_ptr(e, OUT + 16), dc_m2c_ptr(e, NORMAL), 0, 0};
+    r[1] = (uint32_t)e->call_jalr(e, "moving-sphere-triangle-intersect", args);
+  }
+  r[2] = (uint32_t)dc_m2c_call(e, "collide-do-primitives", dc_m2c_ptr(e, SPHERE), dc_m2c_ptr(e, MOVE),
+                               dc_m2c_fbits(1.0f), dc_m2c_ptr(e, DC_M2C_PRIM_TRI2), dc_m2c_ptr(e, OUT + 32), 0);
+  for (i = 0; i < 3; ++i) dc_m2c_u(e, RESULT + 4 * i, r[i]);
+  return r[0] ^ r[1] ^ r[2];
+}
+
 typedef struct { const char *name; uint32_t (*run)(dc_m2c_env *); } dc_m2c_case;
 static const dc_m2c_case dc_m2c_cases[] = {
   {"sky_tng", dc_m2c_sky},
@@ -1610,6 +1660,7 @@ static const dc_m2c_case dc_m2c_cases[] = {
   {"generic-envmap-interp", dc_m2c_generic_envmap_interp},
   {"shadow-double", dc_m2c_shadow_double},
   {"sp-launch-3d", dc_m2c_launch_3d},
+  {"collide-do-primitives", dc_m2c_collide_primitives},
 };
 #define DC_M2C_CASE_COUNT (sizeof dc_m2c_cases / sizeof dc_m2c_cases[0])
 
