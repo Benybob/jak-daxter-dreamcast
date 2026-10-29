@@ -1409,6 +1409,64 @@ static inline uint32_t dc_m2c_generic_envmap_interp(dc_m2c_env *e) {
   return crc;  /* the table's +16 words after both dprocs */
 }
 
+/* ---- shadow: shadow-execute over a chain of two shadow objects. The first is
+ * the tetrahedron again plus a double-sided strip (five double tris, eight double
+ * edges); the second is chained by its cnt tag's upper word and carries the
+ * skip flag (32). ---- */
+static inline uint32_t dc_m2c_shadow_double(dc_m2c_env *e) {
+  enum { CAMERA = 0x0004, SDATA = 0x0600, CHAIN = 0x1000, CHAIN2 = 0x2000, GSF = 0x8000, OUT = 0xa000,
+         SPAD = 0x4000, GEO_BYTES = 704 };
+  static const float vert[10][3] = {{0, 0, 0}, {2, 0, 0}, {0, 0, 2}, {0, 2, 0},  {3, 1, -1},
+                                    {5, 1, -1}, {5, 3, 0}, {3, 3, 0}, {7, 1, -1}, {7, 3, 0}};
+  static const uint8_t tris[16] = {0, 1, 2, 0, 0, 3, 1, 0, 1, 3, 2, 0, 2, 3, 0, 0};
+  static const uint8_t edges[24] = {0, 1, 0, 1, 1, 2, 0, 2, 2, 0, 0, 3, 0, 3, 1, 3, 3, 1, 1, 2, 3, 2, 2, 3};
+  /* Five double tris, so the four-at-a-time loop runs once and the tail once. */
+  static const uint8_t double_tris[20] = {4, 5, 6, 0, 4, 6, 7, 0, 5, 8, 9, 0, 5, 9, 6, 0, 6, 9, 7, 0};
+  static const uint8_t double_edges[32] = {4, 5, 0, 0, 5, 6, 0, 3, 6, 7, 1, 4, 7, 4, 1, 1,
+                                           4, 6, 0, 1, 5, 8, 2, 2, 8, 9, 2, 2, 9, 6, 3, 4};
+  static const uint16_t counts[6] = {10, 0, 4, 6, 5, 8};
+  static const uint32_t offsets[6] = {400, 560, 592, 608, 640, 672};
+  uint32_t i, k, state = 0xd0b1eu;
+  uint64_t end;
+  e->set_symbol(e, "*math-camera*", dc_m2c_ptr(e, CAMERA));
+  e->set_symbol(e, "*fake-scratchpad-data*", dc_m2c_ptr(e, SPAD));
+  e->set_symbol(e, "*gsf-buffer*", dc_m2c_ptr(e, GSF));
+  e->set_symbol(e, "flush-cache", dc_m2c_goal(e, 0, dc_m2c_flush_cache));
+  e->set_symbol(e, "camera-pos", dc_m2c_goal(e, 1, dc_m2c_camera_pos));
+  e->set_symbol(e, "*shadow-data*", dc_m2c_ptr(e, SDATA));
+  for (i = 0; i < 64; ++i) dc_m2c_u(e, SDATA + 4 * i, 0x10000000u * (i & 7) + 0x101u * i);
+  dc_m2c_f(e, CAMERA + 0, 1.0f);
+  for (i = 0; i < 16; ++i) dc_m2c_f(e, CAMERA + 364 + 4 * i, (i % 5 == 0) ? 1.0f : dc_m2c_rand(&state) * 0.0625f);
+  dc_m2c_vec(e, DC_M2C_SHADOW_CAMPOS, 0.0f, 10.0f, 20.0f, 1.0f);
+  for (k = 0; k < 2; ++k) {
+    const uint32_t chain = k ? CHAIN2 : CHAIN, settings = chain + 16, geo = chain + 112;
+    dc_m2c_u(e, chain + 0, 1u << 28 | (96 + GEO_BYTES) / 16);
+    dc_m2c_u(e, chain + 12, k ? 0 : dc_m2c_ptr(e, CHAIN2));  /* the next object */
+    dc_m2c_u(e, chain + 16 + 96 + GEO_BYTES, 7u << 28);
+    dc_m2c_vec(e, settings + 0, 0.5f, 3.0f, 0.5f, 0.0f); dc_m2c_u(e, settings + 12, k ? 32 : 1 | 8);
+    dc_m2c_vec(e, settings + 16, 0.25f, -1.0f, 0.125f, 8.0f);
+    dc_m2c_vec(e, settings + 32, 0.0f, 1.0f, 0.0f, -0.5f);
+    dc_m2c_vec(e, settings + 48, 0.0f, 1.0f, 0.0f, 4.0f);
+    dc_m2c_vec(e, settings + 64, 0.0f, -1.0f, 0.0f, 6.0f);
+    for (i = 0; i < 6; ++i) {
+      memcpy(e->region + geo + 8 + 2 * i, &counts[i], 2);
+      dc_m2c_u(e, geo + 20 + 4 * i, offsets[i]);
+    }
+    for (i = 0; i < 2 * 32; ++i)
+      dc_m2c_f(e, geo + 144 + 4 * i, (i % 32 < 16) ? ((i % 5 == 0) ? 1.0f : dc_m2c_rand(&state) * 0.125f) : 0.0f);
+    for (i = 0; i < 10; ++i) {
+      dc_m2c_vec(e, geo + 400 + 16 * i, vert[i][0], vert[i][1], vert[i][2], 1.0f);
+      dc_m2c_b(e, geo + 560 + 2 * i, (uint8_t)(i & 1));
+    }
+    memcpy(e->region + geo + 592, tris, sizeof tris);
+    memcpy(e->region + geo + 608, edges, sizeof edges);
+    memcpy(e->region + geo + 640, double_tris, sizeof double_tris);
+    memcpy(e->region + geo + 672, double_edges, sizeof double_edges);
+  }
+  end = dc_m2c_call(e, "shadow-execute", dc_m2c_ptr(e, CHAIN), dc_m2c_ptr(e, OUT), 0, 0, 0, 0);
+  return dc_m2c_off(e, end) - OUT;  /* packet bytes */
+}
+
 typedef struct { const char *name; uint32_t (*run)(dc_m2c_env *); } dc_m2c_case;
 static const dc_m2c_case dc_m2c_cases[] = {
   {"sky_tng", dc_m2c_sky},
@@ -1444,6 +1502,7 @@ static const dc_m2c_case dc_m2c_cases[] = {
   {"sky-quad-boundary", dc_m2c_sky_quad_boundary},
   {"collide-mesh-tests", dc_m2c_collide_mesh_tests},
   {"generic-envmap-interp", dc_m2c_generic_envmap_interp},
+  {"shadow-double", dc_m2c_shadow_double},
 };
 #define DC_M2C_CASE_COUNT (sizeof dc_m2c_cases / sizeof dc_m2c_cases[0])
 

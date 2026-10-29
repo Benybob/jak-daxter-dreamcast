@@ -17,7 +17,7 @@ GAME.CGO's mips2c lookups. No lookup gets the faulting stub any more.
 | ripple | 4 | ripple-execute-init, apply-wave-table, matrix-scale; create-wave-table (ntsc, pal and already converted, GOAL stand-ins for sin, cos and atan) |
 | bones | 3 | draw-bones-check-longest-edge-asm (four radii); bones-mtx-calc (20 bones, both scratchpad buffers) |
 | generic_effect2 | 3 | generic-no-light-dproc; generic-envmap-dproc and generic-interp-dproc |
-| shadow | 15 | shadow-init-vars, shadow-xform-verts, shadow-calc-dual-verts; shadow-execute over a tetrahedron (all 13 helpers, GOAL stand-ins) |
+| shadow | 15 | shadow-init-vars, shadow-xform-verts, shadow-calc-dual-verts; shadow-execute over a tetrahedron (all 13 helpers, GOAL stand-ins); a chain of two objects, the first with double-sided tris and edges, the second skipped |
 | ocean | 3 | init-ocean-far-regs, render-ocean-quad (two quads, one clipped) |
 | collide_func | 2 | moving-sphere-triangle-intersect, called through `jalr` (two misses, a face hit) |
 | collide_probe | 2 | collide-probe-node (a two-level node tree) |
@@ -106,8 +106,8 @@ paths stay in C++ (no `jalr` back into GOAL). The region is 16 KiB aligned on bo
 sides, as the PS2 scratchpad is, because translated code forms scratchpad addresses
 with `ori` (`render-ocean-quad`: `ori t4, spad, 12288`). Afterwards every pointer into the
 region becomes its offset, and `#f` and `#t` become markers. The boot runs the same cases
-through the native SH-4 build. All 33 match the oracle bit for bit, both the
-region CRC and each case's result (517 of 517 boot checks).
+through the native SH-4 build. All 34 match the oracle bit for bit, both the
+region CRC and each case's result (519 of 519 boot checks).
 
 **GOAL stand-ins.** A case can give a function symbol a stand-in for the GOAL
 function the translated code calls with `jalr` (`env->goal_function`). On SH-4 the
@@ -174,9 +174,11 @@ Not covered yet:
   case reads them. On the PC port `bones-mtx-calc-execute` calls the GOAL
   `new-bones-mtx-calc-asm` unless `*use-new-bones*` is #f, so bones-mtx-calc
   runs only then;
-- shadow geometry with double-sided verts, tris and edges (the case's tetrahedron
-  has none), and shadow objects chained by the next pointer;
-- `calc-animation-from-spr`, `blerc-execute`, `ocean-generate-verts`,
+- `calc-animation-from-spr` and its five decompressors. They read a joint
+  control flattened to the scratchpad, the jump tables `make-joint-jump-tables`
+  builds there, and compressed animation data; a hand-made stream would test
+  nothing a real one does, and the port does not commit extracted assets;
+- `blerc-execute`, `ocean-generate-verts`,
   `collide-do-primitives`, `collide-probe-instance-tie`, `generic-tie-convert`
   and `draw-inline-array-tfrag`. They call GOAL, or need a level's data;
 - the rest of `sp-launch-particles-var`. Its case launches from a 2d system with
