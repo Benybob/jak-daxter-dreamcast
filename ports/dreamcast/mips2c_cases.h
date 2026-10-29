@@ -8,8 +8,9 @@
  * runs the native SH-4 build. Afterwards every aligned word that is a pointer into
  * the region becomes its offset, and #f and #t become markers, so both sides hash
  * the same bytes. Only functions whose paths stay in C++ (no jalr back into GOAL)
- * are called. The region is 16 KiB aligned on both sides, as the PS2 scratchpad
- * is, so SPAD offsets that are multiples of 0x4000 survive ori address forming. */
+ * are called. The region is 64 KiB aligned on both sides, as the port's fake
+ * scratchpad is, so SPAD offsets that are multiples of 0x4000 survive ori address
+ * forming, and a scratchpad at offset 0 reads as an empty DMA tag. */
 #ifndef DC_MIPS2C_CASES_H
 #define DC_MIPS2C_CASES_H
 #include <stdint.h>
@@ -1666,6 +1667,45 @@ static inline uint32_t dc_m2c_ocean_verts(dc_m2c_env *e) {
   return sum;  /* vertex words written */
 }
 
+/* ---- merc_blend_shape: blerc-execute over the chain of one fragment that
+ * setup-blerc-chains-for-one-fragment links from *blerc-globals*, with patterned
+ * blend-shape data and flush-cache standing in. The PC port skips blerc-execute
+ * while *use-fp-blerc* is #t (its default) and blends in the renderer. ---- */
+static inline uint32_t dc_m2c_blerc_run(dc_m2c_env *e) {
+  /* The scratchpad at the region's start, 64 KiB aligned like the port's: setup
+   * ends each chain with its address as an (empty) refe tag. */
+  enum { SPAD = 0x0000, GLOBALS = 0x4100, WEIGHTS = 0x4200, HEADER = 0x4300, OUT = 0x5000, SRC = 0x6000,
+         DEST = 0x8000, GSF = 0xc000 };
+  static const int16_t weight[3] = {100, 0, -50};
+  static const uint8_t header[5] = {40, 0, 1, 1, 1};
+  uint32_t i, sum = 0, chain;
+  e->set_symbol(e, "*fake-scratchpad-data*", dc_m2c_ptr(e, SPAD));
+  e->set_symbol(e, "*blerc-globals*", dc_m2c_ptr(e, GLOBALS));
+  e->set_symbol(e, "*gsf-buffer*", dc_m2c_ptr(e, GSF));
+  e->set_symbol(e, "*stats-blerc*", e->s7);
+  e->set_symbol(e, "flush-cache", dc_m2c_goal(e, 0, dc_m2c_flush_cache));
+  memcpy(e->region + WEIGHTS, weight, sizeof weight);
+  for (i = 0; i < 0x1800; ++i) dc_m2c_b(e, SRC + i, (uint8_t)(i * 29u + (i >> 7)));
+  for (i = 0; i < 0x2000; i += 4) dc_m2c_u(e, DEST + i, 0x00400040u + i);
+  /* As setup-blerc-chains: the chain starts 16 bytes into the buffer, then a
+   * next tag at the start points past its end. */
+  dc_m2c_u(e, GLOBALS + 0, dc_m2c_ptr(e, OUT + 16));
+  memcpy(e->region + HEADER, header, sizeof header);
+  {
+    const uint64_t args[8] = {3, dc_m2c_ptr(e, WEIGHTS), dc_m2c_ptr(e, OUT + 16), dc_m2c_ptr(e, SRC),
+                              dc_m2c_ptr(e, HEADER), dc_m2c_ptr(e, DEST), 0, 0};
+    chain = (uint32_t)e->call(e, "setup-blerc-chains-for-one-fragment", args);
+  }
+  dc_m2c_u(e, OUT + 0, 0x20000000u); dc_m2c_u(e, OUT + 4, chain & 0x7fffffffu);
+  dc_m2c_call0(e, "blerc-execute");
+  for (i = 0; i < 0x2000; i += 4) {
+    uint32_t w;
+    memcpy(&w, e->region + DEST + i, 4);
+    sum += w != 0x00400040u + i;
+  }
+  return sum;  /* destination words blended */
+}
+
 typedef struct { const char *name; uint32_t (*run)(dc_m2c_env *); } dc_m2c_case;
 static const dc_m2c_case dc_m2c_cases[] = {
   {"sky_tng", dc_m2c_sky},
@@ -1705,6 +1745,7 @@ static const dc_m2c_case dc_m2c_cases[] = {
   {"sp-launch-3d", dc_m2c_launch_3d},
   {"collide-do-primitives", dc_m2c_collide_primitives},
   {"ocean-generate-verts", dc_m2c_ocean_verts},
+  {"blerc-execute", dc_m2c_blerc_run},
 };
 #define DC_M2C_CASE_COUNT (sizeof dc_m2c_cases / sizeof dc_m2c_cases[0])
 

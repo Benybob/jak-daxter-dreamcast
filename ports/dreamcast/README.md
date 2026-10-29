@@ -7,7 +7,7 @@ lower_sh4_ir.py; this support change leaves the lowering/boot files alone.
 
 **2026-10-27 (AI-assisted):** [GAME.CGO](GAME_CGO.md) compiles in game.gp dependency
 order in one frontend run; all 331 files of its dependency graph export. 222 of 326 code
-files lower to SH-4 (all 326 now), and all 326 load and start in Flycast, then the original main loop runs 60 frames headless; all 24 [mips2c](MIPS2C.md) files (94 functions, every GAME.CGO lookup) run natively, and 37 differential cases match the desktop oracle bit for bit (525 of 525 boot checks, 2026-10-29) under a [memory budget](MEMORY_BUDGET.md) and the [memory plan](MEMORY_PLAN.md): smaller native code, freed startups, and VRAM holding the romdisk and the PS2 DMA buffers. Native MMI ops, structure allocation, linker type
+files lower to SH-4 (all 326 now), and all 326 load and start in Flycast, then the original main loop runs 60 frames headless; all 24 [mips2c](MIPS2C.md) files (94 functions, every GAME.CGO lookup) run natively, and 38 differential cases match the desktop oracle bit for bit (527 of 527 boot checks, 2026-10-29) under a [memory budget](MEMORY_BUDGET.md) and the [memory plan](MEMORY_PLAN.md): smaller native code, freed startups, and VRAM holding the romdisk and the PS2 DMA buffers. Native MMI ops, structure allocation, linker type
 placeholders and the original pad services on the Dreamcast controller. All 25 jak1
 mips2c C++ files pass an SH-4 syntax check ([MEMORY_BUDGET.md](MEMORY_BUDGET.md)). `(& var)` locals
 and the kscheme asize-of/copy defaults are native too, as are `go` from a method and the

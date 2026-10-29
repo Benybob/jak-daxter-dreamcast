@@ -23,7 +23,7 @@ GAME.CGO's mips2c lookups. No lookup gets the faulting stub any more.
 | collide_probe | 2 | collide-probe-node (a two-level node tree) |
 | generic_tie | 2 | generic-tie-dma-to-spad-sync (cnt, ref, next and refe tags) |
 | joint | 2 | cspace<-parented-transformq-joint! (unscaled and scaled parent) |
-| merc_blend_shape | 2 | setup-blerc-chains-for-one-fragment (two fragments) |
+| merc_blend_shape | 2 | setup-blerc-chains-for-one-fragment (two fragments); blerc-execute (one fragment) |
 | ocean_vu0 | 2 | ocean-interp-wave (two frame pairs); ocean-generate-verts (draw-ocean's every frame) |
 | sparticle | 2 | sp-process-block-2d (running and paused) and -3d, GOAL stand-ins for the callbacks |
 | sparticle_launcher | 2 | particle-adgif (cache miss, hit and search); sp-launch-particles-var (three particles, sp-init-fields! modelled, particle-adgif through `jalr`); sp-launch-particles-var again: 3d, launch state and control, rotation, sound, aux list, disabled and queued |
@@ -104,13 +104,16 @@ same generated wrappers, with host GOAL addresses biased to a native magnitude
 (0x0c300000 + offset).
 
 The cases are in `mips2c_cases.h`, written once for both sides. Each fills a zeroed
-64 KiB region, points the symbols it needs into it, and calls only functions whose
-paths stay in C++ (no `jalr` back into GOAL). The region is 16 KiB aligned on both
-sides, as the PS2 scratchpad is, because translated code forms scratchpad addresses
-with `ori` (`render-ocean-quad`: `ori t4, spad, 12288`). Afterwards every pointer into the
+64 KiB region, points the symbols it needs into it, and calls mips2c functions,
+with stand-ins where they call back into GOAL (below). The region is 64 KiB aligned
+on both sides, as the port's fake scratchpad is (`gkernel.gc`), because translated
+code relies on it: it forms scratchpad addresses with `ori` (`render-ocean-quad`:
+`ori t4, spad, 12288`), and `setup-blerc-chains-for-one-fragment` ends each chain
+with the scratchpad's address as a DMA tag, which is an empty `refe` only when the
+address's low 16 bits are 0. On the PS2 it was `0x70000000`, an `end` tag. Afterwards every pointer into the
 region becomes its offset, and `#f` and `#t` become markers. The boot runs the same cases
-through the native SH-4 build. All 37 match the oracle bit for bit, both the
-region CRC and each case's result (525 of 525 boot checks).
+through the native SH-4 build. All 38 match the oracle bit for bit, both the
+region CRC and each case's result (527 of 527 boot checks).
 
 **GOAL stand-ins.** A case can give a function symbol a stand-in for the GOAL
 function the translated code calls with `jalr` (`env->goal_function`). On SH-4 the
@@ -159,7 +162,8 @@ Found on the way:
   - small host addresses let packed data look like region pointers to the
     normalization;
   - the boot's region was only 16-byte aligned, so `ori`-formed scratchpad
-    addresses landed elsewhere than on the host;
+    addresses landed elsewhere than on the host; then only 16 KiB aligned, so
+    the blerc chain's end tag read as a `refe` of 16384 quadwords;
   - a denormal float in a particle sprite. The SH-4 FPU runs with denormals
     flushed to zero (FPSCR.DN), like the PS2's VU0, while desktop x86 keeps them.
     So `vmax` of a denormal differs between the two. Case data uses normal
@@ -186,8 +190,12 @@ Not covered yet:
   control flattened to the scratchpad, the jump tables `make-joint-jump-tables`
   builds there, and compressed animation data; a hand-made stream would test
   nothing a real one does, and the port does not commit extracted assets;
-- `blerc-execute`, `collide-probe-instance-tie` and `generic-tie-convert`. They
-  call GOAL, or need a level's data;
+- `blerc-execute` over two fragments (its double-buffered path) and over a
+  120-vertex one, whose blend overwrote the chunk header before the write-back
+  on both sides with the case's hand-made blend control. The PC port skips
+  `blerc-execute` while `*use-fp-blerc*` is #t, its default;
+- `collide-probe-instance-tie` and `generic-tie-convert`. They call GOAL, or need
+  a level's data;
 - `draw-bones-merc` and `draw-inline-array-tfrag`, like tie_methods (below):
   the PC port's GOAL code never calls them. `pc-merc-draw-request` replaces the
   first in `bones.gc`, and the second's calls in `tfrag-methods.gc` are

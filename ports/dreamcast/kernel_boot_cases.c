@@ -215,10 +215,13 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
       CHECK(dc_goal_mips2c_native(),76,"all 76 of GAME.CGO's mips2c lookups return native code");
       /* The differential cases (mips2c_cases.h) through the native SH-4 build,
        * compared with the host oracle: the same C++ as desktop runs it. */
-      {dc_m2c_env env;dc_boot_m2c_saved saved;uint32_t region=dc_goal_alloc_temporary(&rt,DC_M2C_REGION+0x4000u);unsigned k;
-       /* 16 KiB aligned like the PS2 scratchpad: translated code forms scratchpad
-        * addresses with ori (render-ocean-quad: ori t4, spad, 12288). */
-       if(region)region=(region+0x3fffu)&~0x3fffu;
+      {dc_m2c_env env;dc_boot_m2c_saved saved;uint32_t region=dc_goal_alloc_temporary(&rt,2u*DC_M2C_REGION);unsigned k;
+       /* 64 KiB aligned like the port's fake scratchpad (gkernel.gc): translated
+        * code forms scratchpad addresses with ori (render-ocean-quad: ori t4,
+        * spad, 12288), and setup-blerc-chains-for-one-fragment ends a chain with
+        * the scratchpad's address as a DMA tag, an empty refe only when its low
+        * 16 bits are 0. */
+       if(region)region=(region+0xffffu)&~0xffffu;
        CHECK(region!=0 && DC_M2C_EXPECT_COUNT==DC_M2C_CASE_COUNT,1,"mips2c case region and oracle results");
        if(region && DC_M2C_EXPECT_COUNT==DC_M2C_CASE_COUNT){
          memset(&saved,0,sizeof saved);saved.rt=&rt;
