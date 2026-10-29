@@ -13,7 +13,7 @@ GAME.CGO's mips2c lookups. No lookup gets the faulting stub any more.
 | collide_edge_grab | 4 | edge-work methods 16 and 15, hold-list add-to-list! |
 | collide_mesh | 4 | methods 14 and 15 |
 | generic_effect | 4 | generic-light-proc |
-| generic_merc | 4 | high-speed-reject |
+| generic_merc | 4 | high-speed-reject (reject and keep) |
 | ripple | 4 | ripple-execute-init, apply-wave-table, matrix-scale; create-wave-table (ntsc, pal and already converted, GOAL stand-ins for sin, cos and atan) |
 | bones | 3 | draw-bones-check-longest-edge-asm (four radii); bones-mtx-calc (20 bones, both scratchpad buffers) |
 | generic_effect2 | 3 | generic-no-light-dproc |
@@ -132,11 +132,18 @@ Found on the way:
   reach `*collide-cache-max-tris*`, they have already written one tri past the
   count and return without storing the count or a prim. The case keeps that
   behavior, which desktop has too.
-- **A real translation bug, fixed in the shared source.**
+- **Two real translation bugs, fixed in the shared source.**
   `high_speed_reject::vcallms_454` wrote `vis[5]` twice and never wrote `vis[6]`,
-  so `high-speed-reject` read `vis[6]` uninitialized, on desktop too. ChatGPT's
+  so `high-speed-reject` read `vis[6]` uninitialized, on desktop too. And
+  `vcallms_438` discarded its fourth `madd_flag` result, so `vis[4] = vis[9] & f4`
+  read the FPU register enum `f4` (4): `vis[4]` was always 0, and a mesh with
+  four or more bounding spheres was never rejected unless the fourth one's flag
+  was set. The case's first plane set now rejects. The jak2 and jak3 copies of
+  `generic_merc.cpp` have both bugs; this port fixes only jak1. ChatGPT's
   `lint_mips2c.py` (straight-line read-before-write and `vis` checks, candidates for
-  a human to confirm) finds this class mechanically. It also lists more `vis`
+  a human to confirm) finds the first class mechanically. The second compiles
+  cleanly, because every register name is an enum constant in scope; the reject
+  case found it. It also lists more `vis`
   overwrite candidates in `mercneric_convert` to review.
 - **Two test-harness traps:**
   - three random arguments in one call came out in different orders on x86 and
@@ -187,9 +194,8 @@ Not covered yet:
   function sets it (`sw s4, 432(t0)`). A case would need a level's TIE tree,
   prototypes and visibility bits, linked from the user's DGO at build time,
   to verify code the game never calls. Both stay built, so the lookups get
-  native code;
-- `high-speed-reject`'s reject path. Its case runs the function on real data, but
-  none of the three plane sets rejects.
+  native code.
+
 
 ## Next
 

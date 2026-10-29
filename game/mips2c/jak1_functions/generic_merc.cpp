@@ -3570,7 +3570,8 @@ void vcallms_438(ExecutionContext* c, u16* vis) {
   // nop                        |  maddax.xyzw ACC, vf10, vf04    168
   c->acc.vf.madda_xyzw(c->vfs[vf10].vf, c->vfs[vf04].vf.x());
   // nop                        |  maddy.xyzw vf04, vf11, vf04    169
-  c->acc.vf.madd_flag(Mask::xyzw, c->vfs[vf04].vf, c->vf_src(vf11).vf, c->vf_src(vf04).vf.y());
+  // was discarded (AI-assisted fix): vis[4] below read the register enum f4 (4)
+  u16 f4 = c->acc.vf.madd_flag(Mask::xyzw, c->vfs[vf04].vf, c->vf_src(vf11).vf, c->vf_src(vf04).vf.y());
   // fmand vi03, vi09           |  nop                            170
   // ASSERT(false);
   vis[3] = vis[9] & f3;
