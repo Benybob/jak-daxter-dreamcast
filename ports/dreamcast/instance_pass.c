@@ -132,10 +132,10 @@ static int draw(const dc_instance_package *pkg,const dc_instance_camera *cam,flo
   if(counting){++st->drawn_instances;++st->lod_instances[lod];}
   {static matrix_t mv __attribute__((aligned(32)));compose(b,cam,m,mv);mat_load(&mv);}
   for(g=first;g<first+count;++g){
-   const dc_instance_proto *p=&pkg->protos[g];const void *header=NULL;uint32_t k;int textured=0;
+   const dc_instance_proto *p=&pkg->protos[g];const void *header=NULL;uint32_t k;int textured=0,single=0;
    if(materials&&p->material<material_count&&materials[p->material].header){
     if(materials[p->material].list!=(uint32_t)list)continue;
-    header=materials[p->material].header;textured=1;
+    header=materials[p->material].header;textured=1;single=materials[p->material].single_sided!=0;
    }else{
     if(list!=PVR_LIST_OP_POLY)continue;
     header=&colour_hdr;
@@ -172,7 +172,9 @@ static int draw(const dc_instance_package *pkg,const dc_instance_camera *cam,flo
     for(j=0;j<(unsigned)n;++j){float inv=1.f/poly[j].z;px[j]=320.f+390.f*poly[j].x*inv;py[j]=260.f-390.f*poly[j].y*inv;pz[j]=inv;}
     for(fan=1;fan<n-1;++fan){
      unsigned ids[3]={0,(unsigned)fan,(unsigned)fan+1};
-     if((px[fan]-px[0])*(py[fan+1]-py[0])-(py[fan]-py[0])*(px[fan+1]-px[0])==0){++st->culled;continue;}
+     {float area=(px[fan]-px[0])*(py[fan+1]-py[0])-(py[fan]-py[0])*(px[fan+1]-px[0]);
+      if(area==0){++st->culled;continue;}
+      if(single&&area<0){++st->culled;++st->back_faces;continue;}}
      for(j=0;j<3;++j){unsigned q=ids[j];pvr_vertex_t *v=&commands[queued++];
       v->flags=j==2?PVR_CMD_VERTEX_EOL:PVR_CMD_VERTEX;v->x=px[q];v->y=py[q];v->z=pz[q];
       v->u=poly[q].u;v->v=poly[q].v;v->argb=poly[q].argb;v->oargb=0;}

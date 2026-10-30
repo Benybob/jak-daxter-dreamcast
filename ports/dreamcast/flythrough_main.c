@@ -19,7 +19,8 @@ volatile telemetry dc_backend={.magic=0x34485347u,.version=1};
 typedef struct {uint32_t frames,retargets,max_faces,max_instance_triangles,instance_submitted,terrain_triangles,
  max_frame_us,total_us,last_frame,textured_materials,
  retarget_us,frame_make_us,prepare_us,terrain_draw_us,instance_draw_us,reused,
- cache_hits,cache_misses,cache_peak_bytes,cache_evictions,sphere_culled,translucent_triangles,last_translucent;} fly_metrics;
+ cache_hits,cache_misses,cache_peak_bytes,cache_evictions,sphere_culled,translucent_triangles,last_translucent,
+ back_faces,submitted_total;} fly_metrics;
 volatile fly_metrics dc_fly_metrics;
 static int check(int ok,const char *why) {
  ++dc_backend.total;if(ok){++dc_backend.passed;return 1;}
@@ -61,7 +62,7 @@ int main(void) {
   for(slot=0;slot<FLY_MATERIAL_SLOTS;++slot){uint16_t c=fly_material_map[slot];
    if(c==0xffffu)continue;
    if(c>=bank.count){inside=0;break;}
-   materials[slot]=(dc_instance_material){&bank.headers[c],bank.materials[c].list};++textured;}
+   materials[slot]=(dc_instance_material){&bank.headers[c],bank.materials[c].list,!(bank.materials[c].flags&64u)/* DOUBLE_SIDED */};++textured;}
   if(!check(inside,"fly material map inside the catalog"))goto release;}
  dc_fly_metrics.textured_materials=textured;
  for(f=0;f<FLY_FRAMES;++f) {
@@ -108,7 +109,8 @@ int main(void) {
   dc_fly_metrics.total_us+=us;
   if(window.count>dc_fly_metrics.max_faces)dc_fly_metrics.max_faces=window.count;
   if(inst.triangles>dc_fly_metrics.max_instance_triangles)dc_fly_metrics.max_instance_triangles=inst.triangles;
-  dc_fly_metrics.instance_submitted=inst.submitted;dc_fly_metrics.sphere_culled+=inst.sphere_culled;dc_fly_metrics.terrain_triangles=base.triangles;
+  dc_fly_metrics.instance_submitted=inst.submitted;dc_fly_metrics.sphere_culled+=inst.sphere_culled;
+  dc_fly_metrics.back_faces+=inst.back_faces;dc_fly_metrics.submitted_total+=inst.submitted;dc_fly_metrics.terrain_triangles=base.triangles;
   dc_fly_metrics.frames=f+1;dc_fly_metrics.last_frame=f;
  }
  /* The display shows the scene before the last one submitted, so the last

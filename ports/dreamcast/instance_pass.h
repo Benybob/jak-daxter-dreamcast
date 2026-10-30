@@ -41,7 +41,7 @@ const char *dc_instance_package_open(const void *data,size_t size,dc_instance_pa
 
 typedef struct {float tx,ty,tz,yaw,pitch,distance,draw_distance;} dc_instance_camera;
 typedef struct {uint32_t instances,drawn_instances,triangles,submitted,near_clipped,culled,invalid,lod_instances[4],
- sphere_culled;} dc_instance_stats;
+ sphere_culled,back_faces;} dc_instance_stats;
 
 /* The camera of render_world_view.c (dc_render_world_prepare): a point's offset
  * from the target, rotated by yaw and pitch and scaled by DC_RENDER_WORLD_SCALE,
@@ -75,14 +75,16 @@ uint32_t dc_instance_run(const dc_instance_package *,const dc_instance *,float d
  * vertices. Returns 0 on invalid arguments or an invalid clip. */
 int dc_instance_draw(const dc_instance_package *,const dc_instance_camera *,float (*scratch)[3],
                      dc_instance_stats *);
-/* A material's PVR header and list for the textured draw (header NULL: none). */
-typedef struct {const void *header;uint32_t list;} dc_instance_material;
+/* A material's PVR header and list for the textured draw (header NULL: none);
+ * single_sided culls its triangles that face away after projection, as the
+ * terrain's base pass does for materials that are not double-sided. */
+typedef struct {const void *header;uint32_t list,single_sided;} dc_instance_material;
 /* The textured draw: geometries whose material (an index into materials) has a
  * header in this list are drawn with it and their UVs; a geometry whose material
  * has none is drawn untextured in the opaque list. Instance and LOD counts are
  * taken on the PVR_LIST_OP_POLY call only, triangles on every call, so one
  * opaque and one punch-through call count each instance once and each triangle
- * once. Faces stay double-sided, as in dc_instance_draw. */
+ * once. Back faces count as culled. */
 int dc_instance_draw_list(const dc_instance_package *,const dc_instance_camera *,float (*scratch)[3],
                           dc_instance_stats *,int list,const dc_instance_material *materials,uint32_t material_count);
 #endif

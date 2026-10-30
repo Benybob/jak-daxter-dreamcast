@@ -61,7 +61,7 @@ int main(void) {
   for(slot=0;slot<VILLAGE_MATERIAL_SLOTS;++slot){uint16_t c=village_material_map[slot];
    if(c==0xffffu)continue;
    if(c>=bank.count){inside=0;break;}
-   materials[slot]=(dc_instance_material){&bank.headers[c],bank.materials[c].list};++textured;}
+   materials[slot]=(dc_instance_material){&bank.headers[c],bank.materials[c].list,!(bank.materials[c].flags&64u)/* DOUBLE_SIDED */};++textured;}
   if(!check(inside,"village material map inside the catalog"))goto release;}
  /* one camera for both passes */
  check(base_camera.target.x==instance_camera.tx&&base_camera.target.y==instance_camera.ty&&base_camera.target.z==instance_camera.tz&&

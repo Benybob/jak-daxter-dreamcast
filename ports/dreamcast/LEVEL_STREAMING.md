@@ -489,8 +489,11 @@ sand paths lie: the blended triangles reach the screen there and nowhere else.
 
 - The 0.3% of TIE and shrub triangles the cuts miss, and textures for the
   package's materials.
-- Single-sided culling for instances whose materials are not double-sided,
-  and BLEND instance materials (none in village1's instances).
+- BLEND instance materials (none in village1's instances). Instances now cull
+  back faces for materials that are not double-sided, as the terrain does, but
+  the decompiler's GLB marks all 289 of village1's materials double-sided, so
+  neither culls anything there (the flythrough's frames are pixel-identical
+  with and without it); whether the PS2 draws them double-sided is unchecked.
 - Instance records streamed by cell rather than all resident, and the
   per-frame costs measured on hardware rather than Flycast.
 - A native zlib and SH4ZAM in this SDK again, so the village diagnostic can use
