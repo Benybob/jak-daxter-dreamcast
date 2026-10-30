@@ -657,6 +657,22 @@ render_world_view_scalar.o: render_world_view.c render_world_view.h render_cache
 	$(KOS_CC) $(KOS_CFLAGS) -std=gnu17 -Wall -Wextra -Werror -DDC_RENDER_WORLD_SCALAR -c $< -o $@
 jak-dc-village.elf: village_main.o render_base.o render_gpu.o render_cache.o render_package.o sector_inflate_stored.o render_world_view_scalar.o render_world_view_gate.o render_frustum.o instance_pass.o build/village-romdisk.o
 	kos-cc -o $@ $^ -lm
+FLY_ASSET_DIR ?= build/private-flythrough-assets
+# Staged by make_flythrough_fixture.py from a private GLB and package.
+build/flythrough_fixture.h: $(FLY_ASSET_DIR)/FLY.json
+	@test -f $@ || (echo 'run make_flythrough_fixture.py first' && false)
+$(FLY_ASSET_DIR)/FLY.json:
+	@echo 'run make_flythrough_fixture.py GLB PACKAGE $(FLY_ASSET_DIR) first' && false
+flythrough_main.o: flythrough_main.c render_base.h instance_pass.h build/flythrough_fixture.h
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -c $< -o $@
+build/flythrough-romdisk.o: $(FLY_ASSET_DIR)/FLY.json
+	mkdir -p build
+	$(KOS_GENROMFS) -f build/flythrough-romdisk.img -d $(FLY_ASSET_DIR) -x '*.json'
+	$(KOS_BASE)/utils/bin2c/bin2c build/flythrough-romdisk.img build/flythrough-romdisk.c romdisk
+	$(KOS_CC) $(KOS_CFLAGS) -c build/flythrough-romdisk.c -o build/flythrough-romdisk-tmp.o
+	$(KOS_CC) -o $@ -r build/flythrough-romdisk-tmp.o $(KOS_LIB_PATHS) -Wl,--whole-archive -lromdiskbase
+jak-dc-flythrough.elf: flythrough_main.o render_base.o render_gpu.o render_cache.o render_package.o sector_inflate_stored.o render_world_view_scalar.o render_world_view_gate.o render_frustum.o instance_pass.o build/flythrough-romdisk.o
+	kos-cc -o $@ $^ -lm
 TRAINING_STREAM_ASSET_DIR ?= build/private-training-stream-assets
 training_render.o: training_render.c training_render.h render_base.h render_block_cache.h
 training_stream_main.o: training_main.c training_render.h build/training_render_fixture.h private-romdisk-refresh

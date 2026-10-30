@@ -366,6 +366,32 @@ are the alpha-masked holes in palm fronds and leaves that the reference fills.
     python tfrag_glb.py BACKGROUND.glb tfrag.glb --crop X0,X1,Z0,Z1 --probes PACKAGE.dci2
     python make_village_fixture.py SECTORS PACKAGE.dci2 build/private-village-assets --probes BACKGROUND.glb
 
+## A camera path through village1
+
+`jak-dc-flythrough.elf` (`flythrough_main.c`) moves the camera target 60 m along
+the camera's own view direction from the village centre, 2 m a frame for 30
+frames. Every frame it retargets the terrain window (the cache's transactional
+`dc_render_window_retarget`, reading sectors from the romdisk), builds a frame
+owner for it, and draws the terrain and the resident textured instances.
+`make_flythrough_fixture.py` stages a stored-block strip of the terrain cropped
+to every cell the path's windows can touch (14,422 faces, 4.1 MB with the
+package) and, per frame, the window's face count and CRC and the instances,
+triangles and LODs the host expects.
+
+In Flycast, 137 of 137 checks: all 30 windows match the host's faces and CRCs
+byte for byte (at most 7,106 faces), and every frame's instances, triangles (at
+most 56,978) and LODs match. The display shows the scene before the last one
+submitted (the first capture matched frame 28, not 29: 99.19% against frame
+28's reference, 93.5% against 29's), so the last camera's scene is submitted
+once more; the held frame then agrees with frame 29's reference on 99.15% of
+the frame (0 pixels only in Flycast, 2,609 only in the reference: alpha-masked
+holes). Flycast reports up to 3.6 s for a frame with its retarget, 42.5 s for
+the path: emulator time, not a hardware figure.
+
+    python make_flythrough_fixture.py BACKGROUND.glb PACKAGE.dci2 build/private-flythrough-assets --reference ref.dci
+    python build_dreamcast.py --target jak-dc-flythrough.elf --fly-assets build/private-flythrough-assets
+    python verify_backend.py FLYCAST jak-dc-flythrough.elf --nm NM --output OUT --suite flythrough --tests 137         --capture --dump dc_fly_metrics 40
+
 ## Proposed design
 
 1. **Resident per level: what gameplay needs everywhere.** Code (0.25 MiB),
@@ -395,6 +421,9 @@ are the alpha-masked holes in palm fronds and leaves that the reference fills.
   package's materials.
 - A translucent list for BLEND terrain, and single-sided culling for
   instances whose materials are not double-sided.
+- The flythrough's frame time: where the retarget's 3.6 s goes (romdisk reads,
+  CRCs, the frame owner rebuilt every frame), and instance records streamed by
+  cell rather than all resident.
 - A native zlib and SH4ZAM in this SDK again, so the village diagnostic can use
   the compressed sectors and the SH4ZAM transform the other targets use.
 - A draw distance chosen against the LOD table above, and the 16 prototypes

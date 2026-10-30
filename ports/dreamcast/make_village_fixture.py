@@ -89,12 +89,14 @@ def window_faces(sectors, query):
     return [rs.unpack_face(f['raw']) for f in rs.assemble_window(packet, query)]
 
 
-def reference(sectors, package, half=14.0):
+def reference(sectors, package, half=14.0, target=None):
     """A DCI1 for dci1_reference.py of the same frame: the package resolved to
     the camera's LODs, plus the terrain window as one more geometry placed at the
-    target (vertex colours only; the native pass also multiplies textures)."""
+    target (vertex colours only; the native pass also multiplies textures). The
+    target defaults to the instance fixture's."""
     blob = Path(package).read_bytes()
-    target = mf.camera(*mf.read(blob))
+    if target is None:
+        target = mf.camera(*mf.read(blob))
     tx, tz = target[0], target[2]
     flat = tie_lods.flatten(blob, tx, tz) if blob[:4] == b'DCI2' else blob
     geoms, instances = tie_lods.read_dci1(flat)

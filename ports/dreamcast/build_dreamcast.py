@@ -22,6 +22,7 @@ parser.add_argument('--render-cache-assets',type=Path)
 parser.add_argument('--render-base-assets',type=Path)
 parser.add_argument('--instance-assets',type=Path)
 parser.add_argument('--village-assets',type=Path)
+parser.add_argument('--fly-assets',type=Path)
 args=parser.parse_args()
 port=Path(__file__).resolve().parent
 work=args.workspace.resolve()
@@ -49,6 +50,7 @@ if args.render_cache_assets: assets+=' RENDER_CACHE_ASSET_DIR='+short_posix(args
 if args.render_base_assets: assets+=' RENDER_BASE_ASSET_DIR='+short_posix(args.render_base_assets.resolve())
 if args.instance_assets: assets+=' INSTANCE_ASSET_DIR='+short_posix(args.instance_assets.resolve())
 if args.village_assets: assets+=' VILLAGE_ASSET_DIR='+short_posix(args.village_assets.resolve())
+if args.fly_assets: assets+=' FLY_ASSET_DIR='+short_posix(args.fly_assets.resolve())
 script=f'''#!/usr/bin/bash
 set -eo pipefail
 source {short_posix(work)}/kos-source/environ.sh
