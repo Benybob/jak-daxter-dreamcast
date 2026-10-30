@@ -630,6 +630,33 @@ leaves free (above). Where it can shrink:
   path's largest window is refused (`block cache window residency`), by design,
   rather than evicted mid-build. This is the renderer alone beside the GOAL arena's
   figure, not the two running together. Flycast time, no hardware figure.
+
+  `window_caps.py` works those needs out for any level from its `.drx` blocks. Along
+  the village1 path it agrees with Flycast exactly: 7,117 faces, 7,129 vertices, and
+  a 520,992-byte budget, between the 491,520 refused and the 524,288 accepted. The
+  path's caps and budget cost 919 KB and left 38 KB, so about 957 KB is available with
+  village1's other resident data; other levels' packages will move that figure.
+  Swept over every window position, faces, vertices, remap and budget each at
+  their own worst (so these overstate any one window):
+
+  | Level (cell) | 28 m window | 20 m | 14 m |
+  | --- | ---: | ---: | ---: |
+  | maincave (6 m) | 2,386 KB | 1,566 KB | 1,048 KB |
+  | robocave (6 m) | 1,822 KB | 1,466 KB | 1,047 KB |
+  | darkcave (12 m) | 1,626 KB | 986 KB | 832 KB |
+  | village3 | 1,456 KB | 1,137 KB | 807 KB |
+  | village1 | 980 KB | 694 KB | 598 KB |
+  | village2 | 821 KB | | |
+  | sunkenb | 660 KB | | |
+  | sunken | 640 KB | | |
+  | beach | 595 KB | | |
+  | misty | 572 KB | | |
+
+  The other ten levels measured need 415 KB or less at 28 m. So fifteen of twenty fit
+  at 28 m, village1 at 20 m, village3 and darkcave at 14 m. Maincave and robocave do
+  not fit at 14 m, and a window that small is not a usable draw distance without
+  instances and LOD carrying the view past it. Their budget figures are high partly
+  because a 6 m cell scatters a window across many blocks.
 - **The package's vertices: done, DCI3.** `tie_lods.py --compact` writes
   16-byte vertices: 16-bit positions in steps of a geometry's own bounds (a
   quantization record a geometry: float centre and scale), UVs in 1/2048
