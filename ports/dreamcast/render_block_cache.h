@@ -23,9 +23,11 @@ const char *dc_render_block_cache_make(const dc_render_catalog *,const char *roo
 /* The same owner retaining DRX2 blocks: budget bounds their bytes, so about
  * three times the geometry fits. Every block this source lends has zero normals,
  * on a miss too, so replicas keep matching; a window's CRC differs from the
- * package's. A hit lends faces singly and allocates nothing; a miss still reads
- * the whole block and encodes it. Failing to build a retained block only leaves
- * it uncached. */
+ * package's. A hit lends faces singly and allocates nothing. A miss reads the
+ * block's .drx beside its .drs if it is there, whole and validated, and needs no
+ * encoder; a .drx that cannot be used or kept falls back to the .drs, which then
+ * has to exist. Without one a miss reads the .drs and encodes it, and failing to
+ * build a retained block only leaves it uncached. */
 const char *dc_render_block_cache_make_draw(const dc_render_catalog *,const char *root,
     const char *source_sha,uint32_t budget,dc_render_block_cache *);
 dc_render_block_source dc_render_block_cache_source(dc_render_block_cache *);

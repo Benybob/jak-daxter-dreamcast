@@ -22,6 +22,9 @@ const char *dc_render_indexed_decode_draw(const void *blob, uint32_t bytes,
                                          void *out_faces, uint32_t out_capacity_faces,
                                          uint32_t *out_count);
 
+/* dc_render_indexed_decode_draw's checks with no output: a block about to be kept. */
+const char *dc_render_indexed_check_draw(const void *blob, uint32_t bytes, uint32_t *out_count);
+
 /* Past this a vertex's index or the output bound could overflow. */
 #define DC_RENDER_INDEXED_DRAW_MAX_FACES 21845u
 

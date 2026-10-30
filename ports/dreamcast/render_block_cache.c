@@ -81,6 +81,45 @@ static void retain_draw(state *s,const dc_render_entry *entry,int global,dc_rend
  s->stats.bytes+=bytes;++s->stats.blocks;
  if(s->stats.bytes>s->stats.peak_bytes)s->stats.peak_bytes=s->stats.bytes;
 }
+/* A DRX2 file is held to what dc_render_block_load holds a sector to, as far as
+ * it can be without the sector: the entry's face count, IDs in order and known. */
+static int faces_fit(const state *s,const dc_render_entry *entry,const unsigned char *blob,uint32_t bytes) {
+ uint32_t count=0,i,previous=0,vertices;const unsigned char *f;
+ if(dc_render_indexed_check_draw(blob,bytes,&count)||count!=entry->count)return 0;
+ vertices=(uint32_t)blob[4]|(uint32_t)blob[5]<<8|(uint32_t)blob[6]<<16|(uint32_t)blob[7]<<24;
+ f=blob+12u+vertices*24u;
+ for(i=0;i<count;++i,f+=16) {
+  uint32_t id=(uint32_t)f[0]|(uint32_t)f[1]<<8|(uint32_t)f[2]<<16|(uint32_t)f[3]<<24;
+  uint32_t material=(uint32_t)f[4]|(uint32_t)f[5]<<8|(uint32_t)f[6]<<16|(uint32_t)f[7]<<24;
+  if(id>=s->catalog.source_count||material>=s->catalog.material_count||(i&&id<=previous))return 0;
+  previous=id;
+ }
+ return 1;
+}
+/* Into a slot from the .drx, evicting only once the block is known good. */
+static int read_draw_file(state *s,const dc_render_entry *entry,int global) {
+ char path[DC_RENDER_CACHE_PATH_MAX];FILE *file;long size;size_t root_bytes=strlen(s->root);
+ const char *sep=(s->root[root_bytes-1]=='/'||s->root[root_bytes-1]=='\\')?"":"/";
+ unsigned char *blob=NULL;uint32_t bytes;int n,ok=0;unsigned i;
+ n=global?snprintf(path,sizeof path,"%s%sglobal.drx",s->root,sep):
+  snprintf(path,sizeof path,"%s%ssectors/%" PRId32 "_%" PRId32 ".drx",s->root,sep,entry->ix,entry->iz);
+ if(n<0||(unsigned)n>=sizeof path)return 0;
+ file=OPEN(path,"rb");if(!file)return 0;
+ if(!fseek(file,0,SEEK_END)&&(size=ftell(file))>0&&(unsigned long)size<=s->budget&&!fseek(file,0,SEEK_SET)) {
+  bytes=(uint32_t)size;blob=ALLOC(bytes);
+  ok=blob&&fread(blob,1,bytes,file)==bytes&&fgetc(file)==EOF;
+ }
+ if(CLOSE(file))ok=0;
+ if(ok&&!faces_fit(s,entry,blob,bytes))ok=0;
+ if(!ok){FREE(blob);return 0;}
+ ++s->stats.misses;++s->stats.loads;
+ while(s->stats.bytes>s->budget-bytes)evict(s,oldest(s));
+ i=victim(s);evict(s,i);touch(s,i);
+ s->slots[i].entry=*entry;s->slots[i].compact=blob;s->slots[i].bytes=bytes;s->slots[i].global=global;s->slots[i].valid=1;
+ s->stats.bytes+=bytes;++s->stats.blocks;
+ if(s->stats.bytes>s->stats.peak_bytes)s->stats.peak_bytes=s->stats.bytes;
+ return 1;
+}
 static const char *load(void *user,const dc_render_catalog *catalog,const dc_render_entry *entry,
  int global,const char *path,dc_render_block *out) {
  dc_render_block_cache *owner=user;state *s=owner?owner->state:NULL;
@@ -128,15 +167,18 @@ static const char *load(void *user,const dc_render_catalog *catalog,const dc_ren
 /* A DRX2 face begins with its source ID, so the select pass needs no expansion. */
 static int peek(void *user,const dc_render_catalog *catalog,const dc_render_entry *entry,int global,
  const unsigned char **ids,uint32_t *stride) {
- dc_render_block_cache *owner=user;state *s=owner?owner->state:NULL;unsigned i;
+ dc_render_block_cache *owner=user;state *s=owner?owner->state:NULL;unsigned i;int fresh=0;
  if(!s||!s->draw||s->pinned||!catalog||!entry||!ids||!stride||!catalog_equal(catalog,&s->catalog))return 0;
- for(i=0;i<DC_RENDER_BLOCK_CACHE_SLOTS;++i)if(s->slots[i].valid&&s->slots[i].global==global&&
-     !memcmp(&s->slots[i].entry,entry,sizeof(*entry))) {
-  const unsigned char *c=s->slots[i].compact;
-  uint32_t vertices=(uint32_t)c[4]|(uint32_t)c[5]<<8|(uint32_t)c[6]<<16|(uint32_t)c[7]<<24;
-  touch(s,i);++s->stats.hits;s->peeked=c;*ids=c+12u+vertices*24u;*stride=16u;return 1;
+ for(;;) {
+  for(i=0;i<DC_RENDER_BLOCK_CACHE_SLOTS;++i)if(s->slots[i].valid&&s->slots[i].global==global&&
+      !memcmp(&s->slots[i].entry,entry,sizeof(*entry))) {
+   const unsigned char *c=s->slots[i].compact;
+   uint32_t vertices=(uint32_t)c[4]|(uint32_t)c[5]<<8|(uint32_t)c[6]<<16|(uint32_t)c[7]<<24;
+   touch(s,i);if(!fresh)++s->stats.hits;s->peeked=c;*ids=c+12u+vertices*24u;*stride=16u;return 1;
+  }
+  if(fresh||!read_draw_file(s,entry,global))return 0;
+  fresh=1;
  }
- return 0;
 }
 static void face(void *user,uint32_t index,unsigned char *out) {
  dc_render_block_cache *owner=user;state *s=owner->state;

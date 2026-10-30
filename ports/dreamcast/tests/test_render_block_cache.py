@@ -70,6 +70,44 @@ class BlockCacheTest(unittest.TestCase):
         self.lib.dc_rbc_arm(0,0,0);self.assertIsNone(self.load(draw,(-1,3,-1,3)))
         blocks=self.stats(draw)[0]-self.stats(plain)[0]
         self.assertEqual(blocks,0);self.assertLessEqual(self.stats(draw)[10],before)
+    def test_draw_files_replace_the_sectors(self):
+        xyz=[(0.2,0,.2),(1,0,.2),(.2,1,1),(30,0,.2),(31,0,.2),(30,1,1)]
+        p,root=self.packet(xyz);indexed.write_draw_files(root,remove_sectors=True)
+        self.assertEqual(list(root.rglob('*.drs')),[])
+        c=self.draw_owner(root)
+        for q in ((0,2,0,2),(-1,3,-1,3),(0,33,-1,3)):
+            self.assertIsNone(self.load(c,q));self.assertEqual(self.payload(c),self.stripped(p,q))
+        s=self.stats(c);self.assertGreater(s[0],0);self.assertEqual(s[5],0);self.assertEqual(s[4],0)
+        self.assertEqual(s[6],sum(f.stat().st_size for f in root.rglob('*.drx')))
+    def test_draw_files_count_as_the_sectors_do(self):
+        xyz=[(0.2,0,.2),(1,0,.2),(.2,1,1),(30,0,.2),(31,0,.2),(30,1,1)]
+        _,encoded=self.packet(xyz,'encoded');p,files=self.packet(xyz,'files');indexed.write_draw_files(files)
+        a,b=self.draw_owner(encoded),self.draw_owner(files)
+        for c in (a,b):
+            for q in ((0,2,0,2),(-1,3,-1,3),(0,33,-1,3),(0,2,0,2)):self.assertIsNone(self.load(c,q))
+        self.assertEqual(self.stats(a)[:4],self.stats(b)[:4]);self.assertEqual(self.stats(a)[6],self.stats(b)[6])
+    def test_a_bad_draw_file_is_refused_not_trusted(self):
+        for name,spoil in (('truncated',lambda b:b[:-1]),('flipped',lambda b:b[:20]+bytes([b[20]^1])+b[21:]),
+                           ('empty',lambda b:b''),('other block',None)):
+            with self.subTest(name=name):
+                p,root=self.packet([(.2,0,.2),(1,0,.2),(.2,1,1),(30,0,.2),(31,0,.2),(30,1,1)],name.replace(' ','-'))
+                indexed.write_draw_files(root,remove_sectors=True);one=root/'sectors/0_0.drx'
+                one.write_bytes(spoil(one.read_bytes()) if spoil else (root/'global.drx').read_bytes())
+                c=self.draw_owner(root);self.assertIsNotNone(self.load(c,(0,2,0,2)));self.assertEqual(self.stats(c)[15],0)
+    def test_a_bad_draw_file_falls_back_to_its_sector(self):
+        p,root=self.packet([(.2,0,.2),(1,0,.2),(.2,1,1)]);indexed.write_draw_files(root)
+        (root/'sectors/0_0.drx').write_bytes(b'junk');c=self.draw_owner(root);q=(0,2,0,2)
+        self.assertIsNone(self.load(c,q));self.assertEqual(self.payload(c),self.stripped(p,q))
+    def test_a_file_above_the_budget_falls_back(self):
+        p,root=self.packet([(.2,0,.2),(1,0,.2),(.2,1,1)]);indexed.write_draw_files(root);c=self.draw_owner(root,16);q=(0,2,0,2)
+        self.assertIsNone(self.load(c,q));self.assertEqual(self.payload(c),self.stripped(p,q));self.assertLessEqual(self.stats(c)[6],16)
+    def test_every_draw_file_allocation_and_io_failure_is_clean(self):
+        p,root=self.packet([(.2,0,.2),(1,0,.2),(.2,1,1)]);indexed.write_draw_files(root);q=(0,2,0,2)
+        for faults in [(a,0,0) for a in range(1,12)]+[(0,o,0) for o in range(1,6)]+[(0,0,k) for k in range(1,6)]:
+            with self.subTest(faults=faults):
+                c=self.draw_owner(root);self.lib.dc_rbc_arm(*faults);self.load(c,q);self.lib.dc_rbc_arm(0,0,0)
+                self.assertIsNone(self.load(c,q));self.assertEqual(self.payload(c),self.stripped(p,q))
+                self.lib.dc_rbc_close(c);self.owners.remove(c);self.assertEqual(self.stats(None)[13:15],[0,0])
     def test_draw_retention_counts_drx2_bytes_exactly(self):
         p,root=self.packet([(.2,0,.2),(1,0,.2),(.2,1,1)]);c=self.draw_owner(root)
         self.assertIsNone(self.load(c,(0,2,0,2)))

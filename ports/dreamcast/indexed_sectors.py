@@ -216,6 +216,24 @@ def measure(package_dir, queries=()):
                                 for fmt in ('drm2', 'drx1', 'drx2')}, windows=windows)
 
 
+def write_draw_files(package_dir, remove_sectors=False):
+    """Write a .drx beside each published .drs. Removing the .drs needs a block
+    cache budget of at least the biggest .drx, since nothing is left to fall back on."""
+    # The existing DRM2 parser imports Pillow; the DRX1 codec itself is stdlib.
+    import prepare_render_sectors as drm
+
+    root = Path(package_dir)
+    written = 0
+    for path in [root / 'global.drs', *sorted((root / 'sectors').glob('*.drs'))]:
+        records = [r['raw'] for r in drm.parse_sector(path.read_bytes())['records']]
+        blob = encode_draw_sector(records)
+        path.with_suffix('.drx').write_bytes(blob)
+        written += len(blob)
+        if remove_sectors:
+            path.unlink()
+    return written
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('package_dir', type=Path)

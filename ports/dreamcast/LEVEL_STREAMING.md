@@ -549,13 +549,30 @@ leaves free (above). Where it can shrink:
   | DRX2 | 2 MB | 0.57 MB | 3.24 s | 1.60 s | 2.81 MB | 9.13 MB |
   | DRX2 | 512 KB | 0.52 MB | 3.24 s | 1.60 s | 2.69 MB | 9.22 MB |
 
-  2.69 MB is below the 2.8 MiB (2.94 MB) the GOAL arena leaves free, but that
-  figure is taken at the end of the path. A retarget also holds transient
-  buffers: a hit none, but a miss in the biggest sector (3,312 faces) holds the
-  384 KB block plus 291 KB of encoder output and 66 KB of table. So the margin
-  is 0.25 MB at rest and negative on such a miss, unless those transients come
-  from elsewhere. Windows themselves remain 116-byte faces (7,117
-  at most, 826 KB), now the largest part of what is left.
+  Building DRX2 at run time was the expensive part. `write_draw_files` stages a
+  `.drx` beside or in place of each `.drs` (`make_flythrough_fixture.py
+  --draw-files`), and a miss then reads and validates that block whole, into the
+  cache, with no decoded block and no encoder. Same path and package, 83 of 83
+  checks and the same last frame in each, 675 KB of `.drx` against 2.0 MB:
+
+  | Budget | Hits | Misses | Peak | Retarget time | Longest frame | Heap in use | Heap arena |
+  | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+  | 2 MB | 393 | 15 | 0.57 MB | 2.33 s | 0.75 s | 2.81 MB | 3.24 MB |
+  | 512 KB | 393 | 15 | 0.52 MB | 2.33 s | 0.75 s | 2.69 MB | 3.35 MB |
+  | 384 KB | 170 | 238 | 0.39 MB | 6.60 s | 1.30 s | 2.60 MB | 3.07 MB |
+  | 256 KB | 0 | 408 | 0.26 MB | 8.94 s | 1.30 s | 2.49 MB | 3.51 MB |
+
+  So retargeting is now as fast as decoded blocks (2.41 s), the longest frame is
+  shorter (1.24 s), and a cache far below the working set degrades to 8.94 s where
+  decoded blocks took 28.25 s at 768 KB. A `.drx` carries only its own CRC, not the
+  manifest's: it is checked against the entry's face count, ID order and the
+  catalog's ranges, and a window's CRC is checked in the fixture, not at run time.
+
+  In use at the end of the path is 2.69 MB, below the 2.8 MiB (2.94 MB) the GOAL
+  arena leaves free, but the heap arena, which a retarget's window buffers grow,
+  stays at 3.07 to 3.51 MB. It is not yet proven to fit. Windows remain 116-byte
+  faces, old and staged side by side during a retarget (7,117 faces, 826 KB each),
+  now the largest part of what is left.
 - **The package's vertices: done, DCI3.** `tie_lods.py --compact` writes
   16-byte vertices: 16-bit positions in steps of a geometry's own bounds (a
   quantization record a geometry: float centre and scale), UVs in 1/2048

@@ -58,32 +58,24 @@ static void expand(const unsigned char *input, uint32_t nv, uint32_t nf, uint32_
         expand_face(input, input + face_offset + i * 16u, stored, output + (size_t)i * 116u);
 }
 
-static const char *decode(const void *blob, uint32_t bytes, void *out_faces,
-                          uint32_t out_capacity_faces, uint32_t *out_count,
-                          const char *magic, uint32_t stored) {
-    const unsigned char *input = (const unsigned char *)blob;
-    unsigned char *output = (unsigned char *)out_faces;
-    uint32_t nv, nf, i, face_offset;
-    uint64_t expected, output_bytes;
-    if (!out_count) return "null count";
+static const char *check_header(const unsigned char *input, uint32_t bytes, const char *magic,
+                                uint32_t stored, uint32_t *nv, uint32_t *nf) {
+    uint64_t expected;
     if (!input) return "null blob";
     if (bytes < 16u) return "truncated header";
     if (memcmp(input, magic, 4) != 0) return "bad magic";
-    nv = read_u32(input + 4);
-    nf = read_u32(input + 8);
-    if (nv > 65535u) return "too many vertices";
-    expected = UINT64_C(16) + (uint64_t)nv * stored + (uint64_t)nf * 16u;
+    *nv = read_u32(input + 4);
+    *nf = read_u32(input + 8);
+    if (*nv > 65535u) return "too many vertices";
+    expected = UINT64_C(16) + (uint64_t)*nv * stored + (uint64_t)*nf * 16u;
     if (expected != bytes) return "incorrect size";
     if (crc32_bytes(input, bytes - 4u) != read_u32(input + bytes - 4u))
         return "CRC mismatch";
-    if (nf > out_capacity_faces) return "output capacity";
-    if (nf && !output) return "null output";
-    output_bytes = (uint64_t)nf * 116u;
-    if (output_bytes > SIZE_MAX) return "output size";
-    if (overlap(input, bytes, output, (size_t)output_bytes) ||
-        overlap(input, bytes, out_count, sizeof(*out_count)) ||
-        overlap(output, (size_t)output_bytes, out_count, sizeof(*out_count)))
-        return "overlapping buffers";
+    return NULL;
+}
+
+static const char *check_body(const unsigned char *input, uint32_t nv, uint32_t nf, uint32_t stored) {
+    uint32_t i, face_offset = 12u + nv * stored;
     /* Inspect IEEE-754 exponent bits directly: no host float layout, alignment,
      * NaN conversion or floating-point mode can alter the preserved bytes. */
     for (i = 0; i < nv; ++i) {
@@ -94,13 +86,36 @@ static const char *decode(const void *blob, uint32_t bytes, void *out_faces,
                 UINT32_C(0x7f800000)) return "nonfinite vertex";
         }
     }
-    face_offset = 12u + nv * stored;
     for (i = 0; i < nf; ++i) {
         const unsigned char *f = input + face_offset + i * 16u;
         if (read_u16(f + 14) != 0u) return "nonzero pad";
         if (read_u16(f + 8) >= nv || read_u16(f + 10) >= nv ||
             read_u16(f + 12) >= nv) return "index out of range";
     }
+    return NULL;
+}
+
+static const char *decode(const void *blob, uint32_t bytes, void *out_faces,
+                          uint32_t out_capacity_faces, uint32_t *out_count,
+                          const char *magic, uint32_t stored) {
+    const unsigned char *input = (const unsigned char *)blob;
+    unsigned char *output = (unsigned char *)out_faces;
+    uint32_t nv, nf;
+    uint64_t output_bytes;
+    const char *error;
+    if (!out_count) return "null count";
+    error = check_header(input, bytes, magic, stored, &nv, &nf);
+    if (error) return error;
+    if (nf > out_capacity_faces) return "output capacity";
+    if (nf && !output) return "null output";
+    output_bytes = (uint64_t)nf * 116u;
+    if (output_bytes > SIZE_MAX) return "output size";
+    if (overlap(input, bytes, output, (size_t)output_bytes) ||
+        overlap(input, bytes, out_count, sizeof(*out_count)) ||
+        overlap(output, (size_t)output_bytes, out_count, sizeof(*out_count)))
+        return "overlapping buffers";
+    error = check_body(input, nv, nf, stored);
+    if (error) return error;
     /* Validation is complete. Copy raw little-endian fields without repacking. */
     expand(input, nv, nf, stored, output);
     *out_count = nf;
@@ -117,6 +132,17 @@ const char *dc_render_indexed_decode_draw(const void *blob, uint32_t bytes,
                                          void *out_faces, uint32_t out_capacity_faces,
                                          uint32_t *out_count) {
     return decode(blob, bytes, out_faces, out_capacity_faces, out_count, "DRX2", 24u);
+}
+
+const char *dc_render_indexed_check_draw(const void *blob, uint32_t bytes, uint32_t *out_count) {
+    const unsigned char *input = (const unsigned char *)blob;
+    uint32_t nv, nf;
+    const char *error;
+    if (!out_count) return "null count";
+    error = check_header(input, bytes, "DRX2", 24u, &nv, &nf);
+    if (!error) error = check_body(input, nv, nf, 24u);
+    if (!error) *out_count = nf;
+    return error;
 }
 
 void dc_render_indexed_expand_draw(const void *blob, void *out_faces) {
