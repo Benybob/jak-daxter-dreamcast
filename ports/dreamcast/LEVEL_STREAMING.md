@@ -538,10 +538,24 @@ leaves free (above). Where it can shrink:
   So a third of the cache holds the whole working set, 1.09 MB less heap in use,
   for 1.0 s more retargeting over the path (about 60 ms a frame, Flycast time).
   Below the working set DRX2 is the slower of the two, since each miss also
-  encodes. These runs used a LOD 0 package (`tie_lods.py --textured --compact` with
-  an empty dump folder: 811,024 bytes against the 1.10 MB of the full LODs), which
-  sets the same camera and path and leaves the terrain windows unchanged, so the
-  heap column is low by about that difference. No hardware figure.
+  encodes. These rows used a LOD 0 package (`tie_lods.py --textured --compact` with
+  an empty dump folder), which leaves the terrain windows unchanged. With the full
+  dump (1,103,544 bytes, 742,871 instance triangles sent, 83 of 83 checks, the
+  same last frame in each):
+
+  | Retained | Budget | Peak | Retarget time | Longest frame | Heap in use | Free above heap |
+  | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+  | DRM2 | 2 MB | 1.66 MB | 2.41 s | 1.24 s | 3.90 MB | 8.01 MB |
+  | DRX2 | 2 MB | 0.57 MB | 3.41 s | 1.63 s | 2.81 MB | 9.13 MB |
+  | DRX2 | 512 KB | 0.52 MB | 3.41 s | 1.63 s | 2.69 MB | 9.22 MB |
+
+  2.69 MB is below the 2.8 MiB (2.94 MB) the GOAL arena leaves free, but that
+  figure is taken at the end of the path. A retarget also holds transient
+  buffers: for the biggest sector (3,312 faces) a hit's expansion is 384 KB, and
+  a miss the same plus 291 KB of encoder output and 66 KB of table. So the margin
+  is 0.25 MB at rest and negative on a miss in the densest sector, unless those
+  transients come from elsewhere. Windows themselves remain 116-byte faces (7,117
+  at most, 826 KB), now the largest part of what is left.
 - **The package's vertices: done, DCI3.** `tie_lods.py --compact` writes
   16-byte vertices: 16-bit positions in steps of a geometry's own bounds (a
   quantization record a geometry: float centre and scale), UVs in 1/2048
