@@ -665,7 +665,7 @@ build/flythrough_fixture.h: $(FLY_ASSET_DIR)/FLY.json
 $(FLY_ASSET_DIR)/FLY.json:
 	@echo 'run make_flythrough_fixture.py GLB PACKAGE $(FLY_ASSET_DIR) first' && false
 flythrough_main.o: flythrough_main.c render_base.h instance_pass.h build/flythrough_fixture.h
-	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -c $< -o $@
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) $(FLY_DEFS) -c $< -o $@
 build/flythrough-romdisk.o: $(FLY_ASSET_DIR)/FLY.json
 	mkdir -p build
 	$(KOS_GENROMFS) -f build/flythrough-romdisk.img -d $(FLY_ASSET_DIR) -x '*.json'

@@ -500,7 +500,7 @@ leaves free (above). Where it can shrink:
   it touches. The lever is the face record: 116 bytes a triangle, every vertex
   stored inside each face (36 bytes each). An indexed sector format would cut
   the cache's working set roughly threefold.
-- **Indexed sectors: DRX1 does not, DRX2 does, not integrated.** On all of
+- **Indexed sectors: DRX1 does not, DRX2 does.** On all of
   village1's tfrag (84,747 faces in 1,990 16 m sectors plus global, built without
   the 8 MB package cap, every block's round trip verified):
 
@@ -518,8 +518,30 @@ leaves free (above). Where it can shrink:
   with zero normals; flythrough_main.c's window CRCs would have to be taken over
   such faces. Reflections that want the normal would have to derive it from the
   face. The saving is on retained cache blocks only, 2.04 to 3.22 times by
-  neighbourhood: the window still expands to 116-byte faces, and no Flycast
-  budget run has been made against the table above.
+  neighbourhood: the window still expands to 116-byte faces.
+
+  `dc_render_block_cache_make_draw` retains these blocks (built in C on a miss,
+  the same bytes as `encode_draw_sector`; a hit expands one without a CRC, twice
+  a retarget). `-DFLY_DRAW_CACHE` measures it on the same 16-frame path, against
+  the table above and rerun beside it, which reproduced that table's hits, misses
+  and times exactly. Every row: 83 of 83 checks, the same last frame.
+
+  | Retained | Budget | Hits | Misses | Evictions | Peak | Retarget time | Heap in use |
+  | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+  | DRM2 | 2 MB | 393 | 15 | 0 | 1.66 MB | 2.41 s | 3.60 MB |
+  | DRM2 | 1.25 MB | 170 | 238 | 227 | 1.31 MB | 19.24 s | 3.25 MB |
+  | DRX2 | 2 MB | 393 | 15 | 0 | 0.57 MB | 4.02 s | 2.51 MB |
+  | DRX2 | 512 KB | 393 | 15 | 4 | 0.52 MB | 4.02 s | 2.39 MB |
+  | DRX2 | 384 KB | 170 | 238 | 228 | 0.39 MB | 27.37 s | 2.30 MB |
+  | DRX2 | 256 KB | 0 | 408 | 405 | 0.26 MB | 39.91 s | 2.19 MB |
+
+  So a third of the cache holds the whole working set, 1.09 MB less heap in use,
+  for 1.6 s more retargeting over the path (about 100 ms a frame, Flycast time).
+  Below the working set DRX2 is the slower of the two, since each miss also
+  encodes. These runs used a LOD 0 package (`tie_lods.py --textured --compact` with
+  an empty dump folder: 811,024 bytes against the 1.10 MB of the full LODs), which
+  sets the same camera and path and leaves the terrain windows unchanged, so the
+  heap column is low by about that difference. No hardware figure.
 - **The package's vertices: done, DCI3.** `tie_lods.py --compact` writes
   16-byte vertices: 16-bit positions in steps of a geometry's own bounds (a
   quantization record a geometry: float centre and scale), UVs in 1/2048
