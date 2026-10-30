@@ -43,7 +43,7 @@ typedef struct {uint32_t frames,retargets,max_faces,max_instance_triangles,insta
  cache_hits,cache_misses,cache_peak_bytes,cache_evictions,sphere_culled,translucent_triangles,last_translucent,
  back_faces,submitted_total,image_bytes,heap_arena,heap_in_use,heap_free_top,max_vertices,peak_in_use;} fly_metrics;
 volatile fly_metrics dc_fly_metrics;
-/* Live heap at every allocation-heavy moment; the largest is the true peak. */
+/* Live heap at each frame's end and with a missed block held in full. */
 static void sample_heap(void) {
  struct mallinfo m=mallinfo();
  if((uint32_t)m.uordblks>dc_fly_metrics.peak_in_use)dc_fly_metrics.peak_in_use=(uint32_t)m.uordblks;

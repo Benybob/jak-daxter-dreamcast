@@ -626,35 +626,38 @@ leaves free (above). Where it can shrink:
   peaks at 2.90 MB, below the 2.94 MB (2.8 MiB) the GOAL arena leaves free**, and the
   arena stays at 2.91 MB. That margin is 38 KB and holds for this path's caps: they
   are fixed per level, and village3's worst window is about 1.6 times the size, so
-  its buffers must be too. The cache budget has a floor as well: below 512 KB this
-  path's largest window is refused (`block cache window residency`), by design,
-  rather than evicted mid-build. This is the renderer alone beside the GOAL arena's
+  its buffers must be too. The cache budget has a floor as well: below 520,992 bytes
+  this path's largest window is refused (`block cache window residency`), by design,
+  rather than evicted mid-build. The sampling misses file-open and startup
+  transients, and the `.drs` fallback, so 2.90 MB is the largest sample; the
+  arena is the firmer figure. This is the renderer alone beside the GOAL arena's
   figure, not the two running together. Flycast time, no hardware figure.
 
   `window_caps.py` works those needs out for any level from its `.drx` blocks. Along
   the village1 path it agrees with Flycast exactly: 7,117 faces, 7,129 vertices, and
-  a 520,992-byte budget, between the 491,520 refused and the 524,288 accepted. The
-  path's caps and budget cost 919 KB and left 38 KB, so about 957 KB is available with
-  village1's other resident data; other levels' packages will move that figure.
-  Swept over every window position, faces, vertices, remap and budget each at
-  their own worst (so these overstate any one window):
+  a 520,992-byte budget, the exact floor. The path's caps and budget cost 920,064
+  bytes and left 37,809, so about 958,000 bytes (935 KiB) are available with village1's
+  other resident data; other levels' packages will move that figure. The table is
+  in KiB, swept on a grid (4 m at 28 m, 8 m at 20 and 14 m) with each of faces,
+  vertices, remap and budget at its own largest sample. That overstates any one
+  sampled window but is not a bound: a window between grid points can need more.
 
-  | Level (cell) | 28 m window | 20 m | 14 m |
+  | Level (cell), KiB | 28 m window | 20 m | 14 m |
   | --- | ---: | ---: | ---: |
-  | maincave (6 m) | 2,386 KB | 1,566 KB | 1,048 KB |
-  | robocave (6 m) | 1,822 KB | 1,466 KB | 1,047 KB |
-  | darkcave (12 m) | 1,626 KB | 986 KB | 832 KB |
-  | village3 | 1,456 KB | 1,137 KB | 807 KB |
-  | village1 | 980 KB | 694 KB | 598 KB |
-  | village2 | 821 KB | | |
-  | sunkenb | 660 KB | | |
-  | sunken | 640 KB | | |
-  | beach | 595 KB | | |
-  | misty | 572 KB | | |
+  | maincave (6 m) | 2,386 | 1,566 | 1,048 |
+  | robocave (6 m) | 1,822 | 1,466 | 1,047 |
+  | darkcave (12 m) | 1,626 | 986 | 832 |
+  | village3 | 1,456 | 1,137 | 807 |
+  | village1 | 980 | 694 | 598 |
+  | village2 | 821 | | |
+  | sunkenb | 660 | | |
+  | sunken | 640 | | |
+  | beach | 595 | | |
+  | misty | 572 | | |
 
-  The other ten levels measured need 415 KB or less at 28 m. So fifteen of twenty fit
-  at 28 m, village1 at 20 m, village3 and darkcave at 14 m. Maincave and robocave do
-  not fit at 14 m, and a window that small is not a usable draw distance without
+  The other ten levels measured need 415 KiB or less at 28 m. So by these samples
+  fifteen of twenty fit at 28 m, village1 at 20 m, village3 and darkcave at 14 m.
+  Maincave and robocave do not fit at 14 m, and a window that small is not a usable draw distance without
   instances and LOD carrying the view past it. Their budget figures are high partly
   because a 6 m cell scatters a window across many blocks.
 - **The package's vertices: done, DCI3.** `tie_lods.py --compact` writes

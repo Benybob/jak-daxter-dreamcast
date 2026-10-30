@@ -1,4 +1,9 @@
-"""Measure fixed draw-window buffers from published DRX2 blocks. (AI-assisted), ISC."""
+"""Measure fixed draw-window buffers from published DRX2 blocks.
+
+A sweep samples window centres on a grid and takes each measure's largest sample
+independently. A window between grid points can need more, so suggested caps are
+not a bound: leave a margin, and test the path a level really uses. (AI-assisted), ISC.
+"""
 
 import argparse
 import json
@@ -36,24 +41,11 @@ def _load_block(path, expected_count, header):
     return dict(vertex_count=vertex_count, bytes=len(blob), faces=faces)
 
 
-def _read_manifest(blob):
-    """Flythrough fixtures pack at zlib level 0, which the manifest contract records."""
-    saved = drm.ZLIB_LEVEL
-    try:
-        return drm.parse_manifest(blob)
-    except drm.RenderSectorError:
-        drm.ZLIB_LEVEL = 0
-        try:
-            return drm.parse_manifest(blob)
-        finally:
-            drm.ZLIB_LEVEL = saved
-
-
 class LoadedPackage:
     """Cached block indices and face bounds; construct with load_package()."""
 
     def __init__(self, root):
-        self.header = _read_manifest((root / 'manifest.drm').read_bytes())
+        self.header = drm.parse_manifest((root / 'manifest.drm').read_bytes())
         self.cell = self.header['cell_size']
         self.global_block = _load_block(root / 'global.drx', self.header['global_count'], self.header)
         self.locals = []

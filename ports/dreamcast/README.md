@@ -5,6 +5,16 @@ documents the independent finite-input desktop vector oracle, SSE comparison tes
 and inventory of all 346 GAME.CGO entries. Claude Code owns vf lowering in
 lower_sh4_ir.py; this support change leaves the lowering/boot files alone.
 
+**2026-10-30 (AI-assisted):** the village1 flythrough now peaks at 2.90 MB of live
+heap, against the 2.94 MB the GOAL arena leaves free
+([LEVEL_STREAMING.md](LEVEL_STREAMING.md)). With `FLY_DRAW_CACHE`, `FLY_DRAW_WINDOW`
+and `.drx` sectors the block cache keeps 24-byte-vertex DRX2 blocks (0.52 MB against
+1.66 MB) and terrain windows are indexed, in fixed buffers. 84 of 84 checks, and the
+last frame is pixel-identical to the old pipeline's. This is the renderer beside the
+arena's figure, not the two running together, on one path's caps; only this target
+uses it. `window_caps.py` samples any level's needs: 15 of 20 levels fit at a 28 m
+window, and maincave and robocave do not fit even at 14 m. Flycast time only.
+
 **2026-10-29 (AI-assisted):** village1 renders in Flycast from the user's own disc
 ([LEVEL_STREAMING.md](LEVEL_STREAMING.md)): textured tfrag terrain from the cached
 sector pipeline under the TIE and shrub drawn instanced (7,342 instances of 116

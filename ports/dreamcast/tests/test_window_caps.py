@@ -153,6 +153,13 @@ class WindowCapsTest(unittest.TestCase):
                                  cwd=PORT, check=True, capture_output=True, text=True)
         self.assertEqual(json.loads(default.stdout), caps.sweep(root, 14))
 
+    def test_a_sweep_is_a_sample_not_a_bound(self):
+        near = [(.1, 0, .1), (.9, 0, .1), (.1, 0, .9)] * 64
+        far = [(x + 28, y, z) for x, y, z in near]
+        root = self.packet(near + far, 'between')
+        self.assertEqual(caps.sweep(root, 14, 8)['maxima']['faces']['value'], 64)
+        self.assertEqual(caps.window_needs(root, 14.5, .5, 14)['faces'], 128)
+
     def test_invalid_query_and_step(self):
         root = self.replicated()
         loaded = caps.load_package(root)
@@ -163,17 +170,6 @@ class WindowCapsTest(unittest.TestCase):
             with self.subTest(step=step), self.assertRaises(ValueError):
                 caps.sweep(loaded, 14, step)
 
-
-class ManifestLevelTests(unittest.TestCase):
-    def test_a_level_zero_fixture_manifest_is_read_and_the_setting_restored(self):
-        saved = drm.ZLIB_LEVEL
-        drm.ZLIB_LEVEL = 0
-        try:
-            blob = _package(_one([(.2, 0, .2), (1, 0, .2), (.2, 1, 1)]).to_bytes(), cell_size=16).manifest
-        finally:
-            drm.ZLIB_LEVEL = saved
-        self.assertEqual(caps._read_manifest(blob)['cell_size'], 16.0)
-        self.assertEqual(drm.ZLIB_LEVEL, saved)
 
 if __name__ == '__main__':
     unittest.main()
