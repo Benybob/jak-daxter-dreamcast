@@ -493,8 +493,13 @@ leaves free (above). Where it can shrink:
   A 20 m window (at most 4,431 faces) does not fix that: 1 MB gives 148 hits
   and 94 misses (9.5 s), 768 KB 31 and 211 (17.9 s). The cache keeps whole
   16 m sectors and a window touches up to nine of them where the village is
-  densest, so the lever is the sector size (the builder's `--cell-size`), not
-  the window.
+  densest. Smaller sectors do not help either: with 8 m cells
+  (`make_flythrough_fixture.py --cell 8`) the same 28 m windows need 1.92 MB
+  at peak (2 MB: 917 hits, 47 misses), and 1 MB thrashes (178 hits, 786
+  misses, 23.9 s), because a face crossing cell borders is stored in each cell
+  it touches. The lever is the face record: 116 bytes a triangle, every vertex
+  stored inside each face (36 bytes each). An indexed sector format would cut
+  the cache's working set roughly threefold.
 - **The package's vertices: done, DCI3.** `tie_lods.py --compact` writes
   16-byte vertices: 16-bit positions in steps of a geometry's own bounds (a
   quantization record a geometry: float centre and scale), UVs in 1/2048
