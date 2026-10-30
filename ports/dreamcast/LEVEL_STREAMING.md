@@ -412,8 +412,30 @@ the viewport's four planes, before any of its vertices are transformed. A
 randomized host test checks that no point of a culled sphere projects inside
 the viewport. Over the path 13,778 geometries are culled and the instance pass
 drops from 11.5 s to 9.3 s (19%); the last frame sends exactly the same 7,983
-triangles and its image is unchanged, 139 of 139 checks. What remains is the
-per-vertex transform and clip of what is on screen.
+triangles and its image is unchanged, 139 of 139 checks.
+
+Two more, each leaving every frame's output unchanged:
+
+- **XMTRX.** The instance matrix and the camera are composed once an instance
+  (the translation taken relative to the target before the rotation) and loaded
+  with KOS's `mat_load`; each vertex is then one `ftrv`
+  (`mat_trans_single3_nodiv`). Flycast barely notices (instance pass 9.3 s to
+  9.0 s); what it saves on hardware is not measured here.
+- **Trivial accept.** A triangle whose three vertices lie inside the near plane
+  and the viewport skips `dc_render_clip_viewport`, which would return it
+  unchanged; the test's planes are pulled in by 0.1 pixel so float rounding
+  cannot accept what the clipper's exact test would cut. Instance pass 9.0 s to
+  6.1 s.
+
+| Flythrough, 30 frames (Flycast time) | Start | Now |
+| --- | ---: | ---: |
+| window retarget | 29.6 s | 2.6 s |
+| instance pass | 11.5 s | 6.1 s |
+| whole path | 42.5 s | 10.0 s |
+
+The single-view diagnostics moved with it: the instance pass alone from 441 ms
+to 256 ms a frame, the village frame from 504 ms to 320 ms, both sending the
+same 53,942 instance triangles as before.
 
     python make_flythrough_fixture.py BACKGROUND.glb PACKAGE.dci2 build/private-flythrough-assets --reference ref.dci
     python build_dreamcast.py --target jak-dc-flythrough.elf --fly-assets build/private-flythrough-assets
@@ -448,9 +470,8 @@ per-vertex transform and clip of what is on screen.
   package's materials.
 - A translucent list for BLEND terrain, and single-sided culling for
   instances whose materials are not double-sided.
-- The instance pass's per-vertex cost: the transform through SH4ZAM's matrix
-  unit once it is back in this SDK, and instance records streamed by cell
-  rather than all resident.
+- Instance records streamed by cell rather than all resident, and the
+  per-frame costs measured on hardware rather than Flycast.
 - A native zlib and SH4ZAM in this SDK again, so the village diagnostic can use
   the compressed sectors and the SH4ZAM transform the other targets use.
 - A draw distance chosen against the LOD table above, and the 16 prototypes

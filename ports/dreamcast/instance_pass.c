@@ -106,6 +106,16 @@ void dc_instance_to_view(const float b[10],const dc_instance_camera *c,const flo
 static pvr_vertex_t commands[96] __attribute__((aligned(32)));
 static void flush(unsigned *n) {if(*n){pvr_prim(commands,*n*sizeof(*commands));*n=0;}}
 static pvr_poly_hdr_t colour_hdr __attribute__((aligned(32)));
+/* The instance matrix and the camera as one 4x4 for XMTRX (column-major,
+ * matrix_t[column][row]): view = B (M p + t - target) + (0, 0, distance), with
+ * the translation taken relative to the target before the rotation. */
+static void compose(const float b[10],const dc_instance_camera *cam,const float *m,matrix_t out) {
+ const float t[3]={m[9]-cam->tx,m[10]-cam->ty,m[11]-cam->tz};unsigned c,r;
+ for(c=0;c<3;++c)for(r=0;r<3;++r)out[c][r]=b[3*r]*m[3*c]+b[3*r+1]*m[3*c+1]+b[3*r+2]*m[3*c+2];
+ for(r=0;r<3;++r)out[3][r]=b[3*r]*t[0]+b[3*r+1]*t[1]+b[3*r+2]*t[2];
+ out[3][2]+=b[9];
+ out[0][3]=out[1][3]=out[2][3]=0;out[3][3]=1;
+}
 static int draw(const dc_instance_package *pkg,const dc_instance_camera *cam,float (*view)[3],dc_instance_stats *st,
                 int list,const dc_instance_material *materials,uint32_t material_count) {
  float b[10];uint32_t i;unsigned queued=0;const void *current=NULL;pvr_poly_cxt_t cxt;int counting=list==PVR_LIST_OP_POLY;
@@ -120,6 +130,7 @@ static int draw(const dc_instance_package *pkg,const dc_instance_camera *cam,flo
   if(d2>cam->draw_distance*cam->draw_distance)continue;
   first=dc_instance_run(pkg,in,d2,&lod,&count);
   if(counting){++st->drawn_instances;++st->lod_instances[lod];}
+  {static matrix_t mv __attribute__((aligned(32)));compose(b,cam,m,mv);mat_load(&mv);}
   for(g=first;g<first+count;++g){
    const dc_instance_proto *p=&pkg->protos[g];const void *header=NULL;uint32_t k;int textured=0;
    if(materials&&p->material<material_count&&materials[p->material].header){
@@ -137,9 +148,9 @@ static int draw(const dc_instance_package *pkg,const dc_instance_camera *cam,flo
     if(r2>r0){r0=r2;}
     if(dc_instance_sphere_outside(c,s[3]*sqrtf(r0)*0.25f/* DC_RENDER_WORLD_SCALE */)){st->triangles+=p->indices/3u;++st->sphere_culled;continue;}}
    if(header!=current){flush(&queued);pvr_prim(header,sizeof(pvr_poly_hdr_t));current=header;}
-   for(k=0;k<p->verts;++k){const dc_instance_vertex *v=&pkg->verts[p->first_vert+k];float w[3];
-    w[0]=v->x*m[0]+v->y*m[3]+v->z*m[6]+m[9];w[1]=v->x*m[1]+v->y*m[4]+v->z*m[7]+m[10];w[2]=v->x*m[2]+v->y*m[5]+v->z*m[8]+m[11];
-    dc_instance_to_view(b,cam,w,view[k]);}
+   /* every vertex through XMTRX: one ftrv each */
+   for(k=0;k<p->verts;++k){const dc_instance_vertex *v=&pkg->verts[p->first_vert+k];float x=v->x,y=v->y,z=v->z;
+    mat_trans_single3_nodiv(x,y,z);view[k][0]=x;view[k][1]=y;view[k][2]=z;}
    for(k=0;k<p->indices;k+=3){
     const uint16_t *ix=&pkg->indices[p->first_index+k];dc_clip_vertex input[3],poly[DC_RENDER_CLIP_CAP];
     unsigned j,front=0;int n,fan;float px[DC_RENDER_CLIP_CAP],py[DC_RENDER_CLIP_CAP],pz[DC_RENDER_CLIP_CAP];
@@ -147,7 +158,14 @@ static int draw(const dc_instance_package *pkg,const dc_instance_camera *cam,flo
     for(j=0;j<3;++j){const float *v=view[ix[j]];const dc_instance_vertex *s=&pkg->verts[p->first_vert+ix[j]];
      front+=v[2]>=DC_SCENE_NEAR;
      input[j]=(dc_clip_vertex){v[0],v[1],v[2],textured?s->u:0,textured?s->v:0,s->argb};}
-    n=dc_render_clip_viewport(input,poly);
+    /* wholly inside the near plane and the viewport, which dc_render_clip_viewport
+     * returns unchanged: no clip call. The planes are pulled in by 0.1 pixel so
+     * float rounding cannot accept what the clipper's exact test would cut. */
+    {int inside=1;
+     for(j=0;j<3&&inside;++j){const float x=input[j].x,y=input[j].y,z=input[j].z;
+      inside=z>=DC_SCENE_NEAR&&z<=4e6f&&390.f*x<=319.9f*z&&-390.f*x<=319.9f*z&&390.f*y<=259.9f*z&&-390.f*y<=219.9f*z;}
+     if(inside){memcpy(poly,input,sizeof input);n=3;}
+     else n=dc_render_clip_viewport(input,poly);}
     if(n<0){++st->invalid;flush(&queued);return 0;}
     if(n<3){++st->culled;continue;}
     if(front<3)++st->near_clipped;
