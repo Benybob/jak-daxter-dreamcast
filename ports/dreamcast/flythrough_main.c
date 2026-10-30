@@ -12,6 +12,9 @@
 #include "render_block_cache.h"
 #include "instance_pass.h"
 #include "build/flythrough_fixture.h"
+#ifndef FLY_CACHE_BUDGET
+#define FLY_CACHE_BUDGET DC_RENDER_BLOCK_CACHE_MAX
+#endif
 KOS_INIT_FLAGS(INIT_DEFAULT);
 typedef struct {uint32_t magic,version,state,total,passed,failed_case,system_ram,code_bytes;
  uint32_t observed_lo,observed_hi,expected_lo,expected_hi;char description[80];} telemetry;
@@ -45,7 +48,7 @@ int main(void) {
  error=dc_render_gpu_make(&catalog,&gpu);if(!check(error==NULL,error))goto release;
  error=dc_render_base_bank_make(&catalog,&gpu,&bank);if(!check(error==NULL,error))goto release;
  /* decoded sectors kept across retargets: only newly entered ones are read */
- error=dc_render_block_cache_make(&catalog,"/rd",fly_source_sha,DC_RENDER_BLOCK_CACHE_MAX,&cache);
+ error=dc_render_block_cache_make(&catalog,"/rd",fly_source_sha,FLY_CACHE_BUDGET,&cache);
  if(!check(error==NULL,error))goto release;
  source=dc_render_block_cache_source(&cache);
  data=memalign(32,FLY_PACKAGE_BYTES);if(!check(data!=NULL,"fly package allocation"))goto release;

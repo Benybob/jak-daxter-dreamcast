@@ -476,10 +476,23 @@ Flycast's 16 MiB):
 
 In the game the romdisk's part would come from the disc, but the renderer's own
 resident state, about 3.9 MB, is already more than the 2.8 MiB the GOAL arena
-leaves free (above). Where it can shrink: the block cache's budget (it holds
-every sector the path touched, never evicting), and the package's 24-byte
-vertices (16-bit positions in a prototype's bounds and 16-bit UVs would halve
-them). Measured, not yet done.
+leaves free (above). Where it can shrink:
+
+- **The block cache, only with a smaller window.** Its budget against the same
+  16-frame path (`FLY_CACHE_BUDGET`):
+
+  | Budget | Hits | Misses | Evictions | Retarget time |
+  | ---: | ---: | ---: | ---: | ---: |
+  | 2 MB (peak 1.66 MB) | 393 | 15 | 0 | 2.4 s |
+  | 1.25 MB | 170 | 238 | 227 | 19.2 s |
+  | 1 MB | 170 | 238 | 228 | 19.2 s |
+  | 768 KB | 0 | 408 | 405 | 28.3 s |
+
+  One 28 m window's sectors need between 1.31 and 1.66 MB; below that the
+  cache mostly misses and retargeting costs nearly as much as without it.
+- **The package's vertices.** 24 bytes now; 16-bit positions within a
+  geometry's bounds and 16-bit UVs would halve them (about 0.37 MB).
+  Not yet done.
 
 The 16 prototypes whose cut has more triangles than the dump's geometry 0 are
 not simple duplicates: on the warpgate the extras are its `-envmap` materials
