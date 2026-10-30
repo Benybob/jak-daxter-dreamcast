@@ -639,11 +639,11 @@ jak-dc-instances.elf: instances_main.o instance_pass.o render_frustum.o build/in
 	kos-cc -o $@ $^ -lm
 VILLAGE_ASSET_DIR ?= build/private-village-assets
 # Staged by make_village_fixture.py from private sectors and a private package.
-build/village_base_fixture.h build/village_instance_fixture.h: $(VILLAGE_ASSET_DIR)/VILLAGE.json
+build/village_base_fixture.h build/village_instance_fixture.h build/village_material_map.h: $(VILLAGE_ASSET_DIR)/VILLAGE.json
 	@test -f $@ || (echo 'run make_village_fixture.py first' && false)
 $(VILLAGE_ASSET_DIR)/VILLAGE.json:
 	@echo 'run make_village_fixture.py SECTORS PACKAGE $(VILLAGE_ASSET_DIR) first' && false
-village_main.o: village_main.c render_base.h instance_pass.h build/village_base_fixture.h build/village_instance_fixture.h
+village_main.o: village_main.c render_base.h instance_pass.h build/village_base_fixture.h build/village_instance_fixture.h build/village_material_map.h
 	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -c $< -o $@
 build/village-romdisk.o: $(VILLAGE_ASSET_DIR)/VILLAGE.json
 	mkdir -p build

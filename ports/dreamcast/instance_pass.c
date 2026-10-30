@@ -39,8 +39,10 @@ const char *dc_instance_package_open(const void *data,size_t size,dc_instance_pa
  for(i=0;i<ng;++i){const dc_instance_proto *q=&made.protos[i];uint32_t k;
   for(k=0;k<q->indices;++k)if(made.indices[q->first_index+k]>=q->verts)return "DCI1 index range";}
  for(i=0;v2&&i<np;++i){const dc_instance_lod *l=&made.lods[i];unsigned k;
-  if(l->geometry[0]>=ng||l->pad)return "DCI2 prototype LODs";
-  for(k=1;k<4;++k)if(l->geometry[k]!=0xffffu&&l->geometry[k]>=ng)return "DCI2 prototype LODs";
+  if(l->geometry[0]>=ng)return "DCI2 prototype LODs";
+  for(k=0;k<4;++k){
+   if(l->geometry[k]==0xffffu){if(l->count[k])return "DCI2 prototype LODs";continue;}
+   if((uint32_t)l->geometry[k]+l->count[k]>=ng)return "DCI2 prototype LODs";}
   for(k=0;k<3;++k)if(!isfinite(l->plane[k])||!(l->plane[k]>=0)||l->plane[k]>1e18f||(k&&l->plane[k]<l->plane[k-1]))return "DCI2 prototype planes";}
  for(i=0;i<ni;++i){const dc_instance *q=&made.instances[i];unsigned k;
   if(q->proto>=np)return "DCI1 instance prototype";
@@ -50,13 +52,16 @@ const char *dc_instance_package_open(const void *data,size_t size,dc_instance_pa
  return NULL;
 }
 
-uint32_t dc_instance_geometry(const dc_instance_package *pkg,const dc_instance *in,float d2,unsigned *lod) {
+uint32_t dc_instance_run(const dc_instance_package *pkg,const dc_instance *in,float d2,unsigned *lod,unsigned *count) {
  const dc_instance_lod *l;unsigned n=0,k;
- if(!pkg->lods){*lod=0;return in->proto;}
+ if(!pkg->lods){*lod=0;*count=1;return in->proto;}
  l=&pkg->lods[in->proto];
  for(k=0;k<3;++k){float p=l->plane[k]*l->plane[k];if(d2>p)++n;}
  while(l->geometry[n]==0xffffu)--n;
- *lod=n;return l->geometry[n];
+ *lod=n;*count=1u+l->count[n];return l->geometry[n];
+}
+uint32_t dc_instance_geometry(const dc_instance_package *pkg,const dc_instance *in,float d2,unsigned *lod) {
+ unsigned count;return dc_instance_run(pkg,in,d2,lod,&count);
 }
 
 void dc_instance_view(const dc_instance_camera *c,float b[10]) {
@@ -74,44 +79,66 @@ void dc_instance_to_view(const float b[10],const dc_instance_camera *c,const flo
 #ifdef _arch_dreamcast
 static pvr_vertex_t commands[96] __attribute__((aligned(32)));
 static void flush(unsigned *n) {if(*n){pvr_prim(commands,*n*sizeof(*commands));*n=0;}}
-int dc_instance_draw(const dc_instance_package *pkg,const dc_instance_camera *cam,float (*view)[3],dc_instance_stats *st) {
- float b[10];uint32_t i;unsigned queued=0;pvr_poly_cxt_t cxt;static pvr_poly_hdr_t hdr __attribute__((aligned(32)));
+static pvr_poly_hdr_t colour_hdr __attribute__((aligned(32)));
+static int draw(const dc_instance_package *pkg,const dc_instance_camera *cam,float (*view)[3],dc_instance_stats *st,
+                int list,const dc_instance_material *materials,uint32_t material_count) {
+ float b[10];uint32_t i;unsigned queued=0;const void *current=NULL;pvr_poly_cxt_t cxt;int counting=list==PVR_LIST_OP_POLY;
  if(!pkg||!cam||!view||!st||!(cam->distance>=0)||!(cam->draw_distance>0))return 0;
  dc_instance_view(cam,b);
- pvr_poly_cxt_col(&cxt,PVR_LIST_OP_POLY);cxt.gen.culling=PVR_CULLING_NONE;pvr_poly_compile(&hdr,&cxt);
- pvr_prim(&hdr,sizeof hdr);
+ pvr_poly_cxt_col(&cxt,PVR_LIST_OP_POLY);cxt.gen.culling=PVR_CULLING_NONE;pvr_poly_compile(&colour_hdr,&cxt);
  for(i=0;i<pkg->instance_count;++i){
-  const dc_instance *in=&pkg->instances[i];const dc_instance_proto *p;
-  const float *m=in->m;float dx=m[9]-cam->tx,dz=m[11]-cam->tz,dx2=dx*dx,dz2=dz*dz,d2=dx2+dz2;uint32_t k;unsigned lod;
-  ++st->instances;
+  const dc_instance *in=&pkg->instances[i];
+  const float *m=in->m;float dx=m[9]-cam->tx,dz=m[11]-cam->tz,dx2=dx*dx,dz2=dz*dz,d2=dx2+dz2;
+  uint32_t first,g;unsigned lod,count;
+  if(counting)++st->instances;
   if(d2>cam->draw_distance*cam->draw_distance)continue;
-  p=&pkg->protos[dc_instance_geometry(pkg,in,d2,&lod)];
-  ++st->drawn_instances;++st->lod_instances[lod];
-  for(k=0;k<p->verts;++k){const dc_instance_vertex *v=&pkg->verts[p->first_vert+k];float w[3];
-   w[0]=v->x*m[0]+v->y*m[3]+v->z*m[6]+m[9];w[1]=v->x*m[1]+v->y*m[4]+v->z*m[7]+m[10];w[2]=v->x*m[2]+v->y*m[5]+v->z*m[8]+m[11];
-   dc_instance_to_view(b,cam,w,view[k]);}
-  for(k=0;k<p->indices;k+=3){
-   const uint16_t *ix=&pkg->indices[p->first_index+k];dc_clip_vertex input[3],poly[DC_RENDER_CLIP_CAP];
-   unsigned j,front=0;int n,fan;float px[DC_RENDER_CLIP_CAP],py[DC_RENDER_CLIP_CAP],pz[DC_RENDER_CLIP_CAP];
-   ++st->triangles;
-   for(j=0;j<3;++j){const float *v=view[ix[j]];front+=v[2]>=DC_SCENE_NEAR;
-    input[j]=(dc_clip_vertex){v[0],v[1],v[2],0,0,pkg->verts[p->first_vert+ix[j]].argb};}
-   n=dc_render_clip_viewport(input,poly);
-   if(n<0){++st->invalid;flush(&queued);return 0;}
-   if(n<3){++st->culled;continue;}
-   if(front<3)++st->near_clipped;
-   for(j=0;j<(unsigned)n;++j){float inv=1.f/poly[j].z;px[j]=320.f+390.f*poly[j].x*inv;py[j]=260.f-390.f*poly[j].y*inv;pz[j]=inv;}
-   for(fan=1;fan<n-1;++fan){
-    unsigned ids[3]={0,(unsigned)fan,(unsigned)fan+1};
-    if((px[fan]-px[0])*(py[fan+1]-py[0])-(py[fan]-py[0])*(px[fan+1]-px[0])==0){++st->culled;continue;}
-    for(j=0;j<3;++j){unsigned q=ids[j];pvr_vertex_t *v=&commands[queued++];
-     v->flags=j==2?PVR_CMD_VERTEX_EOL:PVR_CMD_VERTEX;v->x=px[q];v->y=py[q];v->z=pz[q];
-     v->u=v->v=0;v->argb=poly[q].argb;v->oargb=0;}
-    ++st->submitted;if(queued==96)flush(&queued);
+  first=dc_instance_run(pkg,in,d2,&lod,&count);
+  if(counting){++st->drawn_instances;++st->lod_instances[lod];}
+  for(g=first;g<first+count;++g){
+   const dc_instance_proto *p=&pkg->protos[g];const void *header=NULL;uint32_t k;int textured=0;
+   if(materials&&p->material<material_count&&materials[p->material].header){
+    if(materials[p->material].list!=(uint32_t)list)continue;
+    header=materials[p->material].header;textured=1;
+   }else{
+    if(list!=PVR_LIST_OP_POLY)continue;
+    header=&colour_hdr;
+   }
+   if(header!=current){flush(&queued);pvr_prim(header,sizeof(pvr_poly_hdr_t));current=header;}
+   for(k=0;k<p->verts;++k){const dc_instance_vertex *v=&pkg->verts[p->first_vert+k];float w[3];
+    w[0]=v->x*m[0]+v->y*m[3]+v->z*m[6]+m[9];w[1]=v->x*m[1]+v->y*m[4]+v->z*m[7]+m[10];w[2]=v->x*m[2]+v->y*m[5]+v->z*m[8]+m[11];
+    dc_instance_to_view(b,cam,w,view[k]);}
+   for(k=0;k<p->indices;k+=3){
+    const uint16_t *ix=&pkg->indices[p->first_index+k];dc_clip_vertex input[3],poly[DC_RENDER_CLIP_CAP];
+    unsigned j,front=0;int n,fan;float px[DC_RENDER_CLIP_CAP],py[DC_RENDER_CLIP_CAP],pz[DC_RENDER_CLIP_CAP];
+    ++st->triangles;
+    for(j=0;j<3;++j){const float *v=view[ix[j]];const dc_instance_vertex *s=&pkg->verts[p->first_vert+ix[j]];
+     front+=v[2]>=DC_SCENE_NEAR;
+     input[j]=(dc_clip_vertex){v[0],v[1],v[2],textured?s->u:0,textured?s->v:0,s->argb};}
+    n=dc_render_clip_viewport(input,poly);
+    if(n<0){++st->invalid;flush(&queued);return 0;}
+    if(n<3){++st->culled;continue;}
+    if(front<3)++st->near_clipped;
+    for(j=0;j<(unsigned)n;++j){float inv=1.f/poly[j].z;px[j]=320.f+390.f*poly[j].x*inv;py[j]=260.f-390.f*poly[j].y*inv;pz[j]=inv;}
+    for(fan=1;fan<n-1;++fan){
+     unsigned ids[3]={0,(unsigned)fan,(unsigned)fan+1};
+     if((px[fan]-px[0])*(py[fan+1]-py[0])-(py[fan]-py[0])*(px[fan+1]-px[0])==0){++st->culled;continue;}
+     for(j=0;j<3;++j){unsigned q=ids[j];pvr_vertex_t *v=&commands[queued++];
+      v->flags=j==2?PVR_CMD_VERTEX_EOL:PVR_CMD_VERTEX;v->x=px[q];v->y=py[q];v->z=pz[q];
+      v->u=poly[q].u;v->v=poly[q].v;v->argb=poly[q].argb;v->oargb=0;}
+     ++st->submitted;if(queued==96)flush(&queued);
+    }
    }
   }
  }
  flush(&queued);
  return 1;
+}
+int dc_instance_draw(const dc_instance_package *pkg,const dc_instance_camera *cam,float (*view)[3],dc_instance_stats *st) {
+ return draw(pkg,cam,view,st,PVR_LIST_OP_POLY,NULL,0);
+}
+int dc_instance_draw_list(const dc_instance_package *pkg,const dc_instance_camera *cam,float (*view)[3],dc_instance_stats *st,
+                          int list,const dc_instance_material *materials,uint32_t material_count) {
+ if(!materials||(list!=PVR_LIST_OP_POLY&&list!=PVR_LIST_PT_POLY))return 0;
+ return draw(pkg,cam,view,st,list,materials,material_count);
 }
 #endif

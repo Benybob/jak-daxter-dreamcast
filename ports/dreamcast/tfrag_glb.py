@@ -1,6 +1,7 @@
 """A level GLB cut down to its tfrag (terrain) roots (AI-assisted), ISC.
 
     python tfrag_glb.py LEVEL-background.glb OUT.glb [--roots normal,lowres] [--crop X0,X1,Z0,Z1]
+                        [--probes PACKAGE.dci2]
 
 The decompiler's background GLB has one scene root per draw tree:
 `<level>-tfrag-{normal,trans,lowres,dirt}`, `<level>-tie-N` and `<level>-shrub-N`.
@@ -16,6 +17,13 @@ new index arrays are appended to the binary chunk and the primitives point at
 them. A diagnostic stages one terrain window this way; cropping to every 16 m
 cell the window can touch leaves the window's faces exactly as the whole
 level's package gives them. tfrag nodes carry no transforms (checked).
+
+--probes adds one small triangle per material an instance package uses
+(probe_materials: its geometries' GLB materials, sorted; BLEND ones skipped),
+in a last root far from the level (PROBE_AT), so the sector builder converts
+those materials' textures into the same catalog as the terrain's. The probes
+are the package's last source faces, in that order, which is how
+make_village_fixture.py maps each GLB material to its catalog material.
 """
 import argparse
 import json
@@ -94,9 +102,54 @@ def crop(doc, binary, kept, rect):
     return bytes(out)
 
 
-def cut(blob, roots=('normal', 'lowres'), rect=None):
+PROBE_AT = (100000.0, -1000.0, 100000.0)
+
+
+def probe_materials(package, doc):
+    """The GLB materials an instance package's geometries use, sorted, less BLEND."""
+    if package[:4] != b'DCI2':
+        raise ValueError('probes need a DCI2 package')
+    ng = struct.unpack_from('<I', package, 8)[0]
+    used = sorted({struct.unpack_from('<I', package, 16 + 52 * i + 16)[0] for i in range(ng)})
+    mats = doc.get('materials', [])
+    return [m for m in used if m < len(mats) and mats[m].get('alphaMode', 'OPAQUE') != 'BLEND']
+
+
+def add_probes(doc, binary, materials):
+    """A last scene root with one probe triangle a material; returns the new binary."""
+    out = bytearray(binary)
+    out += b'\0' * (-len(out) % 4)
+
+    def view(data, **extra):
+        nonlocal out
+        out += b'\0' * (-len(out) % 4)
+        doc['bufferViews'].append(dict(buffer=0, byteOffset=len(out), byteLength=len(data), **extra))
+        out += data
+        return len(doc['bufferViews']) - 1
+    x, y, z = PROBE_AT
+    pos = [(x, y, z), (x + 0.5, y, z), (x, y, z + 0.5)]
+    doc['accessors'].append(dict(bufferView=view(struct.pack('<9f', *[c for p in pos for c in p])), componentType=5126,
+                                 count=3, type='VEC3', min=[x, y, z], max=[x + 0.5, y, z + 0.5]))
+    position = len(doc['accessors']) - 1
+    doc['accessors'].append(dict(bufferView=view(struct.pack('<6f', 0, 0, 1, 0, 0, 1)), componentType=5126,
+                                 count=3, type='VEC2'))
+    uv = len(doc['accessors']) - 1
+    doc['accessors'].append(dict(bufferView=view(struct.pack('<3I', 0, 1, 2)), componentType=5125, count=3,
+                                 type='SCALAR'))
+    index = len(doc['accessors']) - 1
+    doc['meshes'].append(dict(name='material-probes', primitives=[
+        dict(attributes=dict(POSITION=position, TEXCOORD_0=uv), indices=index, material=m) for m in materials]))
+    doc['nodes'].append(dict(name='material-probes', mesh=len(doc['meshes']) - 1))
+    doc['scenes'][doc.get('scene', 0)]['nodes'].append(len(doc['nodes']) - 1)
+    out += b'\0' * (-len(out) % 4)
+    doc['buffers'][0]['byteLength'] = len(out)
+    return bytes(out)
+
+
+def cut(blob, roots=('normal', 'lowres'), rect=None, probe_package=None):
     """(new GLB bytes, {root name: kept}) keeping the tfrag roots named by suffix,
-    cropped to rect (x0, x1, z0, z1) when given."""
+    cropped to rect (x0, x1, z0, z1) when given, with material probes for an
+    instance package when given."""
     chunks = read_chunks(blob)
     doc = json.loads(chunks[0][1])
     scene = doc['scenes'][doc.get('scene', 0)]
@@ -115,6 +168,10 @@ def cut(blob, roots=('normal', 'lowres'), rect=None):
         if len(chunks) < 2 or chunks[1][0] != b'BIN\0':
             raise ValueError('GLB without a binary chunk')
         chunks[1] = (b'BIN\0', crop(doc, chunks[1][1], kept, rect))
+    if probe_package is not None:
+        materials = probe_materials(probe_package, doc)
+        chunks[1] = (b'BIN\0', add_probes(doc, chunks[1][1], materials))
+        report['material-probes'] = materials
     text = json.dumps(doc, separators=(',', ':')).encode()
     text += b' ' * (-len(text) % 4)
     body = struct.pack('<I4s', len(text), b'JSON') + text
@@ -129,12 +186,15 @@ def main():
     ap.add_argument('out', type=Path)
     ap.add_argument('--roots', default='normal,lowres')
     ap.add_argument('--crop', help='X0,X1,Z0,Z1 in meters')
+    ap.add_argument('--probes', type=Path, help='a DCI2 instance package whose materials to add')
     a = ap.parse_args()
     rect = tuple(float(v) for v in a.crop.split(',')) if a.crop else None
-    blob, report = cut(a.glb.read_bytes(), tuple(a.roots.split(',')), rect)
+    blob, report = cut(a.glb.read_bytes(), tuple(a.roots.split(',')), rect,
+                       a.probes.read_bytes() if a.probes else None)
+    probes = report.pop('material-probes', None)
     a.out.write_bytes(blob)
     print(json.dumps({'kept': [n for n, k in report.items() if k], 'dropped': [n for n, k in report.items() if not k],
-                      'bytes': len(blob)}, indent=1))
+                      'material_probes': probes, 'bytes': len(blob)}, indent=1))
 
 
 if __name__ == '__main__':

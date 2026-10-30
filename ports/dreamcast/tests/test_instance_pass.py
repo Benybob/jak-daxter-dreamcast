@@ -161,6 +161,12 @@ class InstancePassTest(unittest.TestCase):
         # past the far plane 'post' draws its LOD 2 (LOD 3 missing); 'fence' has one geometry
         self.assertEqual(pick(ctypes.byref(out), out.instances, 1e6, ctypes.byref(lod)), 2)
         self.assertEqual(lod.value, 2)
+        run = self.lib.dc_instance_run
+        run.argtypes = [ctypes.POINTER(Package), ctypes.c_void_p, ctypes.c_float, ctypes.POINTER(ctypes.c_uint),
+                        ctypes.POINTER(ctypes.c_uint)]
+        count = ctypes.c_uint()
+        self.assertEqual(run(ctypes.byref(out), out.instances, 0.0, ctypes.byref(lod), ctypes.byref(count)), 0)
+        self.assertEqual((lod.value, count.value), (0, 1))
 
     def test_flatten_gives_the_dci1_a_dci1_reader_draws(self):
         blob, _ = self.lod_package()
@@ -182,7 +188,8 @@ class InstancePassTest(unittest.TestCase):
             struct.pack_into(fmt, b, at, *values)
             return bytes(b)
         for bad in (patched(lod_at, '<H', 3), patched(lod_at, '<H', 0xffff), patched(lod_at + 2, '<H', 7),
-                    patched(lod_at + 20, '<I', 1)):
+                    patched(lod_at + 20, '<B', 200),       # LOD 0's run past the geometry table
+                    patched(lod_at + 23, '<B', 1)):        # a count on the missing LOD 3
             self.assertEqual(self.load(bad)[0].decode(), 'DCI2 prototype LODs')
         for bad in (patched(lod_at + 8, '<f', math.nan), patched(lod_at + 8, '<f', -1.0),
                     patched(lod_at + 12, '<f', 5.0)):

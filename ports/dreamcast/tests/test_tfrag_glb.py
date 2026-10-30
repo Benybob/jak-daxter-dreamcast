@@ -72,6 +72,21 @@ class TfragGlbTest(unittest.TestCase):
         doc, binary = rs.parse_glb_bytes(blob)
         self.assertGreater(rs.build_package(doc, binary).summary['source_count'], 0)
 
+    def test_probes_add_one_triangle_a_material_as_the_last_sources(self):
+        import struct
+        import tie_lods
+        geoms = [{'name': n, 'material': m, 'verts': [(0.0, 0.0, 0.0, 0.0, 0.0, 0), (1.0, 0.0, 0.0, 0.0, 0.0, 0),
+                                                       (0.0, 1.0, 0.0, 0.0, 0.0, 0)], 'indices': [0, 1, 2]}
+                 for n, m in (('a', 0), ('b', 0))]
+        package = tie_lods.pack(geoms, [((0, 0xffff, 0xffff, 0xffff), (1e18,) * 3, (1, 0, 0, 0))], [])
+        blob, report = tfrag_glb.cut(level(), probe_package=package)
+        self.assertEqual(report['material-probes'], [0])
+        doc, binary = rs.parse_glb_bytes(blob)
+        self.assertEqual(doc['nodes'][doc['scenes'][0]['nodes'][-1]]['name'], 'material-probes')
+        summary = rs.build_package(doc, binary).summary
+        self.assertEqual(summary['source_count'], 3 + 1)
+        self.assertEqual(struct.unpack_from('<I', package, 8)[0], 2)
+
 
 if __name__ == '__main__':
     unittest.main()

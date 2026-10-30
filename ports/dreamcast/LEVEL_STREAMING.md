@@ -327,6 +327,45 @@ submission, so whether it holds on hardware is not measured.
     python build_dreamcast.py --target jak-dc-village.elf --village-assets build/private-village-assets
     python verify_backend.py FLYCAST jak-dc-village.elf --nm NM --output OUT --suite village --tests 34         --capture --dump dc_village_metrics 60
 
+## Textured instances
+
+67 of village1's 116 prototypes mix materials (up to 11), 186 GLB materials in
+all, so a prototype is no longer one geometry: `tie_lods.py --textured` builds
+from the GLB and DGO directly and splits every LOD into one geometry per
+material. A DCI2 prototype's LOD is now a run of consecutive geometries, its
+length in the record's last four bytes (zero in earlier packages, which still
+read as one geometry a LOD). Vertex colours use the sector builder's formula,
+clamp(colour x baseColorFactor), the PS2's x2 compensation included, so an
+instance matches the terrain's brightness under the same texture. The lower
+LODs' dump UVs agree with the GLB's (93 of 93 shared positions on
+`lil-rock-06`), so they keep them; material and colour come from the nearest
+LOD 0 triangle and vertex.
+
+The textures come from the terrain's own pipeline. `tfrag_glb.py --probes`
+adds one small triangle per instance material in a root far from the level, so
+`prepare_render_sectors.py` converts those materials into the same catalog and
+VRAM as the terrain's; the probes are the last source faces, in material order,
+which gives `make_village_fixture.py` each GLB material's catalog material
+(`build/village_material_map.h`). `dc_instance_draw_list` draws each geometry
+with its material's base-pass header in that material's list (opaque or
+punch-through), and untextured where a material has none.
+
+| Village1 | Value |
+| --- | ---: |
+| geometries (per material, all LODs) | 628 |
+| package | 1,340,928 bytes |
+| catalog materials with the probes | 189 (54 terrain), 159 textures, 722 KB |
+| TA vertex buffer | 2 MiB, double-buffered |
+
+In Flycast, 35 of 35 checks, the same 765 instances, LODs and 53,942 instance
+triangles as untextured, all 186 materials textured. Against the untextured
+reference, coverage agrees on 99.18%: the 2,513 pixels only in the reference
+are the alpha-masked holes in palm fronds and leaves that the reference fills.
+
+    python tie_lods.py --textured BACKGROUND.glb DGO DUMP_DIR --out PACKAGE.dci2
+    python tfrag_glb.py BACKGROUND.glb tfrag.glb --crop X0,X1,Z0,Z1 --probes PACKAGE.dci2
+    python make_village_fixture.py SECTORS PACKAGE.dci2 build/private-village-assets --probes BACKGROUND.glb
+
 ## Proposed design
 
 1. **Resident per level: what gameplay needs everywhere.** Code (0.25 MiB),
@@ -354,7 +393,8 @@ submission, so whether it holds on hardware is not measured.
 
 - The 0.3% of TIE and shrub triangles the cuts miss, and textures for the
   package's materials.
-- Textures on the instance pass, and a translucent list for BLEND terrain.
+- A translucent list for BLEND terrain, and single-sided culling for
+  instances whose materials are not double-sided.
 - A native zlib and SH4ZAM in this SDK again, so the village diagnostic can use
   the compressed sectors and the SH4ZAM transform the other targets use.
 - A draw distance chosen against the LOD table above, and the 16 prototypes
