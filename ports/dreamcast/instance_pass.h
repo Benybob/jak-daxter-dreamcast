@@ -15,7 +15,11 @@
  * as DCI1. An
  * instance draws LOD n where n counts the planes p with d2 > p*p (d2 the draw
  * rule's squared horizontal distance from the camera target), stepped down to the
- * nearest geometry that exists. A DCI1 package is one LOD a prototype. */
+ * nearest geometry that exists. A DCI1 package is one LOD a prototype.
+ *
+ * DCI3 is DCI2 with 16-byte vertices: a quantization record a geometry (float
+ * centre x, y, z, scale) after the prototype table, then s16 x, y, z (centre +
+ * q * scale), s16 u, v (1/2048), u16 0, ARGB8888. */
 #ifndef DC_INSTANCE_PASS_H
 #define DC_INSTANCE_PASS_H
 #include <stddef.h>
@@ -23,6 +27,7 @@
 
 typedef struct {uint32_t verts,indices,first_vert,first_index,material;char name[32];} dc_instance_proto;
 typedef struct {float x,y,z,u,v;uint32_t argb;} dc_instance_vertex;
+typedef struct {int16_t x,y,z,u,v;uint16_t pad;uint32_t argb;} dc_instance_cvertex;
 typedef struct {uint16_t proto,pad;float m[12];} dc_instance;
 typedef struct {uint16_t geometry[4];float plane[3];uint8_t count[4];} dc_instance_lod;
 typedef struct {
@@ -30,6 +35,7 @@ typedef struct {
  uint32_t proto_count,instance_count,vert_count,index_count,max_proto_verts;
  const dc_instance_lod *lods;uint32_t lod_count; /* DCI2: lods[lod_count] index protos (the geometries); DCI1: NULL */
  const float (*bounds)[4]; /* NULL from open; dc_instance_bounds' spheres, set by the caller to cull */
+ const dc_instance_cvertex *cverts;const float (*quant)[4]; /* DCI3 (verts NULL); otherwise NULL */
 } dc_instance_package;
 
 /* Validates a whole package in place (4-byte aligned, the caller keeps it alive):
@@ -60,6 +66,8 @@ uint32_t dc_instance_geometry(const dc_instance_package *,const dc_instance *,fl
  * four planes; its triangles still count as visited, the geometry in
  * sphere_culled. */
 void dc_instance_bounds(const dc_instance_package *,float (*out)[4]);
+/* A vertex of a geometry (k counts from its first) as floats, any format. */
+void dc_instance_vertex_get(const dc_instance_package *,uint32_t geometry,uint32_t k,float xyzuv[5],uint32_t *argb);
 /* The sphere test itself: centre in view space, radius in view units. */
 int dc_instance_sphere_outside(const float centre[3],float radius);
 /* As dc_instance_geometry, also giving how many geometries the LOD runs to. */

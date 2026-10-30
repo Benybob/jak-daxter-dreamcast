@@ -107,8 +107,8 @@ PROBE_AT = (100000.0, -1000.0, 100000.0)
 
 def probe_materials(package, doc):
     """The GLB materials an instance package's geometries use, sorted, less BLEND."""
-    if package[:4] != b'DCI2':
-        raise ValueError('probes need a DCI2 package')
+    if package[:4] not in (b'DCI2', b'DCI3'):
+        raise ValueError('probes need a DCI2 or DCI3 package')
     ng = struct.unpack_from('<I', package, 8)[0]
     used = sorted({struct.unpack_from('<I', package, 16 + 52 * i + 16)[0] for i in range(ng)})
     mats = doc.get('materials', [])

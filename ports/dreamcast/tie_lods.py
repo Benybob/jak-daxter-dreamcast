@@ -1,7 +1,7 @@
 """TIE's lower LODs added to a DCI1 package, as DCI2 (AI-assisted), ISC.
 
     python tie_lods.py PACKAGE.dci1 DGO DUMP_DIR --out PACKAGE.dci2 [--json SUMMARY]
-    python tie_lods.py --textured GLB DGO DUMP_DIR --out PACKAGE.dci2 [--json SUMMARY]
+    python tie_lods.py --textured GLB DGO DUMP_DIR --out PACKAGE.dci2 [--json SUMMARY] [--compact]
 
 The GLB holds TIE geometry 0 only. The decompiler emulates all four geometries
 (extract_tie.cpp) and, with its level dump switched on (the `dump_level`
@@ -31,6 +31,12 @@ squared horizontal distance from the camera target; the LOD is the number of
 planes p with d2 > f32(p * p), stepped down to the nearest geometry that exists.
 flatten() resolves that for one camera target and returns the DCI1 a DCI1
 reader (dci1_reference.py) draws.
+
+DCI3 (--compact) is DCI2 with 16-byte vertices: after the prototype table, a
+quantization record a geometry (float centre x, y, z and scale, meters a step),
+then vertices of s16 x, y, z (position = centre + q * scale), s16 u, v (in
+1/2048), u16 0 and ARGB8888. Positions land within half a step of the float
+ones (11 mm on village1's 718 m low-res mountains, under a millimetre on props).
 
 --textured builds from the level's GLB and DGO directly (prototype_geometry.build)
 so each prototype keeps its per-triangle materials: every LOD is split into one
@@ -218,7 +224,7 @@ def lower_lod(tris, uvs, base):
     return out
 
 
-def build_textured(results, instances, lods, planes, factors):
+def build_textured(results, instances, lods, planes, factors, compact=False):
     """DCI2 with per-material geometries from prototype_geometry.build's results
     and instances, a with_uvs dump, the BSP planes and {GLB material: factor}."""
     import instanced_level
@@ -266,23 +272,43 @@ def build_textured(results, instances, lods, planes, factors):
             m = instanced_level.instance_matrix(i)
             rows = [x for row in m[:3] for x in row[:3]] + [x / instanced_level.UNITS_PER_M for x in m[3][:3]]
             inst.append((remap[i['proto']], 0, *rows))
-    blob = pack(geoms, table, inst)
+    blob = pack(geoms, table, inst, compact)
     summary['materials'] = sorted(summary['materials'])
     summary.update(geometries=len(geoms), instances=len(inst), package_bytes=len(blob),
                    vertices=sum(len(g['verts']) for g in geoms), indices=sum(len(g['indices']) for g in geoms))
     return blob, summary
 
 
-def pack(geoms, table, instances):
+UV_STEPS = 2048.0
+
+
+def quantize(verts):
+    """(centre x, y, z, scale) for a geometry's vertices: 16-bit steps over its bounds."""
+    lo = [min(v[k] for v in verts) for k in range(3)]
+    hi = [max(v[k] for v in verts) for k in range(3)]
+    centre = [mf.f32((lo[k] + hi[k]) / 2) for k in range(3)]
+    half = max(max(hi[k] - centre[k], centre[k] - lo[k]) for k in range(3))
+    return (*centre, mf.f32(max(half / 32767.0, 1e-7)))
+
+
+def pack(geoms, table, instances, compact=False):
     """table rows are (geometry per LOD, planes) or (geometry per LOD, planes, extra counts)."""
-    head = struct.pack('<4s3I', b'DCI2', len(table), len(geoms), len(instances))
-    gt, vb, ib = bytearray(), bytearray(), bytearray()
+    head = struct.pack('<4s3I', b'DCI3' if compact else b'DCI2', len(table), len(geoms), len(instances))
+    gt, vb, ib, qt = bytearray(), bytearray(), bytearray(), bytearray()
     nv = ni = 0
     for g in geoms:
         gt += struct.pack('<5I', len(g['verts']), len(g['indices']), nv, ni, g['material'])
         gt += g['name'].encode()[:31].ljust(32, b'\0')
-        for v in g['verts']:
-            vb += struct.pack('<5fI', *v)
+        if compact:
+            q = quantize(g['verts'])
+            qt += struct.pack('<4f', *q)
+            for v in g['verts']:
+                pos = [max(-32767, min(32767, round((v[k] - q[k]) / q[3]))) for k in range(3)]
+                uv = [max(-32767, min(32767, round(v[3 + k] * UV_STEPS))) for k in range(2)]
+                vb += struct.pack('<5hHI', *pos, *uv, 0, v[5])
+        else:
+            for v in g['verts']:
+                vb += struct.pack('<5fI', *v)
         ib += struct.pack(f'<{len(g["indices"])}H', *g['indices'])
         nv += len(g['verts'])
         ni += len(g['indices'])
@@ -290,24 +316,44 @@ def pack(geoms, table, instances):
         ib += b'\0\0'
     pt = b''.join(struct.pack('<4H3f4B', *r[0], *r[1], *(r[2] if len(r) > 2 else (0, 0, 0, 0))) for r in table)
     inst = b''.join(struct.pack('<2H12f', proto, 0, *m) for proto, _, *m in instances)
-    return head + bytes(gt) + pt + bytes(vb) + bytes(ib) + inst
+    return head + bytes(gt) + pt + bytes(qt) + bytes(vb) + bytes(ib) + inst
 
 
 def read_dci2(blob):
+    """(geometries, prototype table, vertex start, index start, instances) of a
+    DCI2 or DCI3 package (DCI3: 16-byte vertices after the quantization table)."""
     magic, np_, ng, ni = struct.unpack_from('<4s3I', blob, 0)
-    if magic != b'DCI2':
+    if magic not in (b'DCI2', b'DCI3'):
         raise ValueError('DCI2 magic')
+    stride = 16 if magic == b'DCI3' else 24
     at = 16
     geoms = [struct.unpack_from('<5I', blob, at + 52 * i) + (blob[at + 52 * i + 20:at + 52 * i + 52],) for i in range(ng)]
     at += 52 * ng
     table = [struct.unpack_from('<4H3f4B', blob, at + 24 * i) for i in range(np_)]
     at += 24 * np_
+    if stride == 16:
+        at += 16 * ng
     nv = sum(g[0] for g in geoms)
     nx = sum(g[1] for g in geoms)
-    vstart, istart = at, at + 24 * nv
+    vstart, istart = at, at + stride * nv
     inst_at = (istart + 2 * nx + 3) & ~3
     instances = [struct.unpack_from('<2H12f', blob, inst_at + 52 * i) for i in range(ni)]
     return geoms, table, vstart, istart, instances
+
+
+def float_vertices(blob):
+    """Every vertex as DCI1's 24-byte float record (DCI3 decoded)."""
+    geoms, _, vstart, istart, _ = read_dci2(blob)
+    if blob[:4] == b'DCI2':
+        return blob[vstart:istart]
+    qstart = vstart - 16 * len(geoms)
+    out = bytearray()
+    for i, g in enumerate(geoms):
+        cx, cy, cz, s = struct.unpack_from('<4f', blob, qstart + 16 * i)
+        for k in range(g[0]):
+            x, y, z, u, v, _, argb = struct.unpack_from('<5hHI', blob, vstart + 16 * (g[2] + k))
+            out += struct.pack('<5fI', cx + x * s, cy + y * s, cz + z * s, u / UV_STEPS, v / UV_STEPS, argb)
+    return bytes(out)
 
 
 def lod_index(row, plane, d2):
@@ -333,7 +379,8 @@ def flatten(blob, tx, tz):
     nx = sum(g[1] for g in geoms)
     head = struct.pack('<4s2I', b'DCI1', len(geoms), len(instances))
     gt = b''.join(struct.pack('<5I', *g[:5]) + g[5] for g in geoms)
-    data = blob[vstart:istart + 2 * nx]
+    stride = 16 if blob[:4] == b'DCI3' else 24
+    data = float_vertices(blob) + blob[istart:istart + 2 * nx]
     if len(data) % 4:
         data += b'\0\0'
     inst = bytearray()
@@ -345,7 +392,7 @@ def flatten(blob, tx, tz):
         for g in range(row[lod], row[lod] + 1 + row[7 + lod]):  # one instance a material
             inst += struct.pack('<2H12f', g, 0, *m)
             count += 1
-    assert nv == (istart - vstart) // 24
+    assert nv == (istart - vstart) // stride
     head = struct.pack('<4s2I', b'DCI1', len(geoms), count)
     return head + gt + data + bytes(inst)
 
@@ -356,6 +403,7 @@ def main():
     ap.add_argument('dgo', type=Path)
     ap.add_argument('dump_dir', type=Path)
     ap.add_argument('--textured', action='store_true')
+    ap.add_argument('--compact', action='store_true', help='DCI3: 16-byte vertices (with --textured)')
     ap.add_argument('--out', type=Path)
     ap.add_argument('--json', type=Path)
     a = ap.parse_args()
@@ -367,7 +415,7 @@ def main():
         doc, _ = rs.read_glb(a.package)
         factors = {i: tuple(m.get('pbrMetallicRoughness', {}).get('baseColorFactor', (1, 1, 1, 1)))
                    for i, m in enumerate(doc.get('materials', []))}
-        blob, summary = build_textured(results, instances, dump_lods(a.dump_dir, True), planes, factors)
+        blob, summary = build_textured(results, instances, dump_lods(a.dump_dir, True), planes, factors, a.compact)
     else:
         blob, summary = build(a.package.read_bytes(), dump_lods(a.dump_dir), planes)
     if a.out:

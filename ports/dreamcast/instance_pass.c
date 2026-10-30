@@ -11,10 +11,10 @@
 static uint32_t rd32(const unsigned char *p){uint32_t v;memcpy(&v,p,4);return v;}
 
 const char *dc_instance_package_open(const void *data,size_t size,dc_instance_package *out) {
- const unsigned char *p=data;dc_instance_package made;uint32_t np,ng,ni,i,nv=0,nx=0,maxv=0;size_t head,at,need;int v2;
+ const unsigned char *p=data;dc_instance_package made;uint32_t np,ng,ni,i,nv=0,nx=0,maxv=0;size_t head,at,need,stride;int v2,v3;
  if(!data||!out||((uintptr_t)data&3))return "DCI1 arguments";
  if(size<12)return "DCI1 magic";
- v2=!memcmp(p,"DCI2",4);
+ v3=!memcmp(p,"DCI3",4);v2=v3||!memcmp(p,"DCI2",4);stride=v3?16u:24u;
  if(!v2&&memcmp(p,"DCI1",4))return "DCI1 magic";
  if(v2&&size<16)return "DCI1 magic";
  np=rd32(p+4);ng=v2?rd32(p+8):np;ni=rd32(p+(v2?12:8));head=v2?16u:12u;
@@ -27,15 +27,22 @@ const char *dc_instance_package_open(const void *data,size_t size,dc_instance_pa
   nv+=vc;nx+=ic;if(vc>maxv)maxv=vc;
   if(nv>(1u<<24)||nx>(1u<<26))return "DCI1 prototype ranges";
  }
- at=head+52u*ng+(v2?24u*np:0u);need=at+24u*(size_t)nv+2u*(size_t)nx;
+ at=head+52u*ng+(v2?24u*np:0u)+(v3?16u*ng:0u);need=at+stride*(size_t)nv+2u*(size_t)nx;
  need=(need+3u)&~(size_t)3u;/* indices pad to 4 bytes */
  if(size<need||size-need!=52u*(size_t)ni)return "DCI1 size";
  made.protos=(const dc_instance_proto *)(p+head);
  made.lods=v2?(const dc_instance_lod *)(p+head+52u*ng):NULL;made.lod_count=v2?np:0;made.bounds=NULL;
- made.verts=(const dc_instance_vertex *)(p+at);
- made.indices=(const uint16_t *)(p+at+24u*nv);
+ made.verts=v3?NULL:(const dc_instance_vertex *)(p+at);
+ made.cverts=v3?(const dc_instance_cvertex *)(p+at):NULL;
+ made.quant=v3?(const float (*)[4])(p+at-16u*ng):NULL;
+ made.indices=(const uint16_t *)(p+at+stride*nv);
  made.instances=(const dc_instance *)(p+need);
- for(i=0;i<nv;++i){const dc_instance_vertex *v=&made.verts[i];
+ if(v3){
+  for(i=0;i<ng;++i){const float *q=made.quant[i];
+   if(!isfinite(q[0])||!isfinite(q[1])||!isfinite(q[2])||fabsf(q[0])>1e6f||fabsf(q[1])>1e6f||fabsf(q[2])>1e6f
+      ||!(q[3]>0)||q[3]>100.f)return "DCI3 quantization";}
+  for(i=0;i<nv;++i)if(made.cverts[i].pad)return "DCI1 vertex value";
+ }else for(i=0;i<nv;++i){const dc_instance_vertex *v=&made.verts[i];
   if(!isfinite(v->x)||!isfinite(v->y)||!isfinite(v->z)||!isfinite(v->u)||!isfinite(v->v))return "DCI1 vertex value";}
  for(i=0;i<ng;++i){const dc_instance_proto *q=&made.protos[i];uint32_t k;
   for(k=0;k<q->indices;++k)if(made.indices[q->first_index+k]>=q->verts)return "DCI1 index range";}
@@ -53,15 +60,24 @@ const char *dc_instance_package_open(const void *data,size_t size,dc_instance_pa
  return NULL;
 }
 
+void dc_instance_vertex_get(const dc_instance_package *pkg,uint32_t g,uint32_t k,float o[5],uint32_t *argb) {
+ const dc_instance_proto *p=&pkg->protos[g];
+ if(pkg->cverts){const dc_instance_cvertex *v=&pkg->cverts[p->first_vert+k];const float *q=pkg->quant[g];
+  o[0]=q[0]+v->x*q[3];o[1]=q[1]+v->y*q[3];o[2]=q[2]+v->z*q[3];o[3]=v->u*(1.f/2048.f);o[4]=v->v*(1.f/2048.f);*argb=v->argb;}
+ else{const dc_instance_vertex *v=&pkg->verts[p->first_vert+k];
+  o[0]=v->x;o[1]=v->y;o[2]=v->z;o[3]=v->u;o[4]=v->v;*argb=v->argb;}
+}
+
 void dc_instance_bounds(const dc_instance_package *pkg,float (*out)[4]) {
- uint32_t g,k;
+ uint32_t g,k,argb;
  for(g=0;g<pkg->proto_count;++g){
-  const dc_instance_proto *p=&pkg->protos[g];const dc_instance_vertex *v=&pkg->verts[p->first_vert];
-  float lo[3]={v->x,v->y,v->z},hi[3]={v->x,v->y,v->z},c[3],r2=0;
-  for(k=1;k<p->verts;++k){const float q[3]={v[k].x,v[k].y,v[k].z};unsigned a;
-   for(a=0;a<3;++a){if(q[a]<lo[a])lo[a]=q[a];if(q[a]>hi[a])hi[a]=q[a];}}
+  const dc_instance_proto *p=&pkg->protos[g];float v[5],lo[3],hi[3],c[3],r2=0;
+  dc_instance_vertex_get(pkg,g,0,v,&argb);memcpy(lo,v,sizeof lo);memcpy(hi,v,sizeof hi);
+  for(k=1;k<p->verts;++k){unsigned a;dc_instance_vertex_get(pkg,g,k,v,&argb);
+   for(a=0;a<3;++a){if(v[a]<lo[a])lo[a]=v[a];if(v[a]>hi[a])hi[a]=v[a];}}
   for(k=0;k<3;++k)c[k]=.5f*(lo[k]+hi[k]);
-  for(k=0;k<p->verts;++k){float dx=v[k].x-c[0],dy=v[k].y-c[1],dz=v[k].z-c[2],d=dx*dx+dy*dy+dz*dz;if(d>r2)r2=d;}
+  for(k=0;k<p->verts;++k){float dx,dy,dz,d;dc_instance_vertex_get(pkg,g,k,v,&argb);
+   dx=v[0]-c[0];dy=v[1]-c[1];dz=v[2]-c[2];d=dx*dx+dy*dy+dz*dz;if(d>r2)r2=d;}
   out[g][0]=c[0];out[g][1]=c[1];out[g][2]=c[2];out[g][3]=sqrtf(r2)*1.0001f+1e-4f;
  }
 }
@@ -130,7 +146,8 @@ static int draw(const dc_instance_package *pkg,const dc_instance_camera *cam,flo
   if(d2>cam->draw_distance*cam->draw_distance)continue;
   first=dc_instance_run(pkg,in,d2,&lod,&count);
   if(counting){++st->drawn_instances;++st->lod_instances[lod];}
-  {static matrix_t mv __attribute__((aligned(32)));compose(b,cam,m,mv);mat_load(&mv);}
+  static matrix_t mv __attribute__((aligned(32)));compose(b,cam,m,mv);
+  if(!pkg->quant)mat_load(&mv);
   for(g=first;g<first+count;++g){
    const dc_instance_proto *p=&pkg->protos[g];const void *header=NULL;uint32_t k;int textured=0,single=0;
    if(materials&&p->material<material_count&&materials[p->material].header){
@@ -148,16 +165,27 @@ static int draw(const dc_instance_package *pkg,const dc_instance_camera *cam,flo
     if(r2>r0){r0=r2;}
     if(dc_instance_sphere_outside(c,s[3]*sqrtf(r0)*0.25f/* DC_RENDER_WORLD_SCALE */)){st->triangles+=p->indices/3u;++st->sphere_culled;continue;}}
    if(header!=current){flush(&queued);pvr_prim(header,sizeof(pvr_poly_hdr_t));current=header;}
-   /* every vertex through XMTRX: one ftrv each */
+   /* every vertex through XMTRX: one ftrv each. DCI3 folds the geometry's
+    * centre and scale into the matrix, leaving the 16-bit steps to convert. */
+   if(pkg->quant){static matrix_t mq __attribute__((aligned(32)));const float *q=pkg->quant[g];unsigned c,r;
+    for(c=0;c<3;++c)for(r=0;r<4;++r)mq[c][r]=mv[c][r]*q[3];
+    for(r=0;r<4;++r)mq[3][r]=mv[0][r]*q[0]+mv[1][r]*q[1]+mv[2][r]*q[2]+mv[3][r];
+    mat_load(&mq);
+    for(k=0;k<p->verts;++k){const dc_instance_cvertex *v=&pkg->cverts[p->first_vert+k];float x=v->x,y=v->y,z=v->z;
+     mat_trans_single3_nodiv(x,y,z);view[k][0]=x;view[k][1]=y;view[k][2]=z;}
+   }else
    for(k=0;k<p->verts;++k){const dc_instance_vertex *v=&pkg->verts[p->first_vert+k];float x=v->x,y=v->y,z=v->z;
     mat_trans_single3_nodiv(x,y,z);view[k][0]=x;view[k][1]=y;view[k][2]=z;}
    for(k=0;k<p->indices;k+=3){
     const uint16_t *ix=&pkg->indices[p->first_index+k];dc_clip_vertex input[3],poly[DC_RENDER_CLIP_CAP];
     unsigned j,front=0;int n,fan;float px[DC_RENDER_CLIP_CAP],py[DC_RENDER_CLIP_CAP],pz[DC_RENDER_CLIP_CAP];
     ++st->triangles;
-    for(j=0;j<3;++j){const float *v=view[ix[j]];const dc_instance_vertex *s=&pkg->verts[p->first_vert+ix[j]];
+    for(j=0;j<3;++j){const float *v=view[ix[j]];float u=0,w=0;uint32_t argb;
+     if(pkg->cverts){const dc_instance_cvertex *s=&pkg->cverts[p->first_vert+ix[j]];argb=s->argb;
+      if(textured){u=s->u*(1.f/2048.f);w=s->v*(1.f/2048.f);}}
+     else{const dc_instance_vertex *s=&pkg->verts[p->first_vert+ix[j]];argb=s->argb;if(textured){u=s->u;w=s->v;}}
      front+=v[2]>=DC_SCENE_NEAR;
-     input[j]=(dc_clip_vertex){v[0],v[1],v[2],textured?s->u:0,textured?s->v:0,s->argb};}
+     input[j]=(dc_clip_vertex){v[0],v[1],v[2],u,w,argb};}
     /* wholly inside the near plane and the viewport, which dc_render_clip_viewport
      * returns unchanged: no clip call. The planes are pulled in by 0.1 pixel so
      * float rounding cannot accept what the clipper's exact test would cut. */

@@ -490,9 +490,18 @@ leaves free (above). Where it can shrink:
 
   One 28 m window's sectors need between 1.31 and 1.66 MB; below that the
   cache mostly misses and retargeting costs nearly as much as without it.
-- **The package's vertices.** 24 bytes now; 16-bit positions within a
-  geometry's bounds and 16-bit UVs would halve them (about 0.37 MB).
-  Not yet done.
+- **The package's vertices: done, DCI3.** `tie_lods.py --compact` writes
+  16-byte vertices: 16-bit positions in steps of a geometry's own bounds (a
+  quantization record a geometry: float centre and scale), UVs in 1/2048
+  (village1's reach exactly 8.0), ARGB unchanged. The draw folds each
+  geometry's centre and scale into the XMTRX matrix, so a vertex costs only
+  the integer-to-float conversion; `flatten` decodes to DCI1 for the reference
+  renderer. Village1's package goes from 1.34 MB to 1.10 MB (vertices 742 KB to
+  495 KB, 11 mm steps on the 718 m low-res mountains, under a millimetre on
+  props). On the beach path: 83 of 83 checks, the same 742,871 instance
+  triangles sent, heap in use 237 KB lower, the last frame 1,646 pixels off the
+  float package's and 97.66% against the reference as before; the instance
+  pass 2% slower in Flycast (a matrix load a geometry).
 
 The 16 prototypes whose cut has more triangles than the dump's geometry 0 are
 not simple duplicates: on the warpgate the extras are its `-envmap` materials

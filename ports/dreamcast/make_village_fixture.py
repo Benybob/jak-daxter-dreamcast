@@ -98,7 +98,7 @@ def reference(sectors, package, half=14.0, target=None):
     if target is None:
         target = mf.camera(*mf.read(blob))
     tx, tz = target[0], target[2]
-    flat = tie_lods.flatten(blob, tx, tz) if blob[:4] == b'DCI2' else blob
+    flat = tie_lods.flatten(blob, tx, tz) if blob[:4] in (b'DCI2', b'DCI3') else blob
     geoms, instances = tie_lods.read_dci1(flat)
     faces = window_faces(sectors, (tx - half, tx + half, tz - half, tz + half))
     verts = [(v[0] - tx, v[1], v[2] - tz, v[3], v[4], v[8]) for f in faces for v in f['vertices']]

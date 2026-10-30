@@ -22,7 +22,8 @@ def mf_f32(x):
 class Package(ctypes.Structure):
     _fields_ = [(n, ctypes.c_void_p) for n in ('protos', 'verts', 'indices', 'instances')] + \
                [(n, ctypes.c_uint32) for n in ('proto_count', 'instance_count', 'vert_count', 'index_count',
-                                                'max_proto_verts')] +                [('lods', ctypes.c_void_p), ('lod_count', ctypes.c_uint32), ('bounds', ctypes.c_void_p)]
+                                                'max_proto_verts')] +                [('lods', ctypes.c_void_p), ('lod_count', ctypes.c_uint32), ('bounds', ctypes.c_void_p),
+                ('cverts', ctypes.c_void_p), ('quant', ctypes.c_void_p)]
 
 
 class Camera(ctypes.Structure):
@@ -98,7 +99,7 @@ class InstancePassTest(unittest.TestCase):
             struct.pack_into(fmt, b, at, *values)
             return bytes(b)
         cases = {
-            'DCI1 magic': b'DCI3' + blob[4:],
+            'DCI1 magic': b'DCI9' + blob[4:],
             'DCI1 counts': patched(4, '<I', 0),
             'DCI1 size': blob[:-1],
             'DCI1 prototype ranges': patched(12 + 52 + 8, '<I', 2),        # second prototype's first vertex
@@ -238,6 +239,45 @@ class InstancePassTest(unittest.TestCase):
                 self.assertFalse(0 <= x <= 640 and 0 <= y <= 480, (c, r, p))
         self.assertGreater(culled, 500)
         self.assertFalse(f((ctypes.c_float * 3)(0.0, 0.0, 10.0), 1.0))  # dead ahead stays
+
+    def test_dci3_compact_vertices_decode_within_half_a_step(self):
+        blob2, _ = self.lod_package()
+        geoms, table, vstart, _, instances = tie_lods.read_dci2(blob2)
+        floats = tie_lods.float_vertices(blob2)
+        full = []
+        for g in geoms:
+            verts = [struct.unpack_from('<5fI', floats, 24 * (g[2] + k)) for k in range(g[0])]
+            idx = list(struct.unpack_from(f'<{g[1]}H', blob2, vstart + 24 * sum(x[0] for x in geoms) + 2 * g[3]))
+            full.append({'name': g[5].split(b'\0')[0].decode(), 'material': g[4], 'verts': verts, 'indices': idx})
+        rows = [(r[:4], r[4:7], r[7:]) for r in table]
+        blob3 = tie_lods.pack(full, rows, instances, compact=True)
+        self.assertEqual(blob3[:4], b'DCI3')
+        self.assertLess(len(blob3), len(blob2))
+        err, out, buf = self.load(blob3)
+        self.assertIsNone(err)
+        self.assertIsNone(out.verts)
+        get = self.lib.dc_instance_vertex_get
+        get.argtypes = [ctypes.POINTER(Package), ctypes.c_uint32, ctypes.c_uint32, ctypes.c_float * 5,
+                        ctypes.POINTER(ctypes.c_uint32)]
+        o, argb = (ctypes.c_float * 5)(), ctypes.c_uint32()
+        for gi, g in enumerate(full):
+            scale = tie_lods.quantize(g['verts'])[3]
+            for k, v in enumerate(g['verts']):
+                get(ctypes.byref(out), gi, k, o, ctypes.byref(argb))
+                for a in range(3):
+                    self.assertLessEqual(abs(o[a] - v[a]), scale * 0.5 + 1e-6)
+                self.assertEqual((round(o[3] * 2048), round(o[4] * 2048), argb.value),
+                                 (round(v[3] * 2048), round(v[4] * 2048), v[5]))
+        # flattened, DCI3 and DCI2 give the same instances and vertices within the steps
+        flat3, flat2 = tie_lods.flatten(blob3, -20.0, 0.0), tie_lods.flatten(blob2, -20.0, 0.0)
+        self.assertEqual(len(flat3), len(flat2))
+        quant_at = 16 + 52 * len(full) + 24 * len(rows)
+        for name, at, fmt, value in (('DCI3 quantization', quant_at + 12, '<f', 0.0),
+                                     ('DCI3 quantization', quant_at, '<f', math.inf),
+                                     ('DCI1 vertex value', quant_at + 16 * len(full) + 10, '<H', 1)):
+            bad = bytearray(blob3)
+            struct.pack_into(fmt, bad, at, value)
+            self.assertEqual(self.load(bytes(bad))[0].decode(), name)
 
     def test_camera_matches_render_world_view(self):
         # render_world_view.c's columns, applied to (point - target), then z + distance, scaled 0.25.
