@@ -2,6 +2,7 @@
 #ifndef DC_RENDER_BLOCK_CACHE_H
 #define DC_RENDER_BLOCK_CACHE_H
 #include "render_cache.h"
+#include "render_draw_window.h"
 #define DC_RENDER_BLOCK_CACHE_MAX (2u*1024u*1024u)
 enum { DC_RENDER_BLOCK_CACHE_SLOTS=128 };
 typedef struct {void *state;} dc_render_block_cache;
@@ -30,6 +31,14 @@ const char *dc_render_block_cache_make(const dc_render_catalog *,const char *roo
  * build a retained block only leaves it uncached. */
 const char *dc_render_block_cache_make_draw(const dc_render_catalog *,const char *root,
     const char *source_sha,uint32_t budget,dc_render_block_cache *);
+/* Build window for query from a make_draw owner's blocks, reading any missing
+ * .drx (there is no .drs fallback here). Faces come out in source-ID order, each
+ * once; replicas must match byte for byte and a global face may have none. Every
+ * block is held resident for the build, so budget must cover them together. All
+ * checks precede the first write: failure leaves the window as it was. A query
+ * inside the window's coverage changes nothing. One hit a resident block. */
+const char *dc_render_block_cache_window(dc_render_block_cache *,const dc_render_catalog *,
+    const dc_render_query *,dc_render_draw_window *);
 dc_render_block_source dc_render_block_cache_source(dc_render_block_cache *);
 void dc_render_block_cache_measure(const dc_render_block_cache *,dc_render_block_cache_stats *);
 /* One serial owner, no outstanding borrowed block when freeing. Idempotent. */

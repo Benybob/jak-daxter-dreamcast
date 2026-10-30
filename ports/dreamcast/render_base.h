@@ -3,6 +3,7 @@
 #define DC_RENDER_BASE_H
 #include "render_gpu.h"
 #include "render_world_view.h"
+#include "render_draw_window.h"
 typedef struct {uint32_t flags,list;} dc_render_base_material;
 typedef struct {
  pvr_poly_hdr_t *headers;dc_render_base_material *materials;
@@ -12,6 +13,7 @@ typedef struct {
 typedef struct {
  dc_render_vertex *vertices;uint16_t *order;
  const unsigned char *faces;
+ const dc_render_draw_window *draw; /* in place of vertices, order and faces */
  uint32_t first[257],count,materials,catalog_crc,ready,valid;
 } dc_render_base_frame;
 typedef struct {uint32_t faces,clipped,culled,triangles,invalid,near_clipped;} dc_render_base_stats;
@@ -30,6 +32,9 @@ void dc_render_base_bank_free(dc_render_base_bank *);
  * Failed construction frees only candidate CPU allocations. */
 const char *dc_render_base_frame_make(const dc_render_window *,const dc_render_base_bank *,dc_render_base_frame *);
 void dc_render_base_frame_free(dc_render_base_frame *);
+/* The same over an indexed window, which owns everything the frame borrows; its
+ * view cache comes from dc_render_draw_window_prepare, after which frame is ready. */
+const char *dc_render_base_frame_make_draw(dc_render_draw_window *,const dc_render_base_bank *,dc_render_base_frame *);
 /* Failure invalidates readiness; draw cannot silently use a stale camera. */
 int dc_render_base_prepare(dc_render_base_frame *,const dc_render_window *,const dc_render_camera *);
 /* Inside the matching OP/PT PVR list. No allocations/yields/callbacks; stats

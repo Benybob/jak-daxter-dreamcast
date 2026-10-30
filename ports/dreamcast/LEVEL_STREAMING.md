@@ -601,6 +601,28 @@ leaves free (above). Where it can shrink:
   (317,110 faces, 13.09 MB) and robocave at 6 m (247,405 faces, 10.10 MB).
   Finalboss passes the 4,096-face global cap at every cell size down to 4 m, so its
   faces are too large for any sector and it needs a different split.
+- **Indexed windows: done, the renderer fits on live memory.**
+  `dc_render_block_cache_window` (with `-DFLY_DRAW_WINDOW` and `.drx` files) builds
+  a `dc_render_draw_window`: 12-byte faces over shared 24-byte vertices, merged by
+  source ID from the cached blocks, which stay resident for the build. Replicas are
+  compared byte for byte, and a counting pass precedes any write, so a failure leaves
+  the last window. Its buffers are allocated once, which is what the rejected
+  experiments above lacked. The view cache is one entry per shared vertex.
+
+  | Window | Retarget time | Longest frame | Heap in use | Heap arena |
+  | --- | ---: | ---: | ---: | ---: |
+  | 116-byte faces, `.drx`, 512 KB | 2.33 s | 0.75 s | 2.69 MB | 3.35 MB |
+  | Indexed, general caps (8,192 faces, 12,288 vertices) | 1.59 s | 0.70 s | 3.20 MB | 3.31 MB |
+  | Indexed, path caps (7,168 faces, 7,296 vertices) | 1.59 s | 0.70 s | 2.91 MB | 3.02 MB |
+
+  84 of 84 checks, and the last frame hashes the same as the old pipeline's, so the
+  terrain is pixel-identical. At most 7,129 vertices for 7,117 faces. In use at the end
+  of the path is below the 2.94 MB the GOAL arena leaves free, and the arena, the
+  only bound here on the peak, is 80 KB over it; peak live bytes are not measured.
+  The cost is that caps are fixed per level: village3's worst window is about 1.6
+  times the size, so its buffers must be too. The cache budget
+  has a floor as well: below 512 KB this path's largest window is refused
+  (`block cache window residency`), by design, rather than evicted mid-build.
 - **The package's vertices: done, DCI3.** `tie_lods.py --compact` writes
   16-byte vertices: 16-bit positions in steps of a geometry's own bounds (a
   quantization record a geometry: float centre and scale), UVs in 1/2048

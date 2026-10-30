@@ -25,6 +25,11 @@ class BlockCacheTest(unittest.TestCase):
             ('dc_rbc_window',[ctypes.c_void_p,ctypes.POINTER(ctypes.c_double)],ctypes.c_char_p),
             ('dc_rbc_stats',[ctypes.c_void_p,ctypes.POINTER(ctypes.c_uint32)],None),
             ('dc_rbc_copy',[ctypes.c_void_p,ctypes.c_void_p,ctypes.c_uint32],ctypes.c_uint32),
+            ('dc_rbc_dw_make',[ctypes.c_void_p]+[ctypes.c_uint32]*3,ctypes.c_char_p),
+            ('dc_rbc_dw_build',[ctypes.c_void_p,ctypes.POINTER(ctypes.c_double)],ctypes.c_char_p),
+            ('dc_rbc_dw_count',[ctypes.c_void_p],ctypes.c_uint32),
+            ('dc_rbc_dw_vertices',[ctypes.c_void_p],ctypes.c_uint32),
+            ('dc_rbc_dw_copy',[ctypes.c_void_p,ctypes.c_void_p],None),
             ('dc_rbc_guards',[ctypes.c_void_p],ctypes.c_int)]:
             f=getattr(cls.lib,name);f.argtypes=args;f.restype=ret
     def setUp(self):
@@ -107,6 +112,69 @@ class BlockCacheTest(unittest.TestCase):
             with self.subTest(faults=faults):
                 c=self.draw_owner(root);self.lib.dc_rbc_arm(*faults);self.load(c,q);self.lib.dc_rbc_arm(0,0,0)
                 self.assertIsNone(self.load(c,q));self.assertEqual(self.payload(c),self.stripped(p,q))
+                self.lib.dc_rbc_close(c);self.owners.remove(c);self.assertEqual(self.stats(None)[13:15],[0,0])
+    def drawn(self,c,q):
+        args=(ctypes.c_double*4)(q[0],q[2],q[1],q[3]);error=self.lib.dc_rbc_dw_build(c,args);self.assertEqual(self.stats(c)[14],0)
+        return error
+    def drawn_payload(self,c):
+        n=self.lib.dc_rbc_dw_count(c);out=(ctypes.c_ubyte*(n*116+1))();self.lib.dc_rbc_dw_copy(c,out);return bytes(out)[:n*116]
+    def window_owner(self,root,budget=2*1024*1024,caps=(8192,4096,8192)):
+        c=self.draw_owner(root,budget);self.assertIsNone(self.lib.dc_rbc_dw_make(c,*caps));return c
+    def spread(self):
+        xyz=[]
+        for x in range(0,64,4):
+            for z in (0,5,30):xyz+=[(x+.2,0,z+.2),(x+1,0,z+.2),(x+.2,1,z+1)]
+        xyz+=[(14,0,1),(18,0,1),(18,1,18)]  # crosses cells: replicated
+        p,root=self.packet(xyz);indexed.write_draw_files(root,remove_sectors=True);return p,root
+    def test_indexed_windows_match_the_assembled_faces(self):
+        p,root=self.spread();c=self.window_owner(root)
+        for q in ((0,2,0,2),(12,20,0,20),(0,36,0,36),(30,60,0,6),(100,101,100,101)):
+            with self.subTest(q=q):
+                self.assertIsNone(self.drawn(c,q));self.assertEqual(self.drawn_payload(c),self.stripped(p,q))
+    def test_indexed_windows_share_vertices(self):
+        tris=[(.2,0,.2),(1,0,.2),(1,1,.2),(.2,0,.2),(1,1,.2),(.2,1,.2)]
+        p,root=self.packet(tris);indexed.write_draw_files(root,remove_sectors=True);c=self.window_owner(root);q=(0,2,0,2)
+        self.assertIsNone(self.drawn(c,q));self.assertEqual(self.lib.dc_rbc_dw_count(c),2)
+        self.assertLessEqual(self.lib.dc_rbc_dw_vertices(c),6);self.assertEqual(self.drawn_payload(c),self.stripped(p,q))
+    def test_a_covered_query_keeps_the_window(self):
+        p,root=self.spread();c=self.window_owner(root);self.assertIsNone(self.drawn(c,(0,32,0,32)));hits=self.stats(c)[0]
+        self.assertIsNone(self.drawn(c,(1,2,1,2)));self.assertEqual(self.stats(c)[0],hits)
+        self.assertEqual(self.drawn_payload(c),self.stripped(p,(0,32,0,32)))
+    def test_every_capacity_failure_leaves_the_window(self):
+        p,root=self.spread();q=(0,36,0,36)
+        for caps,reason in (((2,4096,8192),b'render cache face cap'),((8192,3,8192),b'draw window vertex capacity'),((8192,4096,2),b'draw window remap capacity')):
+            with self.subTest(reason=reason):
+                c=self.window_owner(root,caps=caps);error=self.drawn(c,q);self.assertIsNotNone(error);self.assertIn(reason.split()[-1],error);self.assertEqual(self.lib.dc_rbc_dw_count(c),0)
+    def test_a_failed_build_keeps_the_last_window(self):
+        p,root=self.spread();c=self.window_owner(root);a=(0,2,0,2);self.assertIsNone(self.drawn(c,a));before=self.drawn_payload(c)
+        for f in root.rglob('*.drx'):
+            if f.name!='global.drx' and f.name!='0_0.drx':f.write_bytes(b'junk')
+        self.assertIsNotNone(self.drawn(c,(20,36,0,36)));self.assertEqual(self.drawn_payload(c),before);self.assertEqual(self.stats(c)[5],0)
+    def test_a_budget_below_the_window_is_refused_not_evicted_mid_build(self):
+        p,root=self.spread();c=self.window_owner(root,300);error=self.drawn(c,(0,36,0,36))
+        self.assertEqual(error,b'block cache window residency');self.assertLessEqual(self.stats(c)[6],300)
+    def test_mismatched_replicas_are_refused(self):
+        p,root=self.spread()
+        crossing=[f for f in sorted((root/'sectors').glob('*.drx'))]
+        from zlib import crc32
+        import struct
+        done=False
+        ids={}
+        for f in crossing:
+            blob=f.read_bytes();nv,nf=struct.unpack_from('<II',blob,4)
+            for i in range(nf):
+                sid=struct.unpack_from('<I',blob,12+nv*24+i*16)[0]
+                ids.setdefault(sid,[]).append((f,i,nv))
+        f,i,nv=next(v for v in ids.values() if len(v)>1)[0]
+        raw=bytearray(f.read_bytes());a=struct.unpack_from('<H',raw,12+nv*24+i*16+8)[0]
+        raw[12+a*24+20]^=1;struct.pack_into('<I',raw,len(raw)-4,crc32(raw[:-4]));f.write_bytes(raw)
+        c=self.window_owner(root);self.assertIn(b'replica',self.drawn(c,(0,36,0,36)))
+    def test_every_window_allocation_and_io_failure_is_clean(self):
+        p,root=self.spread();q=(0,20,0,20);want=self.stripped(p,q)
+        for faults in [(a,0,0) for a in range(1,20)]+[(0,o,0) for o in range(1,10)]+[(0,0,k) for k in range(1,10)]:
+            with self.subTest(faults=faults):
+                c=self.window_owner(root);self.lib.dc_rbc_arm(*faults);self.drawn(c,q);self.lib.dc_rbc_arm(0,0,0)
+                self.assertIsNone(self.drawn(c,q));self.assertEqual(self.drawn_payload(c),want)
                 self.lib.dc_rbc_close(c);self.owners.remove(c);self.assertEqual(self.stats(None)[13:15],[0,0])
     def test_draw_retention_counts_drx2_bytes_exactly(self):
         p,root=self.packet([(.2,0,.2),(1,0,.2),(.2,1,1)]);c=self.draw_owner(root)

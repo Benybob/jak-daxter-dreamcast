@@ -156,6 +156,10 @@ typedef struct {
                 const unsigned char **ids,uint32_t *stride);
     void (*face)(void *,uint32_t index,unsigned char *out);
 } dc_render_block_source;
+/* The entries a query's window reads, with the retarget's own checks: global
+ * into *global, locals into locals (capacity DC_RENDER_CACHE_LOCAL_CAP). */
+const char *dc_render_window_entries(const dc_render_catalog *,const dc_render_query *,
+    dc_render_entry *global,dc_render_entry *locals,uint32_t *count);
 const char *dc_render_window_retarget_source(const dc_render_catalog *,const char *,
     const char *,const dc_render_query *,const dc_render_block_source *,dc_render_window *);
 

@@ -439,6 +439,33 @@ static const char *cache_select_locals(dc_render_job *job) {
     return NULL;
 }
 
+const char *dc_render_window_entries(const dc_render_catalog *catalog, const dc_render_query *query,
+                                     dc_render_entry *global, dc_render_entry *locals, uint32_t *count) {
+    uint32_t index, found = 0;
+    double cell;
+    if (!catalog || !catalog->storage || !query || !global || !locals || !count) return DC_RENDER_CACHE_ERR_ARGUMENTS;
+    if (!cache_query_ok(query)) return DC_RENDER_CACHE_ERR_QUERY;
+    if (!cache_finite_cell(catalog->cell_size)) return DC_RENDER_CACHE_ERR_ARGUMENTS;
+    if (!dc_render_global_get(catalog, global)) return DC_RENDER_CACHE_ERR_ARGUMENTS;
+    cell = (double)catalog->cell_size;
+    for (index = 0; index < catalog->sector_count; ++index) {
+        dc_render_entry entry;
+        double x0, x1, z0, z1;
+        const char *error;
+        if (!dc_render_entry_get(catalog, index, &entry)) return DC_RENDER_CACHE_ERR_ARGUMENTS;
+        error = cache_cell_bounds(entry.ix, entry.iz, cell, &x0, &x1, &z0, &z1);
+        if (error) return error;
+        if (!cache_rect_touches(x0, x1, z0, z1, query)) continue;
+        if (found >= DC_RENDER_CACHE_LOCAL_CAP) return DC_RENDER_CACHE_ERR_COVERAGE;
+        locals[found++] = entry;
+    }
+    if (cache_unique_axis(locals, found, 0) > DC_RENDER_CACHE_AXIS_CAP ||
+        cache_unique_axis(locals, found, 1) > DC_RENDER_CACHE_AXIS_CAP)
+        return DC_RENDER_CACHE_ERR_COVERAGE;
+    *count = found;
+    return NULL;
+}
+
 static int cache_batch_find(const uint32_t *batch, uint32_t count, uint32_t id) {
     uint32_t lo = 0, hi = count;
     while (lo < hi) {

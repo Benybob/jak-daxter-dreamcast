@@ -20,6 +20,16 @@
 #define FLY_CACHE_MAKE dc_render_block_cache_make
 #define FLY_WINDOW_CRC(e) ((e)->crc)
 #endif
+/* FLY_DRAW_WINDOW, with FLY_DRAW_CACHE and .drx files: fixed indexed windows. */
+#ifndef FLY_WINDOW_FACES
+#define FLY_WINDOW_FACES DC_RENDER_WINDOW_CAP
+#endif
+#ifndef FLY_WINDOW_VERTICES
+#define FLY_WINDOW_VERTICES 12288u
+#endif
+#ifndef FLY_WINDOW_REMAP
+#define FLY_WINDOW_REMAP 32768u
+#endif
 #ifndef FLY_CACHE_BUDGET
 #define FLY_CACHE_BUDGET DC_RENDER_BLOCK_CACHE_MAX
 #endif
@@ -31,7 +41,7 @@ typedef struct {uint32_t frames,retargets,max_faces,max_instance_triangles,insta
  max_frame_us,total_us,last_frame,textured_materials,
  retarget_us,frame_make_us,prepare_us,terrain_draw_us,instance_draw_us,reused,
  cache_hits,cache_misses,cache_peak_bytes,cache_evictions,sphere_culled,translucent_triangles,last_translucent,
- back_faces,submitted_total,image_bytes,heap_arena,heap_in_use,heap_free_top;} fly_metrics;
+ back_faces,submitted_total,image_bytes,heap_arena,heap_in_use,heap_free_top,max_vertices;} fly_metrics;
 volatile fly_metrics dc_fly_metrics;
 static int check(int ok,const char *why) {
  ++dc_backend.total;if(ok){++dc_backend.passed;return 1;}
@@ -43,6 +53,9 @@ int main(void) {
  dc_render_catalog catalog={0};dc_render_gpu gpu={0};dc_render_window window={0};
  dc_render_base_bank bank={0};dc_render_base_frame frame={0};
  dc_render_block_cache cache={0};dc_render_block_source source;
+#ifdef FLY_DRAW_WINDOW
+ dc_render_draw_window drawn={0};
+#endif
  dc_instance_package pkg;unsigned char *data=NULL;float (*view)[3]=NULL,(*bounds)[4]=NULL;
  FILE *file=NULL;const char *error;int initialized=0;uint32_t f,slot,textured=0,windows_ok=1,instances_ok=1,lods_ok=1;
  enum {VERTEX_BUFFER=2048*1024};
@@ -58,7 +71,11 @@ int main(void) {
  /* decoded sectors kept across retargets: only newly entered ones are read */
  error=FLY_CACHE_MAKE(&catalog,"/rd",fly_source_sha,FLY_CACHE_BUDGET,&cache);
  if(!check(error==NULL,error))goto release;
- source=dc_render_block_cache_source(&cache);
+ source=dc_render_block_cache_source(&cache);(void)source;
+#ifdef FLY_DRAW_WINDOW
+ error=dc_render_draw_window_make(&drawn,FLY_WINDOW_FACES,FLY_WINDOW_VERTICES,FLY_WINDOW_REMAP);
+ if(!check(error==NULL,error))goto release;
+#endif
  data=memalign(32,FLY_PACKAGE_BYTES);if(!check(data!=NULL,"fly package allocation"))goto release;
  file=fopen("/rd/package.dci","rb");if(!check(file!=NULL,"fly package open"))goto release;
  if(!check(fread(data,1,FLY_PACKAGE_BYTES,file)==FLY_PACKAGE_BYTES&&fgetc(file)==EOF,"fly package size"))goto release;
@@ -82,6 +99,24 @@ int main(void) {
   dc_instance_camera ic={e->target[0],e->target[1],e->target[2],fly_yaw,fly_pitch,fly_distance,fly_draw_distance};
   uint64_t start=timer_us_gettime64();int ok;uint32_t us;
   /* the terrain: retarget the window, then a frame owner for it */
+#ifdef FLY_DRAW_WINDOW
+  {uint64_t t0=timer_us_gettime64(),t1;uint32_t crc=0,i;
+   error=dc_render_block_cache_window(&cache,&catalog,&e->query,&drawn);
+   dc_fly_metrics.retarget_us+=(uint32_t)(timer_us_gettime64()-t0);
+   if(!check(error==NULL,error))goto release;
+   ++dc_fly_metrics.retargets;
+   for(i=0;i<drawn.count;++i){unsigned char record[116];dc_render_draw_window_face(&drawn,i,record);crc=crc32(crc,record,116);}
+   if(drawn.count!=e->faces||crc!=e->draw_crc)windows_ok=0;
+   if(drawn.vertex_count>dc_fly_metrics.max_vertices)dc_fly_metrics.max_vertices=drawn.vertex_count;
+   if(drawn.count>dc_fly_metrics.max_faces)dc_fly_metrics.max_faces=drawn.count;
+   t0=timer_us_gettime64();
+   memset(&frame,0,sizeof frame);
+   error=dc_render_base_frame_make_draw(&drawn,&bank,&frame);
+   t1=timer_us_gettime64();dc_fly_metrics.frame_make_us+=(uint32_t)(t1-t0);
+   if(!check(error==NULL,error))goto release;
+   if(!check(dc_render_draw_window_prepare(&drawn,&rc)==1,"fly terrain prepare"))goto release;
+   dc_fly_metrics.prepare_us+=(uint32_t)(timer_us_gettime64()-t1);}
+#else
   {const unsigned char *before=window.faces;uint64_t t0=timer_us_gettime64();
    error=dc_render_window_retarget_source(&catalog,"/rd",fly_source_sha,&e->query,&source,&window);
    dc_fly_metrics.retarget_us+=(uint32_t)(timer_us_gettime64()-t0);
@@ -96,6 +131,7 @@ int main(void) {
    if(!check(error==NULL,error))goto release;
    if(!check(dc_render_base_prepare(&frame,&window,&rc)==1,"fly terrain prepare"))goto release;
    dc_fly_metrics.prepare_us+=(uint32_t)(timer_us_gettime64()-t1);}
+#endif
   pvr_wait_ready();pvr_scene_begin();pvr_list_begin(PVR_LIST_OP_POLY);
   {uint64_t a=timer_us_gettime64(),b,c,d,e2;
    ok=dc_render_base_draw(&bank,&frame,PVR_LIST_OP_POLY,&base);b=timer_us_gettime64();

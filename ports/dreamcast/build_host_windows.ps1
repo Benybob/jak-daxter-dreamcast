@@ -108,7 +108,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Render package ctypes bridge compilation faile
 if ($LASTEXITCODE -ne 0) { throw 'Resident texture owner host compilation failed' }
 & $Compiler @flags '-DDC_RENDER_CACHE_TEST_IO' -c (Join-Path $port 'render_cache.c') -o (Join-Path $build 'render-cache-host.o')
 if ($LASTEXITCODE -ne 0) { throw 'Render cache compilation failed' }
-& $Compiler @flags -shared '-DDC_RENDER_BLOCK_CACHE_TEST' (Join-Path $port 'tests/render_block_cache_bridge.c') (Join-Path $port 'render_block_cache.c') (Join-Path $port 'render_indexed.c') (Join-Path $port 'render_cache.c') (Join-Path $port 'render_package.c') (Join-Path $port 'sector_inflate.c') $hostZlib -o (Join-Path $build 'render-block-cache-check.dll') -lm
+& $Compiler @flags -shared '-DDC_RENDER_BLOCK_CACHE_TEST' (Join-Path $port 'tests/render_block_cache_bridge.c') (Join-Path $port 'render_block_cache.c') (Join-Path $port 'render_indexed.c') (Join-Path $port 'render_draw_window.c') (Join-Path $port 'render_cache.c') (Join-Path $port 'render_package.c') (Join-Path $port 'sector_inflate.c') $hostZlib -o (Join-Path $build 'render-block-cache-check.dll') -lm
 if ($LASTEXITCODE -ne 0) { throw 'Decoded block cache compilation failed' }
 if ($LASTEXITCODE -ne 0) { throw 'Render window cache compilation failed' }
 & $Compiler @flags -shared (Join-Path $port 'tests/render_cache_bridge.c') (Join-Path $build 'render-cache-host.o') (Join-Path $build 'render-package-host.o') (Join-Path $port 'sector_inflate.c') $hostZlib -o (Join-Path $build 'render-cache-check.dll') -lm

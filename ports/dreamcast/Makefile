@@ -576,8 +576,8 @@ build/render-cache-host.o: render_cache.c render_cache.h render_package.h
 build/render-cache-check$(HOST_SHARED): tests/render_cache_bridge.c render_cache.h build/render-cache-host.o build/render-package-host.o sector_inflate.c
 	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -pedantic -fPIC -shared tests/render_cache_bridge.c build/render-cache-host.o build/render-package-host.o sector_inflate.c -o $@ -lz -lm
 host: build/render-block-cache-check$(HOST_SHARED)
-build/render-block-cache-check$(HOST_SHARED): tests/render_block_cache_bridge.c render_block_cache.c render_block_cache.h render_indexed.c render_indexed.h render_cache.c render_cache.h render_package.c sector_inflate.c
-	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -pedantic -fPIC -shared -DDC_RENDER_BLOCK_CACHE_TEST tests/render_block_cache_bridge.c render_block_cache.c render_indexed.c render_cache.c render_package.c sector_inflate.c -o $@ -lz -lm
+build/render-block-cache-check$(HOST_SHARED): tests/render_block_cache_bridge.c render_block_cache.c render_block_cache.h render_indexed.c render_indexed.h render_draw_window.c render_draw_window.h render_cache.c render_cache.h render_package.c sector_inflate.c
+	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -pedantic -fPIC -shared -DDC_RENDER_BLOCK_CACHE_TEST tests/render_block_cache_bridge.c render_block_cache.c render_indexed.c render_draw_window.c render_cache.c render_package.c sector_inflate.c -o $@ -lz -lm
 jak-dc-camera.elf: camera_boom_main.o camera_boom.o camera_rig.o camera_boom_cases.o world_collision.o
 	kos-cc -o $@ $^ -lm
 camera_real_main.o: camera_boom_main.c
@@ -610,7 +610,8 @@ build/render_base_fixture.h:
 	$(PYTHON) make_render_base_fixture.py build/private-render-base-assets --header $@
 $(RENDER_BASE_ASSET_DIR)/BASE_CASE.json: build/render_base_fixture.h
 	@test -f $@
-render_base.o: render_base.c render_base.h render_frustum.h render_world_view.h
+render_draw_window.o: render_draw_window.c render_draw_window.h render_world_view.h
+render_base.o: render_base.c render_base.h render_frustum.h render_world_view.h render_draw_window.h
 render_base_test.o: render_base.c render_base.h render_frustum.h render_world_view.h
 	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -DDC_RENDER_BASE_TEST_ALLOC -c $< -o $@
 # A restored fixture header can also have an OLDER timestamp than the previous
@@ -672,7 +673,7 @@ build/flythrough-romdisk.o: $(FLY_ASSET_DIR)/FLY.json
 	$(KOS_BASE)/utils/bin2c/bin2c build/flythrough-romdisk.img build/flythrough-romdisk.c romdisk
 	$(KOS_CC) $(KOS_CFLAGS) -c build/flythrough-romdisk.c -o build/flythrough-romdisk-tmp.o
 	$(KOS_CC) -o $@ -r build/flythrough-romdisk-tmp.o $(KOS_LIB_PATHS) -Wl,--whole-archive -lromdiskbase
-jak-dc-flythrough.elf: flythrough_main.o render_base.o render_block_cache.o render_indexed.o render_gpu.o render_cache.o render_package.o sector_inflate_stored.o render_world_view_scalar.o render_world_view_gate.o render_frustum.o instance_pass.o build/flythrough-romdisk.o
+jak-dc-flythrough.elf: flythrough_main.o render_base.o render_block_cache.o render_indexed.o render_draw_window.o render_gpu.o render_cache.o render_package.o sector_inflate_stored.o render_world_view_scalar.o render_world_view_gate.o render_frustum.o instance_pass.o build/flythrough-romdisk.o
 	kos-cc -o $@ $^ -lm
 TRAINING_STREAM_ASSET_DIR ?= build/private-training-stream-assets
 training_render.o: training_render.c training_render.h render_base.h render_block_cache.h

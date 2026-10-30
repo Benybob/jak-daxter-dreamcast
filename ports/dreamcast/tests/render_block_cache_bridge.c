@@ -4,7 +4,7 @@
 #include <string.h>
 #include <zlib.h>
 typedef struct {dc_render_catalog catalog;dc_render_block_cache blocks;dc_render_window window;
- char root[241],sha[65];} context;
+ dc_render_draw_window drawn;char root[241],sha[65];} context;
 static uint32_t attempts[3],faults[3],metadata_live,files_live;
 static const char *last;
 void dc_rbc_arm(uint32_t a,uint32_t o,uint32_t c){faults[0]=a;faults[1]=o;faults[2]=c;memset(attempts,0,sizeof attempts);}
@@ -12,8 +12,13 @@ void *dc_rbc_test_malloc(size_t n){void *p;if(++attempts[0]==faults[0])return NU
 void dc_rbc_test_free(void *p){if(p){--metadata_live;free(p);}}
 FILE *dc_rbc_test_fopen(const char *p,const char *m){FILE *f;if(++attempts[1]==faults[1])return NULL;f=fopen(p,m);if(f)++files_live;return f;}
 int dc_rbc_test_fclose(FILE *f){int r=fclose(f);--files_live;if(++attempts[2]==faults[2])return -1;return r;}
-void dc_rbc_close(void *p){context *c=p;if(!c)return;dc_render_window_free(&c->window);dc_render_block_cache_free(&c->blocks);dc_render_block_cache_free(&c->blocks);dc_render_catalog_free(&c->catalog);free(c);}
+void dc_rbc_close(void *p){context *c=p;if(!c)return;dc_render_draw_window_free(&c->drawn);dc_render_window_free(&c->window);dc_render_block_cache_free(&c->blocks);dc_render_block_cache_free(&c->blocks);dc_render_catalog_free(&c->catalog);free(c);}
 const char *dc_rbc_error(void){return last;}
+const char *dc_rbc_dw_make(void *p,uint32_t f,uint32_t v,uint32_t r){context *c=p;return dc_render_draw_window_make(&c->drawn,f,v,r);}
+const char *dc_rbc_dw_build(void *p,const double *query){context *c=p;return dc_render_block_cache_window(&c->blocks,&c->catalog,(const dc_render_query *)query,&c->drawn);}
+uint32_t dc_rbc_dw_count(void *p){context *c=p;return c->drawn.count;}
+uint32_t dc_rbc_dw_vertices(void *p){context *c=p;return c->drawn.vertex_count;}
+void dc_rbc_dw_copy(void *p,unsigned char *out){context *c=p;uint32_t i;for(i=0;i<c->drawn.count;++i)dc_render_draw_window_face(&c->drawn,i,out+(size_t)i*116u);}
 static void *open_owner(const char *root,uint32_t budget,int draw){
  context *c=calloc(1,sizeof(*c));char path[512];FILE *f;unsigned i;int closed;
  if(!c)return NULL;
