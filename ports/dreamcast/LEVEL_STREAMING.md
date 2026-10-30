@@ -572,7 +572,35 @@ leaves free (above). Where it can shrink:
   arena leaves free, but the heap arena, which a retarget's window buffers grow,
   stays at 3.07 to 3.51 MB. It is not yet proven to fit. Windows remain 116-byte
   faces, old and staged side by side during a retarget (7,117 faces, 826 KB each),
-  now the largest part of what is left.
+  now the largest part of what is left. The arena answers to placement more than
+  to live bytes, as three attempts on the 512 KB row showed: compacting a batch's
+  payloads in place and copying to an exact window gave 4.15 MB; installing the
+  compacted payloads directly, 4.99 MB and 3.45 MB in use, since a batch holds far
+  more faces than the window keeps; sizing the stage exactly and installing it,
+  2.18 s retargets but still 4.15 MB. None was kept. Fitting needs fixed buffers
+  or smaller windows, not a different order of the same allocations.
+
+  DRX2 across the game, all tfrag at 16 m (the worst 3x3 sectors with global):
+
+  | Level | Faces | Vertices a face | DRM2 | DRX2 | Ratio | Worst DRM2 | Worst DRX2 |
+  | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+  | village3 | 161,943 | 1.09 | 18.79 MB | 6.83 MB | 2.75 | 2.59 MB | 0.90 MB |
+  | village1 | 84,747 | 1.06 | 9.83 MB | 3.54 MB | 2.78 | 1.62 MB | 0.56 MB |
+  | village2 | 47,228 | 1.09 | 5.48 MB | 2.00 MB | 2.74 | 1.24 MB | 0.41 MB |
+  | sunkenb | 33,936 | 1.21 | 3.94 MB | 1.53 MB | 2.57 | 1.19 MB | 0.43 MB |
+  | sunken | 89,914 | 1.11 | 10.43 MB | 3.83 MB | 2.72 | 1.06 MB | 0.39 MB |
+  | beach | 119,921 | 0.99 | 13.91 MB | 4.78 MB | 2.91 | 1.06 MB | 0.37 MB |
+  | misty | 73,631 | 0.93 | 8.54 MB | 2.83 MB | 3.01 | 0.96 MB | 0.27 MB |
+  | rolling | 79,855 | 1.15 | 9.26 MB | 3.49 MB | 2.65 | 0.57 MB | 0.21 MB |
+  | lavatube | 19,063 | 1.67 | 2.21 MB | 1.09 MB | 2.04 | 0.13 MB | 0.05 MB |
+
+  Twenty levels run, from 2.04 to 3.05 for any with real geometry; the others
+  fall inside the table's range. Village3, not the caves or lavatube, has the
+  worst window. Three levels pass the 4,096-face sector cap at 16 m and need smaller
+  cells: darkcave at 12 m (172,634 faces, 6.88 MB of DRX2), maincave at 6 m
+  (317,110 faces, 13.09 MB) and robocave at 6 m (247,405 faces, 10.10 MB).
+  Finalboss passes the 4,096-face global cap at every cell size down to 4 m, so its
+  faces are too large for any sector and it needs a different split.
 - **The package's vertices: done, DCI3.** `tie_lods.py --compact` writes
   16-byte vertices: 16-bit positions in steps of a geometry's own bounds (a
   quantization record a geometry: float centre and scale), UVs in 1/2048
@@ -632,4 +660,4 @@ positions differ from the dump's; which is right is not settled.
 - Village1's textures converted to PowerVR formats, and their VRAM total.
 - The decompiler fixes, if wanted upstream of this port: BLEND support in the
   sector builder, and the wind instances' m[15].
-- The same numbers for the densest levels (lavatube, maincave, rolling).
+- Instanced density and streaming paths for the other levels; terrain sectors are measured above.
