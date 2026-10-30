@@ -490,6 +490,11 @@ leaves free (above). Where it can shrink:
 
   One 28 m window's sectors need between 1.31 and 1.66 MB; below that the
   cache mostly misses and retargeting costs nearly as much as without it.
+  A 20 m window (at most 4,431 faces) does not fix that: 1 MB gives 148 hits
+  and 94 misses (9.5 s), 768 KB 31 and 211 (17.9 s). The cache keeps whole
+  16 m sectors and a window touches up to nine of them where the village is
+  densest, so the lever is the sector size (the builder's `--cell-size`), not
+  the window.
 - **The package's vertices: done, DCI3.** `tie_lods.py --compact` writes
   16-byte vertices: 16-bit positions in steps of a geometry's own bounds (a
   quantization record a geometry: float centre and scale), UVs in 1/2048
