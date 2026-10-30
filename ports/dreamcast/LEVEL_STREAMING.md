@@ -622,6 +622,10 @@ leaves free (above). Where it can shrink:
   draw dividing as it does for clipped vertices (12 bytes a vertex for 2% more
   terrain draw time).
 
+  `make_flythrough_fixture.py --draw-files` now derives the path's exact caps and
+  budget with `window_caps.py` (7,117 faces, 7,129 vertices, 12,926 remap, 520,992
+  bytes): 84 of 84 checks, the same frame, peak 2.88 MB, arena 2.89 MB.
+
   **Live heap sampled at the end of every frame and with every missed block held
   peaks at 2.90 MB, below the 2.94 MB (2.8 MiB) the GOAL arena leaves free**, and the
   arena stays at 2.91 MB. That margin is 38 KB and holds for this path's caps: they

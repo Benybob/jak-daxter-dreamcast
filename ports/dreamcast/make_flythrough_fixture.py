@@ -29,6 +29,7 @@ import shutil
 import zlib
 
 import make_instance_fixture as mf
+import window_caps
 import indexed_sectors
 import make_village_fixture as mv
 import prepare_render_sectors as rs
@@ -116,6 +117,20 @@ def make(glb, package, out, frames=30, length=60.0, half=14.0, header='build/fly
     return report, rows
 
 
+def window_caps_for(package, rows, half, header):
+    """Exact caps for this path's own windows, appended to the fixture header:
+    a path, unlike a sweep, has only these windows to hold."""
+    loaded = window_caps.load_package(package)
+    needs = [window_caps.window_needs(loaded, r['target'][0], r['target'][2], half) for r in rows]
+    most = {k: max(n[k] for n in needs) for k in window_caps.METRICS}
+    names = dict(faces='FLY_WINDOW_FACES', vertices='FLY_WINDOW_VERTICES', remap='FLY_WINDOW_REMAP',
+                 budget='FLY_CACHE_BUDGET')
+    with open(header, 'a', newline='\n') as out:
+        for key, name in names.items():
+            out.write(f'#ifndef {name}\n#define {name} {most[key]}u\n#endif\n')
+    return most
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('glb', type=Path)
@@ -126,14 +141,16 @@ def main():
     ap.add_argument('--half', type=float, default=14.0)
     ap.add_argument('--cell', type=float, default=16.0, help='sector size in meters')
     ap.add_argument('--reference', type=Path, help='the DCI1 dci1_reference.py draws for the last frame')
+    ap.add_argument('--header', default='build/flythrough_fixture.h')
     ap.add_argument('--draw-files', action='store_true', help='stage DRX2 .drx sectors in place of .drs (FLY_DRAW_CACHE only)')
     a = ap.parse_args()
-    report, rows = make(a.glb, a.package, a.out, a.frames, a.length, a.half, cell=a.cell)
+    report, rows = make(a.glb, a.package, a.out, a.frames, a.length, a.half, a.header, cell=a.cell)
     if a.reference:
         blob, _ = mv.reference(a.out, a.package, a.half, rows[-1]['target'])
         a.reference.write_bytes(blob)
     if a.draw_files:  # last: the reference reads the .drs sectors these replace
         report['draw_file_bytes'] = indexed_sectors.write_draw_files(a.out, remove_sectors=True)
+        report['window'] = window_caps_for(a.out, rows, a.half, a.header)
         (a.out / 'FLY.json').write_text(json.dumps(report, indent=1), newline='\n')
     print(json.dumps(report, indent=1))
 
