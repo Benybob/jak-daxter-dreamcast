@@ -5,6 +5,15 @@ documents the independent finite-input desktop vector oracle, SSE comparison tes
 and inventory of all 346 GAME.CGO entries. Claude Code owns vf lowering in
 lower_sh4_ir.py; this support change leaves the lowering/boot files alone.
 
+**2026-10-29 (AI-assisted):** village1 renders in Flycast from the user's own disc
+([LEVEL_STREAMING.md](LEVEL_STREAMING.md)): textured tfrag terrain from the cached
+sector pipeline under the TIE and shrub drawn instanced (7,342 instances of 116
+prototypes, TIE's four LODs decoded, 186 materials textured), and a 30-frame camera
+path that retargets the terrain window every frame. Every frame's terrain window,
+instances, triangles and LODs match the host (139 of 139 checks), and captured frames
+agree with an independent reference renderer on over 99% of the frame. Nothing from
+the disc is committed. No hardware figure: Flycast time only.
+
 **2026-10-27 (AI-assisted):** [GAME.CGO](GAME_CGO.md) compiles in game.gp dependency
 order in one frontend run; all 331 files of its dependency graph export. 222 of 326 code
 files lower to SH-4 (all 326 now), and all 326 load and start in Flycast, then the original main loop runs 60 frames headless; all 24 [mips2c](MIPS2C.md) files (94 functions, every GAME.CGO lookup) run natively, and 40 differential cases match the desktop oracle bit for bit (532 of 532 boot checks, 2026-10-29; 538 with the user's disc: Jak's animations and shadow and village1's collision meshes run natively bit for bit) under a [memory budget](MEMORY_BUDGET.md) and the [memory plan](MEMORY_PLAN.md): smaller native code, freed startups, and VRAM holding the romdisk and the PS2 DMA buffers. Native MMI ops, structure allocation, linker type
@@ -234,7 +243,7 @@ A 32 MiB RAM modification would not remove the CPU, graphics or ABI work.
 | Order | Deliverable | Pass condition |
 | --- | --- | --- |
 | 1 | Target asset probe, cross-built and emulator-tested | Hardware verification remains; emulated archive checksums match |
-| 2 | PowerVR geometry viewer and converter, cross-built and emulator-tested with synthetic terrain | Real extracted geometry/textures and retail-hardware measurements remain |
+| 2 | PowerVR geometry viewer and converter, cross-built and emulator-tested | Real village1 geometry and textures render in Flycast (terrain, instanced TIE/shrub with LODs, a streamed camera path); retail-hardware measurements and BLEND (translucent) materials remain |
 | 3 | Minimal GOAL SH-4 compiler/runtime slice | Arithmetic, branches, calls, tagging, symbols and relocation tests execute on SH-4 and match host results |
 | 4 | Animated Jak and movement in one bounded scene | Controller movement, animation and collision work inside the measured memory budget |
 | 5 | Small playable area | Scene streaming, camera, interactions, sound and VMU save/load work together |
