@@ -405,6 +405,16 @@ reads only the sectors the window newly enters: 22 misses and 588 hits over
 the path, 1.7 MB peak, no evictions, with every window check unchanged. The
 instance pass is now the cost.
 
+The first cut at it: `dc_instance_bounds` gives every geometry a bounding sphere
+in its prototype frame, and the draw skips a geometry whose sphere, under the
+instance matrix and the camera, lies behind the near plane or outside one of
+the viewport's four planes, before any of its vertices are transformed. A
+randomized host test checks that no point of a culled sphere projects inside
+the viewport. Over the path 13,778 geometries are culled and the instance pass
+drops from 11.5 s to 9.3 s (19%); the last frame sends exactly the same 7,983
+triangles and its image is unchanged, 139 of 139 checks. What remains is the
+per-vertex transform and clip of what is on screen.
+
     python make_flythrough_fixture.py BACKGROUND.glb PACKAGE.dci2 build/private-flythrough-assets --reference ref.dci
     python build_dreamcast.py --target jak-dc-flythrough.elf --fly-assets build/private-flythrough-assets
     python verify_backend.py FLYCAST jak-dc-flythrough.elf --nm NM --output OUT --suite flythrough --tests 137         --capture --dump dc_fly_metrics 40
@@ -438,9 +448,9 @@ instance pass is now the cost.
   package's materials.
 - A translucent list for BLEND terrain, and single-sided culling for
   instances whose materials are not double-sided.
-- The instance pass's cost: whole instances culled against the view before
-  their vertices are transformed, and instance records streamed by cell rather
-  than all resident.
+- The instance pass's per-vertex cost: the transform through SH4ZAM's matrix
+  unit once it is back in this SDK, and instance records streamed by cell
+  rather than all resident.
 - A native zlib and SH4ZAM in this SDK again, so the village diagnostic can use
   the compressed sectors and the SH4ZAM transform the other targets use.
 - A draw distance chosen against the LOD table above, and the 16 prototypes

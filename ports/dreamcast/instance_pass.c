@@ -1,5 +1,6 @@
 /* Instanced TIE/shrub pass over a DCI1 package (AI-assisted), ISC. */
 #include "instance_pass.h"
+#include "scene_projection.h"
 #include <math.h>
 #include <string.h>
 #ifdef _arch_dreamcast
@@ -30,7 +31,7 @@ const char *dc_instance_package_open(const void *data,size_t size,dc_instance_pa
  need=(need+3u)&~(size_t)3u;/* indices pad to 4 bytes */
  if(size<need||size-need!=52u*(size_t)ni)return "DCI1 size";
  made.protos=(const dc_instance_proto *)(p+head);
- made.lods=v2?(const dc_instance_lod *)(p+head+52u*ng):NULL;made.lod_count=v2?np:0;
+ made.lods=v2?(const dc_instance_lod *)(p+head+52u*ng):NULL;made.lod_count=v2?np:0;made.bounds=NULL;
  made.verts=(const dc_instance_vertex *)(p+at);
  made.indices=(const uint16_t *)(p+at+24u*nv);
  made.instances=(const dc_instance *)(p+need);
@@ -50,6 +51,31 @@ const char *dc_instance_package_open(const void *data,size_t size,dc_instance_pa
  made.proto_count=ng;made.instance_count=ni;made.vert_count=nv;made.index_count=nx;made.max_proto_verts=maxv;
  *out=made;
  return NULL;
+}
+
+void dc_instance_bounds(const dc_instance_package *pkg,float (*out)[4]) {
+ uint32_t g,k;
+ for(g=0;g<pkg->proto_count;++g){
+  const dc_instance_proto *p=&pkg->protos[g];const dc_instance_vertex *v=&pkg->verts[p->first_vert];
+  float lo[3]={v->x,v->y,v->z},hi[3]={v->x,v->y,v->z},c[3],r2=0;
+  for(k=1;k<p->verts;++k){const float q[3]={v[k].x,v[k].y,v[k].z};unsigned a;
+   for(a=0;a<3;++a){if(q[a]<lo[a])lo[a]=q[a];if(q[a]>hi[a])hi[a]=q[a];}}
+  for(k=0;k<3;++k)c[k]=.5f*(lo[k]+hi[k]);
+  for(k=0;k<p->verts;++k){float dx=v[k].x-c[0],dy=v[k].y-c[1],dz=v[k].z-c[2],d=dx*dx+dy*dy+dz*dz;if(d>r2)r2=d;}
+  out[g][0]=c[0];out[g][1]=c[1];out[g][2]=c[2];out[g][3]=sqrtf(r2)*1.0001f+1e-4f;
+ }
+}
+
+/* A sphere (view space, view units) wholly behind the near plane or outside one
+ * of the planes through the eye and the viewport edges of x=320+390x/z,
+ * y=260-390y/z on 640x480. */
+int dc_instance_sphere_outside(const float c[3],float r) {
+ if(c[2]+r<DC_SCENE_NEAR)return 1;
+ if(390.f*c[0]-320.f*c[2]>r*504.48f)return 1;   /* right: |(390,0,-320)| */
+ if(-390.f*c[0]-320.f*c[2]>r*504.48f)return 1;  /* left */
+ if(390.f*c[1]-260.f*c[2]>r*468.72f)return 1;   /* top: |(390,-260)| */
+ if(-390.f*c[1]-220.f*c[2]>r*447.77f)return 1;  /* bottom: |(390,220)| */
+ return 0;
 }
 
 uint32_t dc_instance_run(const dc_instance_package *pkg,const dc_instance *in,float d2,unsigned *lod,unsigned *count) {
@@ -103,6 +129,13 @@ static int draw(const dc_instance_package *pkg,const dc_instance_camera *cam,flo
     if(list!=PVR_LIST_OP_POLY)continue;
     header=&colour_hdr;
    }
+   if(pkg->bounds){const float *s=pkg->bounds[g];float w[3],c[3],r0,r1,r2;
+    w[0]=s[0]*m[0]+s[1]*m[3]+s[2]*m[6]+m[9];w[1]=s[0]*m[1]+s[1]*m[4]+s[2]*m[7]+m[10];w[2]=s[0]*m[2]+s[1]*m[5]+s[2]*m[8]+m[11];
+    dc_instance_to_view(b,cam,w,c);
+    r0=m[0]*m[0]+m[1]*m[1]+m[2]*m[2];r1=m[3]*m[3]+m[4]*m[4]+m[5]*m[5];r2=m[6]*m[6]+m[7]*m[7]+m[8]*m[8];
+    if(r1>r0){r0=r1;}
+    if(r2>r0){r0=r2;}
+    if(dc_instance_sphere_outside(c,s[3]*sqrtf(r0)*0.25f/* DC_RENDER_WORLD_SCALE */)){st->triangles+=p->indices/3u;++st->sphere_culled;continue;}}
    if(header!=current){flush(&queued);pvr_prim(header,sizeof(pvr_poly_hdr_t));current=header;}
    for(k=0;k<p->verts;++k){const dc_instance_vertex *v=&pkg->verts[p->first_vert+k];float w[3];
     w[0]=v->x*m[0]+v->y*m[3]+v->z*m[6]+m[9];w[1]=v->x*m[1]+v->y*m[4]+v->z*m[7]+m[10];w[2]=v->x*m[2]+v->y*m[5]+v->z*m[8]+m[11];

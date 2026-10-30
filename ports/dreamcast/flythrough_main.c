@@ -19,7 +19,7 @@ volatile telemetry dc_backend={.magic=0x34485347u,.version=1};
 typedef struct {uint32_t frames,retargets,max_faces,max_instance_triangles,instance_submitted,terrain_triangles,
  max_frame_us,total_us,last_frame,textured_materials,
  retarget_us,frame_make_us,prepare_us,terrain_draw_us,instance_draw_us,reused,
- cache_hits,cache_misses,cache_peak_bytes,cache_evictions;} fly_metrics;
+ cache_hits,cache_misses,cache_peak_bytes,cache_evictions,sphere_culled;} fly_metrics;
 volatile fly_metrics dc_fly_metrics;
 static int check(int ok,const char *why) {
  ++dc_backend.total;if(ok){++dc_backend.passed;return 1;}
@@ -31,7 +31,7 @@ int main(void) {
  dc_render_catalog catalog={0};dc_render_gpu gpu={0};dc_render_window window={0};
  dc_render_base_bank bank={0};dc_render_base_frame frame={0};
  dc_render_block_cache cache={0};dc_render_block_source source;
- dc_instance_package pkg;unsigned char *data=NULL;float (*view)[3]=NULL;
+ dc_instance_package pkg;unsigned char *data=NULL;float (*view)[3]=NULL,(*bounds)[4]=NULL;
  FILE *file=NULL;const char *error;int initialized=0;uint32_t f,slot,textured=0,windows_ok=1,instances_ok=1,lods_ok=1;
  enum {VERTEX_BUFFER=2048*1024};
  pvr_init_params_t params={.opb_sizes={PVR_BINSIZE_32,0,0,0,PVR_BINSIZE_32},.vertex_buf_size=VERTEX_BUFFER,.opb_overflow_count=8};
@@ -54,6 +54,9 @@ int main(void) {
  if(!check(crc32(0,data,FLY_PACKAGE_BYTES)==FLY_PACKAGE_CRC,"fly package CRC"))goto release;
  error=dc_instance_package_open(data,FLY_PACKAGE_BYTES,&pkg);if(!check(error==NULL,error))goto release;
  view=memalign(32,(size_t)pkg.max_proto_verts*sizeof *view);if(!check(view!=NULL,"fly view scratch"))goto release;
+ /* whole geometries culled against the view before their vertices move */
+ bounds=memalign(32,(size_t)pkg.proto_count*sizeof *bounds);if(!check(bounds!=NULL,"fly bounds"))goto release;
+ dc_instance_bounds(&pkg,bounds);pkg.bounds=(const float (*)[4])bounds;
  {int inside=1;
   for(slot=0;slot<FLY_MATERIAL_SLOTS;++slot){uint16_t c=fly_material_map[slot];
    if(c==0xffffu)continue;
@@ -100,7 +103,7 @@ int main(void) {
   dc_fly_metrics.total_us+=us;
   if(window.count>dc_fly_metrics.max_faces)dc_fly_metrics.max_faces=window.count;
   if(inst.triangles>dc_fly_metrics.max_instance_triangles)dc_fly_metrics.max_instance_triangles=inst.triangles;
-  dc_fly_metrics.instance_submitted=inst.submitted;dc_fly_metrics.terrain_triangles=base.triangles;
+  dc_fly_metrics.instance_submitted=inst.submitted;dc_fly_metrics.sphere_culled+=inst.sphere_culled;dc_fly_metrics.terrain_triangles=base.triangles;
   dc_fly_metrics.frames=f+1;dc_fly_metrics.last_frame=f;
  }
  /* The display shows the scene before the last one submitted, so the last

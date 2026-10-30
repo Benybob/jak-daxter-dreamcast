@@ -22,7 +22,7 @@ def mf_f32(x):
 class Package(ctypes.Structure):
     _fields_ = [(n, ctypes.c_void_p) for n in ('protos', 'verts', 'indices', 'instances')] + \
                [(n, ctypes.c_uint32) for n in ('proto_count', 'instance_count', 'vert_count', 'index_count',
-                                                'max_proto_verts')] +                [('lods', ctypes.c_void_p), ('lod_count', ctypes.c_uint32)]
+                                                'max_proto_verts')] +                [('lods', ctypes.c_void_p), ('lod_count', ctypes.c_uint32), ('bounds', ctypes.c_void_p)]
 
 
 class Camera(ctypes.Structure):
@@ -194,6 +194,50 @@ class InstancePassTest(unittest.TestCase):
         for bad in (patched(lod_at + 8, '<f', math.nan), patched(lod_at + 8, '<f', -1.0),
                     patched(lod_at + 12, '<f', 5.0)):
             self.assertEqual(self.load(bad)[0].decode(), 'DCI2 prototype planes')
+
+    def test_bounds_hold_every_vertex(self):
+        blob, _ = sample()
+        err, out, buf = self.load(blob)
+        self.assertIsNone(err)
+        self.assertIsNone(out.bounds)
+        spheres = (ctypes.c_float * (4 * out.proto_count))()
+        f = self.lib.dc_instance_bounds
+        f.argtypes = [ctypes.POINTER(Package), ctypes.c_void_p]
+        f(ctypes.byref(out), spheres)
+        # 'fence': triangles at x 0..1 and 2..3, y 0..1 -> centre (1.5, 0.5, 0)
+        self.assertEqual([round(v, 4) for v in spheres[4:7]], [1.5, 0.5, 0.0])
+        base = out.verts - ctypes.addressof(buf)
+        protos = [struct.unpack_from('<5I', blob, 12 + 52 * i) for i in range(out.proto_count)]
+        for g, (vc, _, fv, _, _) in enumerate(protos):
+            c, r = spheres[4 * g:4 * g + 3], spheres[4 * g + 3]
+            for k in range(vc):
+                v = struct.unpack_from('<3f', blob, base + 24 * (fv + k))
+                self.assertLessEqual(math.dist(v, c), r)
+
+    def test_sphere_cull_never_drops_a_visible_point(self):
+        import random
+        f = self.lib.dc_instance_sphere_outside
+        f.argtypes = [ctypes.c_float * 3, ctypes.c_float]
+        f.restype = ctypes.c_int
+        rng = random.Random(7)
+        culled = 0
+        for _ in range(3000):
+            c = [rng.uniform(-30, 30), rng.uniform(-20, 20), rng.uniform(-5, 40)]
+            r = rng.uniform(0.01, 6)
+            if not f((ctypes.c_float * 3)(*c), r):
+                continue
+            culled += 1
+            for _ in range(60):  # points in the sphere must all be behind the near plane or off screen
+                d = [rng.gauss(0, 1) for _ in range(3)]
+                n = math.sqrt(sum(x * x for x in d)) or 1
+                s = rng.random() ** (1 / 3) * r
+                p = [c[k] + d[k] / n * s for k in range(3)]
+                if p[2] < 0.05:
+                    continue
+                x, y = 320 + 390 * p[0] / p[2], 260 - 390 * p[1] / p[2]
+                self.assertFalse(0 <= x <= 640 and 0 <= y <= 480, (c, r, p))
+        self.assertGreater(culled, 500)
+        self.assertFalse(f((ctypes.c_float * 3)(0.0, 0.0, 10.0), 1.0))  # dead ahead stays
 
     def test_camera_matches_render_world_view(self):
         # render_world_view.c's columns, applied to (point - target), then z + distance, scaled 0.25.

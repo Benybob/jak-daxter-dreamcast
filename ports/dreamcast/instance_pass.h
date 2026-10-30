@@ -29,6 +29,7 @@ typedef struct {
  const dc_instance_proto *protos;const dc_instance_vertex *verts;const uint16_t *indices;const dc_instance *instances;
  uint32_t proto_count,instance_count,vert_count,index_count,max_proto_verts;
  const dc_instance_lod *lods;uint32_t lod_count; /* DCI2: lods[lod_count] index protos (the geometries); DCI1: NULL */
+ const float (*bounds)[4]; /* NULL from open; dc_instance_bounds' spheres, set by the caller to cull */
 } dc_instance_package;
 
 /* Validates a whole package in place (4-byte aligned, the caller keeps it alive):
@@ -39,7 +40,8 @@ typedef struct {
 const char *dc_instance_package_open(const void *data,size_t size,dc_instance_package *out);
 
 typedef struct {float tx,ty,tz,yaw,pitch,distance,draw_distance;} dc_instance_camera;
-typedef struct {uint32_t instances,drawn_instances,triangles,submitted,near_clipped,culled,invalid,lod_instances[4];} dc_instance_stats;
+typedef struct {uint32_t instances,drawn_instances,triangles,submitted,near_clipped,culled,invalid,lod_instances[4],
+ sphere_culled;} dc_instance_stats;
 
 /* The camera of render_world_view.c (dc_render_world_prepare): a point's offset
  * from the target, rotated by yaw and pitch and scaled by DC_RENDER_WORLD_SCALE,
@@ -50,6 +52,16 @@ void dc_instance_to_view(const float basis[10],const dc_instance_camera *,const 
 /* The geometry (an index into protos) and LOD an instance draws at squared
  * horizontal distance d2; for DCI1 the instance's own prototype at LOD 0. */
 uint32_t dc_instance_geometry(const dc_instance_package *,const dc_instance *,float d2,unsigned *lod);
+/* Each geometry's bounding sphere in its prototype frame: centre of its vertex
+ * bounds and the farthest vertex's distance, out[proto_count] (x, y, z, r).
+ * With pkg->bounds pointing at them, the draws skip a geometry whose sphere,
+ * under the instance matrix (radius times the largest row length) and the
+ * camera, lies wholly behind the near plane or outside one of the viewport's
+ * four planes; its triangles still count as visited, the geometry in
+ * sphere_culled. */
+void dc_instance_bounds(const dc_instance_package *,float (*out)[4]);
+/* The sphere test itself: centre in view space, radius in view units. */
+int dc_instance_sphere_outside(const float centre[3],float radius);
 /* As dc_instance_geometry, also giving how many geometries the LOD runs to. */
 uint32_t dc_instance_run(const dc_instance_package *,const dc_instance *,float d2,unsigned *lod,unsigned *count);
 
