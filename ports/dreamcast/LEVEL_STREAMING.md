@@ -385,8 +385,25 @@ submitted (the first capture matched frame 28, not 29: 99.19% against frame
 28's reference, 93.5% against 29's), so the last camera's scene is submitted
 once more; the held frame then agrees with frame 29's reference on 99.15% of
 the frame (0 pixels only in Flycast, 2,609 only in the reference: alpha-masked
-holes). Flycast reports up to 3.6 s for a frame with its retarget, 42.5 s for
-the path: emulator time, not a hardware figure.
+holes).
+
+Where the time goes, in Flycast's clock (emulator time, not a hardware figure;
+useful only as proportions):
+
+| Phase, 30 frames | Direct reads | Through the block cache |
+| --- | ---: | ---: |
+| window retarget | 29.6 s (70%) | 2.56 s (17%) |
+| instance pass | 11.5 s (27%) | 11.5 s (75%) |
+| terrain draw | 0.69 s | 0.70 s |
+| frame owner and world transform | 0.10 s | 0.10 s |
+| whole path | 42.5 s | 15.4 s |
+
+A 2 m step moves a 28 m window, so no window was ever reused as it stood, and
+each retarget re-read and re-checked every sector it touched. Retargeting
+through `render_block_cache.c` (the training stream's decoded-block owner, 2 MB)
+reads only the sectors the window newly enters: 22 misses and 588 hits over
+the path, 1.7 MB peak, no evictions, with every window check unchanged. The
+instance pass is now the cost.
 
     python make_flythrough_fixture.py BACKGROUND.glb PACKAGE.dci2 build/private-flythrough-assets --reference ref.dci
     python build_dreamcast.py --target jak-dc-flythrough.elf --fly-assets build/private-flythrough-assets
@@ -421,9 +438,9 @@ the path: emulator time, not a hardware figure.
   package's materials.
 - A translucent list for BLEND terrain, and single-sided culling for
   instances whose materials are not double-sided.
-- The flythrough's frame time: where the retarget's 3.6 s goes (romdisk reads,
-  CRCs, the frame owner rebuilt every frame), and instance records streamed by
-  cell rather than all resident.
+- The instance pass's cost: whole instances culled against the view before
+  their vertices are transformed, and instance records streamed by cell rather
+  than all resident.
 - A native zlib and SH4ZAM in this SDK again, so the village diagnostic can use
   the compressed sectors and the SH4ZAM transform the other targets use.
 - A draw distance chosen against the LOD table above, and the 16 prototypes

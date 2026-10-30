@@ -671,7 +671,7 @@ build/flythrough-romdisk.o: $(FLY_ASSET_DIR)/FLY.json
 	$(KOS_BASE)/utils/bin2c/bin2c build/flythrough-romdisk.img build/flythrough-romdisk.c romdisk
 	$(KOS_CC) $(KOS_CFLAGS) -c build/flythrough-romdisk.c -o build/flythrough-romdisk-tmp.o
 	$(KOS_CC) -o $@ -r build/flythrough-romdisk-tmp.o $(KOS_LIB_PATHS) -Wl,--whole-archive -lromdiskbase
-jak-dc-flythrough.elf: flythrough_main.o render_base.o render_gpu.o render_cache.o render_package.o sector_inflate_stored.o render_world_view_scalar.o render_world_view_gate.o render_frustum.o instance_pass.o build/flythrough-romdisk.o
+jak-dc-flythrough.elf: flythrough_main.o render_base.o render_block_cache.o render_gpu.o render_cache.o render_package.o sector_inflate_stored.o render_world_view_scalar.o render_world_view_gate.o render_frustum.o instance_pass.o build/flythrough-romdisk.o
 	kos-cc -o $@ $^ -lm
 TRAINING_STREAM_ASSET_DIR ?= build/private-training-stream-assets
 training_render.o: training_render.c training_render.h render_base.h render_block_cache.h
