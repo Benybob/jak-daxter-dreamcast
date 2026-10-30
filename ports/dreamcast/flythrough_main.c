@@ -12,6 +12,14 @@
 #include "render_block_cache.h"
 #include "instance_pass.h"
 #include "build/flythrough_fixture.h"
+/* FLY_DRAW_CACHE: the cache retains DRX2 blocks and windows lose their normals. */
+#ifdef FLY_DRAW_CACHE
+#define FLY_CACHE_MAKE dc_render_block_cache_make_draw
+#define FLY_WINDOW_CRC(e) ((e)->draw_crc)
+#else
+#define FLY_CACHE_MAKE dc_render_block_cache_make
+#define FLY_WINDOW_CRC(e) ((e)->crc)
+#endif
 #ifndef FLY_CACHE_BUDGET
 #define FLY_CACHE_BUDGET DC_RENDER_BLOCK_CACHE_MAX
 #endif
@@ -48,7 +56,7 @@ int main(void) {
  error=dc_render_gpu_make(&catalog,&gpu);if(!check(error==NULL,error))goto release;
  error=dc_render_base_bank_make(&catalog,&gpu,&bank);if(!check(error==NULL,error))goto release;
  /* decoded sectors kept across retargets: only newly entered ones are read */
- error=dc_render_block_cache_make(&catalog,"/rd",fly_source_sha,FLY_CACHE_BUDGET,&cache);
+ error=FLY_CACHE_MAKE(&catalog,"/rd",fly_source_sha,FLY_CACHE_BUDGET,&cache);
  if(!check(error==NULL,error))goto release;
  source=dc_render_block_cache_source(&cache);
  data=memalign(32,FLY_PACKAGE_BYTES);if(!check(data!=NULL,"fly package allocation"))goto release;
@@ -80,7 +88,7 @@ int main(void) {
    if(!check(error==NULL,error))goto release;
    if(window.faces==before&&before)++dc_fly_metrics.reused;}
   ++dc_fly_metrics.retargets;
-  if(window.count!=e->faces||crc32(0,window.faces,window.count*116u)!=e->crc)windows_ok=0;
+  if(window.count!=e->faces||crc32(0,window.faces,window.count*116u)!=FLY_WINDOW_CRC(e))windows_ok=0;
   {uint64_t t0=timer_us_gettime64(),t1;
    dc_render_base_frame_free(&frame);
    error=dc_render_base_frame_make(&window,&bank,&frame);

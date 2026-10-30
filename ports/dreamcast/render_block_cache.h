@@ -20,6 +20,13 @@ typedef struct {
  * frame/window allocations never borrow these blocks. No GPU ownership. */
 const char *dc_render_block_cache_make(const dc_render_catalog *,const char *root,
     const char *source_sha,uint32_t budget,dc_render_block_cache *);
+/* The same owner retaining DRX2 blocks: budget bounds their bytes, so about
+ * three times the geometry fits. Every block this source lends has zero normals,
+ * on a miss too, so replicas keep matching; a window's CRC differs from the
+ * package's. A hit expands the block into a transient allocation, freed on
+ * release. Failing to build a retained block only leaves it uncached. */
+const char *dc_render_block_cache_make_draw(const dc_render_catalog *,const char *root,
+    const char *source_sha,uint32_t budget,dc_render_block_cache *);
 dc_render_block_source dc_render_block_cache_source(dc_render_block_cache *);
 void dc_render_block_cache_measure(const dc_render_block_cache *,dc_render_block_cache_stats *);
 /* One serial owner, no outstanding borrowed block when freeing. Idempotent. */

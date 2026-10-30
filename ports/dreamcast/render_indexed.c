@@ -33,6 +33,29 @@ static int overlap(const void *a, size_t na, const void *b, size_t nb) {
 }
 
 /* Stored vertices are 36 bytes (DRX1) or 24, which omit the normal at +20..+31. */
+static void expand(const unsigned char *input, uint32_t nv, uint32_t nf, uint32_t stored,
+                   unsigned char *output) {
+    uint32_t i, face_offset = 12u + nv * stored;
+    for (i = 0; i < nf; ++i) {
+        const unsigned char *f = input + face_offset + i * 16u;
+        unsigned char *dest = output + (size_t)i * 116u;
+        unsigned vertex;
+        memcpy(dest, f, 8);
+        for (vertex = 0; vertex < 3; ++vertex) {
+            uint32_t index = read_u16(f + 8u + vertex * 2u);
+            const unsigned char *v = input + 12u + index * stored;
+            unsigned char *to = dest + 8u + vertex * 36u;
+            if (stored == 36u) {
+                memcpy(to, v, 36);
+            } else {
+                memcpy(to, v, 20);
+                memset(to + 20, 0, 12);
+                memcpy(to + 32, v + 20, 4);
+            }
+        }
+    }
+}
+
 static const char *decode(const void *blob, uint32_t bytes, void *out_faces,
                           uint32_t out_capacity_faces, uint32_t *out_count,
                           const char *magic, uint32_t stored) {
@@ -77,24 +100,7 @@ static const char *decode(const void *blob, uint32_t bytes, void *out_faces,
             read_u16(f + 12) >= nv) return "index out of range";
     }
     /* Validation is complete. Copy raw little-endian fields without repacking. */
-    for (i = 0; i < nf; ++i) {
-        const unsigned char *f = input + face_offset + i * 16u;
-        unsigned char *dest = output + (size_t)i * 116u;
-        unsigned vertex;
-        memcpy(dest, f, 8);
-        for (vertex = 0; vertex < 3; ++vertex) {
-            uint32_t index = read_u16(f + 8u + vertex * 2u);
-            const unsigned char *v = input + 12u + index * stored;
-            unsigned char *to = dest + 8u + vertex * 36u;
-            if (stored == 36u) {
-                memcpy(to, v, 36);
-            } else {
-                memcpy(to, v, 20);
-                memset(to + 20, 0, 12);
-                memcpy(to + 32, v + 20, 4);
-            }
-        }
-    }
+    expand(input, nv, nf, stored, output);
     *out_count = nf;
     return NULL;
 }
@@ -109,4 +115,79 @@ const char *dc_render_indexed_decode_draw(const void *blob, uint32_t bytes,
                                          void *out_faces, uint32_t out_capacity_faces,
                                          uint32_t *out_count) {
     return decode(blob, bytes, out_faces, out_capacity_faces, out_count, "DRX2", 24u);
+}
+
+void dc_render_indexed_expand_draw(const void *blob, void *out_faces) {
+    const unsigned char *input = (const unsigned char *)blob;
+    expand(input, read_u32(input + 4), read_u32(input + 8), 24u, (unsigned char *)out_faces);
+}
+
+uint32_t dc_render_indexed_draw_bound(uint32_t faces) {
+    return 16u + faces * (3u * 24u + 16u);
+}
+
+static void put_u32(unsigned char *p, uint32_t value) {
+    p[0] = (unsigned char)value;
+    p[1] = (unsigned char)(value >> 8);
+    p[2] = (unsigned char)(value >> 16);
+    p[3] = (unsigned char)(value >> 24);
+}
+
+const char *dc_render_indexed_encode_draw(const void *faces, uint32_t count, void *out,
+                                         uint32_t capacity, uint16_t *table,
+                                         uint32_t table_slots, uint32_t *out_bytes) {
+    const unsigned char *input = (const unsigned char *)faces;
+    unsigned char *output = (unsigned char *)out;
+    unsigned char *staged;
+    uint32_t i, nv = 0, bytes;
+    if (!out_bytes || !output || !table) return "null argument";
+    if (count && !input) return "null faces";
+    if (count > DC_RENDER_INDEXED_DRAW_MAX_FACES) return "too many faces";
+    if (capacity < dc_render_indexed_draw_bound(count)) return "output capacity";
+    if (table_slots < 8u || table_slots < 6u * count || (table_slots & (table_slots - 1u)))
+        return "table size";
+    memset(table, 0, (size_t)table_slots * sizeof(*table));
+    /* Faces wait above the largest vertex run, then close the gap. */
+    staged = output + 12u + count * 72u;
+    for (i = 0; i < count; ++i) {
+        const unsigned char *record = input + (size_t)i * 116u;
+        unsigned char *f = staged + i * 16u;
+        unsigned vertex;
+        memcpy(f, record, 8);
+        f[14] = f[15] = 0;
+        for (vertex = 0; vertex < 3; ++vertex) {
+            const unsigned char *v = record + 8u + vertex * 36u;
+            unsigned char key[24];
+            uint32_t hash = UINT32_C(2166136261), slot, channel, index = 0;
+            unsigned b;
+            for (channel = 0; channel < 8; ++channel) {
+                if ((read_u32(v + channel * 4u) & UINT32_C(0x7f800000)) ==
+                    UINT32_C(0x7f800000)) return "nonfinite vertex";
+            }
+            memcpy(key, v, 20);
+            memcpy(key + 20, v + 32, 4);
+            for (b = 0; b < 24; ++b) hash = (hash ^ key[b]) * UINT32_C(16777619);
+            for (slot = hash & (table_slots - 1u);; slot = (slot + 1u) & (table_slots - 1u)) {
+                if (!table[slot]) {
+                    if (nv >= 65535u) return "too many vertices";
+                    index = nv++;
+                    table[slot] = (uint16_t)(index + 1u);
+                    memcpy(output + 12u + index * 24u, key, 24);
+                    break;
+                }
+                index = table[slot] - 1u;
+                if (!memcmp(output + 12u + index * 24u, key, 24)) break;
+            }
+            f[8u + vertex * 2u] = (unsigned char)index;
+            f[9u + vertex * 2u] = (unsigned char)(index >> 8);
+        }
+    }
+    memmove(output + 12u + nv * 24u, staged, (size_t)count * 16u);
+    memcpy(output, "DRX2", 4);
+    put_u32(output + 4, nv);
+    put_u32(output + 8, count);
+    bytes = 12u + nv * 24u + count * 16u;
+    put_u32(output + bytes, crc32_bytes(output, bytes));
+    *out_bytes = bytes + 4u;
+    return NULL;
 }

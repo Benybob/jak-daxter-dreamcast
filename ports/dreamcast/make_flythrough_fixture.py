@@ -29,6 +29,7 @@ import shutil
 import zlib
 
 import make_instance_fixture as mf
+import indexed_sectors
 import make_village_fixture as mv
 import prepare_render_sectors as rs
 import tfrag_glb
@@ -80,6 +81,7 @@ def make(glb, package, out, frames=30, length=60.0, half=14.0, header='build/fly
         _, tris = mf.expected(*mf.read(view), t, mf.DRAW_DISTANCE)
         lods = mf.lod_counts(blob, t, mf.DRAW_DISTANCE)
         rows.append({'target': t, 'query': query, 'faces': len(faces), 'crc': rs.crc32(raw),
+                     'draw_crc': rs.crc32(b''.join(indexed_sectors.strip_normals(x['raw']) for x in faces)),
                      'blend_faces': sum(1 for x in faces if x['material_id'] in blend),
                      'instances': sum(lods), 'triangles': tris, 'lods': lods})
     glb_doc = json.loads(tfrag_glb.read_chunks(background)[0][1])
@@ -91,13 +93,13 @@ def make(glb, package, out, frames=30, length=60.0, half=14.0, header='build/fly
             f'static const char fly_source_sha[]="{sha}";',
             f'static const float fly_yaw={f(mf.YAW)},fly_pitch={f(mf.PITCH)},fly_distance={f(mf.DISTANCE)},'
             f'fly_draw_distance={f(mf.DRAW_DISTANCE)};',
-            'typedef struct {float target[3];dc_render_query query;uint32_t faces,crc,instances,triangles,lods[4];} fly_frame;',
+            'typedef struct {float target[3];dc_render_query query;uint32_t faces,crc,draw_crc,instances,triangles,lods[4];} fly_frame;',
             'static const fly_frame fly_frames[FLY_FRAMES]={']
     for r in rows:
         q = r['query']
-        text.append('{{%s},{%s},%du,%du,%du,%du,{%s}},' % (
+        text.append('{{%s},{%s},%du,%du,%du,%du,%du,{%s}},' % (
             ','.join(f(v) for v in r['target']), ','.join(f(v) for v in (q[0], q[2], q[1], q[3])),
-            r['faces'], r['crc'], r['instances'], r['triangles'], ','.join(f'{n}u' for n in r['lods'])))
+            r['faces'], r['crc'], r['draw_crc'], r['instances'], r['triangles'], ','.join(f'{n}u' for n in r['lods'])))
     text.append('};')
     slots = max(mapping) + 1 if mapping else 1
     text.append(f'#define FLY_MATERIAL_SLOTS {slots}u')

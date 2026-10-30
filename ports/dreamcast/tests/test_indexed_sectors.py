@@ -319,6 +319,26 @@ class IndexedSectorNativeTests(unittest.TestCase):
         cls.decode_draw = cls.lib.dc_render_indexed_decode_draw
         cls.decode_draw.argtypes = cls.decode.argtypes
         cls.decode_draw.restype = ctypes.c_char_p
+        cls.encode_draw = cls.lib.dc_render_indexed_encode_draw
+        cls.encode_draw.argtypes = [ctypes.c_void_p, ctypes.c_uint32, ctypes.c_void_p, ctypes.c_uint32,
+                                    ctypes.c_void_p, ctypes.c_uint32, ctypes.POINTER(ctypes.c_uint32)]
+        cls.encode_draw.restype = ctypes.c_char_p
+        cls.expand_draw = cls.lib.dc_render_indexed_expand_draw
+        cls.expand_draw.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+        cls.expand_draw.restype = None
+        cls.bound = cls.lib.dc_render_indexed_draw_bound
+        cls.bound.argtypes = [ctypes.c_uint32]
+        cls.bound.restype = ctypes.c_uint32
+
+    def encode(self, records, slots=None):
+        count = len(records)
+        slots = slots or max(8, 1 << (6 * count - 1).bit_length() if count else 8)
+        faces = ctypes.create_string_buffer(b''.join(records), count * 116 + 1)
+        out = ctypes.create_string_buffer(self.bound(count))
+        table = (ctypes.c_uint16 * slots)()
+        size = ctypes.c_uint32(0)
+        error = self.encode_draw(faces, count, out, self.bound(count), table, slots, ctypes.byref(size))
+        return error, out.raw[:size.value]
 
     def call(self, blob, capacity=2, decoder=None):
         source = ctypes.create_string_buffer(b'X' + blob)
@@ -379,6 +399,46 @@ class IndexedSectorNativeTests(unittest.TestCase):
         self.assertEqual(self.call(blob)[0], 'bad magic')
         self.assertEqual(self.call(indexed.encode_sector(flat_fan_records()),
                                    decoder=self.decode_draw)[0], 'bad magic')
+
+    def test_c_encoder_writes_the_python_bytes(self):
+        package = synthetic_package(True)
+        cases = [[r['raw'] for r in drm.parse_sector(s)['records']]
+                 for s in list(package.sectors.values()) + [package.global_sector]]
+        for records in cases + [flat_fan_records(), []]:
+            error, blob = self.encode(records)
+            self.assertIsNone(error)
+            self.assertEqual(blob, indexed.encode_draw_sector(records))
+
+    def test_c_encoder_handles_a_heavily_colliding_table_and_a_large_sector(self):
+        records = []
+        for i in range(500):
+            corners = b''.join(struct.pack('<8fI', (i + j) * 0.25, j, 0, 0, 0, i % 7, 0, 1, 0xFF000000 + j)
+                               for j in range(3))
+            records.append(struct.pack('<II', i, 1) + corners)
+        self.assertEqual(self.encode(records)[1], indexed.encode_draw_sector(records))
+
+    def test_expand_matches_the_checked_decoder(self):
+        for records in (flat_fan_records(), quad_records()):
+            blob = indexed.encode_draw_sector(records)
+            out = ctypes.create_string_buffer(len(records) * 116 + 4)
+            self.expand_draw(blob, out)
+            self.assertEqual(out.raw[:len(records) * 116], b''.join(indexed.decode_draw_sector(blob)))
+            self.assertEqual(out.raw[len(records) * 116:], bytes(4))
+
+    def test_encoder_refusals(self):
+        records = flat_fan_records()
+        self.assertEqual(self.encode(records, slots=9)[0], b'table size')
+        self.assertEqual(self.encode(records, slots=4)[0], b'table size')
+        bad = bytearray(records[0])
+        struct.pack_into('<f', bad, 8 + 24, math.nan)  # a normal, as Python refuses it too
+        self.assertEqual(self.encode([bytes(bad)])[0], b'nonfinite vertex')
+        size = ctypes.c_uint32(0)
+        table = (ctypes.c_uint16 * 8)()
+        self.assertEqual(self.encode_draw(None, 1, ctypes.create_string_buffer(200), 200, table, 8,
+                                          ctypes.byref(size)), b'null faces')
+        faces = ctypes.create_string_buffer(records[0])
+        self.assertEqual(self.encode_draw(faces, 1, ctypes.create_string_buffer(200), 103, table, 8,
+                                          ctypes.byref(size)), b'output capacity')
 
     def test_empty_block_null_arguments_and_overlap_are_atomic(self):
         empty = indexed.encode_sector([])

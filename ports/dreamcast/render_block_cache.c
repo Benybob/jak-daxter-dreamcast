@@ -1,5 +1,6 @@
 /* Validate once, retain exact whole blocks under an explicit budget (AI-assisted), ISC. */
 #include "render_block_cache.h"
+#include "render_indexed.h"
 #include <inttypes.h>
 #include <stdlib.h>
 #include <string.h>
@@ -20,13 +21,14 @@ extern int dc_rbc_test_fclose(FILE *);
 #endif
 typedef struct {
  dc_render_entry entry;dc_render_block block;
- uint32_t rank;int valid,global;
+ unsigned char *compact; /* DRX2 in place of block when the owner retains them */
+ uint32_t rank,bytes;int valid,global;
 } slot;
 typedef struct {
  dc_render_catalog catalog;char root[DC_RENDER_CACHE_ROOT_MAX+1];
  uint32_t budget;slot slots[DC_RENDER_BLOCK_CACHE_SLOTS];
  dc_render_block_cache_stats stats;
- dc_render_block borrowed;int pinned,cached;
+ dc_render_block borrowed;int pinned,cached,draw,expanded;
 } state;
 static int length(const char *p,unsigned max){unsigned i;if(!p)return -1;for(i=0;i<=max;++i)if(!p[i])return (int)i;return -1;}
 static int hex(char c){if(c>='0'&&c<='9')return c-'0';if(c>='a'&&c<='f')return c-'a'+10;if(c>='A'&&c<='F')return c-'A'+10;return -1;}
@@ -51,14 +53,32 @@ static unsigned victim(const state *s) {
 }
 static void evict(state *s,unsigned i) {
  slot *v=&s->slots[i];if(!v->valid)return;
- s->stats.bytes-=v->entry.raw_bytes;--s->stats.blocks;++s->stats.evictions;
- dc_render_block_free(&v->block);memset(v,0,sizeof(*v));
+ s->stats.bytes-=v->bytes;--s->stats.blocks;++s->stats.evictions;
+ dc_render_block_free(&v->block);FREE(v->compact);memset(v,0,sizeof(*v));
 }
 /* Used only when a byte budget needs space: victim() prefers an empty slot. */
 static unsigned oldest(const state *s) {
  unsigned i,best=DC_RENDER_BLOCK_CACHE_SLOTS;for(i=0;i<DC_RENDER_BLOCK_CACHE_SLOTS;++i)
   if(s->slots[i].valid&&(best==DC_RENDER_BLOCK_CACHE_SLOTS||s->slots[i].rank>s->slots[best].rank))best=i;
  return best;
+}
+/* Zero normals, then retain the block as DRX2 if it can be built and it fits. */
+static void retain_draw(state *s,const dc_render_entry *entry,int global,dc_render_block *block) {
+ uint32_t count=block->count,bytes=0,slots=8,i;unsigned char *built,*kept=NULL;uint16_t *table;
+ for(i=0;i<count;++i){unsigned v;for(v=0;v<3;++v)memset(block->records+(size_t)i*116u+8u+v*36u+20u,0,12);}
+ s->cached=0;
+ if(count>DC_RENDER_INDEXED_DRAW_MAX_FACES){++s->stats.bypasses;return;}
+ while(slots<6u*count)slots<<=1;
+ built=ALLOC(dc_render_indexed_draw_bound(count));table=ALLOC((size_t)slots*sizeof(*table));
+ if(built&&table&&!dc_render_indexed_encode_draw(block->records,count,built,dc_render_indexed_draw_bound(count),table,slots,&bytes)&&
+    bytes<=s->budget&&(kept=ALLOC(bytes)))memcpy(kept,built,bytes);
+ FREE(table);FREE(built);
+ if(!kept){++s->stats.bypasses;return;}
+ while(s->stats.bytes>s->budget-bytes)evict(s,oldest(s));
+ i=victim(s);evict(s,i);touch(s,i);
+ s->slots[i].entry=*entry;s->slots[i].compact=kept;s->slots[i].bytes=bytes;s->slots[i].global=global;s->slots[i].valid=1;
+ s->stats.bytes+=bytes;++s->stats.blocks;
+ if(s->stats.bytes>s->stats.peak_bytes)s->stats.peak_bytes=s->stats.bytes;
 }
 static const char *load(void *user,const dc_render_catalog *catalog,const dc_render_entry *entry,
  int global,const char *path,dc_render_block *out) {
@@ -72,10 +92,19 @@ static const char *load(void *user,const dc_render_catalog *catalog,const dc_ren
  if(n<0||(unsigned)n>=sizeof expected||strcmp(expected,path))return "block cache path";
  for(i=0;i<DC_RENDER_BLOCK_CACHE_SLOTS;++i)if(s->slots[i].valid&&s->slots[i].global==global&&
      !memcmp(&s->slots[i].entry,entry,sizeof(*entry))) {
+  if(s->draw) {
+   block.count=entry->count;
+   if(block.count) {
+    block.records=ALLOC((size_t)block.count*116u);
+    if(!block.records){++s->stats.failures;return "block cache allocation";}
+    dc_render_indexed_expand_draw(s->slots[i].compact,block.records);
+   }
+   touch(s,i);++s->stats.hits;*out=block;s->borrowed=block;s->pinned=1;s->expanded=1;return NULL;
+  }
   touch(s,i);++s->stats.hits;*out=s->slots[i].block;s->borrowed=*out;s->pinned=1;s->cached=1;return NULL;
  }
  ++s->stats.misses;
- if(entry->raw_bytes<=s->budget) {
+ if(!s->draw&&entry->raw_bytes<=s->budget) {
   while(s->stats.bytes>s->budget-entry->raw_bytes) {
    i=oldest(s);if(i==DC_RENDER_BLOCK_CACHE_SLOTS)return "block cache budget invariant";evict(s,i);
   }
@@ -85,9 +114,10 @@ static const char *load(void *user,const dc_render_catalog *catalog,const dc_ren
  if(!error&&closed)error=DC_RENDER_CACHE_ERR_CLOSE;
  if(error){dc_render_block_free(&block);++s->stats.failures;return error;}
  ++s->stats.loads;
- if(entry->raw_bytes<=s->budget) {
+ if(s->draw)retain_draw(s,entry,global,&block);
+ else if(entry->raw_bytes<=s->budget) {
   i=victim(s);evict(s,i);touch(s,i);
-  s->slots[i].entry=*entry;s->slots[i].block=block;s->slots[i].global=global;s->slots[i].valid=1;
+  s->slots[i].entry=*entry;s->slots[i].block=block;s->slots[i].bytes=entry->raw_bytes;s->slots[i].global=global;s->slots[i].valid=1;
   s->stats.bytes+=entry->raw_bytes;++s->stats.blocks;
   if(s->stats.bytes>s->stats.peak_bytes)s->stats.peak_bytes=s->stats.bytes;
   s->cached=1;
@@ -97,19 +127,28 @@ static const char *load(void *user,const dc_render_catalog *catalog,const dc_ren
 static void release(void *user,dc_render_block *block) {
  dc_render_block_cache *owner=user;state *s=owner?owner->state:NULL;
  if(!s||!s->pinned||!block||block->records!=s->borrowed.records||block->count!=s->borrowed.count)return;
- if(!s->cached)dc_render_block_free(&s->borrowed);
- memset(&s->borrowed,0,sizeof s->borrowed);s->pinned=0;s->cached=0;memset(block,0,sizeof(*block));
+ if(s->expanded)FREE(s->borrowed.records);
+ else if(!s->cached)dc_render_block_free(&s->borrowed);
+ memset(&s->borrowed,0,sizeof s->borrowed);s->pinned=0;s->cached=0;s->expanded=0;memset(block,0,sizeof(*block));
 }
-const char *dc_render_block_cache_make(const dc_render_catalog *catalog,const char *root,
- const char *sha,uint32_t budget,dc_render_block_cache *out) {
+static const char *make(const dc_render_catalog *catalog,const char *root,
+ const char *sha,uint32_t budget,int draw,dc_render_block_cache *out) {
  state *s;int n;unsigned i;
  if(!out||out->state)return "block cache owned output";
  if(!catalog||!catalog->storage||catalog->bytes<256||!budget||budget>DC_RENDER_BLOCK_CACHE_MAX||
     (n=length(root,DC_RENDER_CACHE_ROOT_MAX))<1||length(sha,64)!=64)return "block cache arguments";
  for(i=0;i<32;++i){int hi=hex(sha[i*2]),lo=hex(sha[i*2+1]);if(hi<0||lo<0||(unsigned)(hi*16+lo)!=catalog->storage[164+i])return "block cache SHA";}
  s=ALLOC(sizeof(*s));if(!s)return "block cache allocation";
- memset(s,0,sizeof(*s));s->catalog=*catalog;memcpy(s->root,root,(unsigned)n+1u);s->budget=budget;
+ memset(s,0,sizeof(*s));s->catalog=*catalog;memcpy(s->root,root,(unsigned)n+1u);s->budget=budget;s->draw=draw;
  s->stats.metadata_bytes=(uint32_t)sizeof(*s);out->state=s;return NULL;
+}
+const char *dc_render_block_cache_make(const dc_render_catalog *catalog,const char *root,
+ const char *sha,uint32_t budget,dc_render_block_cache *out) {
+ return make(catalog,root,sha,budget,0,out);
+}
+const char *dc_render_block_cache_make_draw(const dc_render_catalog *catalog,const char *root,
+ const char *sha,uint32_t budget,dc_render_block_cache *out) {
+ return make(catalog,root,sha,budget,1,out);
 }
 dc_render_block_source dc_render_block_cache_source(dc_render_block_cache *owner) {
  dc_render_block_source source={owner,load,release};return source;
@@ -119,7 +158,8 @@ void dc_render_block_cache_measure(const dc_render_block_cache *owner,dc_render_
 }
 void dc_render_block_cache_free(dc_render_block_cache *owner) {
  state *s;unsigned i;if(!owner||!(s=owner->state))return;
- if(s->pinned&&!s->cached)dc_render_block_free(&s->borrowed);
- for(i=0;i<DC_RENDER_BLOCK_CACHE_SLOTS;++i)if(s->slots[i].valid)dc_render_block_free(&s->slots[i].block);
+ if(s->pinned&&s->expanded)FREE(s->borrowed.records);
+ else if(s->pinned&&!s->cached)dc_render_block_free(&s->borrowed);
+ for(i=0;i<DC_RENDER_BLOCK_CACHE_SLOTS;++i)if(s->slots[i].valid){dc_render_block_free(&s->slots[i].block);FREE(s->slots[i].compact);}
  FREE(s);owner->state=NULL;
 }

@@ -6,6 +6,7 @@ import unittest
 import sys
 PORT=Path(__file__).resolve().parents[1]
 sys.path[:0]=[str(PORT),str(PORT/'tests')]
+import indexed_sectors as indexed
 import prepare_render_sectors as r
 from test_render_sectors import _one,_package
 from make_render_cache_fixture import make as make_cases
@@ -19,6 +20,7 @@ class BlockCacheTest(unittest.TestCase):
         cls.lib=ctypes.CDLL(str(path))
         for name,args,ret in [
             ('dc_rbc_arm',[ctypes.c_uint32]*3,None),('dc_rbc_new',[ctypes.c_char_p,ctypes.c_uint32],ctypes.c_void_p),
+            ('dc_rbc_new_draw',[ctypes.c_char_p,ctypes.c_uint32],ctypes.c_void_p),
             ('dc_rbc_close',[ctypes.c_void_p],None),('dc_rbc_error',[],ctypes.c_char_p),
             ('dc_rbc_window',[ctypes.c_void_p,ctypes.POINTER(ctypes.c_double)],ctypes.c_char_p),
             ('dc_rbc_stats',[ctypes.c_void_p,ctypes.POINTER(ctypes.c_uint32)],None),
@@ -47,6 +49,48 @@ class BlockCacheTest(unittest.TestCase):
         for q in ((0,2,0,2),(-1,3,-1,3)):
             self.assertIsNone(self.load(c,q));self.assertEqual(self.payload(c),b''.join(f['raw'] for f in r.assemble_window(p,q)))
         s=self.stats(c);self.assertEqual(s[2],2);self.assertGreaterEqual(s[0],6);self.assertEqual(s[3],0);self.assertEqual(s[6],116)
+    def draw_owner(self,root,budget=2*1024*1024):
+        c=self.lib.dc_rbc_new_draw(str(root).encode(),budget);self.assertTrue(c,self.lib.dc_rbc_error());self.owners.append(c);return c
+    def stripped(self,p,q):
+        return b''.join(indexed.strip_normals(f['raw']) for f in r.assemble_window(p,q))
+    def test_draw_blocks_lend_zero_normals_on_misses_and_hits(self):
+        p,root=self.packet([(0.2,0,.2),(1,0,.2),(.2,1,1),(30,0,.2),(31,0,.2),(30,1,1)]);c=self.draw_owner(root)
+        for q in ((0,2,0,2),(-1,3,-1,3),(0,33,-1,3)):
+            self.assertIsNone(self.load(c,q));self.assertEqual(self.payload(c),self.stripped(p,q))
+        s=self.stats(c);self.assertGreater(s[0],0);self.assertEqual(s[3],0);self.assertEqual(s[5],0)
+        self.assertEqual(s[7],s[6]);self.assertEqual(s[4],0)
+    def test_draw_retention_counts_drx2_bytes_exactly(self):
+        p,root=self.packet([(.2,0,.2),(1,0,.2),(.2,1,1)]);c=self.draw_owner(root)
+        self.assertIsNone(self.load(c,(0,2,0,2)))
+        blocks=[v for v in list(p.sectors.values())+[p.global_sector]]
+        self.assertEqual(self.stats(c)[6],sum(len(indexed.encode_draw_sector(f['raw'] for f in r.parse_sector(b)['records'])) for b in blocks))
+    def test_draw_keeps_what_a_drm2_budget_would_bypass(self):
+        fan=[(.2,0,.2),(1,0,.2),(1,1,.2),(.2,1,.2),(.2,0,1),(1,0,1),(1,1,1),(.2,1,1)]
+        tris=[fan[i] for t in ((0,1,2),(0,2,3),(4,5,6),(4,6,7),(0,1,5),(0,5,4),(1,2,6),(1,6,5),(2,3,7),(2,7,6),(3,0,4),(3,4,7)) for i in t]
+        p,root=self.packet(tris);raw=sum(len(f) for f in [b''.join(x['raw'] for x in r.parse_sector(p.sectors[(0,0)])['records'])])
+        budget=raw//2;self.assertGreater(raw,budget)
+        q=(0,2,0,2);plain,draw=self.owner(root,budget),self.draw_owner(root,budget)
+        for c in (plain,draw):
+            for _ in range(3):self.assertIsNone(self.load(c,q))
+        self.assertGreater(self.stats(draw)[0],self.stats(plain)[0]);self.assertEqual(self.payload(draw),self.stripped(p,q))
+    def test_draw_eviction_stays_inside_the_budget(self):
+        xyz=[v for x in range(0,160,16) for v in ((x+.2,0,.2),(x+1,0,.2),(x+.2,1,1))]
+        p,root=self.packet(xyz);c=self.draw_owner(root,300)
+        for x in range(0,160,16):
+            q=(x,x+2,0,2);self.assertIsNone(self.load(c,q));self.assertEqual(self.payload(c),self.stripped(p,q))
+            self.assertLessEqual(self.stats(c)[6],300)
+        self.assertGreater(self.stats(c)[3],0);self.assertLessEqual(self.stats(c)[7],300)
+    def test_every_draw_allocation_failure_is_clean(self):
+        p,root=self.packet([(.2,0,.2),(1,0,.2),(.2,1,1)]);q=(0,2,0,2);full=self.stripped(p,q)
+        for at in range(1,40):
+            with self.subTest(at=at):
+                c=self.draw_owner(root);self.assertIsNone(self.load(c,q));self.lib.dc_rbc_arm(at,0,0)
+                error=self.load(c,(-1,3,-1,3));self.lib.dc_rbc_arm(0,0,0)
+                self.assertEqual(self.payload(c),full)
+                self.assertIsNone(self.load(c,(-1,3,-1,3)));self.assertEqual(self.payload(c),full)
+                self.lib.dc_rbc_close(c);self.owners.remove(c);self.assertEqual(self.stats(None)[13:15],[0,0])
+    def test_draw_guards_match_the_plain_owner(self):
+        _,root=self.packet([(.2,0,.2),(1,0,.2),(.2,1,1)]);self.assertEqual(self.lib.dc_rbc_guards(self.draw_owner(root)),1)
     def test_trailing_separator_matches_the_original_root_contract(self):
         p,root=self.packet([(.2,0,.2),(1,0,.2),(.2,1,1)])
         for suffix in ('/','\\') if sys.platform=='win32' else ('/',):

@@ -14,7 +14,7 @@ FILE *dc_rbc_test_fopen(const char *p,const char *m){FILE *f;if(++attempts[1]==f
 int dc_rbc_test_fclose(FILE *f){int r=fclose(f);--files_live;if(++attempts[2]==faults[2])return -1;return r;}
 void dc_rbc_close(void *p){context *c=p;if(!c)return;dc_render_window_free(&c->window);dc_render_block_cache_free(&c->blocks);dc_render_block_cache_free(&c->blocks);dc_render_catalog_free(&c->catalog);free(c);}
 const char *dc_rbc_error(void){return last;}
-void *dc_rbc_new(const char *root,uint32_t budget){
+static void *open_owner(const char *root,uint32_t budget,int draw){
  context *c=calloc(1,sizeof(*c));char path[512];FILE *f;unsigned i;int closed;
  if(!c)return NULL;
  if(!root||strlen(root)>240){last="bridge root";goto fail;}
@@ -22,10 +22,12 @@ void *dc_rbc_new(const char *root,uint32_t budget){
  if(!f){last="bridge catalog open";goto fail;}
  last=dc_render_catalog_load(f,&c->catalog);closed=fclose(f);if(!last&&closed)last="bridge catalog close";if(last)goto fail;
  for(i=0;i<32;++i)snprintf(c->sha+i*2,3,"%02x",c->catalog.storage[164+i]);
- last=dc_render_block_cache_make(&c->catalog,root,c->sha,budget,&c->blocks);if(last)goto fail;
+ last=(draw?dc_render_block_cache_make_draw:dc_render_block_cache_make)(&c->catalog,root,c->sha,budget,&c->blocks);if(last)goto fail;
  return c;
 fail:dc_rbc_close(c);return NULL;
 }
+void *dc_rbc_new(const char *root,uint32_t budget){return open_owner(root,budget,0);}
+void *dc_rbc_new_draw(const char *root,uint32_t budget){return open_owner(root,budget,1);}
 const char *dc_rbc_window(void *p,const double *query){
  context *c=p;dc_render_window before;dc_render_block_source source;unsigned char *bytes=NULL;const char *error;
  if(!c||!query)return "bridge window arguments";
