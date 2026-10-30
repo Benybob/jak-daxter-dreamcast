@@ -462,6 +462,30 @@ large in this view). Built once more with the translucent list left out, the
 same last frame differs in 279 pixels, all in one 132 x 53 region where the
 sand paths lie: the blended triangles reach the screen there and nowhere else.
 
+## What the streaming renderer holds in RAM
+
+At the end of the beach path (newlib's `mallinfo` and the linker's `end`, in
+Flycast's 16 MiB):
+
+| | MB |
+| --- | ---: |
+| static image (code, data, and the 3.9 MB romdisk linked in) | 4.28 |
+| heap in use: the 1.34 MB instance package, the block cache's 1.66 MB peak, catalog, window, frame owner, scratch | 3.94 |
+| heap arena (in use plus free blocks) | 4.46 |
+| free above the heap | 7.19 |
+
+In the game the romdisk's part would come from the disc, but the renderer's own
+resident state, about 3.9 MB, is already more than the 2.8 MiB the GOAL arena
+leaves free (above). Where it can shrink: the block cache's budget (it holds
+every sector the path touched, never evicting), and the package's 24-byte
+vertices (16-bit positions in a prototype's bounds and 16-bit UVs would halve
+them). Measured, not yet done.
+
+The 16 prototypes whose cut has more triangles than the dump's geometry 0 are
+not simple duplicates: on the warpgate the extras are its `-envmap` materials
+(148 tris), on the fisherman's boat ordinary wood and roof materials whose
+positions differ from the dump's; which is right is not settled.
+
 ## Proposed design
 
 1. **Resident per level: what gameplay needs everywhere.** Code (0.25 MiB),

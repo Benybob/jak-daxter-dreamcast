@@ -20,7 +20,7 @@ typedef struct {uint32_t frames,retargets,max_faces,max_instance_triangles,insta
  max_frame_us,total_us,last_frame,textured_materials,
  retarget_us,frame_make_us,prepare_us,terrain_draw_us,instance_draw_us,reused,
  cache_hits,cache_misses,cache_peak_bytes,cache_evictions,sphere_culled,translucent_triangles,last_translucent,
- back_faces,submitted_total;} fly_metrics;
+ back_faces,submitted_total,image_bytes,heap_arena,heap_in_use,heap_free_top;} fly_metrics;
 volatile fly_metrics dc_fly_metrics;
 static int check(int ok,const char *why) {
  ++dc_backend.total;if(ok){++dc_backend.passed;return 1;}
@@ -137,6 +137,12 @@ int main(void) {
  check(instances_ok,"fly every frame's instances and triangles match the host");
  check(lods_ok,"fly every frame's LOD choice matches the host");
  check(dc_fly_metrics.frames==FLY_FRAMES,"fly every frame drawn");
+ /* main RAM: the static image (code, data, the romdisk linked in), newlib's
+  * heap arena and what is in use in it at the end, everything resident */
+ {extern char end;struct mallinfo mi=mallinfo();
+  dc_fly_metrics.image_bytes=(uint32_t)((uintptr_t)&end-0x8c010000u);
+  dc_fly_metrics.heap_arena=(uint32_t)mi.arena;dc_fly_metrics.heap_in_use=(uint32_t)mi.uordblks;
+  dc_fly_metrics.heap_free_top=(uint32_t)(_arch_mem_top-((uintptr_t)&end+mi.arena));}
  dc_backend.observed_lo=dc_fly_metrics.frames;dc_backend.observed_hi=dc_fly_metrics.max_faces;
  dc_backend.expected_lo=FLY_FRAMES;dc_backend.expected_hi=dc_fly_metrics.max_instance_triangles;
 release:
