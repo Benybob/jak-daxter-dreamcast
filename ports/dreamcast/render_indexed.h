@@ -39,4 +39,7 @@ const char *dc_render_indexed_encode_draw(const void *faces, uint32_t count, voi
  * already decoded: count*116 output bytes, not overlapping the blob. */
 void dc_render_indexed_expand_draw(const void *blob, void *out_faces);
 
+/* The same for one face by position, 116 output bytes. */
+void dc_render_indexed_expand_draw_face(const void *blob, uint32_t index, void *out_face);
+
 #endif

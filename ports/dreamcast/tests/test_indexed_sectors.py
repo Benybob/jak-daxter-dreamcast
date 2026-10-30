@@ -425,6 +425,15 @@ class IndexedSectorNativeTests(unittest.TestCase):
             self.assertEqual(out.raw[:len(records) * 116], b''.join(indexed.decode_draw_sector(blob)))
             self.assertEqual(out.raw[len(records) * 116:], bytes(4))
 
+    def test_expand_one_face_matches_the_block(self):
+        records = flat_fan_records()
+        blob = indexed.encode_draw_sector(records)
+        for index, raw in enumerate(indexed.decode_draw_sector(blob)):
+            out = ctypes.create_string_buffer(120)
+            self.lib.dc_render_indexed_expand_draw_face(ctypes.c_char_p(blob), index, out)
+            self.assertEqual(out.raw[:116], raw)
+            self.assertEqual(out.raw[116:], bytes(4))
+
     def test_encoder_refusals(self):
         records = flat_fan_records()
         self.assertEqual(self.encode(records, slots=9)[0], b'table size')

@@ -33,27 +33,29 @@ static int overlap(const void *a, size_t na, const void *b, size_t nb) {
 }
 
 /* Stored vertices are 36 bytes (DRX1) or 24, which omit the normal at +20..+31. */
+static void expand_face(const unsigned char *input, const unsigned char *f, uint32_t stored,
+                        unsigned char *dest) {
+    unsigned vertex;
+    memcpy(dest, f, 8);
+    for (vertex = 0; vertex < 3; ++vertex) {
+        uint32_t index = read_u16(f + 8u + vertex * 2u);
+        const unsigned char *v = input + 12u + index * stored;
+        unsigned char *to = dest + 8u + vertex * 36u;
+        if (stored == 36u) {
+            memcpy(to, v, 36);
+        } else {
+            memcpy(to, v, 20);
+            memset(to + 20, 0, 12);
+            memcpy(to + 32, v + 20, 4);
+        }
+    }
+}
+
 static void expand(const unsigned char *input, uint32_t nv, uint32_t nf, uint32_t stored,
                    unsigned char *output) {
     uint32_t i, face_offset = 12u + nv * stored;
-    for (i = 0; i < nf; ++i) {
-        const unsigned char *f = input + face_offset + i * 16u;
-        unsigned char *dest = output + (size_t)i * 116u;
-        unsigned vertex;
-        memcpy(dest, f, 8);
-        for (vertex = 0; vertex < 3; ++vertex) {
-            uint32_t index = read_u16(f + 8u + vertex * 2u);
-            const unsigned char *v = input + 12u + index * stored;
-            unsigned char *to = dest + 8u + vertex * 36u;
-            if (stored == 36u) {
-                memcpy(to, v, 36);
-            } else {
-                memcpy(to, v, 20);
-                memset(to + 20, 0, 12);
-                memcpy(to + 32, v + 20, 4);
-            }
-        }
-    }
+    for (i = 0; i < nf; ++i)
+        expand_face(input, input + face_offset + i * 16u, stored, output + (size_t)i * 116u);
 }
 
 static const char *decode(const void *blob, uint32_t bytes, void *out_faces,
@@ -120,6 +122,12 @@ const char *dc_render_indexed_decode_draw(const void *blob, uint32_t bytes,
 void dc_render_indexed_expand_draw(const void *blob, void *out_faces) {
     const unsigned char *input = (const unsigned char *)blob;
     expand(input, read_u32(input + 4), read_u32(input + 8), 24u, (unsigned char *)out_faces);
+}
+
+void dc_render_indexed_expand_draw_face(const void *blob, uint32_t index, void *out_face) {
+    const unsigned char *input = (const unsigned char *)blob;
+    expand_face(input, input + 12u + read_u32(input + 4) * 24u + index * 16u, 24u,
+                (unsigned char *)out_face);
 }
 
 uint32_t dc_render_indexed_draw_bound(uint32_t faces) {

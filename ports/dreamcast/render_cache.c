@@ -489,14 +489,17 @@ static const char *cache_select_ids(dc_render_job *job, const unsigned char *ids
     return cache_merge_ids(job->ws, count);
 }
 
-static const char *cache_validate_block(dc_render_job *job, const dc_render_block *block, int global) {
+/* records, or NULL to take each face wanted from the source's face callback. */
+static const char *cache_validate_ids(dc_render_job *job, const unsigned char *ids, uint32_t stride,
+                                      uint32_t faces, const unsigned char *records, int global) {
+    unsigned char lent[DC_RENDER_FACE_BYTES];
     uint32_t i, previous = 0;
     int have = 0;
-    if (block->count > DC_RENDER_FILE_CAP) return DC_RENDER_CACHE_ERR_ARGUMENTS;
-    if (block->count && !block->records) return DC_RENDER_CACHE_ERR_ARGUMENTS;
-    for (i = 0; i < block->count; ++i) {
-        const unsigned char *record = block->records + (size_t)i * DC_RENDER_FACE_BYTES;
-        uint32_t id = cache_u32(record);
+    if (faces > DC_RENDER_FILE_CAP) return DC_RENDER_CACHE_ERR_ARGUMENTS;
+    if (faces && !ids) return DC_RENDER_CACHE_ERR_ARGUMENTS;
+    for (i = 0; i < faces; ++i) {
+        const unsigned char *record;
+        uint32_t id = cache_u32(ids + (size_t)i * stride);
         int slot;
         if (id >= job->source_count) return DC_RENDER_CACHE_ERR_ORDER;
         if (have && id <= previous) return DC_RENDER_CACHE_ERR_ORDER;
@@ -509,6 +512,12 @@ static const char *cache_validate_block(dc_render_job *job, const dc_render_bloc
                 id <= job->ws->batch[job->ws->batch_count - 1u])
                 return DC_RENDER_CACHE_ERR_MISSING;
             continue;
+        }
+        if (records) {
+            record = records + (size_t)i * DC_RENDER_FACE_BYTES;
+        } else {
+            job->source->face(job->source->user, i, lent);
+            record = lent;
         }
         if (!job->ws->seen[slot]) {
             int hit = cache_face_touches(record, job->query);
@@ -557,11 +566,12 @@ static const char *cache_run_pass(dc_render_job *job, int validate) {
         error = global ? cache_path_global(path, job->root)
                        : cache_path_local(path, job->root, entry->ix, entry->iz);
         if (error) return error;
-        if (!validate && job->source && job->source->peek) {
+        if (job->source && job->source->peek) {
             const unsigned char *ids = NULL;
             uint32_t stride = 0;
             if (job->source->peek(job->source->user, job->catalog, entry, global, &ids, &stride)) {
-                error = cache_select_ids(job, ids, entry->count, stride);
+                error = validate ? cache_validate_ids(job, ids, stride, entry->count, NULL, global)
+                                 : cache_select_ids(job, ids, entry->count, stride);
                 if (error) return error;
                 continue;
             }
@@ -571,7 +581,7 @@ static const char *cache_run_pass(dc_render_job *job, int validate) {
                             : cache_load_block(job->catalog, entry, global, path, &block);
         if (error) return error;
         if (block.count != entry->count) error = DC_RENDER_CACHE_ERR_ARGUMENTS;
-        else if (validate) error = cache_validate_block(job, &block, global);
+        else if (validate) error = cache_validate_ids(job, block.records, DC_RENDER_FACE_BYTES, block.count, block.records, global);
         else error = cache_select_ids(job, block.records, block.count, DC_RENDER_FACE_BYTES);
         if(job->source) job->source->release(job->source->user,&block);
         else dc_render_block_free(&block);

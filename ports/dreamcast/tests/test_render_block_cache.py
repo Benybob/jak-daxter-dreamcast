@@ -69,7 +69,7 @@ class BlockCacheTest(unittest.TestCase):
         self.lib.dc_rbc_arm(0,0,0);self.assertIsNone(self.load(plain,(-1,3,-1,3)));before=self.stats(plain)[10]
         self.lib.dc_rbc_arm(0,0,0);self.assertIsNone(self.load(draw,(-1,3,-1,3)))
         blocks=self.stats(draw)[0]-self.stats(plain)[0]
-        self.assertEqual(blocks,0);self.assertLessEqual(self.stats(draw)[10],before+3)
+        self.assertEqual(blocks,0);self.assertLessEqual(self.stats(draw)[10],before)
     def test_draw_retention_counts_drx2_bytes_exactly(self):
         p,root=self.packet([(.2,0,.2),(1,0,.2),(.2,1,1)]);c=self.draw_owner(root)
         self.assertIsNone(self.load(c,(0,2,0,2)))

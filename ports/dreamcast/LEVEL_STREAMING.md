@@ -521,9 +521,9 @@ leaves free (above). Where it can shrink:
   neighbourhood: the window still expands to 116-byte faces.
 
   `dc_render_block_cache_make_draw` retains these blocks (built in C on a miss,
-  the same bytes as `encode_draw_sector`; a hit expands one without a CRC, once
-  a retarget, since the select pass reads source IDs straight from the DRX2 face
-  table through the source's `peek`). `-DFLY_DRAW_CACHE` measures it on the same 16-frame path, against
+  the same bytes as `encode_draw_sector`; a hit reads source IDs straight from
+  the DRX2 face table through the source's `peek` and expands only the faces a
+  window wants, one at a time, allocating nothing). `-DFLY_DRAW_CACHE` measures it on the same 16-frame path, against
   the table above and rerun beside it, which reproduced that table's hits, misses
   and times exactly. Every row: 83 of 83 checks, the same last frame.
 
@@ -546,15 +546,15 @@ leaves free (above). Where it can shrink:
   | Retained | Budget | Peak | Retarget time | Longest frame | Heap in use | Free above heap |
   | --- | ---: | ---: | ---: | ---: | ---: | ---: |
   | DRM2 | 2 MB | 1.66 MB | 2.41 s | 1.24 s | 3.90 MB | 8.01 MB |
-  | DRX2 | 2 MB | 0.57 MB | 3.41 s | 1.63 s | 2.81 MB | 9.13 MB |
-  | DRX2 | 512 KB | 0.52 MB | 3.41 s | 1.63 s | 2.69 MB | 9.22 MB |
+  | DRX2 | 2 MB | 0.57 MB | 3.24 s | 1.60 s | 2.81 MB | 9.13 MB |
+  | DRX2 | 512 KB | 0.52 MB | 3.24 s | 1.60 s | 2.69 MB | 9.22 MB |
 
   2.69 MB is below the 2.8 MiB (2.94 MB) the GOAL arena leaves free, but that
   figure is taken at the end of the path. A retarget also holds transient
-  buffers: for the biggest sector (3,312 faces) a hit's expansion is 384 KB, and
-  a miss the same plus 291 KB of encoder output and 66 KB of table. So the margin
-  is 0.25 MB at rest and negative on a miss in the densest sector, unless those
-  transients come from elsewhere. Windows themselves remain 116-byte faces (7,117
+  buffers: a hit none, but a miss in the biggest sector (3,312 faces) holds the
+  384 KB block plus 291 KB of encoder output and 66 KB of table. So the margin
+  is 0.25 MB at rest and negative on such a miss, unless those transients come
+  from elsewhere. Windows themselves remain 116-byte faces (7,117
   at most, 826 KB), now the largest part of what is left.
 - **The package's vertices: done, DCI3.** `tie_lods.py --compact` writes
   16-byte vertices: 16-bit positions in steps of a geometry's own bounds (a

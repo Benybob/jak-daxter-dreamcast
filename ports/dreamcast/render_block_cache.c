@@ -29,6 +29,7 @@ typedef struct {
  uint32_t budget;slot slots[DC_RENDER_BLOCK_CACHE_SLOTS];
  dc_render_block_cache_stats stats;
  dc_render_block borrowed;int pinned,cached,draw,expanded;
+ const unsigned char *peeked;
 } state;
 static int length(const char *p,unsigned max){unsigned i;if(!p)return -1;for(i=0;i<=max;++i)if(!p[i])return (int)i;return -1;}
 static int hex(char c){if(c>='0'&&c<='9')return c-'0';if(c>='a'&&c<='f')return c-'a'+10;if(c>='A'&&c<='F')return c-'A'+10;return -1;}
@@ -133,9 +134,13 @@ static int peek(void *user,const dc_render_catalog *catalog,const dc_render_entr
      !memcmp(&s->slots[i].entry,entry,sizeof(*entry))) {
   const unsigned char *c=s->slots[i].compact;
   uint32_t vertices=(uint32_t)c[4]|(uint32_t)c[5]<<8|(uint32_t)c[6]<<16|(uint32_t)c[7]<<24;
-  touch(s,i);++s->stats.hits;*ids=c+12u+vertices*24u;*stride=16u;return 1;
+  touch(s,i);++s->stats.hits;s->peeked=c;*ids=c+12u+vertices*24u;*stride=16u;return 1;
  }
  return 0;
+}
+static void face(void *user,uint32_t index,unsigned char *out) {
+ dc_render_block_cache *owner=user;state *s=owner->state;
+ dc_render_indexed_expand_draw_face(s->peeked,index,out);
 }
 static void release(void *user,dc_render_block *block) {
  dc_render_block_cache *owner=user;state *s=owner?owner->state:NULL;
@@ -164,7 +169,7 @@ const char *dc_render_block_cache_make_draw(const dc_render_catalog *catalog,con
  return make(catalog,root,sha,budget,1,out);
 }
 dc_render_block_source dc_render_block_cache_source(dc_render_block_cache *owner) {
- dc_render_block_source source={owner,load,release,peek};return source;
+ dc_render_block_source source={owner,load,release,peek,face};return source;
 }
 void dc_render_block_cache_measure(const dc_render_block_cache *owner,dc_render_block_cache_stats *out) {
  const state *s=owner?owner->state:NULL;if(!out)return;if(s)*out=s->stats;else memset(out,0,sizeof(*out));
