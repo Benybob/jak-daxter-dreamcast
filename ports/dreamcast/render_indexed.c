@@ -1,4 +1,4 @@
-/* Validated, lossless DRX1 sector expansion without allocation. (AI-assisted), ISC. */
+/* Validated DRX1 (lossless) and DRX2 (draw-only) expansion without allocation. (AI-assisted), ISC. */
 #include "render_indexed.h"
 
 #include <stddef.h>
@@ -32,9 +32,10 @@ static int overlap(const void *a, size_t na, const void *b, size_t nb) {
     return aa <= bb ? bb - aa < na : aa - bb < nb;
 }
 
-const char *dc_render_indexed_decode(const void *blob, uint32_t bytes,
-                                    void *out_faces, uint32_t out_capacity_faces,
-                                    uint32_t *out_count) {
+/* Stored vertices are 36 bytes (DRX1) or 24, which omit the normal at +20..+31. */
+static const char *decode(const void *blob, uint32_t bytes, void *out_faces,
+                          uint32_t out_capacity_faces, uint32_t *out_count,
+                          const char *magic, uint32_t stored) {
     const unsigned char *input = (const unsigned char *)blob;
     unsigned char *output = (unsigned char *)out_faces;
     uint32_t nv, nf, i, face_offset;
@@ -42,11 +43,11 @@ const char *dc_render_indexed_decode(const void *blob, uint32_t bytes,
     if (!out_count) return "null count";
     if (!input) return "null blob";
     if (bytes < 16u) return "truncated header";
-    if (memcmp(input, "DRX1", 4) != 0) return "bad magic";
+    if (memcmp(input, magic, 4) != 0) return "bad magic";
     nv = read_u32(input + 4);
     nf = read_u32(input + 8);
     if (nv > 65535u) return "too many vertices";
-    expected = UINT64_C(16) + (uint64_t)nv * 36u + (uint64_t)nf * 16u;
+    expected = UINT64_C(16) + (uint64_t)nv * stored + (uint64_t)nf * 16u;
     if (expected != bytes) return "incorrect size";
     if (crc32_bytes(input, bytes - 4u) != read_u32(input + bytes - 4u))
         return "CRC mismatch";
@@ -62,13 +63,13 @@ const char *dc_render_indexed_decode(const void *blob, uint32_t bytes,
      * NaN conversion or floating-point mode can alter the preserved bytes. */
     for (i = 0; i < nv; ++i) {
         unsigned channel;
-        const unsigned char *v = input + 12u + i * 36u;
-        for (channel = 0; channel < 8; ++channel) {
+        const unsigned char *v = input + 12u + i * stored;
+        for (channel = 0; channel < (stored - 4u) / 4u; ++channel) {
             if ((read_u32(v + channel * 4u) & UINT32_C(0x7f800000)) ==
                 UINT32_C(0x7f800000)) return "nonfinite vertex";
         }
     }
-    face_offset = 12u + nv * 36u;
+    face_offset = 12u + nv * stored;
     for (i = 0; i < nf; ++i) {
         const unsigned char *f = input + face_offset + i * 16u;
         if (read_u16(f + 14) != 0u) return "nonzero pad";
@@ -83,9 +84,29 @@ const char *dc_render_indexed_decode(const void *blob, uint32_t bytes,
         memcpy(dest, f, 8);
         for (vertex = 0; vertex < 3; ++vertex) {
             uint32_t index = read_u16(f + 8u + vertex * 2u);
-            memcpy(dest + 8u + vertex * 36u, input + 12u + index * 36u, 36);
+            const unsigned char *v = input + 12u + index * stored;
+            unsigned char *to = dest + 8u + vertex * 36u;
+            if (stored == 36u) {
+                memcpy(to, v, 36);
+            } else {
+                memcpy(to, v, 20);
+                memset(to + 20, 0, 12);
+                memcpy(to + 32, v + 20, 4);
+            }
         }
     }
     *out_count = nf;
     return NULL;
+}
+
+const char *dc_render_indexed_decode(const void *blob, uint32_t bytes,
+                                    void *out_faces, uint32_t out_capacity_faces,
+                                    uint32_t *out_count) {
+    return decode(blob, bytes, out_faces, out_capacity_faces, out_count, "DRX1", 36u);
+}
+
+const char *dc_render_indexed_decode_draw(const void *blob, uint32_t bytes,
+                                         void *out_faces, uint32_t out_capacity_faces,
+                                         uint32_t *out_count) {
+    return decode(blob, bytes, out_faces, out_capacity_faces, out_count, "DRX2", 24u);
 }

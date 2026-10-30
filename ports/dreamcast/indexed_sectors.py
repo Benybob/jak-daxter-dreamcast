@@ -1,4 +1,10 @@
-"""Lossless DRX1 sectors and decoded block-cache measurements. (AI-assisted), ISC."""
+"""Lossless DRX1, draw-only DRX2 sectors and block-cache measurements. (AI-assisted), ISC.
+
+DRX1 keeps all 36 vertex bytes. Flat per-face normals defeat its sharing: village1
+stores 2.81 vertices a face. DRX2 stores the 24 bytes the terrain draw reads
+(position, UV, ARGB) and decodes with zero normals, so it is byte-identical only
+to DRM2 faces with their normals zeroed.
+"""
 
 import argparse
 import json
@@ -10,9 +16,11 @@ import zlib
 
 HEADER = struct.Struct('<4sII')
 VERTEX = struct.Struct('<8fI')
+DRAW_VERTEX = struct.Struct('<5fI')
 FACE = struct.Struct('<II4H')
 FACE_BYTES = 116
 MAX_VERTICES = 65535
+ZERO_NORMAL = bytes(12)
 
 
 def _bytes(value, reason):
@@ -26,12 +34,25 @@ def _finite(vertex):
         raise ValueError('nonfinite vertex')
 
 
+def _draw_vertex(vertex):
+    return vertex[:20] + vertex[32:]
+
+
 def encode_sector(records):
     """Encode raw faces (or parse_sector record dictionaries) in original order.
 
     Sharing uses all 36 vertex bytes, including UV, normal, colour and signed
     zero. No floating-point conversion is used to construct the output.
     """
+    return _encode(records, b'DRX1', lambda vertex: vertex)
+
+
+def encode_draw_sector(records):
+    """encode_sector without normals: sharing uses position, UV and ARGB bytes."""
+    return _encode(records, b'DRX2', _draw_vertex)
+
+
+def _encode(records, magic, stored):
     vertices, lookup, faces = bytearray(), {}, bytearray()
     try:
         iterator = iter(records)
@@ -48,40 +69,61 @@ def encode_sector(records):
         for offset in (8, 44, 80):
             vertex = raw[offset:offset + VERTEX.size]
             _finite(vertex)
-            index = lookup.get(vertex)
+            kept = stored(vertex)
+            index = lookup.get(kept)
             if index is None:
                 index = len(lookup)
                 if index >= MAX_VERTICES:
                     raise ValueError('too many vertices')
-                lookup[vertex] = index
-                vertices.extend(vertex)
+                lookup[kept] = index
+                vertices.extend(kept)
             indices.append(index)
         faces.extend(raw[:8])
         faces.extend(struct.pack('<4H', *indices, 0))
         count += 1
         if count > 0xFFFFFFFF:
             raise ValueError('too many faces')
-    blob = HEADER.pack(b'DRX1', len(lookup), count) + vertices + faces
+    blob = HEADER.pack(magic, len(lookup), count) + vertices + faces
     return bytes(blob) + struct.pack('<I', zlib.crc32(blob) & 0xFFFFFFFF)
 
 
 def decode_sector(blob):
     """Validate every field before returning byte-identical 116-byte faces."""
+    return _decode(blob, b'DRX1', VERTEX.size, lambda stored: stored)
+
+
+def decode_draw_sector(blob):
+    """Validate a DRX2 block and return 116-byte faces with zero normals."""
+    return _decode(blob, b'DRX2', DRAW_VERTEX.size,
+                   lambda stored: stored[:20] + ZERO_NORMAL + stored[20:])
+
+
+def strip_normals(record):
+    """A DRM2 face as DRX2 decodes it: the oracle for its round trip."""
+    raw = bytearray(_bytes(record, 'malformed record'))
+    if len(raw) != FACE_BYTES:
+        raise ValueError('malformed record size')
+    for offset in (8, 44, 80):
+        raw[offset + 20:offset + 32] = ZERO_NORMAL
+    return bytes(raw)
+
+
+def _decode(blob, wanted, vertex_size, expand):
     blob = _bytes(blob, 'malformed blob')
     if len(blob) < HEADER.size + 4:
         raise ValueError('truncated header')
     magic, vertex_count, face_count = HEADER.unpack_from(blob)
-    if magic != b'DRX1':
+    if magic != wanted:
         raise ValueError('bad magic')
     if vertex_count > MAX_VERTICES:
         raise ValueError('too many vertices')
-    face_offset = HEADER.size + vertex_count * VERTEX.size
+    face_offset = HEADER.size + vertex_count * vertex_size
     if len(blob) != face_offset + face_count * FACE.size + 4:
         raise ValueError('incorrect size')
     if zlib.crc32(blob[:-4]) & 0xFFFFFFFF != struct.unpack_from('<I', blob, len(blob) - 4)[0]:
         raise ValueError('CRC mismatch')
-    vertices = [blob[i:i + VERTEX.size]
-                for i in range(HEADER.size, face_offset, VERTEX.size)]
+    vertices = [expand(blob[i:i + vertex_size])
+                for i in range(HEADER.size, face_offset, vertex_size)]
     for vertex in vertices:
         _finite(vertex)
     result = []
@@ -137,13 +179,19 @@ def measure(package_dir, queries=()):
         indexed = encode_sector(raw)
         if decode_sector(indexed) != raw:
             raise ValueError('round trip mismatch')
+        draw = encode_draw_sector(raw)
+        if decode_draw_sector(draw) != [strip_normals(r) for r in raw]:
+            raise ValueError('draw round trip mismatch')
         rows.append(dict(path=name, ix=None if global_ else entry['ix'],
                          iz=None if global_ else entry['iz'], is_global=global_,
                          face_count=len(raw), vertex_count=HEADER.unpack_from(indexed)[1],
+                         draw_vertex_count=HEADER.unpack_from(draw)[1],
                          drm2_raw_bytes=len(raw) * FACE_BYTES,
-                         drx1_raw_bytes=len(indexed), drm2_file_bytes=len(blob)))
+                         drx1_raw_bytes=len(indexed), drx2_raw_bytes=len(draw),
+                         drm2_file_bytes=len(blob)))
     totals = {k: sum(r[k] for r in rows) for k in
-              ('face_count', 'vertex_count', 'drm2_raw_bytes', 'drx1_raw_bytes', 'drm2_file_bytes')}
+              ('face_count', 'vertex_count', 'draw_vertex_count', 'drm2_raw_bytes',
+               'drx1_raw_bytes', 'drx2_raw_bytes', 'drm2_file_bytes')}
     totals['raw_bytes_saved'] = totals['drm2_raw_bytes'] - totals['drx1_raw_bytes']
     windows = []
     for query in queries:
@@ -159,12 +207,13 @@ def measure(package_dir, queries=()):
                 touched.append(row)
         windows.append(dict(query=list(bounds), sectors=[r['path'] for r in touched],
                             **{k: sum(r[k] for r in touched) for k in
-                               ('drm2_raw_bytes', 'drx1_raw_bytes', 'drm2_file_bytes')}))
+                               ('drm2_raw_bytes', 'drx1_raw_bytes', 'drx2_raw_bytes',
+                                'drm2_file_bytes')}))
     return dict(format='DRX1', round_trip_verified=True,
-                measurement='decoded DRM2 face payload vs complete DRX1 block; global included',
+                measurement='decoded DRM2 face payload vs complete DRX1 and DRX2 blocks; global included',
                 sectors=rows, totals=totals,
                 biggest_sector={fmt: max(rows, key=lambda r: r[fmt + '_raw_bytes'])
-                                for fmt in ('drm2', 'drx1')}, windows=windows)
+                                for fmt in ('drm2', 'drx1', 'drx2')}, windows=windows)
 
 
 def main(argv=None):

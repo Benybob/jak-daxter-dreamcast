@@ -1,4 +1,4 @@
-"""Synthetic lossless DRX1, C refusal atomicity and cache accounting. (AI-assisted), ISC."""
+"""Synthetic DRX1 and DRX2, C refusal atomicity and cache accounting. (AI-assisted), ISC."""
 
 import ctypes
 import json
@@ -55,9 +55,19 @@ def mutate(blob, offset, fmt, value):
     return resign(raw)
 
 
-def corruptions(blob):
+def flat_fan_records():
+    """Two faces sharing an edge, each with its own normal, as the packer stores
+    a GLB without NORMAL: DRX1 can share nothing, DRX2 shares the edge."""
+    def corner(x, z, u, v, normal):
+        return struct.pack('<8fI', x, 0.5, z, u, v, *normal, 0xFF102030)
+    a, b = (0.0, 1.0, 0.0), (0.0, 0.0, 1.0)
+    return [struct.pack('<II', 7, 1) + corner(0, 0, 0, 0, a) + corner(1, 0, 1, 0, a) + corner(1, 1, 1, 1, a),
+            struct.pack('<II', 8, 1) + corner(0, 0, 0, 0, b) + corner(1, 1, 1, 1, b) + corner(0, 1, 0, 1, b)]
+
+
+def corruptions(blob, stored=36):
     vertices = struct.unpack_from('<I', blob, 4)[0]
-    face = 12 + vertices * 36
+    face = 12 + vertices * stored
     bad_crc = bytearray(blob)
     bad_crc[-1] ^= 1
     result = [(b'BAD!' + blob[4:], 'bad magic'), (bytes(bad_crc), 'CRC mismatch'),
@@ -67,12 +77,12 @@ def corruptions(blob):
               (mutate(blob, face + 14, '<H', 1), 'nonzero pad')]
     for offset in (8, 10, 12):
         result.append((mutate(blob, face + offset, '<H', vertices), 'index out of range'))
-    for offset in range(0, 32, 4):
+    for offset in range(0, stored - 4, 4):
         for value in (math.nan, math.inf, -math.inf):
             result.append((mutate(blob, 12 + offset, '<f', value), 'nonfinite vertex'))
     # A failure in the final face/vertex must not leave partially written faces.
     result.append((mutate(blob, face + 16 + 14, '<H', 1), 'nonzero pad'))
-    result.append((mutate(blob, 12 + (vertices - 1) * 36, '<f', math.nan), 'nonfinite vertex'))
+    result.append((mutate(blob, 12 + (vertices - 1) * stored, '<f', math.nan), 'nonfinite vertex'))
     return result
 
 
@@ -192,6 +202,15 @@ class IndexedSectorTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     indexed.measure(root, [bad])
 
+    def test_measure_reports_draw_blocks(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = drm.publish_package(Path(directory) / 'package', synthetic_package())
+            report = indexed.measure(root, [(3, 5, 1, 2)])
+            self.assertEqual(report['totals']['drx2_raw_bytes'], 2 * 144 + 16)
+            self.assertEqual(report['totals']['draw_vertex_count'], 8)
+            self.assertEqual(report['windows'][0]['drx2_raw_bytes'], 304)
+            self.assertEqual(report['biggest_sector']['drx2']['drx2_raw_bytes'], 144)
+
     def test_measure_includes_nonempty_global_in_every_window(self):
         with tempfile.TemporaryDirectory() as directory:
             root = drm.publish_package(Path(directory) / 'package', synthetic_package(True))
@@ -226,6 +245,57 @@ class IndexedSectorTests(unittest.TestCase):
             self.assertEqual(report['totals']['raw_bytes_saved'], 64)
 
 
+class DrawSectorTests(unittest.TestCase):
+    def test_flat_normals_block_drx1_sharing_but_not_drx2(self):
+        records = flat_fan_records()
+        self.assertEqual(struct.unpack_from('<I', indexed.encode_sector(records), 4)[0], 6)
+        blob = indexed.encode_draw_sector(records)
+        self.assertEqual(struct.unpack_from('<II', blob, 4), (4, 2))
+        self.assertEqual(len(blob), 16 + 4 * 24 + 2 * 16)
+        self.assertLess(len(blob), len(indexed.encode_sector(records)))
+
+    def test_decode_zeroes_normals_and_keeps_every_other_byte(self):
+        records = flat_fan_records()
+        decoded = indexed.decode_draw_sector(indexed.encode_draw_sector(records))
+        self.assertEqual(decoded, [indexed.strip_normals(r) for r in records])
+        for before, after in zip(records, decoded):
+            self.assertEqual(after[:8], before[:8])
+            for offset in (8, 44, 80):
+                self.assertEqual(after[offset:offset + 20], before[offset:offset + 20])
+                self.assertEqual(after[offset + 20:offset + 32], bytes(12))
+                self.assertEqual(after[offset + 32:offset + 36], before[offset + 32:offset + 36])
+
+    def test_sharing_still_separates_uv_colour_and_signed_zero(self):
+        base = flat_fan_records()[0]
+        for offset, value in ((8 + 12, struct.pack('<f', 0.5)), (8 + 32, b''),
+                              (8, struct.pack('<f', -0.0))):
+            raw = bytearray(base)
+            raw[44:80] = raw[8:44]
+            raw[offset:offset + len(value)] = value
+            self.assertEqual(struct.unpack_from('<I', indexed.encode_draw_sector([bytes(raw)]), 4)[0], 3)
+
+    def test_formats_do_not_cross(self):
+        records = flat_fan_records()
+        with self.assertRaisesRegex(ValueError, 'bad magic'):
+            indexed.decode_sector(indexed.encode_draw_sector(records))
+        with self.assertRaisesRegex(ValueError, 'bad magic'):
+            indexed.decode_draw_sector(indexed.encode_sector(records))
+
+    def test_refusals_and_every_truncation(self):
+        blob = indexed.encode_draw_sector(flat_fan_records())
+        for size in range(len(blob)):
+            with self.assertRaises(ValueError):
+                indexed.decode_draw_sector(blob[:size])
+        for invalid, reason in corruptions(blob, 24):
+            with self.subTest(reason=reason), self.assertRaisesRegex(ValueError, reason):
+                indexed.decode_draw_sector(invalid)
+        self.assertEqual(indexed.decode_draw_sector(indexed.encode_draw_sector([])), [])
+
+    def test_strip_normals_refuses_a_short_record(self):
+        with self.assertRaisesRegex(ValueError, 'malformed record size'):
+            indexed.strip_normals(b'x')
+
+
 @unittest.skipUnless(shutil.which('gcc'), 'gcc is required for the C decoder oracle')
 class IndexedSectorNativeTests(unittest.TestCase):
     @classmethod
@@ -246,15 +316,18 @@ class IndexedSectorNativeTests(unittest.TestCase):
         cls.decode.argtypes = [ctypes.c_void_p, ctypes.c_uint32, ctypes.c_void_p,
                                ctypes.c_uint32, ctypes.POINTER(ctypes.c_uint32)]
         cls.decode.restype = ctypes.c_char_p
+        cls.decode_draw = cls.lib.dc_render_indexed_decode_draw
+        cls.decode_draw.argtypes = cls.decode.argtypes
+        cls.decode_draw.restype = ctypes.c_char_p
 
-    def call(self, blob, capacity=2):
+    def call(self, blob, capacity=2, decoder=None):
         source = ctypes.create_string_buffer(b'X' + blob)
         # Unaligned input/output addresses and canaries guard the byte-copy API.
         output = ctypes.create_string_buffer(b'\xA5' * (capacity * 116 + 17))
         before = output.raw
         count = ctypes.c_uint32(0xDEADBEEF)
-        error = self.decode(ctypes.byref(source, 1), len(blob), ctypes.byref(output, 1),
-                            capacity, ctypes.byref(count))
+        error = (decoder or self.decode)(ctypes.byref(source, 1), len(blob), ctypes.byref(output, 1),
+                                         capacity, ctypes.byref(count))
         if error:
             self.assertEqual(output.raw, before)
             self.assertEqual(count.value, 0xDEADBEEF)
@@ -282,6 +355,30 @@ class IndexedSectorNativeTests(unittest.TestCase):
             with self.subTest(reason=reason):
                 self.assertEqual(self.call(invalid)[0], reason)
         self.assertEqual(self.call(blob, capacity=1)[0], 'output capacity')
+
+    def test_draw_decoder_matches_python_and_the_stripped_oracle(self):
+        package = synthetic_package(True)
+        cases = [[r['raw'] for r in drm.parse_sector(s)['records']]
+                 for s in list(package.sectors.values()) + [package.global_sector]]
+        for records in cases + [flat_fan_records()]:
+            blob = indexed.encode_draw_sector(records)
+            error, raw = self.call(blob, decoder=self.decode_draw)
+            self.assertIsNone(error)
+            self.assertEqual(raw, b''.join(indexed.decode_draw_sector(blob)))
+            self.assertEqual(raw, b''.join(indexed.strip_normals(r) for r in records))
+
+    def test_draw_truncation_corruption_and_format_refusals_are_atomic(self):
+        blob = indexed.encode_draw_sector(flat_fan_records())
+        for size in range(len(blob)):
+            with self.subTest(size=size):
+                self.assertIsNotNone(self.call(blob[:size], decoder=self.decode_draw)[0])
+        for invalid, reason in corruptions(blob, 24):
+            with self.subTest(reason=reason):
+                self.assertEqual(self.call(invalid, decoder=self.decode_draw)[0], reason)
+        self.assertEqual(self.call(blob, capacity=1, decoder=self.decode_draw)[0], 'output capacity')
+        self.assertEqual(self.call(blob)[0], 'bad magic')
+        self.assertEqual(self.call(indexed.encode_sector(flat_fan_records()),
+                                   decoder=self.decode_draw)[0], 'bad magic')
 
     def test_empty_block_null_arguments_and_overlap_are_atomic(self):
         empty = indexed.encode_sector([])

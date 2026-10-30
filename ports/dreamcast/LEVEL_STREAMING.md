@@ -500,6 +500,26 @@ leaves free (above). Where it can shrink:
   it touches. The lever is the face record: 116 bytes a triangle, every vertex
   stored inside each face (36 bytes each). An indexed sector format would cut
   the cache's working set roughly threefold.
+- **Indexed sectors: DRX1 does not, DRX2 does, not integrated.** On all of
+  village1's tfrag (84,747 faces in 1,990 16 m sectors plus global, built without
+  the 8 MB package cap, every block's round trip verified):
+
+  | Format | Vertices a face | Level | Biggest sector | Worst 3x3 sectors |
+  | --- | ---: | ---: | ---: | ---: |
+  | DRM2 (116-byte faces) | 3 | 9.83 MB | 384 KB | 1.62 MB |
+  | DRX1 (36-byte vertices, lossless) | 2.81 | 9.97 MB | 362 KB | 1.54 MB |
+  | DRX2 (24-byte vertices, no normal) | 1.06 | 3.54 MB | 129 KB | 0.56 MB |
+
+  DRX1 is larger than the faces it replaces: none of the GLB's 654 primitives
+  has NORMAL, so the packer stores each face's geometric normal in its three
+  vertices and neighbouring faces cannot share them. DRX2 (`encode_draw_sector`,
+  `dc_render_indexed_decode_draw`) drops the 12 normal bytes, which the terrain
+  draw never reads (`render_base.c` takes position, UV and ARGB), and decodes
+  with zero normals; flythrough_main.c's window CRCs would have to be taken over
+  such faces. Reflections that want the normal would have to derive it from the
+  face. The saving is on retained cache blocks only, 2.04 to 3.22 times by
+  neighbourhood: the window still expands to 116-byte faces, and no Flycast
+  budget run has been made against the table above.
 - **The package's vertices: done, DCI3.** `tie_lods.py --compact` writes
   16-byte vertices: 16-bit positions in steps of a geometry's own bounds (a
   quantization record a geometry: float centre and scale), UVs in 1/2048

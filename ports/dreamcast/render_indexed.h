@@ -1,4 +1,4 @@
-/* Allocation-free DRX1 to DRM2 face decoder. (AI-assisted), ISC. */
+/* Allocation-free DRX1 and DRX2 to DRM2 face decoders. (AI-assisted), ISC. */
 #ifndef DC_RENDER_INDEXED_H
 #define DC_RENDER_INDEXED_H
 
@@ -15,5 +15,11 @@
 const char *dc_render_indexed_decode(const void *blob, uint32_t bytes,
                                     void *out_faces, uint32_t out_capacity_faces,
                                     uint32_t *out_count);
+
+/* The same contract for a DRX2 block: 24-byte vertices, written out as faces
+ * whose normals are zero. A CRC of the original DRM2 faces will not match. */
+const char *dc_render_indexed_decode_draw(const void *blob, uint32_t bytes,
+                                         void *out_faces, uint32_t out_capacity_faces,
+                                         uint32_t *out_count);
 
 #endif
