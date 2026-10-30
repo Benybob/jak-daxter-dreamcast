@@ -500,6 +500,29 @@ leaves free (above). Where it can shrink:
   it touches. The lever is the face record: 116 bytes a triangle, every vertex
   stored inside each face (36 bytes each). An indexed sector format would cut
   the cache's working set roughly threefold.
+
+  **The indexed cache: built, not yet measured on village1.**
+  `dc_render_block_cache_make_indexed` is the same owner keeping each block
+  as DRX1 (`render_indexed.c`): a miss loads and validates the DRM2 block as
+  before, then a C encoder (byte-identical to `indexed_sectors.py`, no
+  allocation of its own) packs it; the budget counts DRX1 bytes. A hit decodes
+  into a block of its own, CRC and every index checked again, freed at
+  release. A block that does not encode or fit is bypassed, never refused, and
+  an allocation failure on a hit rolls the window back like any other failure.
+  The CRC is now a nibble table (a quarter of the bitwise loop's work) since
+  every hit checks a whole block. Host tests run every block-cache test against
+  both owners; on a synthetic 6 x 6 grid of quads the indexed owner retains
+  under half the face payload, and at a budget between the two sizes it reads
+  each block once where the raw owner rereads them. Peak memory adds one
+  decoded block, and on a miss the encoder's scratch (6-byte hash slots, at
+  least two a face-vertex: 384 KB for an 8,192-face block, freed before the
+  miss returns) and its output. The flythrough takes it as a build switch, to
+  set against the budget table above:
+
+      make CFLAGS='-std=c99 -Wall -Wextra -Werror -DFLY_CACHE_INDEXED=1 -DFLY_CACHE_BUDGET=1048576' jak-dc-flythrough.elf
+
+  What it costs a hit in Flycast, and whether 1 MB or 768 KB then holds a 28 m
+  window, needs the user's disc; this container has neither it nor Flycast.
 - **The package's vertices: done, DCI3.** `tie_lods.py --compact` writes
   16-byte vertices: 16-bit positions in steps of a geometry's own bounds (a
   quantization record a geometry: float centre and scale), UVs in 1/2048

@@ -12,6 +12,9 @@
 #include "render_block_cache.h"
 #include "instance_pass.h"
 #include "build/flythrough_fixture.h"
+#ifndef FLY_CACHE_INDEXED
+#define FLY_CACHE_INDEXED 0
+#endif
 #ifndef FLY_CACHE_BUDGET
 #define FLY_CACHE_BUDGET DC_RENDER_BLOCK_CACHE_MAX
 #endif
@@ -48,7 +51,9 @@ int main(void) {
  error=dc_render_gpu_make(&catalog,&gpu);if(!check(error==NULL,error))goto release;
  error=dc_render_base_bank_make(&catalog,&gpu,&bank);if(!check(error==NULL,error))goto release;
  /* decoded sectors kept across retargets: only newly entered ones are read */
- error=dc_render_block_cache_make(&catalog,"/rd",fly_source_sha,FLY_CACHE_BUDGET,&cache);
+ /* FLY_CACHE_INDEXED keeps them as DRX1 under the same budget, decoded per hit */
+ error=(FLY_CACHE_INDEXED?dc_render_block_cache_make_indexed:dc_render_block_cache_make)
+  (&catalog,"/rd",fly_source_sha,FLY_CACHE_BUDGET,&cache);
  if(!check(error==NULL,error))goto release;
  source=dc_render_block_cache_source(&cache);
  data=memalign(32,FLY_PACKAGE_BYTES);if(!check(data!=NULL,"fly package allocation"))goto release;

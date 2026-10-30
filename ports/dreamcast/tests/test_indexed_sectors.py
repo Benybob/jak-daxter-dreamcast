@@ -246,6 +246,13 @@ class IndexedSectorNativeTests(unittest.TestCase):
         cls.decode.argtypes = [ctypes.c_void_p, ctypes.c_uint32, ctypes.c_void_p,
                                ctypes.c_uint32, ctypes.POINTER(ctypes.c_uint32)]
         cls.decode.restype = ctypes.c_char_p
+        cls.encode = cls.lib.dc_render_indexed_encode
+        cls.encode.argtypes = [ctypes.c_void_p, ctypes.c_uint32, ctypes.c_void_p, ctypes.c_uint32,
+                               ctypes.c_void_p, ctypes.c_uint32, ctypes.POINTER(ctypes.c_uint32)]
+        cls.encode.restype = ctypes.c_char_p
+        cls.scratch_bytes = cls.lib.dc_render_indexed_scratch_bytes
+        cls.scratch_bytes.argtypes = [ctypes.c_uint32]
+        cls.scratch_bytes.restype = ctypes.c_uint32
 
     def call(self, blob, capacity=2):
         source = ctypes.create_string_buffer(b'X' + blob)
@@ -308,6 +315,91 @@ class IndexedSectorNativeTests(unittest.TestCase):
                          ctypes.cast(storage, ctypes.POINTER(ctypes.c_uint32))), b'overlapping buffers')
         self.assertEqual(storage.raw, before)
 
+    def c_encode(self, records, capacity=None):
+        faces = ctypes.create_string_buffer(b'X' + b''.join(records))
+        scratch = (ctypes.c_uint32 * (self.scratch_bytes(len(records)) // 4 + 1))()
+        size = ctypes.c_uint32(0xDEADBEEF)
+        error = self.encode(ctypes.byref(faces, 1), len(records), scratch, ctypes.sizeof(scratch),
+                            None, 0, ctypes.byref(size))
+        if error:
+            self.assertEqual(size.value, 0xDEADBEEF)
+            return error.decode('ascii'), None
+        measured = size.value
+        capacity = measured if capacity is None else capacity
+        output = ctypes.create_string_buffer(b'\xA5' * (capacity + 9))
+        before = output.raw
+        size.value = 0xDEADBEEF
+        error = self.encode(ctypes.byref(faces, 1), len(records), scratch, ctypes.sizeof(scratch),
+                            ctypes.byref(output, 1), capacity, ctypes.byref(size))
+        if error:
+            self.assertEqual(output.raw, before)
+            self.assertEqual(size.value, 0xDEADBEEF)
+            return error.decode('ascii'), None
+        self.assertEqual(size.value, measured)
+        self.assertEqual(output.raw[:1], before[:1])
+        self.assertEqual(output.raw[1 + measured:], before[1 + measured:])
+        return None, output.raw[1:1 + measured]
+
+    def test_encoder_matches_python_byte_for_byte(self):
+        package = synthetic_package(True)
+        sectors = list(package.sectors.values()) + [package.global_sector]
+        for sector in sectors:
+            records = [r['raw'] for r in drm.parse_sector(sector)['records']]
+            self.assertEqual(self.c_encode(records), (None, indexed.encode_sector(records)))
+        # Repeats, signed zero and a colour difference: sharing is all 36 bytes.
+        records = quad_records()
+        flipped = bytearray(records[1])
+        struct.pack_into('<f', flipped, 8 + 12, -0.0)
+        coloured = bytearray(records[1])
+        coloured[8 + 32] ^= 1
+        mixed = records + records + [bytes(flipped), bytes(coloured)] + records[::-1]
+        error, blob = self.c_encode(mixed)
+        self.assertIsNone(error)
+        self.assertEqual(blob, indexed.encode_sector(mixed))
+        self.assertEqual(indexed.decode_sector(blob), mixed)
+        self.assertEqual(self.c_encode([]), (None, indexed.encode_sector([])))
+
+    def test_encoder_refusals_are_atomic(self):
+        records = quad_records()
+        for channel in range(8):
+            for value in (math.nan, math.inf):
+                bad = bytearray(records[1])
+                struct.pack_into('<f', bad, 80 + channel * 4, value)
+                with self.subTest(channel=channel, value=value):
+                    self.assertEqual(self.c_encode([records[0], bytes(bad)])[0], 'nonfinite vertex')
+        self.assertEqual(self.c_encode(records, capacity=len(indexed.encode_sector(records)) - 1)[0],
+                         'output capacity')
+        faces = ctypes.create_string_buffer(b''.join(records))
+        need = self.scratch_bytes(len(records))
+        scratch = (ctypes.c_uint32 * (need // 4 + 1))()
+        size = ctypes.c_uint32(7)
+        for args, reason in (((faces, 2, scratch, need - 1), b'scratch'),
+                             ((faces, 2, ctypes.byref(scratch, 1), need), b'scratch'),
+                             ((faces, 2, None, need), b'scratch'),
+                             ((None, 2, scratch, need), b'null faces'),
+                             ((faces, 2, faces, need), b'overlapping buffers'),
+                             ((faces, (1 << 24) + 1, scratch, need), b'too many faces')):
+            with self.subTest(reason=reason):
+                self.assertEqual(self.encode(*args, None, 0, ctypes.byref(size)), reason)
+                self.assertEqual(size.value, 7)
+        self.assertEqual(self.encode(faces, 2, scratch, need, None, 0, None), b'null size')
+        self.assertEqual(self.encode(faces, 2, scratch, need, None, 5, ctypes.byref(size)), b'null output')
+        shared = (ctypes.c_uint32 * 300)()
+        self.assertEqual(self.encode(faces, 2, shared, need, ctypes.byref(shared, 8), 1000,
+                                     ctypes.byref(size)), b'overlapping buffers')
+        self.assertEqual(size.value, 7)
+        self.assertEqual(self.scratch_bytes((1 << 24) + 1), 0)
+
+    def test_encoder_vertex_limit_boundary(self):
+        def face(i):
+            return struct.pack('<II', 0, 0) + b''.join(
+                struct.pack('<8fI', float(i * 3 + k), 0, 0, 0, 0, 0, 1, 0, 0) for k in range(3))
+        records = [face(i) for i in range(21845)]
+        error, blob = self.c_encode(records)
+        self.assertIsNone(error)
+        self.assertEqual(struct.unpack_from('<I', blob, 4)[0], 65535)
+        self.assertEqual(blob, indexed.encode_sector(records))
+        self.assertEqual(self.c_encode(records + [face(21845)])[0], 'too many vertices')
 
 if __name__ == '__main__':
     unittest.main()

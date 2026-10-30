@@ -550,7 +550,8 @@ build/render-gpu-check$(HOST_EXE): host_render_gpu.c render_gpu.c render_gpu_cas
 
 RENDER_CACHE_ASSET_DIR ?= build/private-render-cache-assets
 render_cache.o: render_cache.c render_cache.h render_package.h
-render_block_cache.o: render_block_cache.c render_block_cache.h render_cache.h
+render_block_cache.o: render_block_cache.c render_block_cache.h render_cache.h render_indexed.h
+render_indexed.o: render_indexed.c render_indexed.h
 render_cache_test.o: render_cache.c render_cache.h render_package.h
 	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -DDC_RENDER_CACHE_TEST_IO -c $< -o $@
 render_cache_bridge.o: tests/render_cache_bridge.c render_cache.h
@@ -575,8 +576,8 @@ build/render-cache-host.o: render_cache.c render_cache.h render_package.h
 build/render-cache-check$(HOST_SHARED): tests/render_cache_bridge.c render_cache.h build/render-cache-host.o build/render-package-host.o sector_inflate.c
 	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -pedantic -fPIC -shared tests/render_cache_bridge.c build/render-cache-host.o build/render-package-host.o sector_inflate.c -o $@ -lz -lm
 host: build/render-block-cache-check$(HOST_SHARED)
-build/render-block-cache-check$(HOST_SHARED): tests/render_block_cache_bridge.c render_block_cache.c render_block_cache.h render_cache.c render_cache.h render_package.c sector_inflate.c
-	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -pedantic -fPIC -shared -DDC_RENDER_BLOCK_CACHE_TEST tests/render_block_cache_bridge.c render_block_cache.c render_cache.c render_package.c sector_inflate.c -o $@ -lz -lm
+build/render-block-cache-check$(HOST_SHARED): tests/render_block_cache_bridge.c render_block_cache.c render_block_cache.h render_indexed.c render_indexed.h render_cache.c render_cache.h render_package.c sector_inflate.c
+	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -pedantic -fPIC -shared -DDC_RENDER_BLOCK_CACHE_TEST tests/render_block_cache_bridge.c render_block_cache.c render_indexed.c render_cache.c render_package.c sector_inflate.c -o $@ -lz -lm
 jak-dc-camera.elf: camera_boom_main.o camera_boom.o camera_rig.o camera_boom_cases.o world_collision.o
 	kos-cc -o $@ $^ -lm
 camera_real_main.o: camera_boom_main.c
@@ -671,7 +672,7 @@ build/flythrough-romdisk.o: $(FLY_ASSET_DIR)/FLY.json
 	$(KOS_BASE)/utils/bin2c/bin2c build/flythrough-romdisk.img build/flythrough-romdisk.c romdisk
 	$(KOS_CC) $(KOS_CFLAGS) -c build/flythrough-romdisk.c -o build/flythrough-romdisk-tmp.o
 	$(KOS_CC) -o $@ -r build/flythrough-romdisk-tmp.o $(KOS_LIB_PATHS) -Wl,--whole-archive -lromdiskbase
-jak-dc-flythrough.elf: flythrough_main.o render_base.o render_block_cache.o render_gpu.o render_cache.o render_package.o sector_inflate_stored.o render_world_view_scalar.o render_world_view_gate.o render_frustum.o instance_pass.o build/flythrough-romdisk.o
+jak-dc-flythrough.elf: flythrough_main.o render_base.o render_block_cache.o render_indexed.o render_gpu.o render_cache.o render_package.o sector_inflate_stored.o render_world_view_scalar.o render_world_view_gate.o render_frustum.o instance_pass.o build/flythrough-romdisk.o
 	kos-cc -o $@ $^ -lm
 TRAINING_STREAM_ASSET_DIR ?= build/private-training-stream-assets
 training_render.o: training_render.c training_render.h render_base.h render_block_cache.h
@@ -683,7 +684,7 @@ build/training-stream-romdisk.o: $(TRAINING_STREAM_ASSET_DIR)/STREAM_BUNDLE.json
 	$(KOS_BASE)/utils/bin2c/bin2c build/training-stream-romdisk.img build/training-stream-romdisk.c romdisk
 	$(KOS_CC) $(KOS_CFLAGS) -c build/training-stream-romdisk.c -o build/training-stream-romdisk-tmp.o
 	$(KOS_CC) -o $@ -r build/training-stream-romdisk-tmp.o $(KOS_LIB_PATHS) -Wl,--whole-archive -lromdiskbase
-jak-dc-training-stream.elf: training_stream_main.o training_render.o render_block_cache.o render_base.o render_gpu.o render_cache.o render_package.o sector_inflate.o render_world_view.o render_world_view_gate.o render_frustum.o training_layer.o scene_clip.o player_motion.o player_world_motion.o player_anim.o world_collision.o world_manifest.o camera_boom.o camera_rig.o textured_scene.o scene_projection_sh4zam.o scene_projection_gate.o build/training-stream-romdisk.o
+jak-dc-training-stream.elf: training_stream_main.o training_render.o render_block_cache.o render_indexed.o render_base.o render_gpu.o render_cache.o render_package.o sector_inflate.o render_world_view.o render_world_view_gate.o render_frustum.o training_layer.o scene_clip.o player_motion.o player_world_motion.o player_anim.o world_collision.o world_manifest.o camera_boom.o camera_rig.o textured_scene.o scene_projection_sh4zam.o scene_projection_gate.o build/training-stream-romdisk.o
 	kos-cc -o $@ $^ -lsh4zam -lz -lm
 TRAINING_OWNER_ASSET_DIR ?= build/private-training-owner-assets
 build/training_owner_fixture.h: make_training_owner_fixture.py
@@ -695,7 +696,7 @@ build/training-owner-romdisk.o: $(TRAINING_OWNER_ASSET_DIR)/OWNER_CASES.json
 	$(KOS_BASE)/utils/bin2c/bin2c build/training-owner-romdisk.img build/training-owner-romdisk.c romdisk
 	$(KOS_CC) $(KOS_CFLAGS) -c build/training-owner-romdisk.c -o build/training-owner-romdisk-tmp.o
 	$(KOS_CC) -o $@ -r build/training-owner-romdisk-tmp.o $(KOS_LIB_PATHS) -Wl,--whole-archive -lromdiskbase
-jak-dc-training-render.elf: training_render_cases_main.o training_render.o render_block_cache.o render_base_test.o render_gpu.o render_cache.o render_package.o sector_inflate.o render_world_view.o render_world_view_gate.o render_frustum.o build/training-owner-romdisk.o
+jak-dc-training-render.elf: training_render_cases_main.o training_render.o render_block_cache.o render_indexed.o render_base_test.o render_gpu.o render_cache.o render_package.o sector_inflate.o render_world_view.o render_world_view_gate.o render_frustum.o build/training-owner-romdisk.o
 	kos-cc -o $@ $^ -lsh4zam -lz -lm
 build/frustum_fixture.h: make_frustum_fixture.py frustum_oracle.py
 	$(PYTHON) make_frustum_fixture.py $@
