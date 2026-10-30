@@ -57,15 +57,10 @@ int dc_render_draw_window_prepare(dc_render_draw_window *window,const dc_render_
  m[8]=-cp*sy*scale;m[9]=sp*scale;m[10]=cp*cy*scale;m[11]=camera->distance*scale;
  point=window->vertices;
  for(i=0;i<window->vertex_count;++i,point+=DC_RENDER_DRAW_VERTEX_BYTES) {
-  float p[3],x,y,z,rx,ry,rz;dc_render_vertex *out=&window->view[i];
+  float p[3],x,y,z;dc_view_vertex *out=&window->view[i];
   __builtin_memcpy(p,point,sizeof p);
   x=p[0]-camera->target.x;y=p[1]-camera->target.y;z=p[2]-camera->target.z;
-  rx=m[0]*x+m[1]*y+m[2]*z+m[3];ry=m[4]*x+m[5]*y+m[6]*z+m[7];rz=m[8]*x+m[9]*y+m[10]*z+m[11];
-  out->view=(dc_view_vertex){rx,ry,rz};
-  if(rz>=DC_SCENE_NEAR) {
-   float inv=1.f/rz;
-   out->projected=(dc_projected_vertex){320.f+390.f*rx*inv,260.f-390.f*ry*inv,inv};
-  }else out->projected=(dc_projected_vertex){0,0,0};
+  out->x=m[0]*x+m[1]*y+m[2]*z+m[3];out->y=m[4]*x+m[5]*y+m[6]*z+m[7];out->z=m[8]*x+m[9]*y+m[10]*z+m[11];
  }
  window->prepared=1;return 1;
 }

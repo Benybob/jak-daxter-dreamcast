@@ -613,16 +613,23 @@ leaves free (above). Where it can shrink:
   | --- | ---: | ---: | ---: | ---: |
   | 116-byte faces, `.drx`, 512 KB | 2.33 s | 0.75 s | 2.69 MB | 3.35 MB |
   | Indexed, general caps (8,192 faces, 12,288 vertices) | 1.59 s | 0.70 s | 3.20 MB | 3.31 MB |
-  | Indexed, path caps (7,168 faces, 7,296 vertices) | 1.59 s | 0.70 s | 2.91 MB | 3.02 MB |
+  | Indexed, path caps (7,168 faces, 7,296 vertices) | 1.61 s | 0.72 s | 2.83 MB | 2.91 MB |
 
   84 of 84 checks, and the last frame hashes the same as the old pipeline's, so the
-  terrain is pixel-identical. At most 7,129 vertices for 7,117 faces. In use at the end
-  of the path is below the 2.94 MB the GOAL arena leaves free, and the arena, the
-  only bound here on the peak, is 80 KB over it; peak live bytes are not measured.
-  The cost is that caps are fixed per level: village3's worst window is about 1.6
-  times the size, so its buffers must be too. The cache budget
-  has a floor as well: below 512 KB this path's largest window is refused
-  (`block cache window residency`), by design, rather than evicted mid-build.
+  terrain is pixel-identical. At most 7,129 vertices for 7,117 faces. Two last changes
+  are in the bottom row: a miss makes room before it reads, so the old and new block
+  never overlap above the budget, and the view cache keeps view positions only, the
+  draw dividing as it does for clipped vertices (12 bytes a vertex for 2% more
+  terrain draw time).
+
+  **Live heap sampled at the end of every frame and with every missed block held
+  peaks at 2.90 MB, below the 2.94 MB (2.8 MiB) the GOAL arena leaves free**, and the
+  arena stays at 2.91 MB. That margin is 38 KB and holds for this path's caps: they
+  are fixed per level, and village3's worst window is about 1.6 times the size, so
+  its buffers must be too. The cache budget has a floor as well: below 512 KB this
+  path's largest window is refused (`block cache window residency`), by design,
+  rather than evicted mid-build. This is the renderer alone beside the GOAL arena's
+  figure, not the two running together. Flycast time, no hardware figure.
 - **The package's vertices: done, DCI3.** `tie_lods.py --compact` writes
   16-byte vertices: 16-bit positions in steps of a geometry's own bounds (a
   quantization record a geometry: float centre and scale), UVs in 1/2048

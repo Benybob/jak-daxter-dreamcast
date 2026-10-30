@@ -6,6 +6,8 @@
 #define DC_RENDER_BLOCK_CACHE_MAX (2u*1024u*1024u)
 enum { DC_RENDER_BLOCK_CACHE_SLOTS=128 };
 typedef struct {void *state;} dc_render_block_cache;
+/* Called with a missed .drx held in full, the heap's worst moment, if set. */
+extern void (*dc_render_block_cache_probe)(void);
 typedef struct {
  uint32_t hits,misses,loads,evictions,bypasses,failures;
  uint32_t bytes,peak_bytes,blocks,metadata_bytes;

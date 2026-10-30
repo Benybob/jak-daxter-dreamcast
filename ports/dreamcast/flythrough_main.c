@@ -41,8 +41,13 @@ typedef struct {uint32_t frames,retargets,max_faces,max_instance_triangles,insta
  max_frame_us,total_us,last_frame,textured_materials,
  retarget_us,frame_make_us,prepare_us,terrain_draw_us,instance_draw_us,reused,
  cache_hits,cache_misses,cache_peak_bytes,cache_evictions,sphere_culled,translucent_triangles,last_translucent,
- back_faces,submitted_total,image_bytes,heap_arena,heap_in_use,heap_free_top,max_vertices;} fly_metrics;
+ back_faces,submitted_total,image_bytes,heap_arena,heap_in_use,heap_free_top,max_vertices,peak_in_use;} fly_metrics;
 volatile fly_metrics dc_fly_metrics;
+/* Live heap at every allocation-heavy moment; the largest is the true peak. */
+static void sample_heap(void) {
+ struct mallinfo m=mallinfo();
+ if((uint32_t)m.uordblks>dc_fly_metrics.peak_in_use)dc_fly_metrics.peak_in_use=(uint32_t)m.uordblks;
+}
 static int check(int ok,const char *why) {
  ++dc_backend.total;if(ok){++dc_backend.passed;return 1;}
  if(!dc_backend.failed_case){dc_backend.failed_case=dc_backend.total;snprintf((char *)dc_backend.description,80,"%s",why?why:"flythrough failure");}
@@ -72,6 +77,7 @@ int main(void) {
  error=FLY_CACHE_MAKE(&catalog,"/rd",fly_source_sha,FLY_CACHE_BUDGET,&cache);
  if(!check(error==NULL,error))goto release;
  source=dc_render_block_cache_source(&cache);(void)source;
+ dc_render_block_cache_probe=sample_heap;
 #ifdef FLY_DRAW_WINDOW
  error=dc_render_draw_window_make(&drawn,FLY_WINDOW_FACES,FLY_WINDOW_VERTICES,FLY_WINDOW_REMAP);
  if(!check(error==NULL,error))goto release;
@@ -151,6 +157,7 @@ int main(void) {
   if(!check(ok&&base.invalid==0&&inst.invalid==0,"fly draw"))goto release;
   if(inst.drawn_instances!=e->instances||inst.triangles!=e->triangles)instances_ok=0;
   if(memcmp(inst.lod_instances,e->lods,sizeof e->lods))lods_ok=0;
+  sample_heap();
   us=(uint32_t)(timer_us_gettime64()-start);
   if(us>dc_fly_metrics.max_frame_us)dc_fly_metrics.max_frame_us=us;
   dc_fly_metrics.total_us+=us;

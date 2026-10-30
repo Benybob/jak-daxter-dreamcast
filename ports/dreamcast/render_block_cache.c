@@ -107,26 +107,29 @@ static int faces_fit(const state *s,const dc_render_entry *entry,const unsigned 
  }
  return 1;
 }
-/* Into a slot from the .drx, evicting only once the block is known good. */
+void (*dc_render_block_cache_probe)(void);
+/* Into a slot from the .drx. Space is made first, so an old block and the new
+ * one never overlap above the budget; a bad file costs only those evictions. */
 static int read_draw_file(state *s,const dc_render_entry *entry,int global) {
  char path[DC_RENDER_CACHE_PATH_MAX];FILE *file;long size;size_t root_bytes=strlen(s->root);
  const char *sep=(s->root[root_bytes-1]=='/'||s->root[root_bytes-1]=='\\')?"":"/";
- unsigned char *blob=NULL;uint32_t bytes;int n,ok=0;unsigned i;
+ unsigned char *blob=NULL;uint32_t bytes=0;int n,ok=0,room;unsigned i;
  n=global?snprintf(path,sizeof path,"%s%sglobal.drx",s->root,sep):
   snprintf(path,sizeof path,"%s%ssectors/%" PRId32 "_%" PRId32 ".drx",s->root,sep,entry->ix,entry->iz);
  if(n<0||(unsigned)n>=sizeof path)return 0;
  file=OPEN(path,"rb");if(!file)return 0;
  if(!fseek(file,0,SEEK_END)&&(size=ftell(file))>0&&(unsigned long)size<=s->budget&&!fseek(file,0,SEEK_SET)) {
-  bytes=(uint32_t)size;blob=ALLOC(bytes);
+  bytes=(uint32_t)size;room=1;
+  while(room&&s->stats.bytes>s->budget-bytes) {
+   i=oldest(s);if(i==DC_RENDER_BLOCK_CACHE_SLOTS)room=0;else evict(s,i);
+  }
+  if(room)blob=ALLOC(bytes);
   ok=blob&&fread(blob,1,bytes,file)==bytes&&fgetc(file)==EOF;
+  if(blob&&dc_render_block_cache_probe)dc_render_block_cache_probe();
  }
  if(CLOSE(file))ok=0;
  if(ok&&!faces_fit(s,entry,blob,bytes))ok=0;
  if(!ok){FREE(blob);return 0;}
- while(s->stats.bytes>s->budget-bytes) {
-  i=oldest(s);if(i==DC_RENDER_BLOCK_CACHE_SLOTS){FREE(blob);return 0;}
-  evict(s,i);
- }
  i=victim(s);if(i==DC_RENDER_BLOCK_CACHE_SLOTS){FREE(blob);return 0;}
  evict(s,i);touch(s,i);++s->stats.misses;++s->stats.loads;
  s->slots[i].entry=*entry;s->slots[i].compact=blob;s->slots[i].bytes=bytes;s->slots[i].global=global;s->slots[i].valid=1;

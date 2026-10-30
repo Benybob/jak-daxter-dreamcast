@@ -138,13 +138,13 @@ int dc_render_base_draw(const dc_render_base_bank *bank,const dc_render_base_fra
   if(bank->materials[material].list!=(uint32_t)list||frame->first[material]==frame->first[material+1])continue;
   pvr_prim(&bank->headers[material],sizeof(bank->headers[material]));
   for(index=frame->first[material];index<frame->first[material+1];++index) {
-   uint32_t face=frame->order[index];dc_clip_vertex input[3],poly[8];dc_projected_vertex projected[8];int n,fan;unsigned front=0;
+   uint32_t face=frame->order[index];dc_clip_vertex input[3],poly[8];dc_projected_vertex projected[8];int n,fan,same;unsigned front=0;
    const unsigned char *record=frame->draw?NULL:frame->faces+(size_t)face*116u+8u;
    const uint16_t *shared=frame->draw?frame->draw->faces[face].v:NULL;++stats->faces;
    for(j=0;j<3;++j) {
     if(shared) {
      const unsigned char *p=frame->draw->vertices+(size_t)shared[j]*DC_RENDER_DRAW_VERTEX_BYTES;
-     dc_view_vertex v=frame->draw->view[shared[j]].view;
+     dc_view_vertex v=frame->draw->view[shared[j]];
      if(v.z>=DC_SCENE_NEAR)++front;
      input[j]=(dc_clip_vertex){v.x,v.y,v.z,read_float(p+12),read_float(p+16),read32(p+20)};
     }else {
@@ -158,10 +158,11 @@ int dc_render_base_draw(const dc_render_base_bank *bank,const dc_render_base_fra
    if(n<0){++stats->invalid;flush(&queued);return 0;}
    if(n<3){++stats->culled;continue;}
    if(front&&front<3)++stats->near_clipped;
-   if(n==3&&!memcmp(input,poly,3*sizeof(*input))) {
-    for(j=0;j<3;++j)projected[j]=shared?frame->draw->view[shared[j]].projected:frame->vertices[face*3u+j].projected;
+   same=n==3&&!memcmp(input,poly,3*sizeof(*input));
+   if(same&&!shared) {
+    for(j=0;j<3;++j)projected[j]=frame->vertices[face*3u+j].projected;
    }else {
-    ++stats->clipped;
+    if(!same)++stats->clipped;
     for(j=0;j<(unsigned)n;++j) {
      float inv=1.f/poly[j].z;projected[j]=(dc_projected_vertex){320.f+390.f*poly[j].x*inv,260.f-390.f*poly[j].y*inv,inv};
     }
