@@ -48,7 +48,7 @@ def path(target, frames, length):
 
 
 def make(glb, package, out, frames=30, length=60.0, half=14.0, header='build/flythrough_fixture.h',
-         roots=('normal', 'lowres', 'trans', 'dirt'), cell=16.0, draw_files=False):
+         roots=('normal', 'lowres', 'trans', 'dirt'), cell=16.0):
     out = Path(out)
     if out.exists():
         shutil.rmtree(out)
@@ -112,8 +112,6 @@ def make(glb, package, out, frames=30, length=60.0, half=14.0, header='build/fly
               'max_window_faces': max(r['faces'] for r in rows), 'textured_materials': len(mapping),
               'blend_faces_by_frame': [r['blend_faces'] for r in rows],
               'max_instance_triangles': max(r['triangles'] for r in rows), 'start': start, 'end': targets[-1]}
-    if draw_files:
-        report['draw_file_bytes'] = indexed_sectors.write_draw_files(out, remove_sectors=True)
     (out / 'FLY.json').write_text(json.dumps(report, indent=1), newline='\n')
     return report, rows
 
@@ -130,10 +128,13 @@ def main():
     ap.add_argument('--reference', type=Path, help='the DCI1 dci1_reference.py draws for the last frame')
     ap.add_argument('--draw-files', action='store_true', help='stage DRX2 .drx sectors in place of .drs (FLY_DRAW_CACHE only)')
     a = ap.parse_args()
-    report, rows = make(a.glb, a.package, a.out, a.frames, a.length, a.half, cell=a.cell, draw_files=a.draw_files)
+    report, rows = make(a.glb, a.package, a.out, a.frames, a.length, a.half, cell=a.cell)
     if a.reference:
         blob, _ = mv.reference(a.out, a.package, a.half, rows[-1]['target'])
         a.reference.write_bytes(blob)
+    if a.draw_files:  # last: the reference reads the .drs sectors these replace
+        report['draw_file_bytes'] = indexed_sectors.write_draw_files(a.out, remove_sectors=True)
+        (a.out / 'FLY.json').write_text(json.dumps(report, indent=1), newline='\n')
     print(json.dumps(report, indent=1))
 
 

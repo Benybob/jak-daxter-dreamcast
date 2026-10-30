@@ -107,6 +107,7 @@ const char *dc_render_base_frame_make(const dc_render_window *window,const dc_re
 const char *dc_render_base_frame_make_draw(dc_render_draw_window *window,const dc_render_base_bank *bank,dc_render_base_frame *out) {
  dc_render_base_frame made={0};uint32_t counts[256]={0},i;
  if(!out||!window||!bank||!bank->headers||!bank->materials||!bank->count||bank->count>256u||!window->valid||window->catalog_crc!=bank->catalog_crc)return "base draw window binding";
+ if(out->vertices||out->order||out->faces||out->draw||out->count||out->materials||out->ready||out->valid)return "base frame owned";
  for(i=0;i<window->count;++i) {
   uint32_t material=window->faces[i].material;
   if(material>=bank->count)return "base window material";
@@ -130,7 +131,7 @@ typedef char base_command_size[(sizeof(pvr_vertex_t)==32&&sizeof(pvr_poly_hdr_t)
 static void flush(unsigned *n) {if(*n){pvr_prim(commands,*n*sizeof(*commands));*n=0;}}
 int dc_render_base_draw(const dc_render_base_bank *bank,const dc_render_base_frame *frame,int list,dc_render_base_stats *stats) {
  uint32_t material,index,j;
- if(!bank||!frame||!stats||!frame->valid||!frame->ready||frame->catalog_crc!=bank->catalog_crc||frame->materials!=bank->count||
+ if(!bank||!frame||!stats||!frame->valid||!frame->ready||(frame->draw&&!frame->draw->prepared)||frame->catalog_crc!=bank->catalog_crc||frame->materials!=bank->count||
     (list!=PVR_LIST_OP_POLY&&list!=PVR_LIST_PT_POLY&&list!=PVR_LIST_TR_POLY))return 0;
  for(material=0;material<bank->count;++material) {
   unsigned queued=0;

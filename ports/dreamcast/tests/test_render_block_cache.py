@@ -28,6 +28,8 @@ class BlockCacheTest(unittest.TestCase):
             ('dc_rbc_dw_make',[ctypes.c_void_p]+[ctypes.c_uint32]*3,ctypes.c_char_p),
             ('dc_rbc_dw_build',[ctypes.c_void_p,ctypes.POINTER(ctypes.c_double)],ctypes.c_char_p),
             ('dc_rbc_dw_count',[ctypes.c_void_p],ctypes.c_uint32),
+            ('dc_rbc_dw_prepare',[ctypes.c_void_p,ctypes.c_int],ctypes.c_uint32),
+            ('dc_rbc_dw_prepared',[ctypes.c_void_p],ctypes.c_uint32),
             ('dc_rbc_dw_vertices',[ctypes.c_void_p],ctypes.c_uint32),
             ('dc_rbc_dw_copy',[ctypes.c_void_p,ctypes.c_void_p],None),
             ('dc_rbc_guards',[ctypes.c_void_p],ctypes.c_int)]:
@@ -169,6 +171,28 @@ class BlockCacheTest(unittest.TestCase):
         raw=bytearray(f.read_bytes());a=struct.unpack_from('<H',raw,12+nv*24+i*16+8)[0]
         raw[12+a*24+20]^=1;struct.pack_into('<I',raw,len(raw)-4,crc32(raw[:-4]));f.write_bytes(raw)
         c=self.window_owner(root);self.assertIn(b'replica',self.drawn(c,(0,36,0,36)))
+    def test_a_window_is_prepared_only_for_the_current_camera_and_build(self):
+        p,root=self.spread();c=self.window_owner(root);self.assertEqual(self.lib.dc_rbc_dw_prepare(c,1),0)
+        self.assertIsNone(self.drawn(c,(0,2,0,2)));self.assertEqual(self.lib.dc_rbc_dw_prepared(c),0)
+        self.assertEqual(self.lib.dc_rbc_dw_prepare(c,1),(1<<31)|1)
+        self.assertEqual(self.lib.dc_rbc_dw_prepare(c,0),0);self.assertEqual(self.lib.dc_rbc_dw_prepared(c),0)
+        self.assertEqual(self.lib.dc_rbc_dw_prepare(c,1),(1<<31)|1)
+        self.assertIsNone(self.drawn(c,(20,28,0,8)));self.assertEqual(self.lib.dc_rbc_dw_prepared(c),0)
+    def test_a_failed_build_keeps_the_window_prepared(self):
+        p,root=self.spread();c=self.window_owner(root);self.assertIsNone(self.drawn(c,(0,2,0,2)));self.lib.dc_rbc_dw_prepare(c,1)
+        for f in root.rglob('*.drx'):
+            if f.name not in ('global.drx','0_0.drx'):f.write_bytes(b'junk')
+        self.assertIsNotNone(self.drawn(c,(20,36,0,36)));self.assertEqual(self.lib.dc_rbc_dw_prepared(c),1)
+    def test_draw_files_are_held_to_the_sector_bounds(self):
+        import struct
+        from zlib import crc32
+        for offset,value in ((0,1000001.0),(4,-1000001.0),(8,1000001.0),(12,65537.0),(16,-65537.0)):
+            with self.subTest(offset=offset):
+                p,root=self.packet([(.2,0,.2),(1,0,.2),(.2,1,1)],f'bounds{offset}');indexed.write_draw_files(root,remove_sectors=True)
+                f=root/'sectors/0_0.drx';raw=bytearray(f.read_bytes());struct.pack_into('<f',raw,12+offset,value)
+                struct.pack_into('<I',raw,len(raw)-4,crc32(raw[:-4]));f.write_bytes(raw)
+                c=self.window_owner(root);self.assertEqual(self.drawn(c,(0,2,0,2)),b'block cache window residency')
+                self.assertIsNotNone(self.load(self.draw_owner(root),(0,2,0,2)))
     def test_every_window_allocation_and_io_failure_is_clean(self):
         p,root=self.spread();q=(0,20,0,20);want=self.stripped(p,q)
         for faults in [(a,0,0) for a in range(1,20)]+[(0,o,0) for o in range(1,10)]+[(0,0,k) for k in range(1,10)]:

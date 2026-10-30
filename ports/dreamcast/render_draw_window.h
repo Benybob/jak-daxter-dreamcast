@@ -12,7 +12,7 @@ typedef struct {uint32_t id;uint16_t v[3];uint16_t material;} dc_render_draw_fac
 typedef struct {
  dc_render_draw_face *faces;unsigned char *vertices;dc_render_vertex *view;
  uint16_t *order,*remap;
- uint32_t count,vertex_count,face_cap,vertex_cap,remap_cap,catalog_crc,valid;
+ uint32_t count,vertex_count,face_cap,vertex_cap,remap_cap,catalog_crc,valid,prepared;
  dc_render_query coverage;
 } dc_render_draw_window;
 /* Zeroed/unowned output. face_cap 1..65535, vertex_cap 1..65535, remap_cap 1..
@@ -22,7 +22,9 @@ const char *dc_render_draw_window_make(dc_render_draw_window *,uint32_t face_cap
     uint32_t vertex_cap,uint32_t remap_cap);
 void dc_render_draw_window_free(dc_render_draw_window *);
 /* Scalar floats, the matrix of render_world_view.c's scalar build: one view
- * entry per shared vertex. Returns 1, or 0 on a bad camera with view unwritten. */
+ * entry per shared vertex. Returns 1, or 0 on a bad camera with view unwritten.
+ * Any failure, and any rebuild of the window, leaves it unprepared, and a frame
+ * over an unprepared window refuses to draw. */
 int dc_render_draw_window_prepare(dc_render_draw_window *,const dc_render_camera *);
 /* The 116-byte record of a face with zero normals, as a checked window holds. */
 void dc_render_draw_window_face(const dc_render_draw_window *,uint32_t index,unsigned char *out);

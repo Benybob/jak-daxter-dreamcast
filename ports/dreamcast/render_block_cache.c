@@ -86,10 +86,18 @@ static void retain_draw(state *s,const dc_render_entry *entry,int global,dc_rend
 }
 /* A DRX2 file is held to what dc_render_block_load holds a sector to, as far as
  * it can be without the sector: the entry's face count, IDs in order and known. */
+static int within(const unsigned char *p,float limit) {
+ float value;memcpy(&value,p,4);return value>=-limit&&value<=limit;
+}
 static int faces_fit(const state *s,const dc_render_entry *entry,const unsigned char *blob,uint32_t bytes) {
  uint32_t count=0,i,previous=0,vertices;const unsigned char *f;
  if(dc_render_indexed_check_draw(blob,bytes,&count)||count!=entry->count)return 0;
  vertices=(uint32_t)blob[4]|(uint32_t)blob[5]<<8|(uint32_t)blob[6]<<16|(uint32_t)blob[7]<<24;
+ for(i=0;i<vertices;++i) {
+  const unsigned char *v=blob+12u+i*24u;
+  if(!within(v,1000000.f)||!within(v+4,1000000.f)||!within(v+8,1000000.f)||
+     !within(v+12,65536.f)||!within(v+16,65536.f))return 0;
+ }
  f=blob+12u+vertices*24u;
  for(i=0;i<count;++i,f+=16) {
   uint32_t id=(uint32_t)f[0]|(uint32_t)f[1]<<8|(uint32_t)f[2]<<16|(uint32_t)f[3]<<24;
@@ -317,11 +325,12 @@ const char *dc_render_block_cache_window(dc_render_block_cache *owner,const dc_r
  }
  if(!error) {
   memset(window->remap,0,(size_t)remap*sizeof(*window->remap));
+  window->prepared=0;
   error=merge(window,blocks,count+1u,query,1,&faces,&again);
  }
  for(i=0;i<DC_RENDER_BLOCK_CACHE_SLOTS;++i)s->slots[i].held=0;
  if(error)return error;
- window->count=faces;window->vertex_count=again;window->coverage=*query;window->catalog_crc=catalog->crc;window->valid=1;
+ window->count=faces;window->vertex_count=again;window->coverage=*query;window->catalog_crc=catalog->crc;window->valid=1;window->prepared=0;
  return NULL;
 }
 dc_render_block_source dc_render_block_cache_source(dc_render_block_cache *owner) {

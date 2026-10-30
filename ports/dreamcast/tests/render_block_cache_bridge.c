@@ -16,6 +16,10 @@ void dc_rbc_close(void *p){context *c=p;if(!c)return;dc_render_draw_window_free(
 const char *dc_rbc_error(void){return last;}
 const char *dc_rbc_dw_make(void *p,uint32_t f,uint32_t v,uint32_t r){context *c=p;return dc_render_draw_window_make(&c->drawn,f,v,r);}
 const char *dc_rbc_dw_build(void *p,const double *query){context *c=p;return dc_render_block_cache_window(&c->blocks,&c->catalog,(const dc_render_query *)query,&c->drawn);}
+/* 1 camera ok, 0 NaN yaw; returns prepare's result, then prepared in the top bit. */
+uint32_t dc_rbc_dw_prepare(void *p,int good){context *c=p;dc_render_camera camera;float nan=0.f;nan=nan/nan;memset(&camera,0,sizeof camera);camera.distance=4.f;if(!good)camera.yaw=nan;
+ {uint32_t r=(uint32_t)dc_render_draw_window_prepare(&c->drawn,&camera);return r|c->drawn.prepared<<31;}}
+uint32_t dc_rbc_dw_prepared(void *p){context *c=p;return c->drawn.prepared;}
 uint32_t dc_rbc_dw_count(void *p){context *c=p;return c->drawn.count;}
 uint32_t dc_rbc_dw_vertices(void *p){context *c=p;return c->drawn.vertex_count;}
 void dc_rbc_dw_copy(void *p,unsigned char *out){context *c=p;uint32_t i;for(i=0;i<c->drawn.count;++i)dc_render_draw_window_face(&c->drawn,i,out+(size_t)i*116u);}

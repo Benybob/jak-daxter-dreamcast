@@ -35,8 +35,9 @@ const char *dc_render_block_cache_make_draw(const dc_render_catalog *,const char
  * .drx (there is no .drs fallback here). Faces come out in source-ID order, each
  * once; replicas must match byte for byte and a global face may have none. Every
  * block is held resident for the build, so budget must cover them together. All
- * checks precede the first write: failure leaves the window as it was. A query
- * inside the window's coverage changes nothing. One hit a resident block. */
+ * checks precede the first write to its faces and vertices: failure leaves those,
+ * and its readiness, as they were. A query inside the window's coverage changes
+ * nothing. One hit a resident block. */
 const char *dc_render_block_cache_window(dc_render_block_cache *,const dc_render_catalog *,
     const dc_render_query *,dc_render_draw_window *);
 dc_render_block_source dc_render_block_cache_source(dc_render_block_cache *);

@@ -45,7 +45,9 @@ void dc_render_draw_window_free(dc_render_draw_window *window) {
 }
 int dc_render_draw_window_prepare(dc_render_draw_window *window,const dc_render_camera *camera) {
  uint32_t i;float cy,sy,cp,sp,m[12];const float scale=DC_RENDER_WORLD_SCALE;const unsigned char *point;
- if(!window||!camera||!window->valid)return 0;
+ if(!window)return 0;
+ window->prepared=0;
+ if(!camera||!window->valid)return 0;
  if(!target32(camera->target.x)||!target32(camera->target.y)||!target32(camera->target.z)||
     !finite32(camera->yaw)||!finite32(camera->pitch)||!finite32(camera->distance)||
     camera->distance<0.f||camera->distance>1000000.f)return 0;
@@ -65,7 +67,7 @@ int dc_render_draw_window_prepare(dc_render_draw_window *window,const dc_render_
    out->projected=(dc_projected_vertex){320.f+390.f*rx*inv,260.f-390.f*ry*inv,inv};
   }else out->projected=(dc_projected_vertex){0,0,0};
  }
- return 1;
+ window->prepared=1;return 1;
 }
 void dc_render_draw_window_face(const dc_render_draw_window *window,uint32_t index,unsigned char *out) {
  const dc_render_draw_face *f=&window->faces[index];uint32_t material=f->material;unsigned j;
