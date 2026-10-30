@@ -458,8 +458,9 @@ BLEND faces sit in each window: 83 of 83 checks with every window's faces and
 CRC matching the host, 133 translucent triangles drawn over the path (24 in the
 last frame), and the last frame agrees with the reference on 97.66% of the
 frame (1 pixel only in Flycast; the reference-only pixels are masked foliage,
-large in this view). The blended triangles' look on screen is not checked
-separately.
+large in this view). Built once more with the translucent list left out, the
+same last frame differs in 279 pixels, all in one 132 x 53 region where the
+sand paths lie: the blended triangles reach the screen there and nowhere else.
 
 ## Proposed design
 
