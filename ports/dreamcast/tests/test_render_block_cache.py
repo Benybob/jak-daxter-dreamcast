@@ -59,6 +59,17 @@ class BlockCacheTest(unittest.TestCase):
             self.assertIsNone(self.load(c,q));self.assertEqual(self.payload(c),self.stripped(p,q))
         s=self.stats(c);self.assertGreater(s[0],0);self.assertEqual(s[3],0);self.assertEqual(s[5],0)
         self.assertEqual(s[7],s[6]);self.assertEqual(s[4],0)
+    def test_draw_select_pass_expands_nothing_and_counts_as_plain(self):
+        xyz=[(0.2,0,.2),(1,0,.2),(.2,1,1),(30,0,.2),(31,0,.2),(30,1,1)]
+        p,root=self.packet(xyz);plain,draw=self.owner(root),self.draw_owner(root)
+        for c in (plain,draw):
+            for q in ((0,2,0,2),(-1,3,-1,3),(20,33,-1,3),(0,2,0,2)):self.assertIsNone(self.load(c,q))
+        self.assertEqual(self.stats(plain)[:4],self.stats(draw)[:4])
+        self.assertEqual(self.payload(draw),self.stripped(p,(0,2,0,2)))
+        self.lib.dc_rbc_arm(0,0,0);self.assertIsNone(self.load(plain,(-1,3,-1,3)));before=self.stats(plain)[10]
+        self.lib.dc_rbc_arm(0,0,0);self.assertIsNone(self.load(draw,(-1,3,-1,3)))
+        blocks=self.stats(draw)[0]-self.stats(plain)[0]
+        self.assertEqual(blocks,0);self.assertLessEqual(self.stats(draw)[10],before+3)
     def test_draw_retention_counts_drx2_bytes_exactly(self):
         p,root=self.packet([(.2,0,.2),(1,0,.2),(.2,1,1)]);c=self.draw_owner(root)
         self.assertIsNone(self.load(c,(0,2,0,2)))

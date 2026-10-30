@@ -124,6 +124,19 @@ static const char *load(void *user,const dc_render_catalog *catalog,const dc_ren
  }else {++s->stats.bypasses;s->cached=0;}
  *out=block;s->borrowed=block;s->pinned=1;return NULL;
 }
+/* A DRX2 face begins with its source ID, so the select pass needs no expansion. */
+static int peek(void *user,const dc_render_catalog *catalog,const dc_render_entry *entry,int global,
+ const unsigned char **ids,uint32_t *stride) {
+ dc_render_block_cache *owner=user;state *s=owner?owner->state:NULL;unsigned i;
+ if(!s||!s->draw||s->pinned||!catalog||!entry||!ids||!stride||!catalog_equal(catalog,&s->catalog))return 0;
+ for(i=0;i<DC_RENDER_BLOCK_CACHE_SLOTS;++i)if(s->slots[i].valid&&s->slots[i].global==global&&
+     !memcmp(&s->slots[i].entry,entry,sizeof(*entry))) {
+  const unsigned char *c=s->slots[i].compact;
+  uint32_t vertices=(uint32_t)c[4]|(uint32_t)c[5]<<8|(uint32_t)c[6]<<16|(uint32_t)c[7]<<24;
+  touch(s,i);++s->stats.hits;*ids=c+12u+vertices*24u;*stride=16u;return 1;
+ }
+ return 0;
+}
 static void release(void *user,dc_render_block *block) {
  dc_render_block_cache *owner=user;state *s=owner?owner->state:NULL;
  if(!s||!s->pinned||!block||block->records!=s->borrowed.records||block->count!=s->borrowed.count)return;
@@ -151,7 +164,7 @@ const char *dc_render_block_cache_make_draw(const dc_render_catalog *catalog,con
  return make(catalog,root,sha,budget,1,out);
 }
 dc_render_block_source dc_render_block_cache_source(dc_render_block_cache *owner) {
- dc_render_block_source source={owner,load,release};return source;
+ dc_render_block_source source={owner,load,release,peek};return source;
 }
 void dc_render_block_cache_measure(const dc_render_block_cache *owner,dc_render_block_cache_stats *out) {
  const state *s=owner?owner->state:NULL;if(!out)return;if(s)*out=s->stats;else memset(out,0,sizeof(*out));

@@ -148,6 +148,11 @@ typedef struct {
     const char *(*load)(void *,const dc_render_catalog *,const dc_render_entry *,
                         int global,const char *path,dc_render_block *);
     void (*release)(void *,dc_render_block *);
+    /* Optional. Nonzero lends this entry's u32 source IDs in place, every stride
+     * bytes, for the pass that reads nothing else; the IDs stay valid until the
+     * next call on the source. Zero falls back to load, with nothing changed. */
+    int (*peek)(void *,const dc_render_catalog *,const dc_render_entry *,int global,
+                const unsigned char **ids,uint32_t *stride);
 } dc_render_block_source;
 const char *dc_render_window_retarget_source(const dc_render_catalog *,const char *,
     const char *,const dc_render_query *,const dc_render_block_source *,dc_render_window *);

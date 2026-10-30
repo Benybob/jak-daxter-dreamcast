@@ -470,13 +470,14 @@ static const char *cache_merge_ids(dc_render_workspace *ws, uint32_t file_count)
     return NULL;
 }
 
-static const char *cache_select_block(dc_render_job *job, const dc_render_block *block) {
+static const char *cache_select_ids(dc_render_job *job, const unsigned char *ids,
+                                    uint32_t faces, uint32_t stride) {
     uint32_t i, count = 0, previous = 0;
     int have = 0;
-    if (block->count > DC_RENDER_FILE_CAP) return DC_RENDER_CACHE_ERR_ARGUMENTS;
-    if (block->count && !block->records) return DC_RENDER_CACHE_ERR_ARGUMENTS;
-    for (i = 0; i < block->count; ++i) {
-        uint32_t id = cache_u32(block->records + (size_t)i * DC_RENDER_FACE_BYTES);
+    if (faces > DC_RENDER_FILE_CAP) return DC_RENDER_CACHE_ERR_ARGUMENTS;
+    if (faces && !ids) return DC_RENDER_CACHE_ERR_ARGUMENTS;
+    for (i = 0; i < faces; ++i) {
+        uint32_t id = cache_u32(ids + (size_t)i * stride);
         if (id >= job->source_count) return DC_RENDER_CACHE_ERR_ORDER;
         if (have && id <= previous) return DC_RENDER_CACHE_ERR_ORDER;
         previous = id;
@@ -556,13 +557,22 @@ static const char *cache_run_pass(dc_render_job *job, int validate) {
         error = global ? cache_path_global(path, job->root)
                        : cache_path_local(path, job->root, entry->ix, entry->iz);
         if (error) return error;
+        if (!validate && job->source && job->source->peek) {
+            const unsigned char *ids = NULL;
+            uint32_t stride = 0;
+            if (job->source->peek(job->source->user, job->catalog, entry, global, &ids, &stride)) {
+                error = cache_select_ids(job, ids, entry->count, stride);
+                if (error) return error;
+                continue;
+            }
+        }
         memset(&block,0,sizeof block);
         error = job->source ? job->source->load(job->source->user,job->catalog,entry,global,path,&block)
                             : cache_load_block(job->catalog, entry, global, path, &block);
         if (error) return error;
         if (block.count != entry->count) error = DC_RENDER_CACHE_ERR_ARGUMENTS;
         else if (validate) error = cache_validate_block(job, &block, global);
-        else error = cache_select_block(job, &block);
+        else error = cache_select_ids(job, block.records, block.count, DC_RENDER_FACE_BYTES);
         if(job->source) job->source->release(job->source->user,&block);
         else dc_render_block_free(&block);
         if (error) return error;

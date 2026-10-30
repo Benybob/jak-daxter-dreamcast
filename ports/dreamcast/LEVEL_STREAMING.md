@@ -521,8 +521,9 @@ leaves free (above). Where it can shrink:
   neighbourhood: the window still expands to 116-byte faces.
 
   `dc_render_block_cache_make_draw` retains these blocks (built in C on a miss,
-  the same bytes as `encode_draw_sector`; a hit expands one without a CRC, twice
-  a retarget). `-DFLY_DRAW_CACHE` measures it on the same 16-frame path, against
+  the same bytes as `encode_draw_sector`; a hit expands one without a CRC, once
+  a retarget, since the select pass reads source IDs straight from the DRX2 face
+  table through the source's `peek`). `-DFLY_DRAW_CACHE` measures it on the same 16-frame path, against
   the table above and rerun beside it, which reproduced that table's hits, misses
   and times exactly. Every row: 83 of 83 checks, the same last frame.
 
@@ -530,13 +531,12 @@ leaves free (above). Where it can shrink:
   | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
   | DRM2 | 2 MB | 393 | 15 | 0 | 1.66 MB | 2.41 s | 3.60 MB |
   | DRM2 | 1.25 MB | 170 | 238 | 227 | 1.31 MB | 19.24 s | 3.25 MB |
-  | DRX2 | 2 MB | 393 | 15 | 0 | 0.57 MB | 4.02 s | 2.51 MB |
-  | DRX2 | 512 KB | 393 | 15 | 4 | 0.52 MB | 4.02 s | 2.39 MB |
-  | DRX2 | 384 KB | 170 | 238 | 228 | 0.39 MB | 27.37 s | 2.30 MB |
-  | DRX2 | 256 KB | 0 | 408 | 405 | 0.26 MB | 39.91 s | 2.19 MB |
+  | DRX2 | 2 MB | 393 | 15 | 0 | 0.57 MB | 3.40 s | 2.51 MB |
+  | DRX2 | 512 KB | 393 | 15 | 4 | 0.52 MB | 3.40 s | 2.39 MB |
+  | DRX2 | 384 KB | 170 | 238 | 228 | 0.39 MB | 27.16 s | 2.30 MB |
 
   So a third of the cache holds the whole working set, 1.09 MB less heap in use,
-  for 1.6 s more retargeting over the path (about 100 ms a frame, Flycast time).
+  for 1.0 s more retargeting over the path (about 60 ms a frame, Flycast time).
   Below the working set DRX2 is the slower of the two, since each miss also
   encodes. These runs used a LOD 0 package (`tie_lods.py --textured --compact` with
   an empty dump folder: 811,024 bytes against the 1.10 MB of the full LODs), which
