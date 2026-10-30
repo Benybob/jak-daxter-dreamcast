@@ -14,7 +14,7 @@ extern void dc_base_free(void *);
 #define memalign dc_base_memalign
 #define free dc_base_free
 #endif
-enum {MASK=1,CLAMP_U=4,CLAMP_V=8,MIRROR_U=16,MIRROR_V=32,DOUBLE_SIDED=64,NEAREST=128};
+enum {MASK=1,CLAMP_U=4,CLAMP_V=8,MIRROR_U=16,MIRROR_V=32,DOUBLE_SIDED=64,NEAREST=128,BLEND=256};
 static uint32_t read32(const unsigned char *p) {
  return (uint32_t)p[0]|(uint32_t)p[1]<<8|(uint32_t)p[2]<<16|(uint32_t)p[3]<<24;
 }
@@ -36,15 +36,15 @@ const char *dc_render_base_bank_make(const dc_render_catalog *catalog,const dc_r
  for(i=0;i<made.count;++i) {
   dc_render_material material;pvr_poly_cxt_t context;int list;
   if(!dc_render_material_get(catalog,i,&material)){error="base material";goto fail;}
-  list=(material.base_flags&MASK)?PVR_LIST_PT_POLY:PVR_LIST_OP_POLY;
+  list=(material.base_flags&BLEND)?PVR_LIST_TR_POLY:(material.base_flags&MASK)?PVR_LIST_PT_POLY:PVR_LIST_OP_POLY;
   if(material.base_texture==DC_RENDER_ABSENT_TEXTURE) {
    if(material.alpha_mode){error="base absent MASK unsupported";goto fail;}
    pvr_poly_cxt_col(&context,list);
   }else {
    dc_render_texture texture;
    if(!gpu||material.base_texture>=gpu->count||!gpu->slots[material.base_texture]||
-      !dc_render_texture_get(catalog,material.base_texture,&texture)||texture.format!=1u){error="base texture role";goto fail;}
-   pvr_poly_cxt_txr(&context,list,PVR_TXRFMT_ARGB1555|PVR_TXRFMT_TWIDDLED,
+      !dc_render_texture_get(catalog,material.base_texture,&texture)||texture.format!=((material.base_flags&BLEND)?3u:1u)){error="base texture role";goto fail;}
+   pvr_poly_cxt_txr(&context,list,((material.base_flags&BLEND)?PVR_TXRFMT_ARGB4444:PVR_TXRFMT_ARGB1555)|PVR_TXRFMT_TWIDDLED,
      texture.width,texture.height,gpu->slots[material.base_texture],(material.base_flags&NEAREST)?PVR_FILTER_NONE:PVR_FILTER_BILINEAR);
    context.txr.env=PVR_TXRENV_MODULATE;
    context.txr.uv_clamp=((material.base_flags&CLAMP_U)?PVR_UVCLAMP_U:0)|((material.base_flags&CLAMP_V)?PVR_UVCLAMP_V:0);
@@ -53,7 +53,10 @@ const char *dc_render_base_bank_make(const dc_render_catalog *catalog,const dc_r
   /* The CPU performs sidedness after clipping. No unbounded coordinates reach
    * the PVR culling determinant, including very long global faces. */
   context.gen.culling=PVR_CULLING_NONE;context.gen.shading=PVR_SHADE_GOURAUD;
-  context.depth.comparison=PVR_DEPTHCMP_GEQUAL;context.depth.write=PVR_DEPTHWRITE_ENABLE;
+  context.depth.comparison=PVR_DEPTHCMP_GEQUAL;
+  /* the translucent list blends over what is drawn (source alpha, its inverse)
+   * and leaves depth to the opaque passes */
+  context.depth.write=list==PVR_LIST_TR_POLY?PVR_DEPTHWRITE_DISABLE:PVR_DEPTHWRITE_ENABLE;
   pvr_poly_compile(&made.headers[i],&context);
   made.materials[i]=(dc_render_base_material){material.base_flags,(uint32_t)list};
   if(material.strength_texture!=DC_RENDER_ABSENT_TEXTURE||material.spec_texture!=DC_RENDER_ABSENT_TEXTURE)++made.secondary_materials;
@@ -113,7 +116,7 @@ static void flush(unsigned *n) {if(*n){pvr_prim(commands,*n*sizeof(*commands));*
 int dc_render_base_draw(const dc_render_base_bank *bank,const dc_render_base_frame *frame,int list,dc_render_base_stats *stats) {
  uint32_t material,index,j;
  if(!bank||!frame||!stats||!frame->valid||!frame->ready||frame->catalog_crc!=bank->catalog_crc||frame->materials!=bank->count||
-    (list!=PVR_LIST_OP_POLY&&list!=PVR_LIST_PT_POLY))return 0;
+    (list!=PVR_LIST_OP_POLY&&list!=PVR_LIST_PT_POLY&&list!=PVR_LIST_TR_POLY))return 0;
  for(material=0;material<bank->count;++material) {
   unsigned queued=0;
   if(bank->materials[material].list!=(uint32_t)list||frame->first[material]==frame->first[material+1])continue;

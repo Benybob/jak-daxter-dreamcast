@@ -32,8 +32,8 @@ const char *dc_render_gpu_make(const dc_render_catalog *catalog,dc_render_gpu *o
   dc_render_texture t;
   if(!dc_render_texture_get(catalog,i,&t)||!t.pixels||((uintptr_t)t.pixels&3u)
     ||t.width<8u||t.width>64u||t.height<8u||t.height>64u||(t.width&(t.width-1u))||(t.height&(t.height-1u))
-    ||(t.format!=1u&&t.format!=2u)||t.bytes!=t.width*t.height*(t.format==1u?2u:1u)||(t.bytes&31u))return "GPU catalog texture";
-  if(t.format==1u){made.bytes+=t.bytes;++made.colors;}
+    ||(t.format<1u||t.format>3u)||t.bytes!=t.width*t.height*(t.format==2u?1u:2u)||(t.bytes&31u))return "GPU catalog texture";
+  if(t.format!=2u){made.bytes+=t.bytes;++made.colors;}
  }
  if(made.bytes>2097152u)return "GPU catalog budget";
  made.count=catalog->texture_count;made.catalog_crc=catalog->crc;
@@ -41,7 +41,7 @@ const char *dc_render_gpu_make(const dc_render_catalog *catalog,dc_render_gpu *o
  made.slots=GPU_CALLOC(made.count,sizeof(*made.slots));if(!made.slots)return "GPU slot allocation";
  for(i=0;i<made.count;++i) {
   dc_render_texture t;dc_render_texture_get(catalog,i,&t);
-  if(t.format!=1u)continue;
+  if(t.format==2u)continue;
   made.slots[i]=VRAM_MALLOC(t.bytes);if(!made.slots[i]){dc_render_gpu_free(&made);return "GPU VRAM allocation";}
   pvr_txr_load(t.pixels,made.slots[i],t.bytes);
  }

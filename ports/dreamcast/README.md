@@ -243,7 +243,7 @@ A 32 MiB RAM modification would not remove the CPU, graphics or ABI work.
 | Order | Deliverable | Pass condition |
 | --- | --- | --- |
 | 1 | Target asset probe, cross-built and emulator-tested | Hardware verification remains; emulated archive checksums match |
-| 2 | PowerVR geometry viewer and converter, cross-built and emulator-tested | Real village1 geometry and textures render in Flycast (terrain, instanced TIE/shrub with LODs, a streamed camera path); retail-hardware measurements and BLEND (translucent) materials remain |
+| 2 | PowerVR geometry viewer and converter, cross-built and emulator-tested | Real village1 geometry and textures render in Flycast (terrain, instanced TIE/shrub with LODs, a streamed camera path); retail-hardware measurements remain |
 | 3 | Minimal GOAL SH-4 compiler/runtime slice | Arithmetic, branches, calls, tagging, symbols and relocation tests execute on SH-4 and match host results |
 | 4 | Animated Jak and movement in one bounded scene | Controller movement, animation and collision work inside the measured memory budget |
 | 5 | Small playable area | Scene streaming, camera, interactions, sound and VMU save/load work together |

@@ -48,6 +48,8 @@ MATERIAL_BYTES = 64
 MANIFEST_FLAG_ABSOLUTE = 1
 SECTOR_FLAG_GLOBAL = 1
 TEXTURE_ARGB1555 = 1
+# BLEND materials keep 4-bit alpha (translucent list); ARGB1555 has one bit.
+TEXTURE_ARGB4444 = 3
 TEXTURE_STRENGTH_U8 = 2
 ABSENT_TEXTURE = 0xFFFFFFFF
 # Header value 1: world-space float32 normals, each unit length or all zeros.
@@ -61,10 +63,11 @@ FLAG_MIRROR_S = 16
 FLAG_MIRROR_T = 32
 FLAG_DOUBLE_SIDED = 64
 FLAG_NEAREST = 128
+FLAG_BLEND = 256
 FLAG_WRAP = FLAG_CLAMP_S | FLAG_CLAMP_T | FLAG_MIRROR_S | FLAG_MIRROR_T
 FLAG_SAMPLER = FLAG_WRAP | FLAG_NEAREST
 FLAG_ALLOWED = FLAG_MASK | FLAG_WRAP
-BASE_FLAG_ALLOWED = FLAG_ALLOWED | FLAG_UNLIT | FLAG_DOUBLE_SIDED | FLAG_NEAREST
+BASE_FLAG_ALLOWED = FLAG_ALLOWED | FLAG_UNLIT | FLAG_DOUBLE_SIDED | FLAG_NEAREST | FLAG_BLEND
 
 PER_SECTOR_CAP = 4096
 # zlib level for sector payloads. 0 writes stored blocks only, which
@@ -571,6 +574,20 @@ def texture_pixels(doc, binary, image_id, mode, cutoff, size):
     return width, height, bytes(result)
 
 
+def blend_pixels(doc, binary, image_id, size):
+    """Twiddled ARGB4444 for BLEND materials: the base colour bake with its alpha."""
+    image = _rgba_image(doc, binary, image_id, size, opaque=False)
+    width, height = image.size
+    result = bytearray(width * height * 2)
+    pixels = image.load()
+    for y in range(height):
+        for x in range(width):
+            r, g, b, a = pixels[x, y]
+            value = ((a >> 4) << 12) | ((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4)
+            struct.pack_into("<H", result, twiddle(x, y, width, height) * 2, value)
+    return width, height, bytes(result)
+
+
 def strength_pixels(doc, binary, image_id, size):
     """Twiddled U8 from metallicRoughness B after validating source channels.
 
@@ -973,7 +990,7 @@ def _interval_overlap(a0, a1, b0, b1):
 def _texture_record_ok(texture, pixel_blob, unpadded):
     width = texture["width"]
     height = texture["height"]
-    if texture["format"] == TEXTURE_ARGB1555:
+    if texture["format"] in (TEXTURE_ARGB1555, TEXTURE_ARGB4444):
         channels = 2
     elif texture["format"] == TEXTURE_STRENGTH_U8:
         channels = 1
@@ -1012,12 +1029,14 @@ def _material_ok(material, textures):
     if not _axis_flags_ok(flags, BASE_FLAG_ALLOWED):
         return False
     mode = material["alpha_mode"]
-    if mode not in (0, 1) or mode != (1 if flags & FLAG_MASK else 0):
+    expected = 2 if flags & FLAG_BLEND else 1 if flags & FLAG_MASK else 0
+    if mode not in (0, 1, 2) or mode != expected or (flags & FLAG_BLEND and flags & FLAG_MASK):
         return False
     if not _unit_range(material["alpha_cutoff"]):
         return False
     base = material["base_texture"]
-    if not 0 <= base < len(textures) or textures[base]["format"] != TEXTURE_ARGB1555:
+    base_format = TEXTURE_ARGB4444 if flags & FLAG_BLEND else TEXTURE_ARGB1555
+    if not 0 <= base < len(textures) or textures[base]["format"] != base_format:
         return False
     strength = material["strength_texture"]
     spec = material["spec_color_texture"]
@@ -1673,8 +1692,8 @@ def _material_for(doc, binary, primitive, texture_size, state):
     if has_unlit and extensions["KHR_materials_unlit"] not in (None, {}):
         raise RenderSectorError("unsupported extensions")
     mode = material.get("alphaMode", "OPAQUE")
-    if mode not in ("OPAQUE", "MASK"):
-        raise RenderSectorError("BLEND requires a separate translucent path")
+    if mode not in ("OPAQUE", "MASK", "BLEND"):
+        raise RenderSectorError("unsupported alphaMode")
     cutoff = material.get("alphaCutoff", 0.5)
     if isinstance(cutoff, bool) or not isinstance(cutoff, (int, float)):
         raise RenderSectorError("invalid alpha cutoff")
@@ -1705,8 +1724,12 @@ def _material_for(doc, binary, primitive, texture_size, state):
     # Original Python float, not the float32 bits. Nearby cutoffs that collide
     # in float32 still bake and dedup the way convert_textured does.
     base_key = ("base", image_id, mode, float(cutoff))
-    width, height, pixels = texture_pixels(doc, binary, image_id, mode, cutoff, texture_size)
-    base_index = _register_texture(state, base_key, width, height, pixels, TEXTURE_ARGB1555)
+    if mode == "BLEND":
+        width, height, pixels = blend_pixels(doc, binary, image_id, texture_size)
+        base_index = _register_texture(state, base_key, width, height, pixels, TEXTURE_ARGB4444)
+    else:
+        width, height, pixels = texture_pixels(doc, binary, image_id, mode, cutoff, texture_size)
+        base_index = _register_texture(state, base_key, width, height, pixels, TEXTURE_ARGB1555)
 
     metallic = f32(1.0)
     roughness = f32(1.0)
@@ -1746,16 +1769,17 @@ def _material_for(doc, binary, primitive, texture_size, state):
                 state, ("spec", spec_image), width, height, pixels, TEXTURE_ARGB1555
             )
 
-    flags = (FLAG_MASK if mode == "MASK" else 0) | base_wrap
+    flags = (FLAG_MASK if mode == "MASK" else FLAG_BLEND if mode == "BLEND" else 0) | base_wrap
     if has_unlit:
         flags |= FLAG_UNLIT
     if material.get("doubleSided", False):
         flags |= FLAG_DOUBLE_SIDED
+    alpha_mode = {"OPAQUE": 0, "MASK": 1, "BLEND": 2}[mode]
     material_key = (
         base_index,
         flags,
         cutoff_f,
-        1 if mode == "MASK" else 0,
+        alpha_mode,
         strength_index,
         strength_flags,
         metallic,
@@ -1773,7 +1797,7 @@ def _material_for(doc, binary, primitive, texture_size, state):
             "base_texture": base_index,
             "base_flags": flags,
             "alpha_cutoff": cutoff_f,
-            "alpha_mode": 1 if mode == "MASK" else 0,
+            "alpha_mode": alpha_mode,
             "strength_texture": strength_index,
             "strength_flags": strength_flags,
             "metallic_factor": metallic,

@@ -26,7 +26,7 @@ extern int dc_render_test_ferror(FILE *);
 typedef char render_float_width[(sizeof(float)==4 && sizeof(uint32_t)==4 && FLT_MANT_DIG==24 && FLT_MAX_EXP==128)?1:-1];
 enum { HEADER=256, SOURCE_MAX=1000000, SECTORS_MAX=8192, REPLICAS_MAX=2000000,
        MATERIAL_MAX=256,TEXTURE_MAX=256,TEXTURE_BYTE_MAX=2097152,PACKAGE_MAX=8388608,
-       RAW_MAX=475136,COMPRESSED_MAX=476160,WRAP_FLAGS=188,BASE_FLAGS=255 };
+       RAW_MAX=475136,COMPRESSED_MAX=476160,WRAP_FLAGS=188,BASE_FLAGS=511 };
 static uint32_t u32(const unsigned char *p) {
  return (uint32_t)p[0]|(uint32_t)p[1]<<8|(uint32_t)p[2]<<16|(uint32_t)p[3]<<24;
 }
@@ -110,9 +110,9 @@ static const char *tables_check(const dc_render_catalog *c) {
  for(i=0;i<c->texture_count;++i) {
   dc_render_texture t;const unsigned char *d=p+HEADER+i*16u;uint32_t size;
   t.bytes=u32(d+4);t.width=u16(d+8);t.height=u16(d+10);t.format=u32(d+12);
-  if((t.format!=1u&&t.format!=2u)||t.width<8u||t.width>64u||t.height<8u||t.height>64u
+  if((t.format<1u||t.format>3u)||t.width<8u||t.width>64u||t.height<8u||t.height>64u
     ||(t.width&(t.width-1u))||(t.height&(t.height-1u)))return "render texture dimensions";
-  size=t.width*t.height*(t.format==1u?2u:1u);
+  size=t.width*t.height*(t.format==2u?1u:2u);
   if(u32(d)!=running||t.bytes!=size||size>c->texture_bytes-running)return "render texture bounds";
   running+=size;
  }
@@ -121,8 +121,8 @@ static const char *tables_check(const dc_render_catalog *c) {
  for(i=0;i<c->material_count;++i) {
   dc_render_material m;const unsigned char *raw=p+c->material_offset+i*64u;
   dc_render_material_get(c,i,&m);
-  if(!flags_ok(m.base_flags,BASE_FLAGS)||m.alpha_mode>1u||m.alpha_mode!=(m.base_flags&1u)||!unit(m.cutoff)
-    ||!texture_role(c,m.base_texture,1u)||!unit(m.metallic)||!unit(m.roughness)||!unit(m.specular)
+  if(!flags_ok(m.base_flags,BASE_FLAGS)||m.alpha_mode>2u||m.alpha_mode!=((m.base_flags&256u)?2u:(m.base_flags&1u))||((m.base_flags&256u)&&(m.base_flags&1u))||!unit(m.cutoff)
+    ||!texture_role(c,m.base_texture,(m.base_flags&256u)?3u:1u)||!unit(m.metallic)||!unit(m.roughness)||!unit(m.specular)
     ||!unit(m.spec_color[0])||!unit(m.spec_color[1])||!unit(m.spec_color[2])||u32(raw+56)||u32(raw+60))return "render material";
   if(m.strength_texture==DC_RENDER_ABSENT_TEXTURE) { if(m.strength_flags)return "render absent strength"; }
   else if(!texture_role(c,m.strength_texture,2u)||!flags_ok(m.strength_flags,WRAP_FLAGS))return "render strength";

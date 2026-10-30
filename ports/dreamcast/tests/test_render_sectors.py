@@ -997,14 +997,33 @@ class RenderSectorTests(unittest.TestCase):
                 _package(_interior().to_bytes())
             self.assertIn("package budget exceeded", str(caught.exception))
 
+    def test_blend_material_keeps_four_bit_alpha(self):
+        builder = GlbBuilder()
+        builder.images = [{"uri": _png_uri((255, 128, 0, 136))}]
+        builder.textures = [{"source": 0}]
+        builder.materials.append({"alphaMode": "BLEND", "pbrMetallicRoughness": {"baseColorTexture": {"index": 0}}})
+        positions = [(1, 0, 1), (2, 0, 1), (1, 1, 1)]
+        primitive = {"attributes": {"POSITION": builder.add_vec3(positions),
+                                    "TEXCOORD_0": builder.add_vec2([(0, 0), (1, 0), (0, 1)])},
+                     "indices": builder.add_indices([0, 1, 2]), "material": 0}
+        builder.scenes[0]["nodes"] = [builder.add_node(mesh=builder.add_mesh([primitive]))]
+        header = rs.parse_manifest(_package(builder.to_bytes()).manifest)
+        material = header["materials"][0]
+        self.assertEqual(material["base_flags"], rs.FLAG_BLEND)
+        self.assertEqual(material["alpha_mode"], 2)
+        texture = header["textures"][material["base_texture"]]
+        self.assertEqual(texture["format"], rs.TEXTURE_ARGB4444)
+        # alpha 136 -> 8, red 255 -> 15, green 128 -> 8, blue 0
+        self.assertEqual(set(struct.unpack("<64H", texture["pixels"])), {0x8F80})
+
     def test_rejected_draws_and_graphs(self):
         positions = [(1, 0, 1), (2, 0, 1), (1, 1, 1)]
         cases = []
-        blend = GlbBuilder()
-        blend.materials.append({"alphaMode": "BLEND"})
-        primitive = {"attributes": {"POSITION": blend.add_vec3(positions)}, "indices": blend.add_indices([0, 1, 2]), "material": 0}
-        blend.scenes[0]["nodes"] = [blend.add_node(mesh=blend.add_mesh([primitive]))]
-        cases.append((blend.to_bytes(), "BLEND"))
+        odd = GlbBuilder()
+        odd.materials.append({"alphaMode": "FOO"})
+        primitive = {"attributes": {"POSITION": odd.add_vec3(positions)}, "indices": odd.add_indices([0, 1, 2]), "material": 0}
+        odd.scenes[0]["nodes"] = [odd.add_node(mesh=odd.add_mesh([primitive]))]
+        cases.append((odd.to_bytes(), "unsupported alphaMode"))
 
         points = _one(positions)
         points.meshes[0]["primitives"][0]["mode"] = 0

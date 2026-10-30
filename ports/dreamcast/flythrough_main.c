@@ -19,7 +19,7 @@ volatile telemetry dc_backend={.magic=0x34485347u,.version=1};
 typedef struct {uint32_t frames,retargets,max_faces,max_instance_triangles,instance_submitted,terrain_triangles,
  max_frame_us,total_us,last_frame,textured_materials,
  retarget_us,frame_make_us,prepare_us,terrain_draw_us,instance_draw_us,reused,
- cache_hits,cache_misses,cache_peak_bytes,cache_evictions,sphere_culled;} fly_metrics;
+ cache_hits,cache_misses,cache_peak_bytes,cache_evictions,sphere_culled,translucent_triangles,last_translucent;} fly_metrics;
 volatile fly_metrics dc_fly_metrics;
 static int check(int ok,const char *why) {
  ++dc_backend.total;if(ok){++dc_backend.passed;return 1;}
@@ -34,7 +34,7 @@ int main(void) {
  dc_instance_package pkg;unsigned char *data=NULL;float (*view)[3]=NULL,(*bounds)[4]=NULL;
  FILE *file=NULL;const char *error;int initialized=0;uint32_t f,slot,textured=0,windows_ok=1,instances_ok=1,lods_ok=1;
  enum {VERTEX_BUFFER=2048*1024};
- pvr_init_params_t params={.opb_sizes={PVR_BINSIZE_32,0,0,0,PVR_BINSIZE_32},.vertex_buf_size=VERTEX_BUFFER,.opb_overflow_count=8};
+ pvr_init_params_t params={.opb_sizes={PVR_BINSIZE_32,0,PVR_BINSIZE_32,0,PVR_BINSIZE_32},.vertex_buf_size=VERTEX_BUFFER,.opb_overflow_count=8};
  dc_backend.state=1;dc_backend.system_ram=_arch_mem_top-0x8c000000u;vid_set_mode(DM_640x480,PM_RGB565);
  if(!check(pvr_init(&params)==0,"fly PVR init"))goto release;
  initialized=1;pvr_set_bg_color(.45f,.62f,.80f);
@@ -94,7 +94,12 @@ int main(void) {
    ok=ok&&dc_instance_draw_list(&pkg,&ic,view,&inst,PVR_LIST_PT_POLY,materials,FLY_MATERIAL_SLOTS);
    dc_fly_metrics.terrain_draw_us+=(uint32_t)((b-a)+(e2-d));
    dc_fly_metrics.instance_draw_us+=(uint32_t)((c-b)+(timer_us_gettime64()-e2));}
-  pvr_list_finish();pvr_scene_finish();
+  pvr_list_finish();
+  /* BLEND terrain last, blended over everything opaque and masked */
+  {dc_render_base_stats tr={0};pvr_list_begin(PVR_LIST_TR_POLY);
+   ok=ok&&dc_render_base_draw(&bank,&frame,PVR_LIST_TR_POLY,&tr);pvr_list_finish();
+   dc_fly_metrics.translucent_triangles+=tr.triangles;dc_fly_metrics.last_translucent=tr.triangles;}
+  pvr_scene_finish();
   if(!check(ok&&base.invalid==0&&inst.invalid==0,"fly draw"))goto release;
   if(inst.drawn_instances!=e->instances||inst.triangles!=e->triangles)instances_ok=0;
   if(memcmp(inst.lod_instances,e->lods,sizeof e->lods))lods_ok=0;
@@ -117,6 +122,8 @@ int main(void) {
   pvr_list_finish();pvr_list_begin(PVR_LIST_PT_POLY);
   ok=ok&&dc_render_base_draw(&bank,&frame,PVR_LIST_PT_POLY,&base);
   ok=ok&&dc_instance_draw_list(&pkg,&ic,view,&inst,PVR_LIST_PT_POLY,materials,FLY_MATERIAL_SLOTS);
+  pvr_list_finish();pvr_list_begin(PVR_LIST_TR_POLY);
+  ok=ok&&dc_render_base_draw(&bank,&frame,PVR_LIST_TR_POLY,&base);
   pvr_list_finish();pvr_scene_finish();
   check(ok,"fly last frame held for the display");
  }

@@ -86,6 +86,16 @@ class RenderPackageNative(unittest.TestCase):
                  images=[(255,0,128,255),(255,0,0,255)],textures=[{'source':0,'sampler':0},{'source':1}],
                  samplers=[{'magFilter':9728,'minFilter':9728}])
         p=_package(b.to_bytes());self.assertIsNone(self.call(p,next(iter(p.sectors.values())))[0])
+    def test_blend_material_and_its_four_bit_texture_role(self):
+        b=_solo({'alphaMode':'BLEND','pbrMetallicRoughness':{'baseColorTexture':{'index':0}}},
+                images=[(255,128,0,136)],textures=[{'source':0}])
+        p=_package(b.to_bytes());h=r.parse_manifest(p.manifest)
+        self.assertEqual((h['materials'][0]['base_flags'],h['textures'][0]['format']),(r.FLAG_BLEND,r.TEXTURE_ARGB4444))
+        self.assertIsNone(self.call(p,next(iter(p.sectors.values())))[0])
+        mat=256+h['texture_count']*16+h['texture_blob_bytes']
+        for offset,value in ((mat+4,r.FLAG_BLEND|r.FLAG_MASK),(mat+12,1),(256+12,r.TEXTURE_ARGB1555)):
+            raw=bytearray(p.manifest);struct.pack_into('<I',raw,offset,value)
+            with self.subTest(offset=offset,value=value):self.assertIsNotNone(self.call(p,manifest=self.resign(raw))[0])
     def test_sector_roles_header_and_eof(self):
         p=_package(_interior().to_bytes());blob=next(iter(p.sectors.values()))
         for raw in (blob[:-1],blob+b'X',b'',bytes(32)):

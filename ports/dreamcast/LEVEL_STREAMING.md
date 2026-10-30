@@ -441,6 +441,26 @@ same 53,942 instance triangles as before.
     python build_dreamcast.py --target jak-dc-flythrough.elf --fly-assets build/private-flythrough-assets
     python verify_backend.py FLYCAST jak-dc-flythrough.elf --nm NM --output OUT --suite flythrough --tests 137         --capture --dump dc_fly_metrics 40
 
+## BLEND terrain in the translucent list
+
+The sector builder took OPAQUE and MASK only. BLEND now goes through the same
+pipeline: a material flag (256) with alpha mode 2, and a third catalog texture
+format, twiddled ARGB4444 (ARGB1555's single alpha bit cannot blend), validated
+by the Python builder and the C reader alike (a BLEND material must point at an
+ARGB4444 texture and cannot also be MASK). The base bank puts such materials in
+`PVR_LIST_TR_POLY` with depth writes off, blending source alpha over what the
+opaque and punch-through lists drew. `tfrag_glb.py --roots` takes
+`trans` and `dirt` too, and the flythrough fixture keeps all four tfrag roots.
+
+Village1's BLEND terrain is the beach's blended sand paths (140 tris) and the
+oracle's eyes (80). Along a 30 m, 16-frame path ending on the beach, 0 to 24
+BLEND faces sit in each window: 83 of 83 checks with every window's faces and
+CRC matching the host, 133 translucent triangles drawn over the path (24 in the
+last frame), and the last frame agrees with the reference on 97.66% of the
+frame (1 pixel only in Flycast; the reference-only pixels are masked foliage,
+large in this view). The blended triangles' look on screen is not checked
+separately.
+
 ## Proposed design
 
 1. **Resident per level: what gameplay needs everywhere.** Code (0.25 MiB),
@@ -468,8 +488,8 @@ same 53,942 instance triangles as before.
 
 - The 0.3% of TIE and shrub triangles the cuts miss, and textures for the
   package's materials.
-- A translucent list for BLEND terrain, and single-sided culling for
-  instances whose materials are not double-sided.
+- Single-sided culling for instances whose materials are not double-sided,
+  and BLEND instance materials (none in village1's instances).
 - Instance records streamed by cell rather than all resident, and the
   per-frame costs measured on hardware rather than Flycast.
 - A native zlib and SH4ZAM in this SDK again, so the village diagnostic can use

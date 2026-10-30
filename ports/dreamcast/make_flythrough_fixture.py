@@ -3,7 +3,9 @@
     python make_flythrough_fixture.py BACKGROUND.glb PACKAGE.dci2 OUT_DIR
            [--frames 30] [--length 60] [--half 14] [--reference REF.dci]
 
-The camera starts as make_instance_fixture's (aimed at the package's densest
+The terrain keeps the GLB's tfrag roots (default normal, lowres, trans and dirt:
+the last two are BLEND, drawn in the translucent list). The camera starts as
+make_instance_fixture's (aimed at the package's densest
 cell) and its target moves LENGTH meters along the camera's own horizontal view
 direction over FRAMES frames. The terrain is the background GLB's opaque tfrag
 cropped to every 16 m cell a HALF-meter window along the path can touch, with
@@ -44,7 +46,8 @@ def path(target, frames, length):
     return out
 
 
-def make(glb, package, out, frames=30, length=60.0, half=14.0, header='build/flythrough_fixture.h'):
+def make(glb, package, out, frames=30, length=60.0, half=14.0, header='build/flythrough_fixture.h',
+         roots=('normal', 'lowres', 'trans', 'dirt')):
     out = Path(out)
     if out.exists():
         shutil.rmtree(out)
@@ -56,7 +59,7 @@ def make(glb, package, out, frames=30, length=60.0, half=14.0, header='build/fly
     rect = (min(t[0] for t in targets) - margin, max(t[0] for t in targets) + margin,
             min(t[2] for t in targets) - margin, max(t[2] for t in targets) + margin)
     background = Path(glb).read_bytes()
-    cut, _ = tfrag_glb.cut(background, rect=rect, probe_package=blob)
+    cut, _ = tfrag_glb.cut(background, roots, rect=rect, probe_package=blob)
     doc, binary = rs.parse_glb_bytes(cut)
     rs.ZLIB_LEVEL = 0
     packet = rs.build_package(doc, binary, source_sha256=hashlib.sha256(cut).digest())
@@ -65,7 +68,9 @@ def make(glb, package, out, frames=30, length=60.0, half=14.0, header='build/fly
         shutil.move(str(item), str(out / item.name))
     (out / 'sectors-staging').rmdir()
     (out / 'package.dci').write_bytes(blob)
-    sha = rs.parse_manifest(packet.manifest)['source_sha256'].hex()
+    head = rs.parse_manifest(packet.manifest)
+    sha = head['source_sha256'].hex()
+    blend = {i for i, m in enumerate(head['materials']) if m['base_flags'] & rs.FLAG_BLEND}
     rows = []
     for t in targets:
         query = (t[0] - half, t[0] + half, t[2] - half, t[2] + half)
@@ -75,6 +80,7 @@ def make(glb, package, out, frames=30, length=60.0, half=14.0, header='build/fly
         _, tris = mf.expected(*mf.read(view), t, mf.DRAW_DISTANCE)
         lods = mf.lod_counts(blob, t, mf.DRAW_DISTANCE)
         rows.append({'target': t, 'query': query, 'faces': len(faces), 'crc': rs.crc32(raw),
+                     'blend_faces': sum(1 for x in faces if x['material_id'] in blend),
                      'instances': sum(lods), 'triangles': tris, 'lods': lods})
     glb_doc = json.loads(tfrag_glb.read_chunks(background)[0][1])
     mapping = mv.material_map(out, tfrag_glb.probe_materials(blob, glb_doc))
@@ -102,6 +108,7 @@ def make(glb, package, out, frames=30, length=60.0, half=14.0, header='build/fly
     report = {'ai_assisted': True, 'frames': frames, 'length_m': length, 'crop': list(rect),
               'terrain_sources': rs.parse_manifest(packet.manifest)['source_count'],
               'max_window_faces': max(r['faces'] for r in rows), 'textured_materials': len(mapping),
+              'blend_faces_by_frame': [r['blend_faces'] for r in rows],
               'max_instance_triangles': max(r['triangles'] for r in rows), 'start': start, 'end': targets[-1]}
     (out / 'FLY.json').write_text(json.dumps(report, indent=1), newline='\n')
     return report, rows
