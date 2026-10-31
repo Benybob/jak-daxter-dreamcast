@@ -46,8 +46,23 @@ static void conversion(void){
    CHECK(near(v[0],terrain.x)&&near(v[1],terrain.y)&&near(v[2],terrain.z));
   }
  }
- pose(&p,2.2f,.7f);CHECK(dc_arena_game_convert(&p,0,&c));CHECK(near(c.pitch,.7f));
- CHECK(c.target[0]==c.eye[0]&&c.target[1]==c.eye[1]&&c.target[2]==c.eye[2]);
+ pose(&p,2.2f,.7f);p.trans[0]=40960;p.trans[1]=-81920;p.trans[2]=122880;
+ CHECK(dc_arena_game_convert(&p,20,&c));CHECK(near(c.pitch,.7f));
+ CHECK(near(c.eye[0],10)&&near(c.eye[1],-20)&&near(c.eye[2],30));
+ CHECK(near(c.target[0],-2.367449f)&&near(c.target[1],-7.115646f)&&near(c.target[2],20.997795f));
+ {float points[3][6]={{17,-12,36,0,0,0},{-4,-23,51,0,0,0},{11,-6,22,0,0,0}};
+  dc_view_vertex vertices[3];dc_render_draw_window w={0};
+  dc_render_camera rc={{c.target[0],c.target[1],c.target[2]},c.yaw,c.pitch,c.distance};
+  w.valid=1;w.vertex_count=3;w.vertices=(unsigned char *)points;w.view=vertices;
+  CHECK(dc_render_draw_window_prepare(&w,&rc));CHECK(dc_arena_game_terrain_matches(&p,&w));
+  rc.yaw+=3.14159265359f;
+  CHECK(dc_render_draw_window_prepare(&w,&rc));CHECK(!dc_arena_game_terrain_matches(&p,&w));
+  rc.yaw=c.yaw;rc.pitch=-c.pitch;
+  CHECK(dc_render_draw_window_prepare(&w,&rc));CHECK(!dc_arena_game_terrain_matches(&p,&w));
+  rc.pitch=c.pitch;rc.target.x+=1;
+  CHECK(dc_render_draw_window_prepare(&w,&rc));CHECK(!dc_arena_game_terrain_matches(&p,&w));
+  w.vertex_count=0;CHECK(!dc_arena_game_terrain_matches(&p,&w));
+ }
 }
 static void values(void){
  static const uint32_t bad[]={0x7fc00000,0x7f800000,0xff800000,0x7f7fffff};
@@ -82,6 +97,15 @@ static void native_memory(void){
  CHECK(dc_arena_game_write(&rt,camera,type,&p));CHECK(dc_arena_game_read(&rt,camera,type,&out));CHECK(!memcmp(&p,&out,sizeof p));
  for(i=0;i<16;++i){float f;memcpy(&f,memory+camera-rt.base+DC_GAME_CAMERA_ROT+4*i,4);CHECK(f==p.inv[(i%4)*4+i/4]);}
  used=rt.used;memset(&old,0xa5,sizeof old);
+ for(i=0;i<16;++i){
+  unsigned char *lane=memory+camera-rt.base+DC_GAME_CAMERA_ROT+4*i;float good,bad;
+  memcpy(&good,lane,4);bad=good+.25f;memcpy(lane,&bad,4);out=old;
+  CHECK(!dc_arena_game_read(&rt,camera,type,&out));CHECK(!memcmp(&old,&out,sizeof old));
+  memcpy(lane,&good,4);
+ }
+ memcpy(memory+camera-rt.base+DC_GAME_CAMERA_ROT,p.inv,sizeof p.inv);out=old;
+ CHECK(!dc_arena_game_read(&rt,camera,type,&out));CHECK(!memcmp(&old,&out,sizeof old));
+ CHECK(dc_arena_game_write(&rt,camera,type,&p));
  {uint32_t bad[]={0,rt.s7,camera+1,camera-4,rt.base-12,rt.base+used+4,0xfffffff4u,0xa5200004u};
   for(i=0;i<sizeof bad/sizeof bad[0];++i){out=old;
    CHECK(!dc_arena_game_read(&rt,bad[i],type,&out));CHECK(!memcmp(&old,&out,sizeof old));}}

@@ -1,4 +1,4 @@
-/* GOAL camera drives the bounded renderer (AI-assisted), ISC. */
+/* C-scripted GOAL camera readback drives the bounded renderer (AI-assisted), ISC. */
 #include "arena_game.h"
 #include <math.h>
 #include <string.h>
@@ -54,10 +54,15 @@ static unsigned char *camera_bytes(dc_goal_runtime *rt,uint32_t camera,uint32_t 
  return p+4;
 }
 int dc_arena_game_read(dc_goal_runtime *rt,uint32_t camera,uint32_t type,dc_game_camera_pose *out){
- dc_game_camera_pose p;dc_game_camera c;unsigned char *b;
+ dc_game_camera_pose p;dc_game_camera c;unsigned char *b;unsigned i;float rot[16];
  if(!out||(b=camera_bytes(rt,camera,type))==NULL)return 0;
  memcpy(p.trans,b+DC_GAME_CAMERA_TRANS,sizeof p.trans);memcpy(p.inv,b+DC_GAME_CAMERA_INV,sizeof p.inv);
  if(!dc_arena_game_convert(&p,0,&c))return 0;
+ /* C-script layout: pure rotation. Real final GOAL affine matrices need the
+  * separate adapter described in GAME_CAMERA_ROUTE.md. */
+ memcpy(rot,b+DC_GAME_CAMERA_ROT,sizeof rot);
+ for(i=0;i<16;++i)
+  if(!bounded(rot[i],1.001f)||rot[i]!=p.inv[(i%4)*4+i/4])return 0;
  *out=p;return 1;
 }
 int dc_arena_game_write(dc_goal_runtime *rt,uint32_t camera,uint32_t type,const dc_game_camera_pose *p){
@@ -66,6 +71,29 @@ int dc_arena_game_write(dc_goal_runtime *rt,uint32_t camera,uint32_t type,const 
  for(i=0;i<4;++i)for(j=0;j<4;++j)transpose[i*4+j]=p->inv[j*4+i];
  memcpy(b+DC_GAME_CAMERA_TRANS,p->trans,sizeof p->trans);memcpy(b+DC_GAME_CAMERA_INV,p->inv,sizeof p->inv);
  memcpy(b+DC_GAME_CAMERA_ROT,transpose,sizeof transpose);return 1;
+}
+
+/* Uses the readback basis and eye directly, without yaw/pitch or orbit anchor.
+ * Checking real off-axis geometry makes a flipped draw orientation observable. */
+int dc_arena_game_terrain_matches(const dc_game_camera_pose *p,const dc_render_draw_window *w){
+ dc_game_camera c;uint32_t i;unsigned axis;int off_axis=0;
+ if(!w||!w->valid||!w->prepared||!w->vertices||!w->view||w->vertex_count<3||
+    !dc_arena_game_convert(p,0,&c))return 0;
+ for(i=0;i<w->vertex_count;++i){
+  float point[3],delta[3],actual[3]={w->view[i].x,w->view[i].y,w->view[i].z};
+  memcpy(point,w->vertices+(size_t)i*DC_RENDER_DRAW_VERTEX_BYTES,sizeof point);
+  for(axis=0;axis<3;++axis){
+   if(!bounded(point[axis],1000000.f))return 0;
+   delta[axis]=point[axis]-p->trans[axis]/4096.f;
+  }
+  for(axis=0;axis<3;++axis){
+   const float *basis=p->inv+4*axis;
+   float expected=(basis[0]*delta[0]+basis[1]*delta[1]+basis[2]*delta[2])*.25f;
+   if(!bounded(actual[axis],2000000.f)||fabsf(actual[axis]-expected)>.001f+fabsf(expected)*.00001f)return 0;
+   if(axis<2&&fabsf(expected)>1.f)off_axis=1;
+  }
+ }
+ return off_axis;
 }
 
 #ifdef DC_ARENA_GAME
@@ -190,7 +218,7 @@ static int initialize(void){
 static dc_goal_runtime *game_rt;
 static dc_game_camera_pose previous;
 static uint32_t camera_symbol,camera_type;
-volatile struct {uint32_t camera,scripted,reads,moved,turned;float eye[3],yaw,pitch;} dc_arena_game_camera_metrics;
+volatile struct {uint32_t camera,c_scripted,c_script_reads,c_script_moved,c_script_turned;float eye[3],yaw,pitch;} dc_arena_game_script_camera_metrics;
 void dc_arena_game_bind(dc_goal_runtime *rt){game_rt=rt;}
 static int pose_equal(const dc_game_camera_pose *a,const dc_game_camera_pose *b){
  unsigned i;for(i=0;i<4;++i)if(a->trans[i]!=b->trans[i])return 0;
@@ -216,7 +244,7 @@ static int game_camera(dc_render_camera *rc,dc_instance_camera *ic,dc_render_que
   * Any other pose refuses this scripted headless demonstration. */
  CHECK(pose_equal(&original,&initial) ||
        (dc_arena_game_metrics.frames && pose_equal(&original,&previous)),1,
-       "arena game headless camera has no autonomous motion");
+       "arena game pose is idle or previous C-script");
  yaw=fly_yaw+.02f*(float)f/(FLY_FRAMES-1u);
  pitch=fly_pitch+.01f*(float)f/(FLY_FRAMES-1u);rotation(yaw,pitch,script.inv);
  for(i=0;i<3;++i)script.trans[i]=(fly_frames[f].target[i]-script.inv[8+i]*fly_distance)*4096.f;
@@ -233,13 +261,13 @@ static int game_camera(dc_render_camera *rc,dc_instance_camera *ic,dc_render_que
  *query=(dc_render_query){(double)c.target[0]-half,(double)c.target[2]-half,
                          (double)c.target[0]+half,(double)c.target[2]+half};
  if(dc_arena_game_metrics.frames){
-  dc_arena_game_camera_metrics.moved+=memcmp(previous.trans,original.trans,sizeof original.trans)!=0;
-  dc_arena_game_camera_metrics.turned+=memcmp(previous.inv,original.inv,sizeof original.inv)!=0;
+  dc_arena_game_script_camera_metrics.c_script_moved+=memcmp(previous.trans,original.trans,sizeof original.trans)!=0;
+  dc_arena_game_script_camera_metrics.c_script_turned+=memcmp(previous.inv,original.inv,sizeof original.inv)!=0;
  }
- previous=original;dc_arena_game_camera_metrics.camera=camera;
- dc_arena_game_camera_metrics.scripted=1;++dc_arena_game_camera_metrics.reads;
- for(i=0;i<3;++i)dc_arena_game_camera_metrics.eye[i]=c.eye[i];
- dc_arena_game_camera_metrics.yaw=c.yaw;dc_arena_game_camera_metrics.pitch=c.pitch;
+ previous=original;dc_arena_game_script_camera_metrics.camera=camera;
+ dc_arena_game_script_camera_metrics.c_scripted=1;++dc_arena_game_script_camera_metrics.c_script_reads;
+ for(i=0;i<3;++i)dc_arena_game_script_camera_metrics.eye[i]=c.eye[i];
+ dc_arena_game_script_camera_metrics.yaw=c.yaw;dc_arena_game_script_camera_metrics.pitch=c.pitch;
  return 1;
 }
 int dc_arena_fly_frame(void){
@@ -256,6 +284,7 @@ int dc_arena_fly_frame(void){
  CHECK(window.count>0,1,"arena game camera window contains terrain");
  error=dc_render_base_frame_make_draw(&window,&bank,&frame);CHECK(error==NULL,1,error);
  CHECK(dc_render_draw_window_prepare(&window,&rc),1,"arena game frame terrain prepare");
+ CHECK(dc_arena_game_terrain_matches(&previous,&window),1,"arena game terrain view matches GOAL readback basis and eye");
  CHECK(pvr_wait_ready(),0,"arena game PVR ready between GOAL frames");
  pvr_scene_begin();
  for(i=0;i<sizeof lists/sizeof lists[0];++i){
@@ -286,16 +315,15 @@ int dc_arena_fly_finish(void){
  dc_render_block_cache_stats stats;sample();dc_render_block_cache_measure(&cache,&stats);
  dc_arena_game_metrics.cache_peak_bytes=stats.peak_bytes;dc_arena_game_metrics.cache_evictions=stats.evictions;
  CHECK(dc_arena_game_metrics.frames,64,"arena game all dispatches draw");
- CHECK(dc_arena_game_camera_metrics.reads,64,"arena game all cameras read from GOAL");
- CHECK(dc_arena_game_camera_metrics.moved,63,"arena game GOAL position changes each frame");
- CHECK(dc_arena_game_camera_metrics.turned,63,"arena game GOAL orientation changes each frame");
+ CHECK(dc_arena_game_script_camera_metrics.c_script_moved,63,"arena game C-script position readback changes each frame");
+ CHECK(dc_arena_game_script_camera_metrics.c_script_turned,63,"arena game C-script orientation readback changes each frame");
  CHECK(dc_arena_slab_high_water>0&&dc_arena_slab_high_water<=SLAB_BYTES,1,"arena game slab high-water within reserve");
  CHECK(dc_arena_slab_failures,0,"arena game all renderer allocations stayed in slab");
  CHECK(dc_arena_game_metrics.pvr_errors,0,"arena game no PVR overflow");
  return 1;
 }
 void dc_arena_game_report(char *description,size_t bytes,uint32_t used,uint32_t capacity){
- snprintf(description,bytes,"BOOT scripted=%lu/%lu frames=%lu slab=%lu arena=%lu/%lu",
+ snprintf(description,bytes,"BOOT C-script=%lu/%lu frames=%lu slab=%lu arena=%lu/%lu",
   (unsigned long)dc_arena_game_metrics.passed,(unsigned long)dc_arena_game_metrics.checks,
   (unsigned long)dc_arena_game_metrics.frames,(unsigned long)dc_arena_slab_high_water,
   (unsigned long)used,(unsigned long)capacity);
