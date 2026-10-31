@@ -26,6 +26,9 @@ int dc_arena_prepare(dc_goal_runtime *);
 int dc_arena_extension(dc_goal_runtime *);
 int dc_arena_dispatch(dc_goal_runtime *);
 int dc_arena_finish(dc_goal_runtime *);
+#ifdef DC_ARENA_FLY
+void dc_arena_fly_report(char *,size_t,uint32_t,uint32_t);
+#endif
 #endif
 #ifdef DC_KERNEL_DGO
 #include "goal_dgo.h"
@@ -452,6 +455,9 @@ spawn_done:
   snprintf(description,description_bytes,"BOOT GOAL=%lu arena=%lu/%lu startup=%lu symbols=%lu",
            (unsigned long)code_bytes,(unsigned long)rt.used,(unsigned long)capacity,
            (unsigned long)(rt.used-before),(unsigned long)rt.symbol_count);
+#ifdef DC_ARENA_FLY
+  dc_arena_fly_report(description,description_bytes,rt.used,capacity);
+#endif
 done:
 #undef CHECK
 #undef STEP

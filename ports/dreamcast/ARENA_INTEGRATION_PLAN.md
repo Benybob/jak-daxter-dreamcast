@@ -68,6 +68,14 @@ Pass when all of these hold, in `dc_backend` the way the other ELFs report:
 
 Fail on the first miss. Do not free the GOAL arena before these checks (`runtime_main.c` 80 frees it today after the boot returns).
 
+## Milestone 2
+
+**Done (2026-10-31, AI-assisted).** `jak-dc-arena-fly.elf`, [ARENA_FLY_NOTES.md](ARENA_FLY_NOTES.md):
+1,986 of 1,986 checks, real terrain and instances drawn between the original game's
+frames, all renderer memory from a slab outside the arena (1.25 MB of its 2.5 MiB). Beach,
+with a short 6 m path; the level data sits in VRAM, standing in for a disc. The camera
+is the fixture's, not the game's: GOAL does not drive the draw yet.
+
 ## Files
 
 - `Makefile`: new target. Link the current `jak-dc-kernel-dgo.elf` objects plus `arena_coexist.c`. Do not link `flythrough_main.o` or `build/flythrough-romdisk.o`.

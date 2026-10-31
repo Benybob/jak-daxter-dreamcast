@@ -826,3 +826,44 @@ arena_kernel_cases.o: kernel_boot_cases.c goal_dgo.h goal_dgo_zst.h goal_bridge.
 	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -DDC_KERNEL_DGO -DDC_ARENA_COEXIST -I. -c $< -o $@
 jak-dc-arena.elf: kernel_boot_main.o arena_kernel_cases.o kernel_vf_fixture.o goal_dgo.o goal_dgo_zst.o arena_romdisk_stage.o arena_coexist.o arena_goal_bridge.o $(ZSTD_OBJS) build/kernel-dgo-romdisk.o $(filter-out goal_bridge.o,$(KERNEL_BOOT_LIBS)) build/mips2c/libdcmips2c.a
 	kos-c++ -o $@ $^ -Wl,--section-start=.dc_stage=0x8cd80000
+
+# The same boot, drawing flythrough frames from a second romdisk (AI-assisted), ISC.
+# verify_backend.py launches the ELF and does not mount a disc. The level image is
+# linked into the hole after .dc_stage and copied into a pvr_mem_malloc loan.
+# No flythrough objects or bindings are replaced. Renderer CPU ownership is slab-only.
+ARENA_FLY_ASSET_DIR ?= build/arena-fly-disc/fly
+ARENA_FLY_FLAGS=-DDC_ARENA_COEXIST -DDC_ARENA_FLY
+ARENA_FLY_ALLOC=-DDC_ARENA_SLAB_REDIRECT -include arena_slab.h
+ARENA_FLY_RENDER=$(addprefix arena_fly_,instance_cells.o render_base.o render_block_cache.o render_indexed.o render_draw_window.o render_gpu.o render_cache.o render_package.o sector_inflate_stored.o)
+build/arena_fly_fixture.h: $(ARENA_FLY_ASSET_DIR)/FLY.json
+	@test -f $@ || (echo 'run make_flythrough_fixture.py --frames 16 --draw-files --instance-cells --header build/arena_fly_fixture.h first' && false)
+$(ARENA_FLY_ASSET_DIR)/FLY.json:
+	@echo 'stage a 16-frame --draw-files --instance-cells fixture in $(ARENA_FLY_ASSET_DIR); see ARENA_FLY_NOTES.md' && false
+arena_fly.o: arena_fly.c arena_slab.h render_base.h render_block_cache.h instance_cells.h build/arena_fly_fixture.h private-romdisk-refresh
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) $(ARENA_FLY_FLAGS) $(ARENA_FLY_ALLOC) -I. -c $< -o $@
+arena_slab.o: arena_slab.c arena_slab.h
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -c $< -o $@
+$(ARENA_FLY_RENDER): arena_fly_%.o: %.c $(wildcard *.h)
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) $(ARENA_FLY_ALLOC) -I. -c $< -o $@
+arena_fly_coexist.o: arena_coexist.c arena_slab.h goal_runtime.h goal_fiber.h goal_kos_stack.h
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) $(ARENA_FLY_FLAGS) -I. -c $< -o $@
+arena_fly_romdisk_stage.o: romdisk_stage.c
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) $(ARENA_FLY_FLAGS) -c $< -o $@
+arena_fly_goal_bridge.o: goal_bridge.c $(wildcard *.h)
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) $(ARENA_FLY_FLAGS) -I. -c $< -o $@
+arena_fly_kernel_cases.o: kernel_boot_cases.c goal_dgo.h goal_dgo_zst.h goal_bridge.h goal_fiber.h goal_main_start.h runtime_cases.h build/game_cgo_order.h build/vf_cases.h mips2c_dc.h mips2c_cases.h build/mips2c/mips2c_cases_expect.h
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -DDC_KERNEL_DGO $(ARENA_FLY_FLAGS) -I. -c $< -o $@
+# .dc_fly starts on the next 32-byte boundary after the boot image. Python ints:
+# 0x8cd80000 does not fit in a signed 32-bit shell $(( )). 1081024 is the VRAM
+# left after the DMA loan (arena_coexist.c). The hole ends at 0x8d000000.
+# No -lromdiskbase: this image must not auto-mount over /rd.
+build/arena-fly-romdisk.o: $(ARENA_FLY_ASSET_DIR)/FLY.json build/kernel-dgo-romdisk.o private-romdisk-refresh
+	mkdir -p build
+	$(KOS_GENROMFS) -f build/arena-fly-romdisk.img -d $(ARENA_FLY_ASSET_DIR) -x '*.json'
+	$(PYTHON) -c 'import os,sys; boot=os.path.getsize("build/kernel-dgo-romdisk.img"); fly=os.path.getsize("build/arena-fly-romdisk.img"); align=lambda n:(n+31)//32*32; start=0x8cb00000+align(boot); end=start+align(fly); cap=1700000; sys.exit("arena-fly romdisk %d bytes (cap %d); .dc_fly 0x%x..0x%x past 0x8d000000"%(fly,cap,start,end)) if fly<1 or fly>cap or end>0x8d000000 else open("build/arena-fly-section.txt","wb").write(("0x%x"%start).encode())'
+	$(KOS_BASE)/utils/bin2c/bin2c build/arena-fly-romdisk.img build/arena-fly-romdisk.c flydisk
+	sed -i 's/^const unsigned char flydisk_data\[/const unsigned char __attribute__((section(".dc_fly"),aligned(32))) flydisk_data[/' build/arena-fly-romdisk.c
+	$(PYTHON) -c 'import sys; t=open("build/arena-fly-romdisk.c","rb").read(4096); sys.exit("flydisk_data stayed out of .dc_fly; bin2c line did not match") if b"section(\".dc_fly\")" not in t else None'
+	$(KOS_CC) $(KOS_CFLAGS) -c build/arena-fly-romdisk.c -o $@
+jak-dc-arena-fly.elf: kernel_boot_main.o arena_fly_kernel_cases.o kernel_vf_fixture.o goal_dgo.o goal_dgo_zst.o arena_fly_romdisk_stage.o arena_fly_coexist.o arena_fly_goal_bridge.o arena_fly.o arena_slab.o $(ARENA_FLY_RENDER) render_world_view_scalar.o render_world_view_gate.o render_frustum.o instance_pass.o $(ZSTD_OBJS) build/kernel-dgo-romdisk.o build/arena-fly-romdisk.o $(filter-out goal_bridge.o,$(KERNEL_BOOT_LIBS)) build/mips2c/libdcmips2c.a
+	addr=$$(cat build/arena-fly-section.txt) && kos-c++ -o $@ $^ -Wl,--section-start=.dc_stage=0x8cb00000 -Wl,--section-start=.dc_fly=$$addr -lm
