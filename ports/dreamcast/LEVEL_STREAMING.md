@@ -664,6 +664,28 @@ leaves free (above). Where it can shrink:
   Maincave and robocave do not fit at 14 m, and a window that small is not a usable draw distance without
   instances and LOD carrying the view past it. Their budget figures are high partly
   because a 6 m cell scatters a window across many blocks.
+- **Instance records streamed by cell: done.** `instance_store` (`instance_cells.py`,
+  `--instance-cells`) leaves geometry in the package and writes each 16 m cell's
+  52-byte records to `cells/IX_IZ.dci`, with the original index in the record's pad.
+  `instance_cells.c` (`-DFLY_INSTANCE_CELLS`) holds the cells the draw disc touches in
+  one fixed buffer, drops those that left before reading new ones, and restores the
+  original order, so the draw is unchanged. Of 7,342 records this path needs 835
+  at once. Same path, indexed windows, exact caps:
+
+  | Instance records | Package on heap | Peak live heap | Heap arena |
+  | --- | ---: | ---: | ---: |
+  | All resident | 1.10 MB | 2.88 MB | 2.89 MB |
+  | By cell | 0.72 MB + 43 KB | 2.55 MB | 2.55 MB |
+
+  Every target check passes (101, with the sixteen frames' streaming and the rest),
+  742,871 instance triangles sent, the last frame identical. Streaming costs 42 ms over
+  the path, read from romdisk, not disc. **That leaves about 390 KB of the 2.94 MB
+  free** (sampled as above). Geometry for prototypes out of draw range is still
+  resident: `instance_streaming.py` puts that at a further 275 KB on this path.
+
+  `texture_budget.py` measures the other pool: the flythrough leaves 877,312 bytes of
+  VRAM for textures, and every level fits at the 64-pixel cap in ARGB1555/4444
+  (village1 717,312 bytes, village2 787,712). No level needs VQ yet.
 - **The package's vertices: done, DCI3.** `tie_lods.py --compact` writes
   16-byte vertices: 16-bit positions in steps of a geometry's own bounds (a
   quantization record a geometry: float centre and scale), UVs in 1/2048

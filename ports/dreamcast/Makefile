@@ -610,6 +610,7 @@ build/render_base_fixture.h:
 	$(PYTHON) make_render_base_fixture.py build/private-render-base-assets --header $@
 $(RENDER_BASE_ASSET_DIR)/BASE_CASE.json: build/render_base_fixture.h
 	@test -f $@
+instance_cells.o: instance_cells.c instance_cells.h instance_pass.h
 render_draw_window.o: render_draw_window.c render_draw_window.h render_world_view.h
 render_base.o: render_base.c render_base.h render_frustum.h render_world_view.h render_draw_window.h
 render_base_test.o: render_base.c render_base.h render_frustum.h render_world_view.h
@@ -673,7 +674,7 @@ build/flythrough-romdisk.o: $(FLY_ASSET_DIR)/FLY.json
 	$(KOS_BASE)/utils/bin2c/bin2c build/flythrough-romdisk.img build/flythrough-romdisk.c romdisk
 	$(KOS_CC) $(KOS_CFLAGS) -c build/flythrough-romdisk.c -o build/flythrough-romdisk-tmp.o
 	$(KOS_CC) -o $@ -r build/flythrough-romdisk-tmp.o $(KOS_LIB_PATHS) -Wl,--whole-archive -lromdiskbase
-jak-dc-flythrough.elf: flythrough_main.o render_base.o render_block_cache.o render_indexed.o render_draw_window.o render_gpu.o render_cache.o render_package.o sector_inflate_stored.o render_world_view_scalar.o render_world_view_gate.o render_frustum.o instance_pass.o build/flythrough-romdisk.o
+jak-dc-flythrough.elf: flythrough_main.o instance_cells.o render_base.o render_block_cache.o render_indexed.o render_draw_window.o render_gpu.o render_cache.o render_package.o sector_inflate_stored.o render_world_view_scalar.o render_world_view_gate.o render_frustum.o instance_pass.o build/flythrough-romdisk.o
 	kos-cc -o $@ $^ -lm
 TRAINING_STREAM_ASSET_DIR ?= build/private-training-stream-assets
 training_render.o: training_render.c training_render.h render_base.h render_block_cache.h

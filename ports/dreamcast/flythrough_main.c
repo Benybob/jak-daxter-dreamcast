@@ -30,6 +30,10 @@
 #ifndef FLY_WINDOW_REMAP
 #define FLY_WINDOW_REMAP 32768u
 #endif
+/* FLY_INSTANCE_CELLS: records stream by cell; the package holds geometry only. */
+#ifdef FLY_INSTANCE_CELLS
+#include "instance_cells.h"
+#endif
 #ifndef FLY_CACHE_BUDGET
 #define FLY_CACHE_BUDGET DC_RENDER_BLOCK_CACHE_MAX
 #endif
@@ -41,7 +45,7 @@ typedef struct {uint32_t frames,retargets,max_faces,max_instance_triangles,insta
  max_frame_us,total_us,last_frame,textured_materials,
  retarget_us,frame_make_us,prepare_us,terrain_draw_us,instance_draw_us,reused,
  cache_hits,cache_misses,cache_peak_bytes,cache_evictions,sphere_culled,translucent_triangles,last_translucent,
- back_faces,submitted_total,image_bytes,heap_arena,heap_in_use,heap_free_top,max_vertices,peak_in_use;} fly_metrics;
+ back_faces,submitted_total,image_bytes,heap_arena,heap_in_use,heap_free_top,max_vertices,peak_in_use,instance_stream_us,max_records;} fly_metrics;
 volatile fly_metrics dc_fly_metrics;
 /* Live heap at each frame's end and with a missed block held in full. */
 static void sample_heap(void) {
@@ -60,6 +64,9 @@ int main(void) {
  dc_render_block_cache cache={0};dc_render_block_source source;
 #ifdef FLY_DRAW_WINDOW
  dc_render_draw_window drawn={0};
+#endif
+#ifdef FLY_INSTANCE_CELLS
+ static dc_instance_cells held;
 #endif
  dc_instance_package pkg;unsigned char *data=NULL;float (*view)[3]=NULL,(*bounds)[4]=NULL;
  FILE *file=NULL;const char *error;int initialized=0;uint32_t f,slot,textured=0,windows_ok=1,instances_ok=1,lods_ok=1;
@@ -88,6 +95,9 @@ int main(void) {
  fclose(file);file=NULL;
  if(!check(crc32(0,data,FLY_PACKAGE_BYTES)==FLY_PACKAGE_CRC,"fly package CRC"))goto release;
  error=dc_instance_package_open(data,FLY_PACKAGE_BYTES,&pkg);if(!check(error==NULL,error))goto release;
+#ifdef FLY_INSTANCE_CELLS
+ error=dc_instance_cells_make(&held,"/rd",16.0,FLY_INSTANCE_RECORDS);if(!check(error==NULL,error))goto release;
+#endif
  view=memalign(32,(size_t)pkg.max_proto_verts*sizeof *view);if(!check(view!=NULL,"fly view scratch"))goto release;
  /* whole geometries culled against the view before their vertices move */
  bounds=memalign(32,(size_t)pkg.proto_count*sizeof *bounds);if(!check(bounds!=NULL,"fly bounds"))goto release;
@@ -104,6 +114,13 @@ int main(void) {
   dc_render_camera rc={{e->target[0],e->target[1],e->target[2]},fly_yaw,fly_pitch,fly_distance};
   dc_instance_camera ic={e->target[0],e->target[1],e->target[2],fly_yaw,fly_pitch,fly_distance,fly_draw_distance};
   uint64_t start=timer_us_gettime64();int ok;uint32_t us;
+#ifdef FLY_INSTANCE_CELLS
+  {uint64_t t0=timer_us_gettime64();
+   error=dc_instance_cells_update(&held,&pkg,e->target[0],e->target[2],fly_draw_distance);
+   dc_fly_metrics.instance_stream_us+=(uint32_t)(timer_us_gettime64()-t0);
+   if(!check(error==NULL,error))goto release;
+   if(pkg.instance_count>dc_fly_metrics.max_records)dc_fly_metrics.max_records=pkg.instance_count;}
+#endif
   /* the terrain: retarget the window, then a frame owner for it */
 #ifdef FLY_DRAW_WINDOW
   {uint64_t t0=timer_us_gettime64(),t1;uint32_t crc=0,i;
