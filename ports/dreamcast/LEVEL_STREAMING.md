@@ -686,6 +686,24 @@ leaves free (above). Where it can shrink:
   `texture_budget.py` measures the other pool: the flythrough leaves 877,312 bytes of
   VRAM for textures, and every level fits at the 64-pixel cap in ARGB1555/4444
   (village1 717,312 bytes, village2 787,712). No level needs VQ yet.
+- **Other levels through the same pipeline.** Each level's own DGO, a fresh TIE dump
+  (`--textured --compact`), `--draw-files --instance-cells`, exact derived caps, a
+  30 m, 16-frame path from the densest instance cell, in Flycast:
+
+  | Level | Faces | Vertices | Records | Cache | Peak live heap | Longest frame | Checks |
+  | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+  | village1 | 7,117 | 7,129 | 835 | 521 KB | 2.55 MB | 0.75 s | 101 of 101 |
+  | beach | 2,901 | 3,046 | 293 | 277 KB | 1.34 MB | 0.37 s | 101 of 101 |
+  | village2 | 102 | 163 | 619 | 19 KB | 1.50 MB | 0.16 s | 101 of 101 |
+  | village3 | 1,798 | 2,152 | 1,116 | 228 KB | 1.43 MB | 0.37 s | 101 of 101 |
+  | misty | 659 | 635 | 1,491 | 62 KB | 1.35 MB | 0.49 s | 101 of 101 |
+
+  These paths follow instances, not terrain, so most are light on terrain and none
+  shows a level's worst window; the sweep above does. The checks cover geometry and
+  counts, not appearance: village3's last frame has large near-black polygons, not yet
+  explained. Running other levels found two fixture faults, now fixed: the tfrag roots
+  were village1's four, and queries reached the header as single-precision literals,
+  which moved a village2 window edge 0.00003 m and flipped two faces.
 - **The package's vertices: done, DCI3.** `tie_lods.py --compact` writes
   16-byte vertices: 16-bit positions in steps of a geometry's own bounds (a
   quantization record a geometry: float centre and scale), UVs in 1/2048

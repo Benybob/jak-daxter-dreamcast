@@ -13,6 +13,7 @@ import struct
 
 INSTANCE = struct.Struct('<2H12f')
 CELL = 16.0
+MARGIN = 0.125  # DC_INSTANCE_CELLS_MARGIN
 
 
 def read(blob):
@@ -43,6 +44,8 @@ def split(blob, out, cell=CELL):
             record[:2] + struct.pack('<H', index) + record[4:])
     folder = Path(out) / 'cells'
     folder.mkdir(parents=True, exist_ok=True)
+    for old in folder.glob('*.dci'):  # a stale cell would draw beside the new ones
+        old.unlink()
     for (ix, iz), rows in cells.items():
         (folder / f'{ix}_{iz}.dci').write_bytes(b''.join(rows))
     return prefix[:12] + struct.pack('<I', 0) + prefix[16:]
@@ -53,7 +56,8 @@ def touches(ix, iz, x, z, draw, cell=CELL):
     x1, z1 = x0 + cell, z0 + cell
     dx = x0 - x if x < x0 else (x - x1 if x > x1 else 0.0)
     dz = z0 - z if z < z0 else (z - z1 if z > z1 else 0.0)
-    return dx * dx + dz * dz <= draw * draw
+    reach = draw + MARGIN
+    return dx * dx + dz * dz <= reach * reach
 
 
 def resident(blob, x, z, draw, cell=CELL):

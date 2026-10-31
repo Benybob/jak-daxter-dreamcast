@@ -43,6 +43,21 @@ class SplitTests(unittest.TestCase):
         self.assertFalse(cells.touches(2, 0, 0, 8, 16))
         self.assertFalse(cells.touches(1, 1, 0, 0, 16))
 
+    def test_the_renderers_rounding_cannot_lose_an_instance(self):
+        # dx rounds to exactly 80 in float32, so the renderer draws this record,
+        # though in exact arithmetic it is past the radius.
+        x = -2.0 ** -20
+        f32 = lambda v: struct.unpack('<f', struct.pack('<f', v))[0]  # noqa: E731
+        self.assertEqual(f32(80.0 - x), 80.0)
+        self.assertGreater((80.0 - x) ** 2, 6400.0)
+        self.assertEqual(cells.resident(package([(80.0, 0.0)]), x, 0.0, 80.0), [0])
+
+    def test_a_second_split_leaves_no_stale_cell(self):
+        with tempfile.TemporaryDirectory() as d:
+            cells.split(package([(1, 1)]), d)
+            cells.split(package([(17, 1)]), d)
+            self.assertEqual([f.name for f in (Path(d) / 'cells').iterdir()], ['1_0.dci'])
+
 
 class Package(ctypes.Structure):
     _fields_ = [('protos', ctypes.c_void_p), ('verts', ctypes.c_void_p), ('indices', ctypes.c_void_p),
@@ -138,6 +153,27 @@ class NativeTests(unittest.TestCase):
                 self.assertIsNotNone(self.lib.dc_instance_cells_update(ctypes.byref(owner), ctypes.byref(pkg), 0, 0, 8.0))
                 self.assertEqual(pkg.instance_count, 0)
                 self.lib.dc_instance_cells_free(ctypes.byref(owner))
+
+    def test_a_cell_that_cannot_be_opened_is_an_error_and_retried(self):
+        blob = package([(1, 1)])
+        cells.split(blob, self.root)
+        target = Path(self.root) / 'cells/0_0.dci'
+        data = target.read_bytes()
+        target.unlink()
+        target.mkdir()  # exists, and cannot be read as a file
+        self.make(4)
+        first = self.update(8, 8, 1.0)
+        target.rmdir()
+        target.write_bytes(data)
+        self.assertIsNotNone(first)
+        self.assertIsNone(self.update(8, 8, 1.0))
+        self.assertEqual(self.indices(), [0])
+
+    def test_unconvertible_positions_are_refused(self):
+        self.make(4)
+        for x, z, draw in ((0, 0, math.inf), (0, 0, math.nan), (3.4e10, 0, 80), (0, -3.4e10, 80), (math.inf, 0, 80)):
+            with self.subTest(x=x, z=z, draw=draw):
+                self.assertEqual(self.update(x, z, draw), b'instance cells arguments')
 
     def test_arguments(self):
         self.assertIsNotNone(self.lib.dc_instance_cells_make(ctypes.byref(self.owner), self.root.encode(), 0.0, 8))

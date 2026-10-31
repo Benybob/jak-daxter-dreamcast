@@ -3,7 +3,7 @@
     python make_flythrough_fixture.py BACKGROUND.glb PACKAGE.dci2 OUT_DIR
            [--frames 30] [--length 60] [--half 14] [--reference REF.dci]
 
-The terrain keeps the GLB's tfrag roots (default normal, lowres, trans and dirt:
+The terrain keeps the tfrag roots the GLB has of normal, lowres, trans and dirt (
 the last two are BLEND, drawn in the translucent list). The camera starts as
 make_instance_fixture's (aimed at the package's densest
 cell) and its target moves LENGTH meters along the camera's own horizontal view
@@ -50,7 +50,7 @@ def path(target, frames, length):
 
 
 def make(glb, package, out, frames=30, length=60.0, half=14.0, header='build/flythrough_fixture.h',
-         roots=('normal', 'lowres', 'trans', 'dirt'), cell=16.0, instance_cells=False):
+         roots=None, cell=16.0, instance_cells=False):
     out = Path(out)
     if out.exists():
         shutil.rmtree(out)
@@ -62,7 +62,7 @@ def make(glb, package, out, frames=30, length=60.0, half=14.0, header='build/fly
     rect = (min(t[0] for t in targets) - margin, max(t[0] for t in targets) + margin,
             min(t[2] for t in targets) - margin, max(t[2] for t in targets) + margin)
     background = Path(glb).read_bytes()
-    cut, _ = tfrag_glb.cut(background, roots, rect=rect, probe_package=blob)
+    cut, _ = tfrag_glb.cut(background, roots or tfrag_glb.present_roots(background), rect=rect, probe_package=blob)
     doc, binary = rs.parse_glb_bytes(cut)
     rs.ZLIB_LEVEL = 0
     packet = rs.build_package(doc, binary, cell, source_sha256=hashlib.sha256(cut).digest())
@@ -101,7 +101,7 @@ def make(glb, package, out, frames=30, length=60.0, half=14.0, header='build/fly
     for r in rows:
         q = r['query']
         text.append('{{%s},{%s},%du,%du,%du,%du,%du,{%s}},' % (
-            ','.join(f(v) for v in r['target']), ','.join(f(v) for v in (q[0], q[2], q[1], q[3])),
+            ','.join(f(v) for v in r['target']), ','.join(repr(v) for v in (q[0], q[2], q[1], q[3])),
             r['faces'], r['crc'], r['draw_crc'], r['instances'], r['triangles'], ','.join(f'{n}u' for n in r['lods'])))
     text.append('};')
     slots = max(mapping) + 1 if mapping else 1

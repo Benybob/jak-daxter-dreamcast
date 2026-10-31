@@ -146,6 +146,13 @@ def add_probes(doc, binary, materials):
     return bytes(out)
 
 
+def present_roots(blob, roots=('normal', 'lowres', 'trans', 'dirt')):
+    """The tfrag root suffixes this level has: no level has them all but village1."""
+    doc = json.loads(read_chunks(blob)[0][1])
+    names = [doc['nodes'][i].get('name', '') for i in doc['scenes'][doc.get('scene', 0)]['nodes']]
+    return tuple(r for r in roots if any(n.endswith(f'-tfrag-{r}') for n in names))
+
+
 def cut(blob, roots=('normal', 'lowres'), rect=None, probe_package=None):
     """(new GLB bytes, {root name: kept}) keeping the tfrag roots named by suffix,
     cropped to rect (x0, x1, z0, z1) when given, with material probes for an

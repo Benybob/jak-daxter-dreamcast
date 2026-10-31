@@ -1,5 +1,6 @@
 /* Cells in, cells out, original order kept (AI-assisted), ISC. */
 #include "instance_cells.h"
+#include <errno.h>
 #include <inttypes.h>
 #include <math.h>
 #include <stdio.h>
@@ -21,6 +22,9 @@ void dc_instance_cells_free(dc_instance_cells *cells) {
  if(!cells)return;
  free(cells->records);memset(cells,0,sizeof(*cells));
 }
+/* instance_pass.c accepts on single-precision distances, which round: a record a
+ * hair past the exact radius can still be drawn. Far more than that rounding. */
+#define DC_INSTANCE_CELLS_MARGIN 0.125
 static int touches(const dc_instance_cells *c,int32_t ix,int32_t iz,double x,double z,double draw) {
  double x0=(double)ix*c->cell,x1=x0+c->cell,z0=(double)iz*c->cell,z1=z0+c->cell;
  double dx=x<x0?x0-x:(x>x1?x-x1:0),dz=z<z0?z0-z:(z>z1?z-z1:0);
@@ -35,8 +39,11 @@ static const char *read_cell(dc_instance_cells *c,const dc_instance_package *pkg
  char path[256];FILE *file;long size;uint32_t n,i,limit=pkg->lods?pkg->lod_count:pkg->proto_count;dc_instance *in=c->records+c->count;
  snprintf(path,sizeof path,"%s/cells/%" PRId32 "_%" PRId32 ".dci",c->root,ix,iz);
  if(c->cell_count>=DC_INSTANCE_CELLS_MAX)return "instance cells table";
- file=fopen(path,"rb");
- if(!file){c->cells[c->cell_count++]=(dc_instance_cell){ix,iz,0};return NULL;}
+ errno=0;file=fopen(path,"rb");
+ if(!file) {
+  if(errno!=ENOENT)return "instance cell open";
+  c->cells[c->cell_count++]=(dc_instance_cell){ix,iz,0};return NULL;
+ }
  if(fseek(file,0,SEEK_END)||(size=ftell(file))<=0||size%52||fseek(file,0,SEEK_SET)){fclose(file);return "instance cell size";}
  n=(uint32_t)(size/52);
  if(n>c->capacity-c->count){fclose(file);return "instance cells capacity";}
@@ -53,7 +60,9 @@ static const char *read_cell(dc_instance_cells *c,const dc_instance_package *pkg
 }
 const char *dc_instance_cells_update(dc_instance_cells *c,dc_instance_package *pkg,double x,double z,double draw) {
  uint32_t i,kept=0,out=0;int32_t ix,iz,x0,x1,z0,z1;const char *error=NULL;int changed=0;
- if(!c||!c->records||!pkg||!(draw>0)||!isfinite(x)||!isfinite(z))return "instance cells arguments";
+ if(!c||!c->records||!pkg||!(draw>0)||!isfinite(draw)||!isfinite(x)||!isfinite(z))return "instance cells arguments";
+ if((fabs(x)+draw)/c->cell>=1073741824.0||(fabs(z)+draw)/c->cell>=1073741824.0)return "instance cells arguments";
+ draw+=DC_INSTANCE_CELLS_MARGIN;
  for(i=0;i<c->cell_count;++i) {
   if(touches(c,c->cells[i].ix,c->cells[i].iz,x,z,draw))c->cells[kept++]=c->cells[i];
   else if(c->cells[i].count)changed=1;
