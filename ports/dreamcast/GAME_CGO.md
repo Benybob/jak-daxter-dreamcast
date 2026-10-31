@@ -35,6 +35,16 @@ and `goal-src-sequence`), and `build_game_cgo.py` uses it in two passes:
 An export refusal marks only that file: it compiled, so later files still see its
 definitions. Objects commented out of `game.gd` are skipped.
 
+The ignored `build/` directory can contain status and IR from an older frontend.
+The builder removes batch status before invoking the frontend and requires fresh
+status, checking its exit code before lowering. A startup failure now replaces
+the report with zero compiled files and the actual diagnostic. Previously it
+could reuse an old status and report 192 files followed by loader's obsolete
+`conflicting or non-fixed virtual register alias` error, even with a new frontend.
+The alias exporter change is already committed in `477c486b8`; both the copied
+`port-tools-current-frontend` executable and `port-tools-validation/og-host/bin`
+executable inspected on 2026-10-31 predate it. (AI-assisted)
+
 ## What the engine files needed
 
 Lowering (`lower_sh4_ir.py`):
