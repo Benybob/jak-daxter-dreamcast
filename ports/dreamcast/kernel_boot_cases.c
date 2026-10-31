@@ -26,7 +26,9 @@ int dc_arena_prepare(dc_goal_runtime *);
 int dc_arena_extension(dc_goal_runtime *);
 int dc_arena_dispatch(dc_goal_runtime *);
 int dc_arena_finish(dc_goal_runtime *);
-#ifdef DC_ARENA_FLY
+#ifdef DC_ARENA_GAME
+void dc_arena_game_report(char *,size_t,uint32_t,uint32_t);
+#elif defined(DC_ARENA_FLY)
 void dc_arena_fly_report(char *,size_t,uint32_t,uint32_t);
 #endif
 #endif
@@ -455,7 +457,9 @@ spawn_done:
   snprintf(description,description_bytes,"BOOT GOAL=%lu arena=%lu/%lu startup=%lu symbols=%lu",
            (unsigned long)code_bytes,(unsigned long)rt.used,(unsigned long)capacity,
            (unsigned long)(rt.used-before),(unsigned long)rt.symbol_count);
-#ifdef DC_ARENA_FLY
+#ifdef DC_ARENA_GAME
+  dc_arena_game_report(description,description_bytes,rt.used,capacity);
+#elif defined(DC_ARENA_FLY)
   dc_arena_fly_report(description,description_bytes,rt.used,capacity);
 #endif
 done:

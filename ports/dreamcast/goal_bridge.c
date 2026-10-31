@@ -1226,7 +1226,13 @@ static uint64_t pc_kclose_native(uint64_t fs){return fs;}
 uint64_t dc_arena_syncv(void);
 uint64_t dc_arena_chain(uint64_t,uint64_t);
 #endif
+#ifdef DC_ARENA_GAME
+void dc_arena_game_bind(dc_goal_runtime *);
+#endif
 int dc_goal_install_pc_services(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_goal_module_result *result) {
+#ifdef DC_ARENA_GAME
+  dc_arena_game_bind(rt);
+#endif
   static const char *const void_setters[]={
     "pc-set-mouse-options!","pc-set-mouse-camera-sens!","pc-set-auto-hide-cursor!","pc-set-window-size!",
     "pc-set-frame-rate","pc-ignore-background-controller-events!","pc-get-active-display-size",

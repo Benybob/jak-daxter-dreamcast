@@ -867,3 +867,14 @@ build/arena-fly-romdisk.o: $(ARENA_FLY_ASSET_DIR)/FLY.json build/kernel-dgo-romd
 	$(KOS_CC) $(KOS_CFLAGS) -c build/arena-fly-romdisk.c -o $@
 jak-dc-arena-fly.elf: kernel_boot_main.o arena_fly_kernel_cases.o kernel_vf_fixture.o goal_dgo.o goal_dgo_zst.o arena_fly_romdisk_stage.o arena_fly_coexist.o arena_fly_goal_bridge.o arena_fly.o arena_slab.o $(ARENA_FLY_RENDER) render_world_view_scalar.o render_world_view_gate.o render_frustum.o instance_pass.o $(ZSTD_OBJS) build/kernel-dgo-romdisk.o build/arena-fly-romdisk.o $(filter-out goal_bridge.o,$(KERNEL_BOOT_LIBS)) build/mips2c/libdcmips2c.a
 	addr=$$(cat build/arena-fly-section.txt) && kos-c++ -o $@ $^ -Wl,--section-start=.dc_stage=0x8cb00000 -Wl,--section-start=.dc_fly=$$addr -lm
+
+# Original math-camera readback; shared fly objects keep their own behaviour (AI-assisted), ISC.
+ARENA_GAME_FLAGS=$(ARENA_FLY_FLAGS) -DDC_ARENA_GAME
+arena_game.o: arena_game.c arena_game.h arena_slab.h render_base.h render_block_cache.h instance_cells.h build/arena_fly_fixture.h
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) $(ARENA_GAME_FLAGS) $(ARENA_FLY_ALLOC) -I. -c $< -o $@
+arena_game_goal_bridge.o: goal_bridge.c $(wildcard *.h)
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) $(ARENA_GAME_FLAGS) -I. -c $< -o $@
+arena_game_kernel_cases.o: kernel_boot_cases.c $(wildcard *.h) build/game_cgo_order.h build/vf_cases.h build/mips2c/mips2c_cases_expect.h
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -DDC_KERNEL_DGO $(ARENA_GAME_FLAGS) -I. -c $< -o $@
+jak-dc-arena-game.elf: kernel_boot_main.o arena_game_kernel_cases.o kernel_vf_fixture.o goal_dgo.o goal_dgo_zst.o arena_fly_romdisk_stage.o arena_fly_coexist.o arena_game_goal_bridge.o arena_game.o arena_slab.o $(ARENA_FLY_RENDER) render_world_view_scalar.o render_world_view_gate.o render_frustum.o instance_pass.o $(ZSTD_OBJS) build/kernel-dgo-romdisk.o build/arena-fly-romdisk.o $(filter-out goal_bridge.o,$(KERNEL_BOOT_LIBS)) build/mips2c/libdcmips2c.a
+	addr=$$(cat build/arena-fly-section.txt) && kos-c++ -o $@ $^ -Wl,--section-start=.dc_stage=0x8cb00000 -Wl,--section-start=.dc_fly=$$addr -lm
