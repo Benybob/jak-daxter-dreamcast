@@ -700,10 +700,25 @@ leaves free (above). Where it can shrink:
 
   These paths follow instances, not terrain, so most are light on terrain and none
   shows a level's worst window; the sweep above does. The checks cover geometry and
-  counts, not appearance: village3's last frame has large near-black polygons, not yet
-  explained. Running other levels found two fixture faults, now fixed: the tfrag roots
+  counts, not appearance: village3's last frame had large near-black polygons. They
+  are textured TIE instances with the wrong lighting: a shared prototype keeps the
+  vertex colours of its first placement, and each placement in the original data has
+  its own (`vil3-norm-wallmed-02.mb`: mean RGB 12, 15, 16 from that donor, 82, 67, 111
+  where the camera stands). `tie_lods.py --textured --mean-colours` averages each
+  corner over all placements (75, 64, 76 here), adds no runtime cost, and is off by
+  default, so packages stay byte-identical without it. All five levels pass 101 of 101
+  with it and look more natural, with heap within 11 KB. Village3 stays darker than
+  it should: true per-instance lighting needs colours per placement, which this does
+  not attempt, and its camera sits almost inside the rock (0.9 m). Running other levels found two fixture faults, now fixed: the tfrag roots
   were village1's four, and queries reached the header as single-precision literals,
   which moved a village2 window edge 0.00003 m and flipped two faces.
+- **Finalboss is not a density problem.** `global_faces.py`: 223,594 faces, of which
+  11,519 go global at every cell size from 4 m to 64 m, against the cap of 4,096.
+  A face goes global on its width, not its cell count (the largest edge is 2,830 m):
+  these are backdrop faces. Splitting every face over 8 cells at 16 m adds 283,365
+  faces and takes DRX2 from 21.0 MB to 128.3 MB, so a general split is the wrong tool.
+  Either a larger global budget, about 11,519 faces resident in that level, or a
+  split of those wide faces alone.
 - **The package's vertices: done, DCI3.** `tie_lods.py --compact` writes
   16-byte vertices: 16-bit positions in steps of a geometry's own bounds (a
   quantization record a geometry: float centre and scale), UVs in 1/2048

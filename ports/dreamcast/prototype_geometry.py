@@ -117,8 +117,9 @@ def signature(local):
     return sorted(tuple(round(c / TOLERANCE_M) for p in points for c in p) for points, _, _, _ in local)
 
 
-def shared(a, b):
-    """The triangles of cut a that cut b also has, each vertex within the tolerance,
+def shared_matches(a, b):
+    """Indices of matching triangles in cuts a and b (AI-assisted),
+    each vertex within the tolerance,
     each matched once. Triangles are hashed by centroid on a coarse grid and
     compared vertex by vertex, so values either side of a grid line still match."""
     cell = 4 * TOLERANCE_M
@@ -132,8 +133,8 @@ def shared(a, b):
     grid = {}
     for n, tri in enumerate(b):
         grid.setdefault(key(centre(tri)), []).append(n)
-    used, out = set(), []
-    for tri in a:
+    used = set()
+    for i, tri in enumerate(a):
         k = key(centre(tri))
         for dx in (-1, 0, 1):
             for dy in (-1, 0, 1):
@@ -143,7 +144,7 @@ def shared(a, b):
                             continue
                         if all(abs(p - q) <= TOLERANCE_M for u, v in zip(tri[0], b[n][0]) for p, q in zip(u, v)):
                             used.add(n)
-                            out.append(tri)
+                            yield i, n
                             break
                     else:
                         continue
@@ -151,6 +152,33 @@ def shared(a, b):
                 else:
                     continue
                 break
+
+
+def shared(a, b):
+    """The triangles of cut a that cut b also has, each matched once (AI-assisted)."""
+    return [a[i] for i, _ in shared_matches(a, b)]
+
+
+def mean_vertex_colours(base, cuts):
+    """Mean matched RGB per triangle corner; keep donor alpha (AI-assisted).
+
+    Missing triangles contribute neither colour nor count. Leave the mean in
+    GLB colour units: argb()/tie_lods.colour() round to the nearest byte after
+    the usual material factor and clamp, just as they do for donor colours.
+    """
+    sums = [[[0.0] * 3 for _ in range(3)] for _ in base]
+    counts = [0] * len(base)
+    for other in cuts:
+        for i, n in shared_matches(base, other):
+            counts[i] += 1
+            for corner, c in enumerate(other[n][2]):
+                for k in range(3):
+                    sums[i][corner][k] += c[k]
+    out = []
+    for i, (pts, uvs, cols, mat) in enumerate(base):
+        mean = tuple(tuple(v / counts[i] for v in sums[i][corner]) + tuple(c[3:])
+                     for corner, c in enumerate(cols)) if counts[i] else cols
+        out.append((pts, uvs, mean, mat))
     return out
 
 
@@ -169,7 +197,7 @@ def argb(c):
     return v[3] << 24 | v[0] << 16 | v[1] << 8 | v[2]
 
 
-def build(dgo, glb):
+def build(dgo, glb, mean_colours=False):  # optional RGB averaging (AI-assisted)
     name = next(n for n, _, kind in level_contents.objects(dgo) if kind == 'level')
     prototypes, instances = instanced_level.model(level_contents.object_bytes(dgo, name))
     doc, binary = rs.read_glb(glb)
@@ -222,6 +250,10 @@ def build(dgo, glb):
             row['cut_tris'] = [len(c) for c in cuts]
             if expected is not None:
                 row['bsp_tris'] = expected
+        if mean_colours and 'geometry' in row:
+            # All source instances, including those beyond the selection's first
+            # eight, contribute once through the same position match (AI-assisted).
+            row['geometry'] = mean_vertex_colours(row['geometry'], (cut(source, inst) for inst in own))
     return results, instances, prototypes
 
 

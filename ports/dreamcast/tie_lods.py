@@ -45,6 +45,10 @@ geometry per GLB material, its vertex colours are the sector builder's
 match the terrain under a texture, and lower LODs keep their dump UVs (they
 agree with the GLB's) and take the material and colour of the nearest LOD 0
 triangle and vertex.
+
+--mean-colours (with --textured) averages matched source-instance RGB at LOD 0,
+keeping donor alpha and the same nearest-vertex transfer to lower LODs
+(AI-assisted). By default the original donor colours are kept.
 """
 import argparse
 import glob
@@ -403,15 +407,19 @@ def main():
     ap.add_argument('dgo', type=Path)
     ap.add_argument('dump_dir', type=Path)
     ap.add_argument('--textured', action='store_true')
+    ap.add_argument('--mean-colours', action='store_true',
+                    help='average matched instance RGB (with --textured; AI-assisted)')
     ap.add_argument('--compact', action='store_true', help='DCI3: 16-byte vertices (with --textured)')
     ap.add_argument('--out', type=Path)
     ap.add_argument('--json', type=Path)
     a = ap.parse_args()
+    if a.mean_colours and not a.textured:  # averaging needs the GLB source instances (AI-assisted)
+        ap.error('--mean-colours requires --textured')
     _, planes = instance_budget.bsp_lod_table(a.dgo)
     if a.textured:
         import prepare_render_sectors as rs
         import prototype_geometry
-        results, instances, _ = prototype_geometry.build(a.dgo, a.package)
+        results, instances, _ = prototype_geometry.build(a.dgo, a.package, mean_colours=a.mean_colours)  # AI-assisted
         doc, _ = rs.read_glb(a.package)
         factors = {i: tuple(m.get('pbrMetallicRoughness', {}).get('baseColorFactor', (1, 1, 1, 1)))
                    for i, m in enumerate(doc.get('materials', []))}
