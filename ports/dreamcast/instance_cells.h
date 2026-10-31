@@ -4,19 +4,27 @@
 #include "instance_pass.h"
 
 enum {DC_INSTANCE_CELLS_MAX=256};
-typedef struct {int32_t ix,iz;uint32_t count;} dc_instance_cell;
+typedef struct {int32_t ix,iz;uint32_t count,offset,bytes;} dc_instance_cell;
 typedef struct {
  dc_instance *records;
  uint32_t capacity,count,cell_count;
  double cell;
  char root[192];
  dc_instance_cell cells[DC_INSTANCE_CELLS_MAX];
+ dc_instance_palette *palette;
+ unsigned char *lighting;uint32_t lighting_capacity,lighting_used;
+ const unsigned char **tables;
 } dc_instance_cells;
 /* Zeroed/unowned output. capacity records, allocated once. root holds
  * cells/IX_IZ.dci, written by instance_cells.py: 52-byte records whose pad is the
  * original instance index, ascending. A cell whose file does not exist is empty;
  * any other open failure is an error, and the cell is tried again next time. */
 const char *dc_instance_cells_make(dc_instance_cells *,const char *root,double cell,uint32_t capacity);
+/* DCL4 cells, one allocation for the fixed file buffer and one pointer/record.
+ * bytes is the exact fixture path peak from instance_cells.palette_peak.
+ * No read-time allocation; capacity failures leave a consistent subset. */
+const char *dc_instance_cells_palette_make(dc_instance_cells *,const char *root,double cell,
+                                          uint32_t capacity,dc_instance_palette *,uint32_t bytes);
 void dc_instance_cells_free(dc_instance_cells *);
 /* Hold exactly the cells a disc of radius draw (plus a small margin, for the
  * renderer's rounding) around (x, z) touches, in original record order, and point

@@ -30,6 +30,10 @@
 #ifndef FLY_WINDOW_REMAP
 #define FLY_WINDOW_REMAP 32768u
 #endif
+/* Palette draw opt-in (AI-assisted), ISC. */
+#if defined(FLY_PALETTE_LIGHTING) && !defined(FLY_INSTANCE_CELLS)
+#error FLY_PALETTE_LIGHTING requires FLY_INSTANCE_CELLS
+#endif
 /* FLY_INSTANCE_CELLS: records stream by cell; the package holds geometry only. */
 #ifdef FLY_INSTANCE_CELLS
 #include "instance_cells.h"
@@ -67,6 +71,9 @@ int main(void) {
 #endif
 #ifdef FLY_INSTANCE_CELLS
  static dc_instance_cells held;
+#ifdef FLY_PALETTE_LIGHTING
+ static dc_instance_palette palette;
+#endif
 #endif
  dc_instance_package pkg;unsigned char *data=NULL;float (*view)[3]=NULL,(*bounds)[4]=NULL;
  FILE *file=NULL;const char *error;int initialized=0;uint32_t f,slot,textured=0,windows_ok=1,instances_ok=1,lods_ok=1;
@@ -94,9 +101,20 @@ int main(void) {
  if(!check(fread(data,1,FLY_PACKAGE_BYTES,file)==FLY_PACKAGE_BYTES&&fgetc(file)==EOF,"fly package size"))goto release;
  fclose(file);file=NULL;
  if(!check(crc32(0,data,FLY_PACKAGE_BYTES)==FLY_PACKAGE_CRC,"fly package CRC"))goto release;
- error=dc_instance_package_open(data,FLY_PACKAGE_BYTES,&pkg);if(!check(error==NULL,error))goto release;
+#ifdef FLY_PALETTE_LIGHTING
+ error=dc_instance_palette_open(data,FLY_PACKAGE_BYTES,&pkg,&palette);
+#else
+ error=dc_instance_package_open(data,FLY_PACKAGE_BYTES,&pkg);
+#endif
+ if(!check(error==NULL,error))goto release;
 #ifdef FLY_INSTANCE_CELLS
- error=dc_instance_cells_make(&held,"/rd",16.0,FLY_INSTANCE_RECORDS);if(!check(error==NULL,error))goto release;
+#ifdef FLY_PALETTE_LIGHTING
+ error=dc_instance_cells_palette_make(&held,"/rd",16.0,FLY_INSTANCE_RECORDS,&palette,FLY_PALETTE_BYTES);
+ dc_instance_palette_bind(&pkg,&palette);
+#else
+ error=dc_instance_cells_make(&held,"/rd",16.0,FLY_INSTANCE_RECORDS);
+#endif
+ if(!check(error==NULL,error))goto release;
 #endif
  view=memalign(32,(size_t)pkg.max_proto_verts*sizeof *view);if(!check(view!=NULL,"fly view scratch"))goto release;
  /* whole geometries culled against the view before their vertices move */
@@ -217,6 +235,9 @@ int main(void) {
  dc_backend.observed_lo=dc_fly_metrics.frames;dc_backend.observed_hi=dc_fly_metrics.max_faces;
  dc_backend.expected_lo=FLY_FRAMES;dc_backend.expected_hi=dc_fly_metrics.max_instance_triangles;
 release:
+#ifdef FLY_PALETTE_LIGHTING
+ dc_instance_palette_bind(NULL,NULL);
+#endif
  if(file)fclose(file);
  if(initialized)pvr_wait_ready();
  if(!dc_backend.failed_case)snprintf((char *)dc_backend.description,80,"Flythrough frames=%u faces<=%u inst<=%u us<=%u",

@@ -71,7 +71,9 @@ class Package(ctypes.Structure):
 class Owner(ctypes.Structure):
     _fields_ = [('records', ctypes.c_void_p), ('capacity', ctypes.c_uint32), ('count', ctypes.c_uint32),
                 ('cell_count', ctypes.c_uint32), ('cell', ctypes.c_double), ('root', ctypes.c_char * 192),
-                ('cells', (ctypes.c_int32 * 3) * 256)]
+                ('cells', (ctypes.c_int32 * 5) * 256), ('palette', ctypes.c_void_p),
+                ('lighting', ctypes.c_void_p), ('lighting_capacity', ctypes.c_uint32),
+                ('lighting_used', ctypes.c_uint32), ('tables', ctypes.c_void_p)]
 
 
 @unittest.skipUnless(shutil.which('gcc'), 'gcc is required for the C oracle')
@@ -82,7 +84,7 @@ class NativeTests(unittest.TestCase):
         cls.addClassCleanup(cls.temp.cleanup)
         library = Path(cls.temp.name) / ('cells.dll' if os.name == 'nt' else 'cells.so')
         result = subprocess.run([shutil.which('gcc'), '-std=c99', '-Wall', '-Wextra', '-Werror', '-O2', '-shared',
-                                 '-static', str(PORT / 'instance_cells.c'), '-o', str(library), '-lm'],
+                                 '-static', str(PORT / 'instance_cells.c'), str(PORT / 'instance_pass.c'), '-o', str(library), '-lm'],
                                 capture_output=True, text=True, timeout=60)
         if result.returncode:
             raise AssertionError(result.stdout + result.stderr)

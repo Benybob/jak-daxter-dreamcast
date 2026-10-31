@@ -8,13 +8,17 @@
 #include "render_frustum.h"
 #endif
 
+static const char *palette_read(const unsigned char *,size_t,const dc_instance_package *,dc_instance_palette *);
+static const dc_instance_package *palette_package;
+static const dc_instance_palette *palette_active;
+
 static uint32_t rd32(const unsigned char *p){uint32_t v;memcpy(&v,p,4);return v;}
 
 const char *dc_instance_package_open(const void *data,size_t size,dc_instance_package *out) {
- const unsigned char *p=data;dc_instance_package made;uint32_t np,ng,ni,i,nv=0,nx=0,maxv=0;size_t head,at,need,stride;int v2,v3;
+ const unsigned char *p=data;dc_instance_package made;uint32_t np,ng,ni,i,nv=0,nx=0,maxv=0;size_t head,at,need,stride;int v2,v3,v4;
  if(!data||!out||((uintptr_t)data&3))return "DCI1 arguments";
  if(size<12)return "DCI1 magic";
- v3=!memcmp(p,"DCI3",4);v2=v3||!memcmp(p,"DCI2",4);stride=v3?16u:24u;
+ v4=!memcmp(p,"DCI4",4);v3=v4||!memcmp(p,"DCI3",4);v2=v3||!memcmp(p,"DCI2",4);stride=v3?16u:24u;
  if(!v2&&memcmp(p,"DCI1",4))return "DCI1 magic";
  if(v2&&size<16)return "DCI1 magic";
  np=rd32(p+4);ng=v2?rd32(p+8):np;ni=rd32(p+(v2?12:8));head=v2?16u:12u;
@@ -29,6 +33,11 @@ const char *dc_instance_package_open(const void *data,size_t size,dc_instance_pa
  }
  at=head+52u*ng+(v2?24u*np:0u)+(v3?16u*ng:0u);need=at+stride*(size_t)nv+2u*(size_t)nx;
  need=(need+3u)&~(size_t)3u;/* indices pad to 4 bytes */
+ if(v4){uint32_t bytes;
+  if(size<need||size-need<16||memcmp(p+need,"DCP4",4))return "DCI4 extension";
+  bytes=rd32(p+need+4);if(bytes<16||(bytes&3)||bytes>size-need)return "DCI4 extension";
+  need+=bytes;
+ }
  if(size<need||size-need!=52u*(size_t)ni)return "DCI1 size";
  made.protos=(const dc_instance_proto *)(p+head);
  made.lods=v2?(const dc_instance_lod *)(p+head+52u*ng):NULL;made.lod_count=v2?np:0;made.bounds=NULL;
@@ -41,7 +50,7 @@ const char *dc_instance_package_open(const void *data,size_t size,dc_instance_pa
   for(i=0;i<ng;++i){const float *q=made.quant[i];
    if(!isfinite(q[0])||!isfinite(q[1])||!isfinite(q[2])||fabsf(q[0])>1e6f||fabsf(q[1])>1e6f||fabsf(q[2])>1e6f
       ||!(q[3]>0)||q[3]>100.f)return "DCI3 quantization";}
-  for(i=0;i<nv;++i)if(made.cverts[i].pad)return "DCI1 vertex value";
+  for(i=0;!v4&&i<nv;++i)if(made.cverts[i].pad)return "DCI1 vertex value";
  }else for(i=0;i<nv;++i){const dc_instance_vertex *v=&made.verts[i];
   if(!isfinite(v->x)||!isfinite(v->y)||!isfinite(v->z)||!isfinite(v->u)||!isfinite(v->v))return "DCI1 vertex value";}
  for(i=0;i<ng;++i){const dc_instance_proto *q=&made.protos[i];uint32_t k;
@@ -56,8 +65,67 @@ const char *dc_instance_package_open(const void *data,size_t size,dc_instance_pa
   if(q->proto>=np)return "DCI1 instance prototype";
   for(k=0;k<12;++k)if(!isfinite(q->m[k])||fabsf(q->m[k])>1e6f)return "DCI1 instance matrix";}
  made.proto_count=ng;made.instance_count=ni;made.vert_count=nv;made.index_count=nx;made.max_proto_verts=maxv;
+ if(v4){dc_instance_palette lighting;const char *error=palette_read(p,size,&made,&lighting);if(error)return error;}
  *out=made;
  return NULL;
+}
+
+/* Palette parsing and lookups (AI-assisted), ISC. No heap or vertex scratch. */
+const char *dc_instance_palette_table(const dc_instance_palette *p,uint32_t proto,const void *data,size_t size) {
+ const unsigned char *t=data;uint32_t i,n,width,entries;
+ if(!p||proto>=p->proto_count||!data)return "DCI4 table arguments";
+ n=p->protos[proto].slots;entries=p->protos[proto].entries;width=entries<=256?1u:2u;
+ if(size<(size_t)n*width)return "DCI4 table range";
+ for(i=0;i<n;++i){uint32_t index=t[i*width];if(width==2)index|=(uint32_t)t[i*width+1]<<8;
+  if(index>=entries)return "DCI4 palette index";}
+ return NULL;
+}
+static const char *palette_read(const unsigned char *data,size_t size,const dc_instance_package *pkg,dc_instance_palette *out) {
+ dc_instance_palette p;uint32_t i,k;size_t at=(const unsigned char *)pkg->indices-data+2u*pkg->index_count,minimum;
+ at=(at+3u)&~(size_t)3u;
+ if(size<at||size-at<16||memcmp(data+at,"DCP4",4))return "DCI4 extension";
+ memset(&p,0,sizeof p);p.data=data+at;p.size=rd32(p.data+4);p.resident=rd32(p.data+8);p.count=rd32(p.data+12);
+ p.proto_count=pkg->lod_count;p.geometry_count=pkg->proto_count;
+ minimum=16u+8u*(size_t)p.proto_count+16u*(size_t)p.geometry_count;
+ if(p.size>size-at||p.size<minimum||p.resident<minimum||p.resident>p.size||(p.size&3)||(p.resident&3)
+    ||p.count!=pkg->instance_count||4u*(size_t)p.count>p.size-p.resident)return "DCI4 ranges";
+ p.protos=(const dc_instance_palette_proto *)(p.data+16);
+ p.geometries=(const dc_instance_palette_geometry *)(p.data+16+8u*p.proto_count);
+ for(i=0;i<p.proto_count;++i){const dc_instance_palette_proto *r=&p.protos[i];
+  if(!r->slots||r->slots>65536||!r->entries||r->entries>65536)return "DCI4 counts";
+  for(k=0;k<4;++k){const dc_instance_lod *l=&pkg->lods[i];uint32_t g;
+   if(l->geometry[k]==0xffffu)continue;
+   for(g=l->geometry[k];g<=l->geometry[k]+l->count[k];++g){const dc_instance_palette_geometry *q=&p.geometries[g];
+    if(q->slots!=r->slots||q->entries!=r->entries)return "DCI4 prototype palette";}}}
+ for(i=0;i<p.geometry_count;++i){const dc_instance_palette_geometry *q=&p.geometries[i];const dc_instance_proto *g=&pkg->protos[i];
+  if(!q->entries||q->entries>65536||!q->slots||q->slots>65536||q->width!=(q->entries<=256?1u:2u)
+     ||q->offset<minimum||(q->offset&3)||q->offset>p.resident||4u*(size_t)q->entries>p.resident-q->offset)return "DCI4 palette range";
+  for(k=0;k<q->entries;++k)if(rd32(p.data+q->offset+4*k)&0xff000000u)return "DCI4 RGB";
+  for(k=0;k<g->verts;++k)if(pkg->cverts[g->first_vert+k].pad>=q->slots)return "DCI4 slot";
+ }
+ for(i=0;i<p.count;++i){uint32_t offset=rd32(p.data+p.resident+4*i);const char *error;
+  if((offset&3)||offset<p.resident+4u*p.count||offset>p.size)return "DCI4 table offset";
+  error=dc_instance_palette_table(&p,pkg->instances[i].proto,p.data+offset,p.size-offset);if(error)return error;
+ }
+ *out=p;return NULL;
+}
+const char *dc_instance_palette_open(const void *data,size_t size,dc_instance_package *pkg,dc_instance_palette *out) {
+ dc_instance_package made;dc_instance_palette p;const char *error;
+ if(!data||size<4||memcmp(data,"DCI4",4)||!pkg||!out)return "DCI4 arguments";
+ error=dc_instance_package_open(data,size,&made);if(error)return error;
+ error=palette_read(data,size,&made,&p);if(error)return error;
+ *pkg=made;*out=p;return NULL;
+}
+uint32_t dc_instance_palette_colour(const dc_instance_package *pkg,const dc_instance_palette *p,
+                                  const unsigned char *table,uint32_t geometry,uint32_t vertex) {
+ const dc_instance_palette_geometry *g=&p->geometries[geometry];
+ const dc_instance_cvertex *v=&pkg->cverts[pkg->protos[geometry].first_vert+vertex];
+ uint32_t index=table[(uint32_t)v->pad*g->width];
+ if(g->width==2)index|=(uint32_t)table[(uint32_t)v->pad*2+1]<<8;
+ return (v->argb&0xff000000u)|rd32(p->data+g->offset+4*index);
+}
+void dc_instance_palette_bind(const dc_instance_package *pkg,const dc_instance_palette *p) {
+ palette_package=pkg;palette_active=p;
 }
 
 void dc_instance_vertex_get(const dc_instance_package *pkg,uint32_t g,uint32_t k,float o[5],uint32_t *argb) {
@@ -140,10 +208,13 @@ static int draw(const dc_instance_package *pkg,const dc_instance_camera *cam,flo
  pvr_poly_cxt_col(&cxt,PVR_LIST_OP_POLY);cxt.gen.culling=PVR_CULLING_NONE;pvr_poly_compile(&colour_hdr,&cxt);
  for(i=0;i<pkg->instance_count;++i){
   const dc_instance *in=&pkg->instances[i];
+  const dc_instance_palette *lighting=palette_package==pkg?palette_active:NULL;
+  const unsigned char *table=NULL;
   const float *m=in->m;float dx=m[9]-cam->tx,dz=m[11]-cam->tz,dx2=dx*dx,dz2=dz*dz,d2=dx2+dz2;
   uint32_t first,g;unsigned lod,count;
   if(counting)++st->instances;
   if(d2>cam->draw_distance*cam->draw_distance)continue;
+  if(lighting)table=lighting->tables?lighting->tables[i]:lighting->data+rd32(lighting->data+lighting->resident+4*i);
   first=dc_instance_run(pkg,in,d2,&lod,&count);
   if(counting){++st->drawn_instances;++st->lod_instances[lod];}
   static matrix_t mv __attribute__((aligned(32)));compose(b,cam,m,mv);
@@ -181,7 +252,7 @@ static int draw(const dc_instance_package *pkg,const dc_instance_camera *cam,flo
     unsigned j,front=0;int n,fan;float px[DC_RENDER_CLIP_CAP],py[DC_RENDER_CLIP_CAP],pz[DC_RENDER_CLIP_CAP];
     ++st->triangles;
     for(j=0;j<3;++j){const float *v=view[ix[j]];float u=0,w=0;uint32_t argb;
-     if(pkg->cverts){const dc_instance_cvertex *s=&pkg->cverts[p->first_vert+ix[j]];argb=s->argb;
+     if(pkg->cverts){const dc_instance_cvertex *s=&pkg->cverts[p->first_vert+ix[j]];argb=lighting?dc_instance_palette_colour(pkg,lighting,table,g,ix[j]):s->argb;
       if(textured){u=s->u*(1.f/2048.f);w=s->v*(1.f/2048.f);}}
      else{const dc_instance_vertex *s=&pkg->verts[p->first_vert+ix[j]];argb=s->argb;if(textured){u=s->u;w=s->v;}}
      front+=v[2]>=DC_SCENE_NEAR;

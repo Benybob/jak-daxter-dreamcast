@@ -46,6 +46,11 @@ match the terrain under a texture, and lower LODs keep their dump UVs (they
 agree with the GLB's) and take the material and colour of the nearest LOD 0
 triangle and vertex.
 
+--palette-lighting (with --textured) implies --compact and writes DCI4 native
+RGB palettes, shared corner slots and placement tables (instance_pass.h). Static
+COLOR_0; unmatched corners use donor RGB, lower LODs transfer the nearest LOD-0
+slot. Cells stream the tables with their records (AI-assisted), ISC.
+
 --mean-colours (with --textured) averages matched source-instance RGB at LOD 0,
 keeping donor alpha and the same nearest-vertex transfer to lower LODs
 (AI-assisted). By default the original donor colours are kept.
@@ -201,10 +206,13 @@ def material_geometries(tris, name, factors):
         for pts, uvs, cols in groups[mat]:
             for p, uv, c in zip(pts, uvs, cols):
                 col = c if isinstance(c, int) else colour(c, factor)
+                slot = getattr(c, 'slot', None)  # AI-assisted, ISC: preserve lighting discontinuities
                 key = (tuple(round(x * 1000) for x in p), tuple(uv), col)
+                if slot is not None:
+                    key += (slot,)
                 if key not in lookup:
                     lookup[key] = len(verts)
-                    verts.append((p[0], p[1], p[2], uv[0], uv[1], col))
+                    verts.append((p[0], p[1], p[2], uv[0], uv[1], col) + ((slot,) if slot is not None else ()))
                 idx.append(lookup[key])
         out.append({'name': f'{name[:26]}#{mat & 0xffff}', 'material': mat & 0xffffffff, 'verts': verts,
                     'indices': idx})
@@ -228,17 +236,23 @@ def lower_lod(tris, uvs, base):
     return out
 
 
-def build_textured(results, instances, lods, planes, factors, compact=False):
+def build_textured(results, instances, lods, planes, factors, compact=False, palette_lighting=False):
     """DCI2 with per-material geometries from prototype_geometry.build's results
     and instances, a with_uvs dump, the BSP planes and {GLB material: factor}."""
     import instanced_level
+    if palette_lighting:
+        import instance_palette
+        compact = True
     keep = [i for i, r in enumerate(results) if 'geometry' in r]
     remap = {old: new for new, old in enumerate(keep)}
-    geoms, table = [], []
+    geoms, table, palettes, slots, lighting_tables = [], [], [], [], []
     summary = {'prototypes': len(keep), 'with_lods': 0, 'shared': 0, 'materials': set()}
     for old in keep:
         r = results[old]
         base = [(pts, uvs, cols, mat) for pts, uvs, cols, mat in r['geometry']]
+        if palette_lighting:
+            palettes.append(r['palette'])
+            slots.append(r['slots'])
         runs, row, counts = [], [NONE] * 4, [0] * 4
         lod = lods.get(r['name'][:31])
         plane = planes.get(r['name'][:31])
@@ -267,16 +281,22 @@ def build_textured(results, instances, lods, planes, factors, compact=False):
             made = material_geometries(tris, r['name'] if n == 0 else f"{r['name'][:24]}:{n}", factors)
             row[n], counts[n] = len(geoms), len(made) - 1
             summary['materials'].update(g['material'] for g in made)
+            if palette_lighting:
+                for g in made:
+                    g['palette_proto'] = remap[old]
             geoms += made
         runs.append(row)
         table.append((row, plane, counts))
     inst = []
-    for i in instances:
+    for original, i in enumerate(instances):
         if i['proto'] in remap:
             m = instanced_level.instance_matrix(i)
             rows = [x for row in m[:3] for x in row[:3]] + [x / instanced_level.UNITS_PER_M for x in m[3][:3]]
             inst.append((remap[i['proto']], 0, *rows))
-    blob = pack(geoms, table, inst, compact)
+            if palette_lighting:
+                lighting_tables.append(results[i['proto']]['tables'][original])
+    ext = instance_palette.extension(geoms, palettes, slots, lighting_tables, factors) if palette_lighting else b''
+    blob = pack(geoms, table, inst, compact, ext)
     summary['materials'] = sorted(summary['materials'])
     summary.update(geometries=len(geoms), instances=len(inst), package_bytes=len(blob),
                    vertices=sum(len(g['verts']) for g in geoms), indices=sum(len(g['indices']) for g in geoms))
@@ -295,9 +315,9 @@ def quantize(verts):
     return (*centre, mf.f32(max(half / 32767.0, 1e-7)))
 
 
-def pack(geoms, table, instances, compact=False):
+def pack(geoms, table, instances, compact=False, lighting=b''):
     """table rows are (geometry per LOD, planes) or (geometry per LOD, planes, extra counts)."""
-    head = struct.pack('<4s3I', b'DCI3' if compact else b'DCI2', len(table), len(geoms), len(instances))
+    head = struct.pack('<4s3I', b'DCI4' if lighting else (b'DCI3' if compact else b'DCI2'), len(table), len(geoms), len(instances))
     gt, vb, ib, qt = bytearray(), bytearray(), bytearray(), bytearray()
     nv = ni = 0
     for g in geoms:
@@ -309,7 +329,7 @@ def pack(geoms, table, instances, compact=False):
             for v in g['verts']:
                 pos = [max(-32767, min(32767, round((v[k] - q[k]) / q[3]))) for k in range(3)]
                 uv = [max(-32767, min(32767, round(v[3 + k] * UV_STEPS))) for k in range(2)]
-                vb += struct.pack('<5hHI', *pos, *uv, 0, v[5])
+                vb += struct.pack('<5hHI', *pos, *uv, v[6] if lighting else 0, v[5])
         else:
             for v in g['verts']:
                 vb += struct.pack('<5fI', *v)
@@ -320,16 +340,16 @@ def pack(geoms, table, instances, compact=False):
         ib += b'\0\0'
     pt = b''.join(struct.pack('<4H3f4B', *r[0], *r[1], *(r[2] if len(r) > 2 else (0, 0, 0, 0))) for r in table)
     inst = b''.join(struct.pack('<2H12f', proto, 0, *m) for proto, _, *m in instances)
-    return head + bytes(gt) + pt + bytes(qt) + bytes(vb) + bytes(ib) + inst
+    return head + bytes(gt) + pt + bytes(qt) + bytes(vb) + bytes(ib) + lighting + inst
 
 
 def read_dci2(blob):
     """(geometries, prototype table, vertex start, index start, instances) of a
     DCI2 or DCI3 package (DCI3: 16-byte vertices after the quantization table)."""
     magic, np_, ng, ni = struct.unpack_from('<4s3I', blob, 0)
-    if magic not in (b'DCI2', b'DCI3'):
+    if magic not in (b'DCI2', b'DCI3', b'DCI4'):
         raise ValueError('DCI2 magic')
-    stride = 16 if magic == b'DCI3' else 24
+    stride = 16 if magic in (b'DCI3', b'DCI4') else 24
     at = 16
     geoms = [struct.unpack_from('<5I', blob, at + 52 * i) + (blob[at + 52 * i + 20:at + 52 * i + 52],) for i in range(ng)]
     at += 52 * ng
@@ -341,6 +361,8 @@ def read_dci2(blob):
     nx = sum(g[1] for g in geoms)
     vstart, istart = at, at + stride * nv
     inst_at = (istart + 2 * nx + 3) & ~3
+    if magic == b'DCI4':
+        inst_at += struct.unpack_from('<I', blob, inst_at + 4)[0]
     instances = [struct.unpack_from('<2H12f', blob, inst_at + 52 * i) for i in range(ni)]
     return geoms, table, vstart, istart, instances
 
@@ -378,12 +400,15 @@ def flatten(blob, tx, tz):
     """The DCI1 a DCI1 reader draws for a DCI2 package seen from target (tx, tz):
     one prototype per geometry, each instance pointing at the geometry its LOD
     picks there."""
+    if blob[:4] == b'DCI4':
+        import instance_palette
+        return instance_palette.flatten(blob, tx, tz)
     geoms, table, vstart, istart, instances = read_dci2(blob)
     nv = sum(g[0] for g in geoms)
     nx = sum(g[1] for g in geoms)
     head = struct.pack('<4s2I', b'DCI1', len(geoms), len(instances))
     gt = b''.join(struct.pack('<5I', *g[:5]) + g[5] for g in geoms)
-    stride = 16 if blob[:4] == b'DCI3' else 24
+    stride = 16 if blob[:4] in (b'DCI3', b'DCI4') else 24
     data = float_vertices(blob) + blob[istart:istart + 2 * nx]
     if len(data) % 4:
         data += b'\0\0'
@@ -409,10 +434,13 @@ def main():
     ap.add_argument('--textured', action='store_true')
     ap.add_argument('--mean-colours', action='store_true',
                     help='average matched instance RGB (with --textured; AI-assisted)')
+    ap.add_argument('--palette-lighting', action='store_true', help='DCI4 static placement palettes (implies --compact; AI-assisted, ISC)')
     ap.add_argument('--compact', action='store_true', help='DCI3: 16-byte vertices (with --textured)')
     ap.add_argument('--out', type=Path)
     ap.add_argument('--json', type=Path)
     a = ap.parse_args()
+    if a.palette_lighting and (not a.textured or a.mean_colours):
+        ap.error('--palette-lighting requires --textured and donor colours')
     if a.mean_colours and not a.textured:  # averaging needs the GLB source instances (AI-assisted)
         ap.error('--mean-colours requires --textured')
     _, planes = instance_budget.bsp_lod_table(a.dgo)
@@ -423,7 +451,12 @@ def main():
         doc, _ = rs.read_glb(a.package)
         factors = {i: tuple(m.get('pbrMetallicRoughness', {}).get('baseColorFactor', (1, 1, 1, 1)))
                    for i, m in enumerate(doc.get('materials', []))}
-        blob, summary = build_textured(results, instances, dump_lods(a.dump_dir, True), planes, factors, a.compact)
+        lighting_report = {}
+        if a.palette_lighting:
+            import instance_palette
+            results, lighting_report = instance_palette.prepare(results, instances, a.dgo, a.package, factors)
+        blob, summary = build_textured(results, instances, dump_lods(a.dump_dir, True), planes, factors, a.compact, a.palette_lighting)
+        summary.update(lighting_report)
     else:
         blob, summary = build(a.package.read_bytes(), dump_lods(a.dump_dir), planes)
     if a.out:

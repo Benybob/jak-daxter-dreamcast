@@ -19,7 +19,24 @@
  *
  * DCI3 is DCI2 with 16-byte vertices: a quantization record a geometry (float
  * centre x, y, z, scale) after the prototype table, then s16 x, y, z (centre +
- * q * scale), s16 u, v (1/2048), u16 0, ARGB8888. */
+ * q * scale), s16 u, v (1/2048), u16 0, ARGB8888.
+ *
+ * DCI4 (--palette-lighting, AI-assisted, ISC) is DCI3 with the u16 pad a
+ * lighting slot. After aligned indices and before the 52-byte instances:
+ * 'DCP4', u32 extension bytes, resident bytes, instance count; per prototype
+ * u32 slots, palette entries; per geometry u32 palette offset (extension
+ * relative), entries, slots, index width (1 if entries<=256, else 2); RGB888
+ * u32 palettes (high byte zero); then u32 table offset per instance and
+ * 4-byte-aligned deduplicated slot tables. Resident bytes ends the palettes.
+ * Cell splitting removes offsets/tables from the package (count=0). Each
+ * cells/IX_IZ.dci is 'DCL4', u32 file bytes, record count, reserved zero;
+ * 56-byte records (52-byte instance, original-index pad, u32 absolute file
+ * table offset), then aligned deduplicated slot tables. Width/length come
+ * from the prototype. All indices, slots and ranges are checked before use.
+ * Static COLOR_0 RGB only; donor alpha stays per vertex. Unmatched corners
+ * use donor RGB; lower LODs transfer the nearest LOD-0 slot, as before.
+ * FLY_PALETTE_LIGHTING opts the flythrough into the palette API below;
+ * default draws continue using vertex ARGB without allocation. */
 #ifndef DC_INSTANCE_PASS_H
 #define DC_INSTANCE_PASS_H
 #include <stddef.h>
@@ -37,6 +54,23 @@ typedef struct {
  const float (*bounds)[4]; /* NULL from open; dc_instance_bounds' spheres, set by the caller to cull */
  const dc_instance_cvertex *cverts;const float (*quant)[4]; /* DCI3 (verts NULL); otherwise NULL */
 } dc_instance_package;
+
+typedef struct {uint32_t slots,entries;} dc_instance_palette_proto;
+typedef struct {uint32_t offset,entries,slots,width;} dc_instance_palette_geometry;
+typedef struct {
+ const unsigned char *data;uint32_t size,resident,count,proto_count,geometry_count;
+ const dc_instance_palette_proto *protos;
+ const dc_instance_palette_geometry *geometries;
+ const unsigned char **tables; /* cell owner, in the current record order */
+} dc_instance_palette;
+/* Validates DCI4 and its palette extension; outputs unchanged on failure. */
+const char *dc_instance_palette_open(const void *,size_t,dc_instance_package *,dc_instance_palette *);
+const char *dc_instance_palette_table(const dc_instance_palette *,uint32_t proto,const void *,size_t);
+/* Lookup arguments belong to a validated package/table kept alive by caller. */
+uint32_t dc_instance_palette_colour(const dc_instance_package *,const dc_instance_palette *,
+                                  const unsigned char *table,uint32_t geometry,uint32_t vertex);
+/* One active draw context, borrowed until unbound (NULL,NULL); no allocation. */
+void dc_instance_palette_bind(const dc_instance_package *,const dc_instance_palette *);
 
 /* Validates a whole package in place (4-byte aligned, the caller keeps it alive):
  * sizes add up exactly, every prototype's vertex and index ranges lie inside the

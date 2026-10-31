@@ -28,6 +28,7 @@ from pathlib import Path
 import shutil
 import zlib
 
+import instance_palette
 import instance_cells as instance_store
 import make_instance_fixture as mf
 import window_caps
@@ -55,7 +56,10 @@ def make(glb, package, out, frames=30, length=60.0, half=14.0, header='build/fly
     if out.exists():
         shutil.rmtree(out)
     out.mkdir(parents=True)
-    blob = Path(package).read_bytes()
+    source_blob = Path(package).read_bytes()
+    blob = instance_palette.baseline(source_blob)
+    if source_blob[:4] == b'DCI4' and not instance_cells:
+        raise ValueError('palette lighting requires --instance-cells')
     start = mf.camera(*mf.read(blob))
     targets = path(start, frames, length)
     margin = half + 2 * cell
@@ -70,7 +74,7 @@ def make(glb, package, out, frames=30, length=60.0, half=14.0, header='build/fly
     for item in (out / 'sectors-staging').iterdir():
         shutil.move(str(item), str(out / item.name))
     (out / 'sectors-staging').rmdir()
-    stored = instance_store.split(blob, out) if instance_cells else blob
+    stored = instance_store.split(source_blob, out) if instance_cells else source_blob
     (out / 'package.dci').write_bytes(stored)
     head = rs.parse_manifest(packet.manifest)
     sha = head['source_sha256'].hex()
@@ -107,6 +111,8 @@ def make(glb, package, out, frames=30, length=60.0, half=14.0, header='build/fly
     slots = max(mapping) + 1 if mapping else 1
     if instance_cells:
         text.append(f'#define FLY_INSTANCE_RECORDS {instance_store.peak(blob, [(t[0], t[2]) for t in targets], mf.DRAW_DISTANCE)}u')
+    if source_blob[:4] == b'DCI4':
+        text.append(f'#define FLY_PALETTE_BYTES {instance_store.palette_peak(out, targets, mf.DRAW_DISTANCE)}u')
     text.append(f'#define FLY_MATERIAL_SLOTS {slots}u')
     text.append('static const uint16_t fly_material_map[FLY_MATERIAL_SLOTS]={'
                 + ','.join(f'{mapping.get(i, 0xffff)}u' for i in range(slots)) + '};')
@@ -117,6 +123,9 @@ def make(glb, package, out, frames=30, length=60.0, half=14.0, header='build/fly
               'max_window_faces': max(r['faces'] for r in rows), 'textured_materials': len(mapping),
               'blend_faces_by_frame': [r['blend_faces'] for r in rows],
               'max_instance_triangles': max(r['triangles'] for r in rows), 'start': start, 'end': targets[-1]}
+    if source_blob[:4] == b'DCI4':
+        report['palette_buffer_bytes'] = instance_store.palette_peak(out, targets, mf.DRAW_DISTANCE)
+        report['instance_record_capacity'] = instance_store.peak(blob, targets, mf.DRAW_DISTANCE)
     (out / 'FLY.json').write_text(json.dumps(report, indent=1), newline='\n')
     return report, rows
 
