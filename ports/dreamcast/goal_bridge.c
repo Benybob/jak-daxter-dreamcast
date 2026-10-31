@@ -1221,6 +1221,11 @@ static uint64_t pc_kopen_native(uint64_t fs,uint64_t name,uint64_t mode){
 }
 static uint64_t pc_kclose_native(uint64_t fs){return fs;}
 #define DC_PC_SERVICES 52
+/* Coexistence only stashes requests on the GOAL stack (AI-assisted), ISC. */
+#ifdef DC_ARENA_COEXIST
+uint64_t dc_arena_syncv(void);
+uint64_t dc_arena_chain(uint64_t,uint64_t);
+#endif
 int dc_goal_install_pc_services(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_goal_module_result *result) {
   static const char *const void_setters[]={
     "pc-set-mouse-options!","pc-set-mouse-camera-sens!","pc-set-auto-hide-cursor!","pc-set-window-size!",
@@ -1261,7 +1266,12 @@ int dc_goal_install_pc_services(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_g
   functions[k]=(dc_goal_code_export){"pc-rand",code[k],12,NULL,0};targets[k++]=(uint32_t)(uintptr_t)pc_rand_native;
   functions[k]=(dc_goal_code_export){"__read-ee-timer",code[k],12,NULL,0};targets[k++]=(uint32_t)(uintptr_t)read_ee_timer_native;
   for(i=0;i<sizeof void_setters/sizeof void_setters[0];++i){
-    functions[k]=(dc_goal_code_export){void_setters[i],code[k],12,NULL,0};targets[k++]=(uint32_t)(uintptr_t)pc_zero_native;}
+    functions[k]=(dc_goal_code_export){void_setters[i],code[k],12,NULL,0};targets[k++]=(uint32_t)(uintptr_t)pc_zero_native;
+#ifdef DC_ARENA_COEXIST
+    if(!strcmp(void_setters[i],"syncv"))targets[k-1]=(uint32_t)(uintptr_t)dc_arena_syncv;
+    if(!strcmp(void_setters[i],"__send-gfx-dma-chain"))targets[k-1]=(uint32_t)(uintptr_t)dc_arena_chain;
+#endif
+  }
   if(k>DC_PC_SERVICES){(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);return 0;}
   for(i=0;i<k;++i){memcpy(code[i],stub,12);memcpy(code[i]+8,&targets[i],4);}
   if(!dc_goal_load_module(rt,functions,k,sync,NULL,result))return 0;

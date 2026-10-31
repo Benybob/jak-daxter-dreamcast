@@ -48,6 +48,13 @@ Shim, combined ELF only: call `pvr_init` before any GOAL use of VRAM, then take 
 
 ## Milestone 1
 
+**Done (2026-10-31, AI-assisted).** `jak-dc-arena.elf` passes 870 of 870 checks in stock
+16 MiB Flycast: all 326 GAME.CGO files and the original main loop's 60 frames, a clear
+PVR scene between frames, the 2.5 MiB slab outside the GOAL arena, DMA in VRAM loans.
+The arena reports 10,673,360 of 11,010,048 bytes, 336,688 spare. `jak-dc-kernel-dgo.elf`
+still passes 532 of 532. Submits no geometry; a frontend linked with
+`-Wl,--stack,16777216` or more is required, or it dies with exit 0xC00000FD.
+
 One new ELF. GOAL’s existing 60-frame checks still pass, and a clear PVR frame is submitted on the KOS stack between two of those frames. No village romdisk, no change to `render_base.c`, `render_block_cache.c`, `render_draw_window.c`, `instance_pass.c`, or `instance_cells.c`.
 
 Pass when all of these hold, in `dc_backend` the way the other ELFs report:

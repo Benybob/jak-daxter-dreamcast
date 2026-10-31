@@ -719,6 +719,15 @@ leaves free (above). Where it can shrink:
   faces and takes DRX2 from 21.0 MB to 128.3 MB, so a general split is the wrong tool.
   Either a larger global budget, about 11,519 faces resident in that level, or a
   split of those wide faces alone.
+- **Per-placement lighting and noon.** `--mean-colours` is superseded by
+  `--palette-lighting` (`instance_palette.py`, `-DFLY_PALETTE_LIGHTING`): native palette
+  colours through shared lighting slots, matching the export exactly, streamed with the
+  cells. Exports bake palette slot 0. `tod_recolor.py` rewrites COLOR_0 to another
+  slot from the DGO's palettes: noon is slot 2 for village1 and beach, slot 1 for
+  village3, and slot 0, the export itself, for misty and village2 (the mood tables
+  weight snapshot 2 there). All five pass 101 of 101 at noon. Village1 peaks at 2.69 MB
+  and its longest frame is 0.86 s, against 2.55 MB and 0.75 s without. Blended levels
+  and every other level are unrun.
 - **The package's vertices: done, DCI3.** `tie_lods.py --compact` writes
   16-byte vertices: 16-bit positions in steps of a geometry's own bounds (a
   quantization record a geometry: float centre and scale), UVs in 1/2048

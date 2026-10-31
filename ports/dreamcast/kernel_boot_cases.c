@@ -20,6 +20,13 @@
 #include "process_spans.h"
 #include "pp_scope.h"
 #include "runtime_cases.h"
+/* PVR work runs only after dispatch restores the KOS stack (AI-assisted), ISC. */
+#ifdef DC_ARENA_COEXIST
+int dc_arena_prepare(dc_goal_runtime *);
+int dc_arena_extension(dc_goal_runtime *);
+int dc_arena_dispatch(dc_goal_runtime *);
+int dc_arena_finish(dc_goal_runtime *);
+#endif
 #ifdef DC_KERNEL_DGO
 #include "goal_dgo.h"
 #include "goal_dgo_zst.h"
@@ -99,10 +106,17 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
                               char *description,size_t description_bytes){
   dc_goal_runtime rt;dc_goal_module_result r;dc_kernel_types_result types;uint64_t value;
   uint32_t code_bytes=0,before;unsigned id=0;const char *text;uint32_t length;
+#ifdef DC_ARENA_COEXIST
+#define CHECK(a,b,label) do{uint64_t a_=(uint64_t)(a),b_=(uint64_t)(b);check(a_,b_,++id,label,context);if(a_!=b_)goto done;}while(0)
+#else
 #define CHECK(a,b,label) check((uint64_t)(a),(uint64_t)(b),++id,label,context)
+#endif
 #define STEP(call,label) do{int ok_=(call);CHECK(ok_?1:100+rt.error,1,label);if(!ok_)goto done;code_bytes+=r.code_bytes;memset(&r,0,sizeof r);}while(0)
   memset(&r,0,sizeof r);
   CHECK(dc_goal_init_native(&rt,memory,capacity),1,"native runtime for the original kernel boot");
+#ifdef DC_ARENA_COEXIST
+  if(!dc_arena_prepare(&rt))goto done;
+#endif
   /* Native counterpart of the C++ kernel's scheme setup. */
   STEP(dc_goal_install_core_bridges(&rt,sync_code,&r),"core pair/type/call-error bridges");
   STEP(dc_goal_install_kernel_types(&rt,&types),"original fixed kernel types (process, thread, cpu-thread, ...)");
@@ -193,9 +207,13 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
     /* The PC port's mips2c functions built for SH-4 (build_mips2c.py): every
      * registration links, and GAME.CGO's lookups of them get native functions. */
     CHECK(dc_mips2c_install(&rt),94,"the 94 functions of the 24 built mips2c files link natively");
+#ifdef DC_ARENA_COEXIST
+    CHECK(dc_arena_extension(&rt),1,"PVR loan registered as the GOAL extension region");
+#else
     /* Idle VRAM from 1 to 6 MiB (romdisk_stage.c) holds the PS2 DMA buffers. */
     CHECK(dc_goal_register_extension(&rt,(void *)0xa5100000u,0xa5100000u,5u*1024u*1024u),1,
           "idle VRAM registered as the GOAL extension region");
+#endif
     CHECK(dc_goal_place_in_extension(&rt,"dma-buffer",512u*1024u),1,"large dma-buffers placed in VRAM");
     if(file){
       method_set_depth(&rt,1);
@@ -334,6 +352,9 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
     CHECK(dc_goal_register_thread_fiber(&rt,&fiber),1,"fiber registered for the original resume-hook");
     for(i=0;i<FRAMES;++i){
       dispatch();
+#ifdef DC_ARENA_COEXIST
+      if(!dc_arena_dispatch(&rt))goto done;
+#endif
       CHECK(rt.error,DC_GOAL_OK,"original kernel-dispatcher frame completes without error");
       CHECK(word(&rt,proc,STATUS),suspended,"the spawned process runs and suspends each frame");
       CHECK(fiber.phase,DC_FIBER_SUSPENDED,"its native fiber is suspended between frames");
@@ -367,6 +388,9 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
        for(frame=0;frame<DISPLAY_FRAMES && rt.error==DC_GOAL_OK;++frame){
          dc_goal_error_site=0;
          dispatch();
+#ifdef DC_ARENA_COEXIST
+         if(!dc_arena_dispatch(&rt))goto done;
+#endif
          if(rt.error==DC_GOAL_OK && word(&rt,dproc,STATUS)==suspended)++completed;
          else {dc_boot_display_error=rt.error|((uint32_t)dc_goal_sticky_error<<8);dc_boot_display_site=dc_goal_error_site;}
        }
@@ -388,6 +412,9 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
     CHECK(word(&rt,proc,STATUS),dc_goal_find(&rt,"dead"),"original deactivate kills the spawned process");
     CHECK(word(&rt,pool,CHILD),proc+SELF,"original deactivate returns the process to the 8k pool");
     dispatch();
+#ifdef DC_ARENA_COEXIST
+    if(!dc_arena_dispatch(&rt))goto done;
+#endif
     CHECK(rt.error,DC_GOAL_OK,"dispatcher frame after the process died succeeds");
     CHECK(dc_goal_fiber_clear(&fiber),1,"dead process's fiber clears");
     CHECK(dc_goal_pp_scope_detach(&scopes,&rt),1,"quiescent scope metadata detaches");
@@ -395,7 +422,7 @@ spawn_done:
     rt.error=DC_GOAL_OK;dc_goal_clear_process_context(&rt);
     CHECK(dc_goal_process_spans_detach(&rt),1,"ownership ledger detaches");
   }
-#ifdef DC_KERNEL_DGO
+#if defined(DC_KERNEL_DGO) && !defined(DC_ARENA_COEXIST)
   /* Damaged containers refuse before linking anything. */
   {
     /* The image buffer lives only for these tests (malloc, not 400 KB of bss). */
@@ -418,6 +445,9 @@ spawn_done:
     free(image);
     CHECK(rt.symbol_count==symbols && rt.used==used,1,"refused DGOs link nothing");
   }
+#endif
+#ifdef DC_ARENA_COEXIST
+  if(!dc_arena_finish(&rt))goto done;
 #endif
   snprintf(description,description_bytes,"BOOT GOAL=%lu arena=%lu/%lu startup=%lu symbols=%lu",
            (unsigned long)code_bytes,(unsigned long)rt.used,(unsigned long)capacity,

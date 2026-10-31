@@ -5,6 +5,13 @@ documents the independent finite-input desktop vector oracle, SSE comparison tes
 and inventory of all 346 GAME.CGO entries. Claude Code owns vf lowering in
 lower_sh4_ir.py; this support change leaves the lowering/boot files alone.
 
+**2026-10-31 (AI-assisted):** the original game and PVR run in one ELF for the first
+time: `jak-dc-arena.elf`, [ARENA_INTEGRATION_PLAN.md](ARENA_INTEGRATION_PLAN.md), 870 of
+870 checks, 326 GAME.CGO files, 60 frames with a clear scene between them, a 2.5 MiB
+renderer slab beside the arena. It draws no geometry yet. Instances can now use each
+placement's own lighting (`tie_lods.py --palette-lighting`) and a level's noon palette
+(`tod_recolor.py`): five levels pass 101 of 101.
+
 **2026-10-30 (AI-assisted):** the village1 flythrough now peaks at 2.90 MB of live
 heap, against the 2.94 MB the GOAL arena leaves free
 ([LEVEL_STREAMING.md](LEVEL_STREAMING.md)). With `FLY_DRAW_CACHE`, `FLY_DRAW_WINDOW`

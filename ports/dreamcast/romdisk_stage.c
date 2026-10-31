@@ -18,16 +18,29 @@ extern const int romdisk_size;
 #define DC_STAGE_VRAM ((uint32_t *)0xa5600000u)
 #define DC_STAGE_VRAM_BYTES (2u * 1024u * 1024u)
 
-int dc_stage_romdisk(void) {
+/* Pointer staging also serves the PVR-owned loans (AI-assisted), ISC. */
+int dc_stage_romdisk_at(void *memory) {
+  volatile uint32_t *destination = memory;
   const uint32_t *source = (const uint32_t *)(const void *)romdisk_data;
   uint32_t words = ((uint32_t)romdisk_size + 3u) / 4u, i;
-  if ((uintptr_t)source & 3u || (uint32_t)romdisk_size > DC_STAGE_VRAM_BYTES) return 0;
+  if (!memory || ((uintptr_t)source | (uintptr_t)memory) & 3u ||
+      (uint32_t)romdisk_size > DC_STAGE_VRAM_BYTES) return 0;
   if (fs_romdisk_unmount("/rd")) return 0;
-  for (i = 0; i < words; ++i) DC_STAGE_VRAM[i] = source[i];  /* VRAM takes 32-bit writes */
-  return fs_romdisk_mount("/rd", (const uint8 *)DC_STAGE_VRAM, 0) == 0;
+  for (i = 0; i < words; ++i) destination[i] = source[i];  /* VRAM takes 32-bit writes */
+  return fs_romdisk_mount("/rd", (const uint8 *)memory, 0) == 0;
+}
+
+int dc_stage_romdisk(void) {
+#ifdef DC_ARENA_COEXIST
+  int dc_arena_stage(void);
+  return dc_arena_stage();
+#else
+  return dc_stage_romdisk_at(DC_STAGE_VRAM);
+#endif
 }
 
 /* The arena the staged romdisk leaves room for. */
 /* 13 MiB: the arena holds 10.7 MB of GAME.CGO; the KOS heap needs the rest of main
  * RAM while objects load, now that the ELF carries the native mips2c code. */
-uint32_t dc_kernel_arena_bytes(void) { return 13u * 1024u * 1024u; }
+uint32_t __attribute__((weak)) dc_renderer_reserve(void) { return 0; }
+uint32_t dc_kernel_arena_bytes(void) { return 13u * 1024u * 1024u - dc_renderer_reserve(); }
