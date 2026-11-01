@@ -5,6 +5,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef _WIN32
+#include <windows.h>
+#endif
 /* Fail unattended on Windows too: libc abort may wait in a system dialog. */
 #undef assert
 #define assert(expr) do { if (!(expr)) { \
@@ -236,6 +239,11 @@ static void invalid(void) {
   puts("invalid: spans, alignment, lengths, bounds, ticket atomicity, generation exhaustion");
 }
 int main(int argc, char **argv) {
+#ifdef _WIN32
+  /* Mutants may fault before an assertion: suppress Windows error dialogs too.
+   * Static linking in test_disc_reader.py covers loader failures before main. */
+  SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX);
+#endif
   int group = argc == 2 ? atoi(argv[1]) : -1;
   if (group == 0) late(); else if (group == 1) queue();
   else if (group == 2) errors(); else if (group == 3) invalid(); else return 2;

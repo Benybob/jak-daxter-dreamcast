@@ -207,7 +207,7 @@ int dc_arena_camera_finish(dc_goal_runtime *rt){
           "camera original update-camera completed all 61 display dispatches");
   REQUIRE(dc_arena_camera_metrics.diagnostic_seeds==1 && dc_arena_camera_metrics.original_wrote_camera==1,4,
           "camera original output replaced the single diagnostic sentinel");
-  REQUIRE(dc_arena_camera_metrics.dispatches==64,7,"camera observed all 64 original dispatcher returns");
+  REQUIRE(dc_arena_camera_metrics.dispatches==65,7,"camera observed all 65 original dispatcher returns including display initialization");
   REQUIRE(dc_goal_set_symbol(rt,update_symbol,original_update),1,"camera observer restores original update-camera binding");
   return 1;
 }

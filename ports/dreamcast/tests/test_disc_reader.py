@@ -19,10 +19,12 @@ class DiscReaderTest(unittest.TestCase):
         cls.cc = os.environ.get("HOST_CC") or shutil.which("gcc", path=cls.env["PATH"])
         if not cls.cc:
             raise RuntimeError("set HOST_CC to a host compiler with pthread support")
+        # Avoid loader dialogs for missing MinGW runtime DLLs (AI-assisted), ISC.
+        cls.link_flags = ["-static"] if os.name == "nt" else []
         cls.exe = Path(cls.tmp.name) / ("reader.exe" if os.name == "nt" else "reader")
         subprocess.run([cls.cc, "-O2", "-std=c99", "-Wall", "-Wextra", "-Werror", "-pthread",
                         "-I", str(PORT), str(PORT / "disc_reader.c"),
-                        str(PORT / "tests/disc_reader_check.c"), "-o", str(cls.exe)],
+                        str(PORT / "tests/disc_reader_check.c"), *cls.link_flags, "-o", str(cls.exe)],
                        env=cls.env, check=True, capture_output=True, text=True)
 
     @classmethod
@@ -76,7 +78,7 @@ class DiscReaderTest(unittest.TestCase):
                 exe = Path(tmp) / ("mutant.exe" if os.name == "nt" else "mutant")
                 subprocess.run([self.cc, "-O2", "-std=c99", "-Wall", "-Wextra", "-Werror",
                                 "-pthread", "-I", str(PORT), str(mutated),
-                                str(PORT / "tests/disc_reader_check.c"), "-o", str(exe)],
+                                str(PORT / "tests/disc_reader_check.c"), *self.link_flags, "-o", str(exe)],
                                env=self.env, check=True, capture_output=True, text=True)
                 result = subprocess.run([str(exe), str(group)], env=self.env, timeout=15,
                                         capture_output=True, text=True)

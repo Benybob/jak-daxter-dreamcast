@@ -381,7 +381,17 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
      * *4k-dead-pool* :to *display-pool*, on the default fake-scratchpad stack),
      * with *run* set. No level is loaded and nothing draws; each dispatcher frame
      * runs one iteration of the loop and suspends. */
-    {enum {DISPLAY_FRAMES=60,REAL_INTEGRAL_FRAMES=804};  /* display field at 808, less the basic tag */
+    {
+#ifdef DC_ARENA_CAMERA
+     /* Original display-loop suspends once before entering its update loop.
+      * Allow that initialization dispatch as well as 60 loop dispatches;
+      * the post-deactivation dispatch supplies the required 61st update.
+      * Keep the original update-count check intact (AI-assisted), ISC. */
+     enum {DISPLAY_FRAMES=61,REAL_INTEGRAL_FRAMES=804};
+#else
+     enum {DISPLAY_FRAMES=60,REAL_INTEGRAL_FRAMES=804};
+#endif
+     /* display field at 808, less the basic tag */
      uint32_t dpool=entry(&rt,"*4k-dead-pool*"),dparent=entry(&rt,"*display-pool*");
      uint32_t scratch=entry(&rt,"*fake-scratchpad-stack*"),dname=dc_goal_intern(&rt,"display"),dproc,dthread;
      unsigned frame,completed=0;uint32_t before;

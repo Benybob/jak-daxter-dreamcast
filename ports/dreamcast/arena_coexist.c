@@ -202,7 +202,11 @@ int dc_arena_finish(dc_goal_runtime *rt){
 #ifndef DC_ARENA_FLY
   uint32_t used=rt->used,i;volatile uint32_t *words=slab;
 #endif
+#ifdef DC_ARENA_CAMERA
+  CHECK(scenes,65,"arena clear after all 65 camera dispatcher calls including display initialization");
+#else
   CHECK(scenes,64,"arena clear after all 64 dispatcher calls");
+#endif
   CHECK(dc_arena_sync_requested,1,"arena syncv request stashed");
   CHECK(dc_arena_chain_seen,1,"arena DMA chain stashed without walking it");
   CHECK(pvr_wait_ready(),0,"arena final scene ready");
