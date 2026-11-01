@@ -16,7 +16,7 @@ parser.add_argument('elf',type=Path)
 parser.add_argument('--nm',type=Path,required=True)
 parser.add_argument('--output',type=Path,required=True)
 parser.add_argument('--tests',type=int,default=17)
-parser.add_argument('--suite',choices=('codegen','runtime','runtime-goal','objects','projection','movement','collision','world-manifest','view-clip','camera','sectors','compression','render-io','gpu-catalog','render-cache','world-view','frustum','render-base','training-render','instances','village','flythrough','arena-game'),default='codegen')
+parser.add_argument('--suite',choices=('codegen','runtime','runtime-goal','objects','projection','movement','collision','world-manifest','view-clip','camera','sectors','compression','render-io','gpu-catalog','render-cache','world-view','frustum','render-base','training-render','instances','village','flythrough','arena-game','arena-camera'),default='codegen')
 parser.add_argument('--timeout',type=float,default=30,help='Native completion deadline in seconds, 1..300')
 parser.add_argument('--capture',action='store_true',help='Capture completed RGB565 framebuffer before recording terminal success')
 parser.add_argument('--dump',nargs=2,metavar=('SYMBOL','BYTES'),help='Also write BYTES of a guest symbol to dump.bin at the end')
@@ -142,6 +142,7 @@ if args.suite=='runtime-goal': result['scope']='Native compiled GOAL scalar runt
 if args.suite=='objects': result['scope']='Native original V2/V4 data-only relocation validation; retail code never executed'
 if args.suite=='flythrough': result['scope']='Native camera path: cached tfrag window retargeted every frame from stored-block sectors under the resident textured instance pass, each frame checked against host counts/CRCs; Flycast timing only, no hardware validation'
 if args.suite=='arena-game': result['scope']='C-scripted fixture motion written into original GOAL math-camera and read back; terrain view checked against readback basis/eye; no game-driven camera, fixture per-frame count/CRC oracle or hardware validation'
+if args.suite=='arena-camera': result['scope']='Original camera boot probe: process resumptions, free-floating state, serviced Maple pad and original update-camera output store witnessed by one diagnostic trans.w sentinel; clear scenes only, no motion/input-response, player-follow or hardware validation'
 if args.suite=='village': result['scope']='Native cached tfrag base pass and DCI1/DCI2 instanced TIE/shrub pass in one frame from one camera; no translucent tfrag, instance textures, streaming, game integration or hardware validation'
 if args.suite=='instances': result['scope']='Native DCI1 instanced TIE/shrub package, per-instance view transform, viewport clipping and untextured Gouraud raster; no textures, LOD, streaming, game integration or hardware validation'
 if args.suite=='training-render': result['scope']='Native combined render owner source binding, frame-allocation and selected-file rollback, reuse, known-empty and CPU/GPU cleanup; no full-game or hardware validation'

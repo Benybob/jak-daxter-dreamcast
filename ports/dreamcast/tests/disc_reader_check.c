@@ -5,6 +5,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+/* Fail unattended on Windows too: libc abort may wait in a system dialog. */
+#undef assert
+#define assert(expr) do { if (!(expr)) { \
+  fprintf(stderr, "Assertion failed: %s (%s:%d)\n", #expr, __FILE__, __LINE__); \
+  exit(EXIT_FAILURE); } } while (0)
 
 typedef struct {
   dc_disc_reader reader;
@@ -82,14 +87,39 @@ static void cleanup(fixture *f) {
   assert(!pthread_cond_destroy(&f->changed));
   assert(!pthread_mutex_destroy(&f->event)); assert(!pthread_mutex_destroy(&f->metadata));
 }
+/* Minimal frame consumer: publish only a complete ticket, never a partial or
+ * failed destination. This is a host model, not a renderer integration. */
+static int select_window(fixture *f, dc_disc_ticket t, const unsigned char *candidate,
+                         const unsigned char **displayed) {
+  if (dc_disc_reader_poll(&f->reader, t) != DC_DISC_READY) return 0;
+  *displayed = candidate;
+  return 1;
+}
+static dc_disc_ticket complete_previous(fixture *f, unsigned char previous[16]) {
+  dc_disc_ticket t;
+  assert(dc_disc_reader_submit(&f->reader, 131072, 16, previous, 16, &t));
+  start(f); allow(f, 0);
+  assert(!pthread_mutex_lock(&f->event));
+  while (f->completed < 1) assert(!pthread_cond_wait(&f->changed, &f->event));
+  assert(!pthread_mutex_unlock(&f->event));
+  assert(dc_disc_reader_poll(&f->reader, t) == DC_DISC_READY);
+  return t; /* Keep the completed ticket live while the next window loads. */
+}
+static void previous_matches(const unsigned char *displayed, const unsigned char *previous) {
+  unsigned i;
+  assert(displayed == previous);
+  for (i = 0; i < 16; ++i) assert(displayed[i] == pattern(131072+i));
+}
 static void late(void) {
-  fixture f; unsigned char destination[70002], previous[16], displayed[16];
-  dc_disc_ticket ticket; unsigned frame, submitted = 0; uint32_t i;
+  fixture f; unsigned char destination[70002], previous[16];
+  const unsigned char *displayed = NULL;
+  dc_disc_ticket ticket, old; unsigned frame; uint32_t i;
   init(&f); memset(destination, 0xa5, sizeof(destination));
-  memset(previous, 0x37, sizeof(previous)); memcpy(displayed, previous, sizeof(previous));
+  old = complete_previous(&f, previous);
+  assert(select_window(&f, old, previous, &displayed));
   assert(dc_disc_reader_submit(&f.reader, 2048, 70000, destination+1, 70000, &ticket));
   assert(dc_disc_reader_poll(&f.reader, ticket) == DC_DISC_QUEUED);
-  assert(!dc_disc_reader_release(&f.reader, ticket)); start(&f); wait_calls(&f, 1);
+  assert(!dc_disc_reader_release(&f.reader, ticket)); wait_calls(&f, 2);
   {
     dc_disc_ticket refused = {77, 88};
     assert(!dc_disc_reader_submit(&f.reader, 0, 1, destination+2, 1, &refused));
@@ -99,32 +129,38 @@ static void late(void) {
   for (frame = 0; frame < 64; ++frame) {
     assert(dc_disc_reader_poll(&f.reader, ticket) == DC_DISC_READING);
     assert(!dc_disc_reader_release(&f.reader, ticket));
-    assert(!memcmp(displayed, previous, sizeof(previous))); ++submitted;
+    assert(!select_window(&f, ticket, destination+1, &displayed));
+    previous_matches(displayed, previous);
   }
-  assert(submitted == 64); allow(&f, 0); wait_calls(&f, 2);
-  assert(dc_disc_reader_poll(&f.reader, ticket) == DC_DISC_READING);
-  assert(!memcmp(displayed, previous, sizeof(previous)));
   allow(&f, 0); wait_calls(&f, 3);
   assert(dc_disc_reader_poll(&f.reader, ticket) == DC_DISC_READING);
+  assert(!select_window(&f, ticket, destination+1, &displayed));
+  previous_matches(displayed, previous);
+  allow(&f, 0); wait_calls(&f, 4);
+  assert(dc_disc_reader_poll(&f.reader, ticket) == DC_DISC_READING);
+  assert(!select_window(&f, ticket, destination+1, &displayed));
+  previous_matches(displayed, previous);
   finish(&f); /* join is teardown; it is not part of any simulated frame */
   assert(dc_disc_reader_poll(&f.reader, ticket) == DC_DISC_READY);
   for (i = 0; i < 70000; ++i) assert(destination[i+1] == pattern(2048+i));
   assert(destination[0] == 0xa5 && destination[70001] == 0xa5);
-  assert(f.calls == 3 && f.sizes[0] == 32768 && f.sizes[1] == 32768 && f.sizes[2] == 6144);
-  assert(f.offsets[0] == 2048 && f.offsets[1] == 34816 && f.offsets[2] == 67584);
+  assert(select_window(&f, ticket, destination+1, &displayed) && displayed == destination+1);
+  assert(f.calls == 4 && f.sizes[1] == 32768 && f.sizes[2] == 32768 && f.sizes[3] == 6144);
+  assert(f.offsets[1] == 2048 && f.offsets[2] == 34816 && f.offsets[3] == 67584);
+  assert(dc_disc_reader_release(&f.reader, old));
   assert(dc_disc_reader_release(&f.reader, ticket));
   assert(dc_disc_reader_poll(&f.reader, ticket) == DC_DISC_INVALID);
   cleanup(&f);
   puts("late: 64 simulated frames, three aligned reads, exact bytes, canaries");
 }
 static void queue(void) {
-  fixture f; unsigned char destination[DC_DISC_REQUESTS+1][2048];
+  fixture f; unsigned char destination[DC_DISC_REQUESTS+1][2050];
   dc_disc_ticket tickets[DC_DISC_REQUESTS], extra = {77, 88}, stale;
-  unsigned i;
-  init(&f);
+  unsigned i, j;
+  init(&f); memset(destination, 0xa5, sizeof destination);
   for (i = 0; i < DC_DISC_REQUESTS; ++i) {
-    assert(dc_disc_reader_submit(&f.reader, i*2048, 2048, destination[i], 2048, &tickets[i]));
-    if (!i) assert(!dc_disc_reader_submit(&f.reader, 0, 1, destination[0]+1, 1, &extra));
+    assert(dc_disc_reader_submit(&f.reader, i*2048, 2048, destination[i]+1, 2048, &tickets[i]));
+    if (!i) assert(!dc_disc_reader_submit(&f.reader, 0, 1, destination[0]+2, 1, &extra));
   }
   assert(!dc_disc_reader_submit(&f.reader, 0, 2048, destination[8], 2048, &extra));
   assert(extra.slot == 77 && extra.generation == 88);
@@ -136,6 +172,8 @@ static void queue(void) {
   for (i = 0; i < DC_DISC_REQUESTS; ++i) {
     assert(dc_disc_reader_poll(&f.reader, tickets[i]) == DC_DISC_READY);
     assert(f.offsets[i] == i*2048);
+    for (j = 0; j < 2048; ++j) assert(destination[i][j+1] == pattern(i*2048+j));
+    assert(destination[i][0] == 0xa5 && destination[i][2049] == 0xa5);
     assert(dc_disc_reader_release(&f.reader, tickets[i]));
   }
   stale = tickets[0];
@@ -153,15 +191,22 @@ static void queue(void) {
 static void errors(void) {
   int mode;
   for (mode = 0; mode < 3; ++mode) {
-    fixture f; unsigned char destination[40002]; dc_disc_ticket t;
-    init(&f); f.fail_call = 2; f.fail_result = mode == 0 ? -1 : (mode == 1 ? 1 : 32769);
+    fixture f; unsigned char destination[40002], previous[16];
+    const unsigned char *displayed = NULL; uint32_t i; dc_disc_ticket t, old;
+    init(&f); old = complete_previous(&f, previous);
+    assert(select_window(&f, old, previous, &displayed));
+    f.fail_call = 3; f.fail_result = mode == 0 ? -1 : (mode == 1 ? 1 : 32769);
     memset(destination, 0xac, sizeof(destination));
     assert(dc_disc_reader_submit(&f.reader, 0, 40000, destination+1, 40000, &t));
-    start(&f); finish(&f);
+    finish(&f);
     assert(dc_disc_reader_poll(&f.reader, t) == DC_DISC_FAILED);
-    assert(destination[1] == pattern(0) && destination[32769] == 0xac);
+    for (i = 0; i < 32768; ++i) assert(destination[i+1] == pattern(i));
+    for (; i < 40000; ++i) assert(destination[i+1] == 0xac);
     assert(destination[0] == 0xac && destination[40001] == 0xac);
+    assert(!select_window(&f, t, destination+1, &displayed));
+    previous_matches(displayed, previous);
     assert(dc_disc_reader_release(&f.reader, t));
+    assert(dc_disc_reader_release(&f.reader, old));
     cleanup(&f);
   }
   puts("errors: negative, short and oversized read results never publish READY");

@@ -20,6 +20,9 @@
 #include "process_spans.h"
 #include "pp_scope.h"
 #include "runtime_cases.h"
+#ifdef DC_ARENA_CAMERA
+#include "arena_camera.h"
+#endif
 /* PVR work runs only after dispatch restores the KOS stack (AI-assisted), ISC. */
 #ifdef DC_ARENA_COEXIST
 int dc_arena_prepare(dc_goal_runtime *);
@@ -355,6 +358,9 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
     CHECK(word(&rt,thread,RESUME_HOOK),entry(&rt,"dc-c-thread-resume"),"original constructor installed the native thread-resume hook");
     CHECK(word(&rt,thread,32),512,"original activate reserves the Dreamcast main-thread backup");
     CHECK(dc_goal_register_thread_fiber(&rt,&fiber),1,"fiber registered for the original resume-hook");
+#ifdef DC_ARENA_CAMERA
+    if(!dc_arena_camera_begin(&rt,sync_code))goto done;
+#endif
     for(i=0;i<FRAMES;++i){
       dispatch();
 #ifdef DC_ARENA_COEXIST
@@ -457,7 +463,9 @@ spawn_done:
   snprintf(description,description_bytes,"BOOT GOAL=%lu arena=%lu/%lu startup=%lu symbols=%lu",
            (unsigned long)code_bytes,(unsigned long)rt.used,(unsigned long)capacity,
            (unsigned long)(rt.used-before),(unsigned long)rt.symbol_count);
-#ifdef DC_ARENA_GAME
+#ifdef DC_ARENA_CAMERA
+  dc_arena_camera_report(description,description_bytes,rt.used,capacity);
+#elif defined(DC_ARENA_GAME)
   dc_arena_game_report(description,description_bytes,rt.used,capacity);
 #elif defined(DC_ARENA_FLY)
   dc_arena_fly_report(description,description_bytes,rt.used,capacity);

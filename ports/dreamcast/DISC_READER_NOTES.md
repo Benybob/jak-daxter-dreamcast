@@ -1,5 +1,26 @@
 (AI-assisted)
 
+Review fixes (ISC): `tests/disc_reader_check.c` now retains a real completed
+reader destination while the next read blocks. Its frame consumer selects only
+READY tickets, checks all previous payload bytes against the independent offset
+pattern, and selects the new destination only after completion. Each of the
+eight queue destinations has a full payload scan and canaries. Failed 40000-byte
+reads scan all 32768 successful prefix bytes, every untouched failed-suffix
+byte and both canaries, then refuse selection and retain the previous window.
+This is a host consumer model; no renderer integration is claimed.
+
+The updated combined `test_disc_*.py` run passed 12 tests (7 layout, 4 reader
+groups, 1 mutation group). The mutation group builds temporary reader copies
+and requires the specific expected assertion to reject previous-window damage,
+slot-zero misrouting, a one-byte successful prefix, and FAILED published as
+READY. Assertions exit directly to avoid Windows abort dialogs; the initial
+abort-based mutation run timed out on the fourth mutation and was corrected.
+The reader's existing FAILED/READY production logic required no change.
+Both reader single SH-4 objects were recompiled into
+`build/arena-camera-validation/` using the requested toolchain. Historical
+commands/results below describe the initial implementation; the review-fix
+run did not rerun the real-fixture packer or KOS adapter on a device.
+
 # Disc reader and level extent prototype
 
 ISC. New files only. Existing arena sources, Makefile, renderer paths and ELF

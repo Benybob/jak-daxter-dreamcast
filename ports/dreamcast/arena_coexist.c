@@ -7,6 +7,9 @@
 #include "goal_runtime.h"
 #include "goal_fiber.h"
 #include "goal_kos_stack.h"
+#ifdef DC_ARENA_CAMERA
+#include "arena_camera.h"
+#endif
 
 /* runtime_main.c's unchanged 128-byte verify_backend.py record. */
 extern volatile struct {
@@ -63,6 +66,9 @@ static int check(uint64_t actual,uint64_t expected,const char *name){
   }
   dc_backend.state=3;return 0;
 }
+#ifdef DC_ARENA_CAMERA
+int dc_arena_camera_check(uint64_t actual,uint64_t expected,const char *name){return check(actual,expected,name);}
+#endif
 #ifdef DC_ARENA_FLY
 int dc_arena_fly_check(uint64_t actual,uint64_t expected,const char *name){return check(actual,expected,name);}
 /* Only after GAME.CGO and its checks have closed every boot file. The boot
@@ -176,6 +182,9 @@ int dc_arena_dispatch(dc_goal_runtime *rt){
 #ifdef DC_ARENA_FLY
   uint32_t used=rt->used;
 #endif
+#ifdef DC_ARENA_CAMERA
+  if(!dc_arena_camera_frame(rt))return 0;
+#endif
   CHECK(rt->error,DC_GOAL_OK,"arena dispatch leaves no runtime fault");
   CHECK(on_root(),1,"arena clear starts outside fibers on restored KOS stack");
 #ifdef DC_ARENA_FLY
@@ -206,6 +215,9 @@ int dc_arena_finish(dc_goal_runtime *rt){
   CHECK(rt->used,used,"arena slab fill leaves GOAL bump unchanged");
 #endif
   CHECK(rt->error,DC_GOAL_OK,"arena heap probe leaves no runtime fault");
+#ifdef DC_ARENA_CAMERA
+  if(!dc_arena_camera_finish(rt))return 0;
+#endif
   return 1;
 }
 #undef CHECK

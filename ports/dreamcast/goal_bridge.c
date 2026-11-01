@@ -13,6 +13,9 @@
 #include "goal_mmi.h"
 #include "goal_pad.h"
 #include "goal_bridge.h"
+#ifdef DC_ARENA_CAMERA
+#include "arena_camera.h"
+#endif
 #include "goal_fiber.h"
 #include "goal_stack_call.h"
 #include "goal_scalar_call.h"
@@ -747,7 +750,15 @@ static uint64_t thread_resume(uint64_t thread) {
   }
   {uint32_t top=(uint32_t)thread;unsigned char *p=dc_goal_resolve(rt,fiber->process+44,4);if(p)memcpy(p,&top,4);}
   set_process_status(rt,fiber->process,"running");
+#ifdef DC_ARENA_CAMERA
+  {int event;
+   dc_arena_camera_resume(rt,fiber->process,0);
+   event=dc_goal_fiber_step(fiber,0,&out);
+   if(event==DC_FIBER_YIELDED && rt->error==DC_GOAL_OK && fiber->phase==DC_FIBER_SUSPENDED)
+     dc_arena_camera_resume(rt,fiber->process,1);}
+#else
   dc_goal_fiber_step(fiber,0,&out);
+#endif
   {enum dc_goal_error error=rt->error;dc_goal_clear_process_context(rt);rt->error=error;}
   memcpy(fields+20,&current,4);
   return 0;
@@ -1097,6 +1108,9 @@ static uint64_t cpad_get_data_native(uint64_t info){
   dc_goal_runtime *rt=active_runtime;uint8_t *cpad;
   if(!rt || info>UINT32_MAX || !(cpad=dc_goal_resolve(rt,(uint32_t)info,132))){if(rt)(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);return 0;}
   dc_goal_cpad_get_data(cpad);
+#ifdef DC_ARENA_CAMERA
+  dc_arena_camera_pad(rt,(uint32_t)info);
+#endif
   return info;
 }
 /* PS2 MMI 128-bit integer ops called by lowered code with frame-slot pointers. */
