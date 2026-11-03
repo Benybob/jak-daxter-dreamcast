@@ -5,6 +5,21 @@ documents the independent finite-input desktop vector oracle, SSE comparison tes
 and inventory of all 346 GAME.CGO entries. Claude Code owns vf lowering in
 lower_sh4_ir.py; this support change leaves the lowering/boot files alone.
 
+**2026-11-03 (AI-assisted):** the original camera drives the renderer.
+`jak-dc-arena-live.elf` ([ARENA_LIVE_NOTES.md](ARENA_LIVE_NOTES.md)): the original
+free-camera code, moved by a recorded pad input sequence through the original pad
+path, writes the camera on all 181 updates, and the renderer draws beach from it in
+the same 16 MiB process: 6,984 of 6,984 checks in Flycast. Digital turning was gated
+off by `*cam-layout*`, defined only in the debug segment this boot skips
+([ARENA_LIVE_ROOT_CAUSE.md](ARENA_LIVE_ROOT_CAUSE.md)); the recording turns with the
+right stick. `jak-dc-arena-camera.elf` (1,148 checks) shows the original `update-camera`
+running on every display dispatch. First sound: `jak-dc-sound-probe.elf`
+(`make -f Makefile -f sound_probe.mk`, [SOUND_PROBE_NOTES.md](SOUND_PROBE_NOTES.md)) loads
+a tone and a PS2 sample converted by `vag_adpcm.py` into AICA sound RAM and keys them,
+59 of 59 checks; the checks read AICA state and nobody has listened yet. Plans:
+[SOUND_PLAN.md](SOUND_PLAN.md), [DISC_STREAMING_PLAN.md](DISC_STREAMING_PLAN.md). Jak
+himself does not run yet, and level data still sits in VRAM in place of a disc.
+
 **2026-10-31 (AI-assisted):** the original game and PVR run in one ELF for the first
 time: `jak-dc-arena.elf`, [ARENA_INTEGRATION_PLAN.md](ARENA_INTEGRATION_PLAN.md), 870 of
 870 checks, 326 GAME.CGO files, 60 frames with a clear scene between them. And
