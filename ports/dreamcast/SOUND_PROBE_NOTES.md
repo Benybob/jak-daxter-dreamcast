@@ -188,3 +188,20 @@ Port documents used the same way: sound RAM is 2 MiB and separate from main RAM 
 - Any KOS revision other than the sibling 2.2.1 tree cited above.
 
 `snd_effect_t` was read (`snd_sfxmgr.c` 32–41) so the public command path could be used instead of that private object.
+
+## Audio actually produced (2026-11-03, AI-assisted)
+
+The probe now holds each clip `DC_SOUND_PROBE_HOLD_MS` (500 ms) before stopping it.
+`capture_audio.py` runs the verifier with Flycast's SDL backend and SDL's disk
+driver, so what Flycast plays lands in `OUT/sdlaudio.raw` and `OUT/capture.wav`:
+
+    python capture_audio.py FLYCAST jak-dc-sound-probe.elf --nm NM --output build/audio-capture --tests 59 --expect-period 29 --expect-peak 6000
+
+Measured: the square clip comes out as a clean square, peak about 6,000, half-period
+29 samples at 44.1 kHz (32 at the clip's 48 kHz), so the AICA encoder, channel setup
+and rate are right; a wrong `--expect-period` fails as it should. The VAG clip is a
+4096 literal every 4 samples, a 12 kHz click train near the format's limit: its
+capture repeats at that rate with the expected peaks but correlates only 0.47 with
+the expected signal after resampling, so it does not prove the VAG conversion.
+Replace it with a low tone that can be checked the same way. The disk driver runs
+faster than real time; gaps between bursts are not real timing.

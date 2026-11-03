@@ -75,6 +75,10 @@ static uint32_t pool(void) {
   return available;
 }
 
+/* How long each clip sounds before the stop, so a capture holds a waveform. */
+#ifndef DC_SOUND_PROBE_HOLD_MS
+#define DC_SOUND_PROBE_HOLD_MS 500
+#endif
 static int wait_playing(const dc_aica_sfx *sfx, dc_aica_sfx_info *status) {
   uint64_t start = timer_ms_gettime64();
   uint32_t spins = 0;
@@ -140,6 +144,7 @@ int main(void) {
   check_i32(st.channel >= 0 && st.channel < 64, 1, "square channel");
   check_i32(wait_playing(&square, &st), 1, "square keyed");
   check_u32(st.position <= DC_SOUND_SQUARE_SAMPLES ? 1u : 0u, 1u, "square position");
+  thd_sleep(DC_SOUND_PROBE_HOLD_MS); /* long enough to capture and hear */
   check_i32(dc_aica_sfx_stop(&square), 0, "stop square");
   check_i32(dc_aica_sfx_status(&square, &st), 0, "square status after stop");
   check_u32(st.playing, 0u, "square released");
@@ -152,6 +157,7 @@ int main(void) {
   check_i32(wait_playing(&vag, &st), 1, "vag keyed");
   check_i32(st.channel >= 0 && st.channel < 64, 1, "vag channel");
   check_u32(st.position <= DC_SOUND_VAG_SAMPLES ? 1u : 0u, 1u, "vag position");
+  thd_sleep(DC_SOUND_PROBE_HOLD_MS); /* long enough to capture and hear */
   check_i32(dc_aica_sfx_stop(&vag), 0, "stop vag");
   check_i32(dc_aica_sfx_status(&vag, &st), 0, "vag status after stop");
   check_u32(st.playing, 0u, "vag released");
