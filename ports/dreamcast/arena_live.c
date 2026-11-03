@@ -7,6 +7,9 @@
 #include <stdio.h>
 #include <math.h>
 #include <string.h>
+#ifdef DC_ARENA_JAK
+#include "arena_jak.h"
+#endif
 
 volatile dc_live_evidence dc_arena_live_evidence={.version=3,.producer=2};
 typedef char camera_metrics_size[sizeof(dc_live_evidence)==39476?1:-1];
@@ -127,6 +130,15 @@ fault:
  rt->error=DC_GOAL_BAD_OBJECT;return 0;
 }
 static int initialize_layout_default(dc_goal_runtime *rt){
+#ifdef DC_ARENA_JAK
+  /* This target must obtain data from the ORIGINAL debug initializer. No C
+   * fallback: removing that startup must fail before recording motion. */
+  layout_sym=symbol(rt,"*cam-layout*");
+  REQUIRE(dc_arena_jak_evidence.debug_calls==1 && dc_arena_jak_evidence.debug_restored,5,
+          "jak camera requires original cam-debug-h data initializer");
+  REQUIRE(layout_sym && value(rt,layout_sym)==rt->s7,5,
+          "jak camera layout false came from original define-perm");
+#else
   /* cam-debug-h.gc:73/150 puts this default in a skipped debug initializer.
    * Numeric zero is truthy in GOAL and blocks digital free-camera rotation.
    * Supply only the absent default; never disable an active layout mode. */
@@ -134,6 +146,7 @@ static int initialize_layout_default(dc_goal_runtime *rt){
   REQUIRE(layout_sym && (value(rt,layout_sym)==0 || value(rt,layout_sym)==rt->s7),5,
           "live camera layout is inactive or has its skipped debug default");
   REQUIRE(dc_goal_set_symbol(rt,layout_sym,rt->s7),5,"live initializes skipped camera layout false default once");
+#endif
   return 1;
 }
 int dc_arena_live_begin(dc_goal_runtime *rt,dc_goal_cache_sync sync){

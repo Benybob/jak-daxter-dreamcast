@@ -20,6 +20,9 @@
 #include "process_spans.h"
 #include "pp_scope.h"
 #include "runtime_cases.h"
+#ifdef DC_ARENA_JAK
+#include "arena_jak.h"
+#endif
 #if defined(DC_ARENA_LIVE)
 #include "arena_live.h"
 #elif defined(DC_ARENA_CAMERA)
@@ -478,6 +481,12 @@ spawn_done:
 #endif
 #ifdef DC_ARENA_COEXIST
   if(!dc_arena_finish(&rt))goto done;
+#endif
+#ifdef DC_ARENA_JAK
+  /* Retain the completed digital-camera evidence before probing dependencies.
+   * A missing original player dependency is terminal FAIL, never a free-camera
+   * success relabeled as Jak. No existing ELF compiles this branch. */
+  if(!dc_arena_jak_finish(&rt))goto done;
 #endif
   snprintf(description,description_bytes,"BOOT GOAL=%lu arena=%lu/%lu startup=%lu symbols=%lu",
            (unsigned long)code_bytes,(unsigned long)rt.used,(unsigned long)capacity,

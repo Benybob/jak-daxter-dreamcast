@@ -932,3 +932,21 @@ build/arena-live-romdisk.o: $(ARENA_LIVE_ASSET_DIR)/FLY.json build/kernel-dgo-ro
 	$(KOS_CC) $(KOS_CFLAGS) -c build/arena-live-romdisk.c -o $@
 jak-dc-arena-live.elf: kernel_boot_main.o arena_live_kernel_cases.o kernel_vf_fixture.o goal_dgo.o goal_dgo_zst.o arena_fly_romdisk_stage.o arena_live_coexist.o arena_live_goal_bridge.o arena_live_goal_pad.o arena_live.o arena_live_math.o arena_live_input.o arena_live_assets.o arena_live_render.o arena_slab.o $(ARENA_FLY_RENDER) render_world_view_scalar.o render_world_view_gate.o render_frustum.o instance_pass.o $(ZSTD_OBJS) build/kernel-dgo-romdisk.o build/arena-live-romdisk.o $(filter-out goal_bridge.o goal_pad.o,$(KERNEL_BOOT_LIBS)) build/mips2c/libdcmips2c.a
 	addr=$$(cat build/arena-live-section.txt) && kos-c++ -o $@ $^ -Wl,--section-start=.dc_stage=0x8cb00000 -Wl,--section-start=.dc_fly=$$addr -lm
+
+# Milestone 5: original debug data, digital rotation, honest player dependency
+# refusal. No old recipe/flags change; no fabricated target (AI-assisted), ISC.
+ARENA_JAK_FLAGS=$(ARENA_LIVE_FLAGS) -DDC_ARENA_JAK
+arena_jak.o: arena_jak.c arena_jak.h arena_live.h
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) $(ARENA_JAK_FLAGS) -I. -c $< -o $@
+arena_jak_debug.o: arena_jak_debug.c arena_jak.h arena_live.h
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) $(ARENA_JAK_FLAGS) -I. -c $< -o $@
+arena_jak_dgo.o: arena_jak_dgo.c goal_dgo.c goal_dgo.h arena_jak.h
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) $(ARENA_JAK_FLAGS) -I. -c $< -o $@
+arena_jak_live.o: arena_live.c arena_live.h arena_live_math.h arena_jak.h goal_bridge.h
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) $(ARENA_JAK_FLAGS) -I. -c $< -o $@
+arena_jak_input.o: arena_live_input.c arena_live.h arena_live_math.h
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) $(ARENA_JAK_FLAGS) -I. -c $< -o $@
+arena_jak_kernel_cases.o: kernel_boot_cases.c $(wildcard *.h) build/game_cgo_order.h build/vf_cases.h build/mips2c/mips2c_cases_expect.h
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -DDC_KERNEL_DGO $(ARENA_JAK_FLAGS) -I. -c $< -o $@
+jak-dc-arena-jak.elf: kernel_boot_main.o arena_jak_kernel_cases.o kernel_vf_fixture.o arena_jak_dgo.o goal_dgo_zst.o arena_fly_romdisk_stage.o arena_live_coexist.o arena_live_goal_bridge.o arena_live_goal_pad.o arena_jak_live.o arena_live_math.o arena_jak_input.o arena_live_assets.o arena_live_render.o arena_jak.o arena_jak_debug.o arena_slab.o $(ARENA_FLY_RENDER) render_world_view_scalar.o render_world_view_gate.o render_frustum.o instance_pass.o $(ZSTD_OBJS) build/kernel-dgo-romdisk.o build/arena-live-romdisk.o $(filter-out goal_bridge.o goal_pad.o,$(KERNEL_BOOT_LIBS)) build/mips2c/libdcmips2c.a
+	addr=$$(cat build/arena-live-section.txt) && kos-c++ -o $@ $^ -Wl,--section-start=.dc_stage=0x8cb00000 -Wl,--section-start=.dc_fly=$$addr -lm

@@ -31,7 +31,13 @@ int dc_live_recorded_pad(unsigned completed,int port,dc_goal_pad_state *out){
   * See ARENA_LIVE_NOTES.md and the recorded-path host regression. */
  if(stage==1||stage==7||stage==10)s.joyx=52;
  if(stage==5||stage==9)s.joyx=-52;
+#ifdef DC_ARENA_JAK
+ /* Circle uses the original digital gate; all analog lanes remain centered.
+  * L2 preserves rotation and adds zero translation at centered sticks. */
+ if(stage==3 && completed>=42)s.buttons=DC_PAD_B|DC_PAD_L2;
+#else
  if(stage==3 && completed>=42)s.buttons=DC_PAD_RX_POS; /* Right X=207: (207-128-48)/62=.5; no digital/pressure path. */
+#endif
  *out=s;return 1;
 }
 void dc_live_input_advance(unsigned completed){completed_updates=completed;}
