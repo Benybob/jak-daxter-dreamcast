@@ -38,13 +38,13 @@ class SoundFixtureTest(unittest.TestCase):
         self.assertNotEqual(make_sound_fixture.byte_sum(adpcm), 0)
         self.assertEqual(make_sound_fixture.classify_load(adpcm, len(adpcm), 8192, 48000), 0)
 
-    def test_vag_clip_keeps_the_4096_literal_and_convert_vag_bytes(self):
+    def test_vag_clip_is_a_square_and_convert_vag_bytes(self):
         payload = make_sound_fixture.vag_payload()
         self.assertEqual(len(payload), 160 * 16)
         decoded = vag_adpcm.decode_vag(payload)
-        self.assertEqual(decoded.samples[0], 4096)
-        self.assertEqual(decoded.samples[1], 0)
-        self.assertEqual(decoded.samples[4], 4096)
+        self.assertEqual(list(decoded.samples[:28]), [6144] * 28)
+        self.assertEqual(list(decoded.samples[28:56]), [-6144] * 28)
+        self.assertEqual(decoded.samples[56], 6144)
         self.assertEqual(len(decoded.samples), 4480)
         self.assertFalse(decoded.loop_repeat)
         converted = vag_adpcm.convert_vag(payload)

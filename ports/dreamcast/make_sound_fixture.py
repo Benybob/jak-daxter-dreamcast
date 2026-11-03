@@ -1,7 +1,9 @@
 """Write two synthetic AICA ADPCM clips for the sound probe (AI-assisted), ISC.
 
 The square clip is ``encode_aica`` of a signed square. The vag clip is
-``convert_vag`` of filter-0 blocks whose first sample is the 4096 literal.
+``convert_vag`` of a VAG square: filter-0, shift-2 blocks of all +6144 or all
+-6144, alternating every block: a half-period of 28 samples at 48 kHz, 25.7 at
+the 44.1 kHz capture, that capture_audio.py can measure.
 Both images are an even number of samples, so the encoder adds no nibble pad,
 and both lengths are already a multiple of 32 bytes. Nothing here is played
 and no disc file is opened. (AI-assisted), ISC.
@@ -55,10 +57,14 @@ def vag_block(shift, filt, flags, nibbles):
     return bytes(((shift & 0xF) | ((filt & 0xF) << 4), flags & 0xFF)) + bytes(body)
 
 
+VAG_SHIFT = 2
+VAG_LEVEL = 6 << (12 - VAG_SHIFT)  # 6144: nibble 6 shifted into a filter-0 sample
+
+
 def vag_payload():
-    """160 filter-0 blocks, nibble 1 then three zeros (AI-assisted), ISC."""
-    nibbles = [1, 0, 0, 0] * 7
-    return vag_block(0, 0, 0, nibbles) * VAG_BLOCKS
+    """160 filter-0 blocks alternating all +6 and all -6 nibbles (AI-assisted), ISC."""
+    up, down = vag_block(VAG_SHIFT, 0, 0, [6] * 28), vag_block(VAG_SHIFT, 0, 0, [-6] * 28)
+    return (up + down) * (VAG_BLOCKS // 2)
 
 
 def align_adpcm(data):
@@ -124,11 +130,11 @@ def build_square():
 
 
 def build_vag():
-    """Convert the VAG payload and keep the 4096 literal (AI-assisted), ISC."""
+    """Convert the VAG square payload (AI-assisted), ISC."""
     converted = vag_adpcm.convert_vag(vag_payload())
     samples = converted.vag.samples
-    if samples[0] != 4096 or samples[1] != 0:
-        raise RuntimeError('vag fixture lost the filter-0 nibble-1 literal')
+    if samples[0] != VAG_LEVEL or samples[27] != VAG_LEVEL or samples[28] != -VAG_LEVEL:
+        raise RuntimeError('vag fixture is not the expected square')
     if len(samples) != VAG_BLOCKS * 28 or len(converted.aica) * 2 != len(samples):
         raise RuntimeError('vag fixture length')
     adpcm = align_adpcm(converted.aica)

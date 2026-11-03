@@ -203,5 +203,11 @@ and rate are right; a wrong `--expect-period` fails as it should. The VAG clip i
 4096 literal every 4 samples, a 12 kHz click train near the format's limit: its
 capture repeats at that rate with the expected peaks but correlates only 0.47 with
 the expected signal after resampling, so it does not prove the VAG conversion.
-Replace it with a low tone that can be checked the same way. The disk driver runs
+It has since been replaced by a VAG square: filter-0, shift-2 blocks alternating
+all +6144 and all -6144, a half-period of 28 samples at 48 kHz. Captured, it plays at
+a half-period of 26 samples at 44.1 kHz (25.7 expected) with peaks near 6,800, the
+AICA ADPCM overshoot at each edge (the converter's own decode peaks at 6,993). So a
+PS2 VAG converted by `vag_adpcm.py` plays at the right pitch and level:
+
+    python capture_audio.py FLYCAST jak-dc-sound-probe.elf --nm NM --output build/audio-capture --tests 59 --expect-period 26 --expect-peak 6144 The disk driver runs
 faster than real time; gaps between bursts are not real timing.
