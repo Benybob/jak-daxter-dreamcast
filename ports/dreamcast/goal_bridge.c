@@ -13,8 +13,14 @@
 #include "goal_mmi.h"
 #include "goal_pad.h"
 #include "goal_bridge.h"
-#ifdef DC_ARENA_CAMERA
+#if defined(DC_ARENA_LIVE)
+#include "arena_live.h"
+#elif defined(DC_ARENA_CAMERA)
 #include "arena_camera.h"
+#endif
+/* Preserve prior diagnostic site numbers in all existing modes (AI-assisted). */
+#ifndef DC_ARENA_LIVE
+#line 18
 #endif
 #include "goal_fiber.h"
 #include "goal_stack_call.h"
@@ -750,7 +756,13 @@ static uint64_t thread_resume(uint64_t thread) {
   }
   {uint32_t top=(uint32_t)thread;unsigned char *p=dc_goal_resolve(rt,fiber->process+44,4);if(p)memcpy(p,&top,4);}
   set_process_status(rt,fiber->process,"running");
-#ifdef DC_ARENA_CAMERA
+#ifdef DC_ARENA_LIVE
+  {int event;
+   dc_arena_live_resume(rt,fiber->process,0);
+   event=dc_goal_fiber_step(fiber,0,&out);
+   if(event==DC_FIBER_YIELDED && rt->error==DC_GOAL_OK && fiber->phase==DC_FIBER_SUSPENDED)
+     dc_arena_live_resume(rt,fiber->process,1);}
+#elif defined(DC_ARENA_CAMERA)
   {int event;
    dc_arena_camera_resume(rt,fiber->process,0);
    event=dc_goal_fiber_step(fiber,0,&out);
@@ -758,6 +770,10 @@ static uint64_t thread_resume(uint64_t thread) {
      dc_arena_camera_resume(rt,fiber->process,1);}
 #else
   dc_goal_fiber_step(fiber,0,&out);
+#endif
+/* Preserve prior diagnostic site numbers in all existing modes (AI-assisted). */
+#ifndef DC_ARENA_LIVE
+#line 761
 #endif
   {enum dc_goal_error error=rt->error;dc_goal_clear_process_context(rt);rt->error=error;}
   memcpy(fields+20,&current,4);
@@ -1108,11 +1124,17 @@ static uint64_t cpad_get_data_native(uint64_t info){
   dc_goal_runtime *rt=active_runtime;uint8_t *cpad;
   if(!rt || info>UINT32_MAX || !(cpad=dc_goal_resolve(rt,(uint32_t)info,132))){if(rt)(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);return 0;}
   dc_goal_cpad_get_data(cpad);
-#ifdef DC_ARENA_CAMERA
+#ifdef DC_ARENA_LIVE
+  dc_arena_live_pad(rt,(uint32_t)info);
+#elif defined(DC_ARENA_CAMERA)
   dc_arena_camera_pad(rt,(uint32_t)info);
 #endif
   return info;
 }
+/* Preserve prior diagnostic site numbers in all existing modes (AI-assisted). */
+#ifndef DC_ARENA_LIVE
+#line 1115
+#endif
 /* PS2 MMI 128-bit integer ops called by lowered code with frame-slot pointers. */
 static uint64_t mmi_native(uint32_t op,uint32_t dst,uint32_t a,uint32_t b){
   if(!dc_goal_mmi(op,(void*)(uintptr_t)dst,(const void*)(uintptr_t)a,b?(const void*)(uintptr_t)b:NULL) &&

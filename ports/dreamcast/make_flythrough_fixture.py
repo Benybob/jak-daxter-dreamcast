@@ -51,7 +51,7 @@ def path(target, frames, length):
 
 
 def make(glb, package, out, frames=30, length=60.0, half=14.0, header='build/flythrough_fixture.h',
-         roots=None, cell=16.0, instance_cells=False):
+         roots=None, cell=16.0, instance_cells=False, recorded_targets=None, coverage_targets=None):
     out = Path(out)
     if out.exists():
         shutil.rmtree(out)
@@ -61,10 +61,12 @@ def make(glb, package, out, frames=30, length=60.0, half=14.0, header='build/fly
     if source_blob[:4] == b'DCI4' and not instance_cells:
         raise ValueError('palette lighting requires --instance-cells')
     start = mf.camera(*mf.read(blob))
-    targets = path(start, frames, length)
+    targets = recorded_targets if recorded_targets is not None else path(start, frames, length)
+    assert len(targets) == frames
+    envelope = coverage_targets if coverage_targets is not None else targets
     margin = half + 2 * cell
-    rect = (min(t[0] for t in targets) - margin, max(t[0] for t in targets) + margin,
-            min(t[2] for t in targets) - margin, max(t[2] for t in targets) + margin)
+    rect = (min(t[0] for t in envelope) - margin, max(t[0] for t in envelope) + margin,
+            min(t[2] for t in envelope) - margin, max(t[2] for t in envelope) + margin)
     background = Path(glb).read_bytes()
     cut, _ = tfrag_glb.cut(background, roots or tfrag_glb.present_roots(background), rect=rect, probe_package=blob)
     doc, binary = rs.parse_glb_bytes(cut)

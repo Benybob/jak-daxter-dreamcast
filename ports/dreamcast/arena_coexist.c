@@ -7,7 +7,9 @@
 #include "goal_runtime.h"
 #include "goal_fiber.h"
 #include "goal_kos_stack.h"
-#ifdef DC_ARENA_CAMERA
+#if defined(DC_ARENA_LIVE)
+#include "arena_live.h"
+#elif defined(DC_ARENA_CAMERA)
 #include "arena_camera.h"
 #endif
 
@@ -66,6 +68,9 @@ static int check(uint64_t actual,uint64_t expected,const char *name){
   }
   dc_backend.state=3;return 0;
 }
+#ifdef DC_ARENA_LIVE
+int dc_arena_live_check(uint64_t actual,uint64_t expected,const char *name){return check(actual,expected,name);}
+#endif
 #ifdef DC_ARENA_CAMERA
 int dc_arena_camera_check(uint64_t actual,uint64_t expected,const char *name){return check(actual,expected,name);}
 #endif
@@ -182,7 +187,9 @@ int dc_arena_dispatch(dc_goal_runtime *rt){
 #ifdef DC_ARENA_FLY
   uint32_t used=rt->used;
 #endif
-#ifdef DC_ARENA_CAMERA
+#ifdef DC_ARENA_LIVE
+  if(!dc_arena_live_frame(rt))return 0;
+#elif defined(DC_ARENA_CAMERA)
   if(!dc_arena_camera_frame(rt))return 0;
 #endif
   CHECK(rt->error,DC_GOAL_OK,"arena dispatch leaves no runtime fault");
@@ -202,7 +209,9 @@ int dc_arena_finish(dc_goal_runtime *rt){
 #ifndef DC_ARENA_FLY
   uint32_t used=rt->used,i;volatile uint32_t *words=slab;
 #endif
-#ifdef DC_ARENA_CAMERA
+#if defined(DC_ARENA_LIVE)
+  CHECK(scenes,DC_LIVE_DISPATCHES,"arena clear after every live camera dispatcher call");
+#elif defined(DC_ARENA_CAMERA)
   CHECK(scenes,65,"arena clear after all 65 camera dispatcher calls including display initialization");
 #else
   CHECK(scenes,64,"arena clear after all 64 dispatcher calls");
@@ -219,7 +228,9 @@ int dc_arena_finish(dc_goal_runtime *rt){
   CHECK(rt->used,used,"arena slab fill leaves GOAL bump unchanged");
 #endif
   CHECK(rt->error,DC_GOAL_OK,"arena heap probe leaves no runtime fault");
-#ifdef DC_ARENA_CAMERA
+#ifdef DC_ARENA_LIVE
+  if(!dc_arena_live_finish(rt))return 0;
+#elif defined(DC_ARENA_CAMERA)
   if(!dc_arena_camera_finish(rt))return 0;
 #endif
   return 1;

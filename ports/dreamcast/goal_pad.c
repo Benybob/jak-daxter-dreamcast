@@ -31,6 +31,12 @@ static int32_t get32(const uint8_t *p,unsigned off){int32_t v;memcpy(&v,p+off,4)
 static void put32(uint8_t *p,unsigned off,int32_t v){memcpy(p+off,&v,4);}
 
 int dc_goal_pad_read_state(int port,dc_goal_pad_state *out){
+#ifdef DC_ARENA_LIVE
+  /* This target alone uses a labeled recording through the same cpad state
+   * machine and byte mapping. No controller/camera fields bypass the service. */
+  extern int dc_arena_live_pad_state(int,dc_goal_pad_state *);
+  return dc_arena_live_pad_state(port,out);
+#else
   memset(out,0,sizeof *out);
 #ifdef __DREAMCAST__
   {
@@ -44,6 +50,7 @@ int dc_goal_pad_read_state(int port,dc_goal_pad_state *out){
 #else
   (void)port;
   return 0;
+#endif
 #endif
 }
 
@@ -61,10 +68,16 @@ void dc_goal_pad_fill(uint8_t *cpad,const dc_goal_pad_state *s){
   if(s->buttons&DC_PAD_RIGHT)b|=1u<<BTN_RIGHT;
   if(s->ltrig>=128)b|=1u<<BTN_L1;
   if(s->rtrig>=128)b|=1u<<BTN_R1;
+#ifdef DC_ARENA_LIVE
+  if(s->buttons&DC_PAD_L2)b|=1u<<8; /* PS2 L2: preserve circle yaw in original input. */
+#endif
   cpad[OFF_VALID]=0;
   cpad[OFF_STATUS]=0x70|(20/2);  /* DualShock 2, 20 bytes of data */
   memcpy(cpad+OFF_BUTTON0,&b,2);
   cpad[OFF_RIGHTX]=128;cpad[OFF_RIGHTY]=128;
+#ifdef DC_ARENA_LIVE
+  if(s->buttons&DC_PAD_RX_POS)cpad[OFF_RIGHTX]=207;
+#endif
   cpad[OFF_LEFTX]=(uint8_t)(s->joyx<-128?0:s->joyx>127?255:s->joyx+128);
   cpad[OFF_LEFTY]=(uint8_t)(s->joyy<-128?0:s->joyy>127?255:s->joyy+128);
   memset(cpad+OFF_ABUTTON,0,12);  /* not in pressure mode */

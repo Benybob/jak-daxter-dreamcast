@@ -892,3 +892,43 @@ arena_camera_kernel_cases.o: kernel_boot_cases.c $(wildcard *.h) build/game_cgo_
 	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -DDC_KERNEL_DGO $(ARENA_CAMERA_FLAGS) -I. -c $< -o $@
 jak-dc-arena-camera.elf: kernel_boot_main.o arena_camera_kernel_cases.o kernel_vf_fixture.o goal_dgo.o goal_dgo_zst.o arena_romdisk_stage.o arena_camera_coexist.o arena_camera_goal_bridge.o arena_camera.o $(ZSTD_OBJS) build/kernel-dgo-romdisk.o $(filter-out goal_bridge.o,$(KERNEL_BOOT_LIBS)) build/mips2c/libdcmips2c.a
 	kos-c++ -o $@ $^ -Wl,--section-start=.dc_stage=0x8cd80000
+
+# Original affine camera -> renderer, recorded pad services (AI-assisted), ISC.
+# No DC_ARENA_GAME, arena_game.o, arena_camera.o or arena_fly.o on this link.
+# Only this target replaces goal_pad.o; all prior recipes/flags stay intact.
+ARENA_LIVE_FLAGS=$(ARENA_FLY_FLAGS) -DDC_ARENA_LIVE
+ARENA_LIVE_ASSET_DIR ?= build/arena-live-disc/live
+build/arena_live_fixture.h: $(ARENA_LIVE_ASSET_DIR)/FLY.json
+	@test -f $@ || (echo 'run make_arena_live_path.py with exported production input first' && false)
+$(ARENA_LIVE_ASSET_DIR)/FLY.json:
+	@echo 'missing recorded live beach assets: run make_arena_live_path.py first' && false
+build/arena_live_assets.h: make_arena_live_assets.py $(ARENA_LIVE_ASSET_DIR)/FLY.json private-romdisk-refresh
+	$(PYTHON) make_arena_live_assets.py $(ARENA_LIVE_ASSET_DIR) $@
+arena_live.o: arena_live.c arena_live.h arena_live_math.h goal_bridge.h
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) $(ARENA_LIVE_FLAGS) -I. -c $< -o $@
+arena_live_math.o: arena_live_math.c arena_live_math.h arena_game.h
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -I. -c $< -o $@
+arena_live_input.o: arena_live_input.c arena_live.h arena_live_math.h
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -I. -c $< -o $@
+arena_live_assets.o: arena_live_assets.c arena_live_assets.h arena_live_math.h arena_slab.h
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) $(ARENA_FLY_ALLOC) -I. -c $< -o $@
+arena_live_render.o: arena_live_render.c arena_live.h arena_live_math.h arena_live_assets.h arena_slab.h build/arena_live_fixture.h build/arena_live_assets.h
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) $(ARENA_LIVE_FLAGS) $(ARENA_FLY_ALLOC) -I. -c $< -o $@
+arena_live_coexist.o: arena_coexist.c arena_live.h arena_slab.h goal_runtime.h goal_fiber.h goal_kos_stack.h
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) $(ARENA_LIVE_FLAGS) -I. -c $< -o $@
+arena_live_goal_bridge.o: goal_bridge.c $(wildcard *.h)
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) $(ARENA_LIVE_FLAGS) -I. -c $< -o $@
+arena_live_goal_pad.o: goal_pad.c goal_pad.h
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -DDC_ARENA_LIVE -I. -c $< -o $@
+arena_live_kernel_cases.o: kernel_boot_cases.c $(wildcard *.h) build/game_cgo_order.h build/vf_cases.h build/mips2c/mips2c_cases_expect.h
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -DDC_KERNEL_DGO $(ARENA_LIVE_FLAGS) -I. -c $< -o $@
+build/arena-live-romdisk.o: $(ARENA_LIVE_ASSET_DIR)/FLY.json build/kernel-dgo-romdisk.o private-romdisk-refresh
+	mkdir -p build
+	$(KOS_GENROMFS) -f build/arena-live-romdisk.img -d $(ARENA_LIVE_ASSET_DIR) -x '*.json'
+	$(PYTHON) -c 'import os,sys; boot=os.path.getsize("build/kernel-dgo-romdisk.img"); fly=os.path.getsize("build/arena-live-romdisk.img"); align=lambda n:(n+31)//32*32; start=0x8cb00000+align(boot); end=start+align(fly); cap=1700000; sys.exit("arena-live romdisk %d bytes (cap %d); .dc_fly 0x%x..0x%x past 0x8d000000"%(fly,cap,start,end)) if fly<1 or fly>cap or end>0x8d000000 else open("build/arena-live-section.txt","wb").write(("0x%x"%start).encode())'
+	$(KOS_BASE)/utils/bin2c/bin2c build/arena-live-romdisk.img build/arena-live-romdisk.c flydisk
+	sed -i 's/^const unsigned char flydisk_data\[/const unsigned char __attribute__((section(".dc_fly"),aligned(32))) flydisk_data[/' build/arena-live-romdisk.c
+	$(PYTHON) -c 'import sys; t=open("build/arena-live-romdisk.c","rb").read(4096); sys.exit("flydisk_data stayed out of .dc_fly; bin2c line did not match") if b"section(\".dc_fly\")" not in t else None'
+	$(KOS_CC) $(KOS_CFLAGS) -c build/arena-live-romdisk.c -o $@
+jak-dc-arena-live.elf: kernel_boot_main.o arena_live_kernel_cases.o kernel_vf_fixture.o goal_dgo.o goal_dgo_zst.o arena_fly_romdisk_stage.o arena_live_coexist.o arena_live_goal_bridge.o arena_live_goal_pad.o arena_live.o arena_live_math.o arena_live_input.o arena_live_assets.o arena_live_render.o arena_slab.o $(ARENA_FLY_RENDER) render_world_view_scalar.o render_world_view_gate.o render_frustum.o instance_pass.o $(ZSTD_OBJS) build/kernel-dgo-romdisk.o build/arena-live-romdisk.o $(filter-out goal_bridge.o goal_pad.o,$(KERNEL_BOOT_LIBS)) build/mips2c/libdcmips2c.a
+	addr=$$(cat build/arena-live-section.txt) && kos-c++ -o $@ $^ -Wl,--section-start=.dc_stage=0x8cb00000 -Wl,--section-start=.dc_fly=$$addr -lm

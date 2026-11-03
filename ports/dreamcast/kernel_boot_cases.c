@@ -20,7 +20,9 @@
 #include "process_spans.h"
 #include "pp_scope.h"
 #include "runtime_cases.h"
-#ifdef DC_ARENA_CAMERA
+#if defined(DC_ARENA_LIVE)
+#include "arena_live.h"
+#elif defined(DC_ARENA_CAMERA)
 #include "arena_camera.h"
 #endif
 /* PVR work runs only after dispatch restores the KOS stack (AI-assisted), ISC. */
@@ -358,7 +360,9 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
     CHECK(word(&rt,thread,RESUME_HOOK),entry(&rt,"dc-c-thread-resume"),"original constructor installed the native thread-resume hook");
     CHECK(word(&rt,thread,32),512,"original activate reserves the Dreamcast main-thread backup");
     CHECK(dc_goal_register_thread_fiber(&rt,&fiber),1,"fiber registered for the original resume-hook");
-#ifdef DC_ARENA_CAMERA
+#ifdef DC_ARENA_LIVE
+    if(!dc_arena_live_begin(&rt,sync_code))goto done;
+#elif defined(DC_ARENA_CAMERA)
     if(!dc_arena_camera_begin(&rt,sync_code))goto done;
 #endif
     for(i=0;i<FRAMES;++i){
@@ -371,6 +375,9 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
       CHECK(fiber.phase,DC_FIBER_SUSPENDED,"its native fiber is suspended between frames");
       CHECK(word(&rt,entry(&rt,"*kernel-context*"),20),rt.s7,"dispatcher clears current-process after the frame");
     }
+#ifdef DC_ARENA_LIVE
+    if(!dc_arena_live_initialize(&rt))goto done;
+#endif
 #ifdef DC_KERNEL_DGO
     /* The process time-of-day's startup spawned ran too: the dispatcher gave it a
      * native fiber on its first resume, and its state code suspends each frame. */
@@ -382,7 +389,9 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
      * with *run* set. No level is loaded and nothing draws; each dispatcher frame
      * runs one iteration of the loop and suspends. */
     {
-#ifdef DC_ARENA_CAMERA
+#if defined(DC_ARENA_LIVE)
+     enum {DISPLAY_FRAMES=DC_LIVE_UPDATES,REAL_INTEGRAL_FRAMES=804};
+#elif defined(DC_ARENA_CAMERA)
      /* Original display-loop suspends once before entering its update loop.
       * Allow that initialization dispatch as well as 60 loop dispatches;
       * the post-deactivation dispatch supplies the required 61st update.
@@ -473,7 +482,9 @@ spawn_done:
   snprintf(description,description_bytes,"BOOT GOAL=%lu arena=%lu/%lu startup=%lu symbols=%lu",
            (unsigned long)code_bytes,(unsigned long)rt.used,(unsigned long)capacity,
            (unsigned long)(rt.used-before),(unsigned long)rt.symbol_count);
-#ifdef DC_ARENA_CAMERA
+#ifdef DC_ARENA_LIVE
+  dc_arena_live_report(description,description_bytes,rt.used,capacity);
+#elif defined(DC_ARENA_CAMERA)
   dc_arena_camera_report(description,description_bytes,rt.used,capacity);
 #elif defined(DC_ARENA_GAME)
   dc_arena_game_report(description,description_bytes,rt.used,capacity);
