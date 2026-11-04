@@ -1134,8 +1134,8 @@ static void jak_reloc_note(dc_goal_runtime *rt,uint32_t site) {
    for(i=0;i<9u;++i)d[i]=w[i];}
 }
 /* Every unique walk node (up to 32) with its type name and the name of its
- * state. --dump dc_arena_jak_player_nodes 1536 */
-volatile struct { uint32_t process,state; char type[20],state_name[24]; } dc_arena_jak_player_nodes[32];
+ * state, and its status symbol. --dump dc_arena_jak_player_nodes 2176 */
+volatile struct { uint32_t process,state; char type[20],state_name[24],status[16]; } dc_arena_jak_player_nodes[32];
 /* PC sampler: the watchdog interval timer records the interrupted PC and PR,
  * with the GOAL function holding each. Shows where a hang without bridge calls
  * spins. Build with -DDC_JAK_HEAVY_PROBES (they slow every yield).
@@ -1225,6 +1225,7 @@ publish:
     jak_copy_name(dc_arena_jak_player_nodes[i].type,p?jak_type_name(rt,jak_guest_word(rt,p-4u)):NULL,20);
     jak_copy_name(dc_arena_jak_player_nodes[i].state_name,
                   st && st!=rt->s7 && st!=0xffffffffu?dc_goal_symbol_name(rt,jak_guest_word(rt,st)):NULL,24);
+    jak_copy_name(dc_arena_jak_player_nodes[i].status,p?dc_goal_symbol_name(rt,jak_guest_word(rt,p+32u)):NULL,16);
   }
 #endif
   if(out.stop==3 && out.to_process>=4u)
@@ -1356,7 +1357,7 @@ static uint64_t suspend_current(void) {
   return rt->error==DC_GOAL_OK;
 }
 /* Original cpu-thread resume-hook targets: registered native fibers by thread. */
-#define DC_THREAD_FIBERS 24
+#define DC_THREAD_FIBERS 36
 static dc_goal_fiber *thread_fibers[DC_THREAD_FIBERS];
 int dc_goal_register_thread_fiber(dc_goal_runtime *rt,dc_goal_fiber *fiber) {
   unsigned i,free_slot=DC_THREAD_FIBERS;
@@ -1386,8 +1387,16 @@ int dc_goal_unregister_thread_fiber(dc_goal_runtime *rt,dc_goal_fiber *fiber) {
  * shared fake-scratchpad stack is imported (activate's PC-port stack for
  * process-spawn's default *scratch-memory-top*). The extent is the process's own
  * record (allocated-length + 112), noted in the ledger when one is registered. */
-#define DC_SPAWNED_FIBERS 16
+#define DC_SPAWNED_FIBERS 28  /* Jak arena: 18 live processes; each slot is 336 bytes of bss */
 static dc_goal_fiber spawned_fibers[DC_SPAWNED_FIBERS];
+/* The process status word (+32) is the named symbol; no intern. */
+static int process_status_is(dc_goal_runtime *rt,uint32_t process,const char *name) {
+  enum dc_goal_error prior=rt->error;uint32_t symbol=dc_goal_find(rt,name),status=0;
+  const unsigned char *p=symbol?dc_goal_resolve(rt,process+32u,4):NULL;
+  if(p)memcpy(&status,p,4);
+  rt->error=prior;
+  return symbol && p && status==symbol;
+}
 static dc_goal_fiber *import_spawned(dc_goal_runtime *rt,uint32_t thread) {
   const unsigned char *p;uint32_t process,top,length,base,symbol;dc_goal_process_span span;unsigned i;
   enum dc_goal_error prior=rt->error;dc_goal_fiber *f=NULL;
@@ -1419,6 +1428,18 @@ static uint64_t thread_resume(uint64_t thread) {
   uint32_t symbol,context,current;unsigned char *fields;uint64_t out=0;unsigned i;
   if(!rt)return 0;
   for(i=0;i<DC_THREAD_FIBERS;++i)if(thread_fibers[i] && thread_fibers[i]->thread==thread)fiber=thread_fibers[i];
+  /* A dead process's imported fiber stays registered by thread address. When
+   * dead-pool-heap carves a new process in the same memory, its armed main
+   * thread has that address too: a spawned fiber that can no longer resume,
+   * or one suspended while the process says waiting-to-run, belongs to the
+   * earlier process. Release it and import the new activation. */
+  if(fiber && fiber>=spawned_fibers && fiber<spawned_fibers+DC_SPAWNED_FIBERS &&
+     !dc_goal_fiber_current() && !execution_context &&
+     (fiber->phase==DC_FIBER_DONE || fiber->phase==DC_FIBER_FAULT || fiber->phase==DC_FIBER_EMPTY ||
+      (fiber->phase==DC_FIBER_SUSPENDED && fiber->process>=4u &&
+       process_status_is(rt,fiber->process,"waiting-to-run")))) {
+    dc_goal_unregister_thread_fiber(rt,fiber);memset(fiber,0,sizeof *fiber);fiber=NULL;
+  }
   if(!fiber && thread<=UINT32_MAX && !dc_goal_fiber_current() && !execution_context)
     fiber=import_spawned(rt,(uint32_t)thread);
   if(!fiber || fiber->runtime!=rt || dc_goal_fiber_current() || execution_context)goto unsupported;

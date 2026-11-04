@@ -1613,3 +1613,25 @@ Each object relocates against its own base, unchanged otherwise.
 
 Observed (Flycast): 7652 of 7652 pass, `sidekick-short=0`; the node map
 shows the sidekick in its original `sidekick-clone` state.
+
+## Processes that never ran (2026-11-04, AI-assisted)
+
+The node map (heavy build) showed `hud-pickups` and the `hud-money` icon
+manipy with status `waiting-to-run` and no state after 160 frames: their
+init had `go`ne, arming the main thread, and nothing ever started it.
+
+- `hud-pickups` is carved where the PC HUD's dead manipy was, so its armed
+  main thread has the dead process's thread address. `thread_resume` looks
+  fibers up by thread address, found the dead manipy's imported fiber, and
+  the ownership check refused it silently. A spawned fiber that is done,
+  faulted or empty, or suspended while its process says `waiting-to-run`,
+  is now released and the new activation imported.
+- The money manipy found no free slot: 16 spawned fibers for about 18 live
+  processes. Now 28 spawned and 36 registered. Each slot is 336 bytes of bss,
+  which comes out of the KOS heap the resident sidekick region needs: 48
+  slots left too little for sidekick plus its 32 KiB margin.
+
+Observed (Flycast): every process in the tree runs its original state. The
+target is in target-stance, the sidekick in sidekick-clone, the HUD parts in
+hud-hidden, and both HUD manipys in process-drawable-art-error (their money
+and fuel-cell art is not staged). 7652 of 7652 pass with sidekick-short=0.
