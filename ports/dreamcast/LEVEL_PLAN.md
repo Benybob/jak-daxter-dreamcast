@@ -165,6 +165,43 @@ Pieces:
   pending. The server records it (`prior_error`) and starts clean, as the IOP
   never saw EE faults. The buffers are not needed: objects go straight to `bt`.
 
+### Toward actors: birth's entity table
+
+After the level was active no actor spawned, and `bsp-header birth` (method
+18, wrapped by a diagnostic probe) left the level's `entity` field (+280) at 0
+with BAD_ARGUMENT: its `(new 'loading-level 'entity-links-array ...)` failed.
+- `'loading-level` is the C kernel's fixed heap symbol, whose value is a kheap:
+  the global heap, or a level's heap while that level loads and births
+  (`load-begin`, level `birth`). The bridge refused it. `new` on it now
+  kmallocs from that kheap (16-byte aligned from `current`, refused at `top`,
+  zeroed), or uses the arena when its value is the global heap's.
+- The port does not bind the fixed slot, so compiled code links an interned
+  `loading-level`; the bridge finds that symbol by name.
+- `alloc-levels!` called `load-package "art"` and `"common"`, which reached the
+  unbound C `dgo-load` (BAD_FUNCTION from `load-package`, found with
+  `dc_goal_missing_call_probe`, which records the GOAL caller of a call to a
+  non-function). The DGO boot now records the resident packages in
+  `*kernel-packages*` after GAME.CGO, as the C kernel does: kernel, engine,
+  art, common.
+
+Observed after these (Flycast, 538 of 538): `bsp-header birth` runs once with
+no fault and allocates the level's `entity-links-array` (152 links) and
+ambient table from the level heap; no call reaches a non-function.
+
+### Why no actor is born yet
+
+`actors-update` (wrapped: it runs every one of the 60 frames) has
+`*vis-actors*` on, and the level's `vis-info` 0 is set while `all-visible?` is
+`'loading`, so its vis branch births nothing. That is the original behaviour
+until a VIS file arrives: `init-vis` marks the level `'loading`, and
+`load-state update!` only calls `load-vis-info` (a ramdisk RPC fill of the
+level's VIS file, then `ramdisk-load` chunks) once the camera is inside the
+level's boxes. In this headless boot nothing puts a camera there: there is no
+target or camera process, and the camera position is the origin, about
+1,500 m from Geyser Rock's first actor (-1,199 m, 16 m, 925 m). Actors need the
+player in the level (its camera inside the boxes) and an IOP ramdisk server
+for the VIS file, as the PC port's overlord provides.
+
 Not yet: level code served through the same RPC (it loads at boot), the
 level's art groups and texture pages, actor spawning over later frames,
 collision queries, and the level inside the Jak ELF (its arena has no room for

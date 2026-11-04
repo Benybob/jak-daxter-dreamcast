@@ -451,9 +451,24 @@ static uint32_t global_basic_new(dc_goal_runtime *rt,uint32_t type,uint32_t byte
  * table is "treated as a stack address": the object is zeroed in place there,
  * as dead-pool-heap's get-process does with (the symbol gap-address). */
 static int debug_heap_absent(dc_goal_runtime *rt,uint64_t heap);
-enum heap_kind { HEAP_REFUSED,HEAP_GLOBAL,HEAP_PROCESS,HEAP_ADDRESS };
+enum heap_kind { HEAP_REFUSED,HEAP_GLOBAL,HEAP_PROCESS,HEAP_ADDRESS,HEAP_KHEAP };
+/* kscheme's loading-level: a fixed symbol whose value is a kheap, the global
+ * heap's (kglobalheap) except while a level loads, when load-begin sets it to
+ * that level's heap. The port's global heap is the arena itself. */
+/* The port interns loading-level by name (the C kernel's fixed slot is not
+ * bound), so compiled code links that symbol; find it by name, once per runtime. */
+static uint32_t loading_level_symbol(dc_goal_runtime *rt){
+  static dc_goal_runtime *cached_rt;static uint32_t cached;
+  if(cached_rt!=rt){enum dc_goal_error prior=rt->error;cached=dc_goal_find(rt,"loading-level");rt->error=prior;
+    if(cached)cached_rt=rt;}
+  return cached;
+}
+static int loading_level_is_global(dc_goal_runtime *rt){
+  return dc_goal_symbol_value(rt,loading_level_symbol(rt))==dc_goal_symbol_value(rt,rt->s7+DC_FIX_SYM_GLOBAL_HEAP);
+}
 static enum heap_kind heap_kind(dc_goal_runtime *rt,uint64_t heap) {
   if(heap==rt->s7+DC_FIX_SYM_GLOBAL_HEAP || debug_heap_absent(rt,heap))return HEAP_GLOBAL;
+  if(heap && heap==loading_level_symbol(rt))return loading_level_is_global(rt)?HEAP_GLOBAL:HEAP_KHEAP;
   if(heap==rt->s7+DC_FIX_SYM_PROCESS_TYPE)return HEAP_PROCESS;
   if(heap>UINT32_MAX || (heap>=rt->table && heap<rt->table+DC_GOAL_SYMBOL_BYTES))return HEAP_REFUSED;
   return HEAP_ADDRESS;
@@ -484,6 +499,37 @@ static uint32_t basic_type(dc_goal_runtime *rt,uint64_t object) {
   if(object<4 || object>UINT32_MAX || ((uint32_t)object&7u)!=4u || !(p=object_bytes(rt,(uint32_t)object-4,4)))return 0;
   memcpy(&type,p,4);return type;
 }
+/* kmalloc on a guest kheap (base, top, current, top-base): 16-byte aligned from
+ * current, refused at top, zeroed (KMALLOC_MEMSET). A basic gets its tag. */
+/* Every 'loading-level allocation: calls, the runtime error pending on entry
+ * (a pending fault makes new refuse before any heap is chosen), successes, and
+ * the last type and size. --dump dc_goal_loading_level_probe 32 */
+volatile struct { uint32_t calls,pending,pending_error,pending_site,made,last_type,last_bytes,last_result; } dc_goal_loading_level_probe;
+static void loading_level_note(dc_goal_runtime *rt,uint64_t heap,uint64_t type,uint64_t bytes){
+  if(!heap || heap!=loading_level_symbol(rt))return;
+  ++dc_goal_loading_level_probe.calls;
+  dc_goal_loading_level_probe.last_type=(uint32_t)type;dc_goal_loading_level_probe.last_bytes=(uint32_t)bytes;
+  if(rt->error!=DC_GOAL_OK){++dc_goal_loading_level_probe.pending;
+    dc_goal_loading_level_probe.pending_error=rt->error;dc_goal_loading_level_probe.pending_site=dc_goal_error_site;}
+}
+static uint64_t kheap_new(dc_goal_runtime *rt,uint32_t type,uint32_t bytes,int basic) {
+  uint32_t kheap=dc_goal_symbol_value(rt,loading_level_symbol(rt)),field[4],start,size;
+  unsigned char *p=kheap?dc_goal_resolve(rt,kheap,16):NULL,*memory;
+  if(!p || !bytes || bytes>UINT32_MAX-15u || (basic && bytes<4)){
+    if(rt->error==DC_GOAL_OK){(void)DC_GOAL_NOTE_SITE(1);rt->error=DC_GOAL_BAD_ARGUMENT;}
+    return 0;
+  }
+  memcpy(field,p,16);
+  start=(field[2]+15u)&~15u;size=(bytes+15u)&~15u;
+  if(start<field[2] || start>field[1] || size>field[1]-start){dc_goal_last_failed_alloc=size;rt->error=DC_GOAL_OUT_OF_MEMORY;return 0;}
+  if(!(memory=dc_goal_resolve(rt,start,size)))return 0;
+  memset(memory,0,size);
+  field[2]=start+size;memcpy(p+8,&field[2],4);
+  if(!basic)return start;
+  memcpy(memory,&type,4);
+  ++dc_goal_loading_level_probe.made;dc_goal_loading_level_probe.last_result=start+4u;
+  return start+4u;
+}
 static uint64_t in_place_new(dc_goal_runtime *rt,uint32_t address,uint32_t type,uint32_t bytes,int basic) {
   uint32_t aligned=(bytes+15u)&~15u;
   unsigned char *memory=NULL;enum dc_goal_error prior=rt->error;
@@ -503,6 +549,7 @@ static uint64_t new_basic(uint64_t heap,uint64_t type) {
   dc_goal_runtime *rt=active_runtime;
   dc_goal_type_fields *fields;
   if (!rt) return 0;
+  loading_level_note(rt,heap,type,0);
   if(dc_goal_pp_scope_blocks_transfer(rt) && rt->error!=DC_GOAL_OK)return 0;
   if (type>UINT32_MAX ||
       !dc_goal_is_subtype(rt,(uint32_t)type,rt->basic_type)) {
@@ -514,6 +561,8 @@ static uint64_t new_basic(uint64_t heap,uint64_t type) {
     return in_place_new(rt,(uint32_t)heap,(uint32_t)type,fields->allocated_size,1);
   if(heap_kind(rt,heap)==HEAP_GLOBAL)
     return global_basic_new(rt,(uint32_t)type,fields->allocated_size);
+  if(heap_kind(rt,heap)==HEAP_KHEAP)
+    return kheap_new(rt,(uint32_t)type,fields->allocated_size,1);
   if(heap==rt->s7+DC_FIX_SYM_PROCESS_TYPE && active_process_heap.runtime==rt) {
     uint32_t lexical;
     if(!process_heap_type_allowed(rt,(uint32_t)type)) {
@@ -546,18 +595,20 @@ static uint64_t new_structure(uint64_t heap,uint64_t type) {
   dc_goal_runtime *rt=active_runtime;
   dc_goal_type_fields *fields;
   if (!rt) return 0;
+  loading_level_note(rt,heap,type,0);
   if(dc_goal_pp_scope_blocks_transfer(rt) && rt->error!=DC_GOAL_OK)return 0;
 #ifdef DC_ARENA_JAK_PLAYER
   if(heap==rt->s7+DC_FIX_SYM_PROCESS_TYPE && active_process_heap.runtime==rt && type<=UINT32_MAX)
     jak_heap_structure((uint32_t)type);
 #endif
-  if ((heap_kind(rt,heap)!=HEAP_GLOBAL && heap_kind(rt,heap)!=HEAP_ADDRESS) || type>UINT32_MAX ||
+  if ((heap_kind(rt,heap)!=HEAP_GLOBAL && heap_kind(rt,heap)!=HEAP_ADDRESS && heap_kind(rt,heap)!=HEAP_KHEAP) || type>UINT32_MAX ||
       !dc_goal_is_subtype(rt,(uint32_t)type,rt->structure_type) || dc_goal_is_subtype(rt,(uint32_t)type,rt->basic_type)) {
     (DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT); return 0;
   }
   fields=dc_goal_resolve(rt,(uint32_t)type,sizeof(*fields));
   if(!fields || !fields->allocated_size){if(rt->error==DC_GOAL_OK)(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);return 0;}
   if(heap_kind(rt,heap)==HEAP_ADDRESS)return in_place_new(rt,(uint32_t)heap,(uint32_t)type,fields->allocated_size,0);
+  if(heap_kind(rt,heap)==HEAP_KHEAP)return kheap_new(rt,(uint32_t)type,fields->allocated_size,0);
   return dc_goal_alloc(rt,fields->allocated_size);
 }
 /* Native counterparts of the kscheme default asize-of/copy methods (AI-assisted):
@@ -606,6 +657,7 @@ static uint64_t copy_basic(uint64_t object,uint64_t heap) {
 static uint64_t new_object(uint64_t heap,uint64_t type,uint64_t size) {
   dc_goal_runtime *rt=active_runtime;
   if (!rt) return 0;
+  loading_level_note(rt,heap,type,size);
   if(dc_goal_pp_scope_blocks_transfer(rt) && rt->error!=DC_GOAL_OK)return 0;
   if (type>UINT32_MAX || size>UINT32_MAX ||
       !dc_goal_is_subtype(rt,(uint32_t)type,rt->basic_type)) {
@@ -615,6 +667,8 @@ static uint64_t new_object(uint64_t heap,uint64_t type,uint64_t size) {
     return in_place_new(rt,(uint32_t)heap,(uint32_t)type,(uint32_t)size,1);
   if(heap_kind(rt,heap)==HEAP_GLOBAL)
     return global_basic_new(rt,(uint32_t)type,(uint32_t)size);
+  if(heap_kind(rt,heap)==HEAP_KHEAP)
+    return kheap_new(rt,(uint32_t)type,(uint32_t)size,1);
   if(heap==rt->s7+DC_FIX_SYM_PROCESS_TYPE && active_process_heap.runtime==rt) {
     uint32_t lexical;
     if(!process_heap_type_allowed(rt,(uint32_t)type)) {
@@ -673,7 +727,26 @@ static uint64_t integer_error(uint64_t kind) {
 }
 /* A call to a non-function is always a fault. It is also sticky, because a later
  * bridge's symbol lookup (dc_goal_find) resets rt->error before the loader looks. */
+/* The GOAL callers of the first 8 calls to non-functions: return address and
+ * the code-registry function holding it. --dump dc_goal_missing_call_probe 260 */
+volatile struct { uint32_t count; struct { uint32_t pc; char fn[28]; } row[8]; } dc_goal_missing_call_probe;
+static void note_missing_call(uint32_t pc) {
+  dc_goal_runtime *rt=active_runtime;uint32_t n=dc_goal_missing_call_probe.count++,at,i,k;
+  if(n>=8u || !rt)return;
+  dc_goal_missing_call_probe.row[n].pc=pc;
+  at=rt->code_registry_head;
+  for(i=0;i<rt->code_registry_count && at>=rt->base && at-rt->base<=rt->used-16u;++i){
+    uint32_t record[4];memcpy(record,rt->memory+(at-rt->base),16);
+    if(pc>=record[0] && pc-record[0]<record[1]){
+      const char *name=dc_goal_symbol_name(rt,record[2]);
+      for(k=0;name && name[k] && k<27u;++k)dc_goal_missing_call_probe.row[n].fn[k]=name[k];
+      return;
+    }
+    at=record[3];
+  }
+}
 static uint64_t missing_call(void) {
+  note_missing_call((uint32_t)(uintptr_t)__builtin_return_address(0));
   if(dc_goal_sticky_error==DC_GOAL_OK)dc_goal_sticky_error=DC_GOAL_BAD_FUNCTION;
   if(active_runtime) active_runtime->error=DC_GOAL_BAD_FUNCTION;
   return 0;

@@ -250,6 +250,17 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
       CHECK(loaded?1:100+rt.error,1,"GAME.CGO prefix links and runs each original startup in order");
       CHECK(game.objects,DC_GAME_PREFIX,"GAME.CGO holds the compiled prefix of original engine files");
       CHECK(game.initializers,DC_GAME_PREFIX,"each engine file runs its top-level startup");
+      /* As the C kernel does (klisten.cpp InitListener, kmachine.cpp after
+       * GAME.CGO): the packages now resident, so original load-package (from
+       * alloc-levels!) does not ask dgo-load for ART or COMMON again. */
+      {uint32_t packages=dc_goal_find(&rt,"*kernel-packages*");unsigned k;
+       static const char *const names[]={"kernel","engine","art","common"};
+       for(k=0;packages && k<4u;++k){
+         uint32_t text=dc_goal_string(&rt,names[k]);
+         uint32_t cell=text?dc_goal_new_pair(&rt,text,dc_goal_symbol_value(&rt,packages)):0;
+         if(cell)dc_goal_set_symbol(&rt,packages,cell);
+       }
+       rt.error=DC_GOAL_OK;}
       CHECK(dc_goal_mips2c_native(),76,"all 76 of GAME.CGO's mips2c lookups return native code");
       /* gkernel.gc aligns it to 64 KiB, and translated code relies on that:
        * setup-blerc-chains-for-one-fragment ends each chain with its address as a
