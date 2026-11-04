@@ -834,3 +834,49 @@ already ran init-target in the process and its `go` armed the thread for the
 first state. Stack top, the continue point (+44) and the zero words match.
 Checks 16 and 17 still describe the earlier plan, where init-target had not
 run; they need to expect the original enter-state arming instead.
+
+## Target armed at enter-state (AI-assisted)
+
+Checks 16 and 17 in `arena_jak_player.c` now follow that image. `process-spawn`
+runs `init-target` before `start` returns (`gstate.gc`, `run-now-in-process`).
+`init-target` finishes with `(go target-continue arg0)`, and `arg0` is the
+continue point passed to `start`. `go` stores that state in process
+`next-state` and calls `enter-state`. On the initialize path `enter-state`
+calls `set-to-run` (`gkernel.gc`) and throws; `run-function-in-process` then
+sets status back to `waiting-to-run`.
+
+`set-to-run` writes the function and its arguments into the main thread's
+uint64 `rreg` slots. In this port those slots begin at thread+36 (`rreg` is
+retail offset 40). rreg 0 is `enter-state`: word +36 is the entry and word +40
+is the zero high half. rreg 1 is `go`'s one argument, the continue point: word
++44 is that pointer and word +48 is the zero high half. Word +28 is still the
+stack top. Those three words are the ones the previous run already matched, so
+check 16 still requires them. It does not require rreg 2..6. `enter-state` was
+called with one argument, and those slots were not part of the matched check.
+
+Word +36 must be the exact original `enter-state` entry. The check resolves
+the `enter-state` symbol, accepts that value through `dc_goal_code_entry`, and
+requires the registry record's owner to be that same symbol, as
+`arena_jak_exports.c` does for an export. `next-state` is process field +72
+(retail 76). It must be a 36-byte `state` (parent `protect-frame`) whose name
+symbol's value is that same object, which is how `defstate` publishes a state.
+Check 17 still imports the main thread with `dc_goal_fiber_init_main`. That
+import copies the uint64 at thread+36 into `target_fiber.entry`
+(`goal_main_start.c`), so the fiber entry must be `enter-state`.
+`init_entry` is still stored from the authenticated
+`init-target` export. The probe block, case numbers 16 and 17, and the 7652
+total are unchanged. `verify_arena_jak_player.py` was not edited: `init_entry`
+still means `init-target`.
+
+This was not compiled and not run. The last Flycast stop was check 16 comparing
+thread+36 with `init-target`; +28, +40, +44 and +48 had already matched the
+stack top, zero, the continue point and zero. The new `enter-state`
+authentication, the `next-state` predicate, and the fiber import have not
+executed. That import also requires `waiting-to-run`, thread+20 equal to
+original `set-to-run-bootstrap`, and sp at the stack top; those were not
+reached. Dispatcher, pad and motion checks remain unobserved.
+
+Observed in Flycast with that change: checks 16 to 19 pass (7011 checks pass).
+The run then never completes: it stops inside the first call to the original
+`kernel-dispatcher` (just before check 20), which is where Jak's first state
+runs. Flycast logs no exception; the verifier times out.

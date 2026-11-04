@@ -38,6 +38,30 @@ static int typed(dc_goal_runtime *rt,uint32_t p,const char *type,uint32_t bytes)
  uint32_t t=named(rt,type);
  return p>=4 && (p&15u)==4 && t && t!=rt->s7 && dc_goal_resolve(rt,p-4,bytes) && word(rt,p-4)==t;
 }
+/* Same authentication as an export: symbol value, code registry, and that
+ * record's owner is this symbol. dc_goal_find clears a prior fault. */
+static uint32_t code_entry(dc_goal_runtime *rt,const char *name){
+ dc_goal_code_entry_info info;enum dc_goal_error saved=rt->error;
+ uint32_t symbol=dc_goal_find(rt,name),value=symbol?dc_goal_symbol_value(rt,symbol):0;
+ if(saved!=DC_GOAL_OK){rt->error=saved;return 0;}
+ if(rt->error!=DC_GOAL_OK || !value || !dc_goal_code_entry(rt,value,&info)){
+  if(rt->error==DC_GOAL_OK)rt->error=DC_GOAL_BAD_FUNCTION;
+  return 0;
+ }
+ if(info.symbol!=symbol){rt->error=DC_GOAL_BAD_FUNCTION;return 0;}
+ return value;
+}
+/* process next-state is port +72 (retail 76). A state is the 36-byte type
+ * whose parent is protect-frame. Original defstate binds the name symbol to
+ * that object. */
+static int original_state(dc_goal_runtime *rt,uint32_t state){
+ uint32_t name;int ok=typed(rt,state,"state",36);
+ if(ok){name=word(rt,state);
+  ok=name && dc_goal_type_of(rt,name)==rt->symbol_type &&
+   dc_goal_symbol_value(rt,name)==state && rt->error==DC_GOAL_OK;}
+ if(!ok && rt->error==DC_GOAL_OK)rt->error=DC_GOAL_BAD_OBJECT;
+ return ok;
+}
 static int check(dc_goal_runtime *rt,int ok,uint32_t why,const char *text){
  if(!ok){dc_arena_jak_player_evidence.failure=why;
   dc_arena_jak_player_evidence.error=rt?rt->error:DC_GOAL_BAD_ARGUMENT;dc_arena_jak_player_evidence.site=dc_goal_error_site;
@@ -108,7 +132,7 @@ static void sync_code(uint32_t allocation,uint32_t bytes,void *unused){
 int dc_arena_jak_player_run(dc_goal_runtime *rt,uint32_t cp){
  typedef uint64_t (*two_fn)(uint64_t,uint64_t);
  typedef uint64_t (*zero_fn)(void);
- uint32_t listener,bytes,target,thread,dram,base,top,start,dispatch,control,cpad;
+ uint32_t listener,bytes,target,thread,dram,base,top,start,dispatch,control,cpad,enter;
  uint32_t prev_state=0,prev_resumes,prev_pads;float previous[3]={0,0,0};
  int ok=0,registered=0,installed=0,bound=0;
  unsigned char code[12]={1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0};
@@ -163,14 +187,19 @@ int dc_arena_jak_player_run(dc_goal_runtime *rt,uint32_t cp){
      for(k=0;n[k] && k<31;++k)dc_arena_jak_thread_probe.w32_name[k]=n[k];}
   dc_arena_jak_thread_probe.error=rt->error;dc_arena_jak_thread_probe.site=dc_goal_error_site;
   rt->error=DC_GOAL_OK;dc_goal_error_site=site;}
- CHECK(bytes>=192 && dc_goal_resolve(rt,target-4,bytes) && typed(rt,thread,"cpu-thread",124) &&
-       word(rt,thread+36)==dc_arena_jak_player_evidence.init_entry && word(rt,thread+40)==0 &&
+ /* set-to-run stores uint64 rregs at port +36. rreg 0 is enter-state (+36, high
+  * half +40 is zero). rreg 1 is go's continue point (+44, high half +48 is zero).
+  * +28 is the unchanged stack-top. init-target already returned. */
+ enter=code_entry(rt,"enter-state");
+ CHECK(enter && bytes>=192 && dc_goal_resolve(rt,target-4,bytes) && typed(rt,thread,"cpu-thread",124) &&
+       word(rt,thread+36)==enter && word(rt,thread+40)==0 &&
        word(rt,thread+44)==cp && word(rt,thread+48)==0 && word(rt,thread+28)==top &&
+       original_state(rt,word(rt,target+72)) &&
        dc_goal_note_process_span(rt,target,bytes,NULL),
-       16,"jak original armed thread contains init-target and the original continue argument");
+       16,"jak original armed thread is enter-state, the continue point and an original state");
  CHECK(dc_goal_fiber_init_main(&target_fiber,rt,target,bytes,thread,base,top-base) &&
-       target_fiber.entry==dc_arena_jak_player_evidence.init_entry &&
-       dc_goal_register_thread_fiber(rt,&target_fiber),17,"jak imports original target main on its original DRAM working stack");
+       target_fiber.entry==enter &&
+       dc_goal_register_thread_fiber(rt,&target_fiber),17,"jak imports original target main at enter-state on its original DRAM working stack");
  registered=1;
  read_symbol=dc_goal_find(rt,"read-pad");memcpy(code+8,&address,4);
  CHECK(dc_goal_load_module(rt,&fn,1,sync_code,NULL,&loaded),18,"jak read-pad call observer links");
