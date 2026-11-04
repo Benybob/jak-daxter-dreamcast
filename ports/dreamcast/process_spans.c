@@ -83,6 +83,9 @@ int dc_goal_process_span_room(dc_goal_runtime *r){
  if(active->count==registered_capacity||next_generation==UINT64_MAX){fail(r,DC_GOAL_OUT_OF_MEMORY);return -1;}
  return 1;
 }
+#ifdef DC_ARENA_JAK_PLAYER
+static uint32_t span_field(dc_goal_runtime *r,uint32_t address);
+#endif
 int dc_goal_process_span_note(dc_goal_runtime *r,uint32_t process,uint32_t bytes,dc_goal_process_span *out){
  uint32_t at,offset;dc_goal_process_span made;
  if(state(r)!=1)return (DC_GOAL_NOTE_SITE(5),fail(r,DC_GOAL_BAD_ARGUMENT));
@@ -96,7 +99,25 @@ int dc_goal_process_span_note(dc_goal_runtime *r,uint32_t process,uint32_t bytes
   if(out)*out=registered_rows[at];
   return 1;
  }
+#ifdef DC_ARENA_JAK_PLAYER
+ /* Original shrink-heap already made the previous pool member's own record
+  * (allocated-length+112) end at or before this one; the dead pool carved this
+  * process after it. Follow that shrink instead of refusing the new member. */
+ if(at>0&&process-registered_rows[at-1].process<registered_rows[at-1].bytes){
+  uint32_t prev=registered_rows[at-1].process,length=span_field(r,prev+68u);
+  dc_goal_span_overlap_note(r,process,bytes,prev,registered_rows[at-1].bytes);
+  if(length!=0xffffffffu&&length<=UINT32_MAX-112u&&length+112u<=process-prev&&next_generation!=UINT64_MAX){
+   registered_rows[at-1].bytes=length+112u;registered_rows[at-1].generation=++next_generation;
+   ++dc_goal_span_overlap_probe.followed;
+  }
+ }
+#line 99
  if(at>0&&process-registered_rows[at-1].process<registered_rows[at-1].bytes)return (DC_GOAL_NOTE_SITE(5),fail(r,DC_GOAL_BAD_ARGUMENT));
+#else
+#line 99
+ if(at>0&&process-registered_rows[at-1].process<registered_rows[at-1].bytes)return (DC_GOAL_NOTE_SITE(5),fail(r,DC_GOAL_BAD_ARGUMENT));
+#endif
+#line 100
  if(at<active->count&&registered_rows[at].process-process<bytes)return (DC_GOAL_NOTE_SITE(5),fail(r,DC_GOAL_BAD_ARGUMENT));
  if(dc_goal_process_span_room(r)!=1)return 0;
  made.process=process;made.bytes=bytes;made.generation=++next_generation;
@@ -146,3 +167,28 @@ int dc_goal_process_spans_detach(dc_goal_runtime *r){
  active=NULL;registered_runtime=NULL;registered_rows=NULL;registered_capacity=registered_owner=0;
  memset(&registered_hooks,0,sizeof registered_hooks);memset(rows,0,bytes);memset(table,0,sizeof *table);return 1;
 }
+#ifdef DC_ARENA_JAK_PLAYER
+/* goal_length is the guest word at object+68 (allocated-length). 0xffffffff
+ * means that address was outside the arena's used range. No dc_goal_resolve:
+ * that would overwrite rt->error before the refusal. */
+volatile dc_goal_span_overlap_info dc_goal_span_overlap_probe={.version=1};
+typedef char dc_goal_span_overlap_probe_size[sizeof dc_goal_span_overlap_probe==36?1:-1];
+static uint32_t span_field(dc_goal_runtime *r,uint32_t address){
+ uint32_t value=0xffffffffu,offset;
+ if(!r||!r->memory||address<r->base)return value;
+ offset=address-r->base;
+ if(offset>r->used||4u>r->used-offset)return value;
+ memcpy(&value,r->memory+offset,4);
+ return value;
+}
+void dc_goal_span_overlap_note(dc_goal_runtime *r,uint32_t process,uint32_t bytes,
+                               uint32_t prev_process,uint32_t prev_bytes){
+ if(dc_goal_span_overlap_probe.count++)return;
+ dc_goal_span_overlap_probe.process=process;
+ dc_goal_span_overlap_probe.bytes=bytes;
+ dc_goal_span_overlap_probe.goal_length=process<=UINT32_MAX-68u?span_field(r,process+68u):0xffffffffu;
+ dc_goal_span_overlap_probe.prev_process=prev_process;
+ dc_goal_span_overlap_probe.prev_bytes=prev_bytes;
+ dc_goal_span_overlap_probe.prev_goal_length=prev_process<=UINT32_MAX-68u?span_field(r,prev_process+68u):0xffffffffu;
+}
+#endif

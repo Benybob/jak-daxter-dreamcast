@@ -43,4 +43,15 @@ int dc_goal_process_span_shrink(dc_goal_runtime *,const dc_goal_process_span *,u
 int dc_goal_process_spans_detach(dc_goal_runtime *);
 /* 0 absent/foreign, 1 registered, -1 invalid owning metadata/context. */
 int dc_goal_process_spans_registered(dc_goal_runtime *);
+#ifdef DC_ARENA_JAK_PLAYER
+/* First line-99 overlap (new span starts inside the previous row). The note
+ * does not change the refusal, rt->error, or dc_goal_error_site. Jak ELF only. */
+typedef struct dc_goal_span_overlap_info {
+  uint32_t version,count,process,bytes,goal_length,prev_process,prev_bytes,prev_goal_length;
+  uint32_t followed;  /* rows shrunk to the original record */
+} dc_goal_span_overlap_info;
+extern volatile dc_goal_span_overlap_info dc_goal_span_overlap_probe;
+void dc_goal_span_overlap_note(dc_goal_runtime *,uint32_t process,uint32_t bytes,
+                               uint32_t prev_process,uint32_t prev_bytes);
+#endif
 #endif
