@@ -669,18 +669,93 @@ int dc_goal_leave_known_scope(dc_goal_runtime *rt,uint32_t previous_process) {
   return dc_goal_leave_lexical_scope(rt,process,top->lexical_bytes) && shrink_left_span(rt,process);
 }
 
+#ifdef DC_ARENA_JAK_PLAYER
+/* Hung-dispatcher heartbeat. goal_fiber.c / goal_main_thread.c are not built
+ * with this flag; the bridges below are. seq is published last. A frozen seq
+ * means the loop left these bridges. The ring slot of that sample is
+ * (seq-1)&7. --dump dc_arena_jak_player_heartbeat 180 */
+enum {
+  DC_JAK_BEAT_RESUME_BEFORE=1,
+  DC_JAK_BEAT_RESUME_YIELD=2,
+  DC_JAK_BEAT_RESUME_RETURN=3,
+  DC_JAK_BEAT_SUSPEND=4,
+  DC_JAK_BEAT_SCOPE_ENTER=5,
+  DC_JAK_BEAT_SCOPE_LEAVE=6,
+  DC_JAK_BEAT_RESET_BEFORE=7,
+  DC_JAK_BEAT_RESET_AFTER=8,
+  DC_JAK_BEAT_PAD=9,
+  DC_JAK_BEAT_RESUME_FAIL=10
+};
+enum {DC_JAK_BEAT_RING=8};
+typedef struct {
+  uint32_t seq,site,process,name,thread,phase,event,depth,status;
+  uint32_t ring_process[DC_JAK_BEAT_RING];
+  uint32_t ring_site[DC_JAK_BEAT_RING];
+  uint32_t ring_name[DC_JAK_BEAT_RING];
+  char type_name[24];  /* the type symbol name of process */
+  char process_name[24];  /* the process name string */
+} dc_jak_player_heartbeat;
+volatile dc_jak_player_heartbeat dc_arena_jak_player_heartbeat;
+typedef char dc_arena_jak_player_heartbeat_bytes[sizeof(dc_jak_player_heartbeat)==180?1:-1];
+static void jak_beat(uint32_t site,uint32_t process,uint32_t thread,uint32_t phase,uint32_t event) {
+  uint32_t seq=dc_arena_jak_player_heartbeat.seq+1u,slot=(seq-1u)&(DC_JAK_BEAT_RING-1u);
+  uint32_t depth=0,status=0,name=0;dc_goal_runtime *rt=active_runtime;
+  if(rt) {
+    dc_goal_pp_scope_stack *stack=dc_goal_pp_scope_active(rt);
+    enum dc_goal_error saved=rt->error;unsigned char *fields;
+    if(stack)depth=stack->depth;
+    if(process>=4u && process<=UINT32_MAX-35u && (fields=dc_goal_resolve(rt,process,36))) {
+      memcpy(&name,fields,4);memcpy(&status,fields+32,4);
+    }
+    {/* type tag at process-4, its name symbol at type+0; the process name
+      * field (process+0) is a GOAL string: length word, then bytes. */
+     const unsigned char *tag=process>=8u?dc_goal_resolve(rt,process-4u,4):NULL,*type=NULL,*text=NULL;
+     uint32_t type_address=0,symbol=0,length=0;const char *n=NULL;size_t k=0;
+     if(tag){memcpy(&type_address,tag,4);type=type_address>=4u?dc_goal_resolve(rt,type_address,4):NULL;}
+     if(type){memcpy(&symbol,type,4);n=dc_goal_symbol_name(rt,symbol);}
+     for(;n && n[k] && k<23;++k)dc_arena_jak_player_heartbeat.type_name[k]=n[k];
+     for(;k<24;++k)dc_arena_jak_player_heartbeat.type_name[k]=0;
+     if(name>=4u && dc_goal_resolve(rt,name,4)){memcpy(&length,dc_goal_resolve(rt,name,4),4);
+       if(length<64u)text=dc_goal_resolve(rt,name+4u,length?length:1u);}
+     for(k=0;text && k<length && k<23;++k)dc_arena_jak_player_heartbeat.process_name[k]=(char)text[k];
+     for(;k<24;++k)dc_arena_jak_player_heartbeat.process_name[k]=0;}
+    rt->error=saved;
+  }
+  dc_arena_jak_player_heartbeat.site=site;
+  dc_arena_jak_player_heartbeat.process=process;
+  dc_arena_jak_player_heartbeat.name=name;
+  dc_arena_jak_player_heartbeat.thread=thread;
+  dc_arena_jak_player_heartbeat.phase=phase;
+  dc_arena_jak_player_heartbeat.event=event;
+  dc_arena_jak_player_heartbeat.depth=depth;
+  dc_arena_jak_player_heartbeat.status=status;
+  dc_arena_jak_player_heartbeat.ring_process[slot]=process;
+  dc_arena_jak_player_heartbeat.ring_site[slot]=site;
+  dc_arena_jak_player_heartbeat.ring_name[slot]=name;
+  dc_arena_jak_player_heartbeat.seq=seq;
+}
+#endif
 /* Compiled original (set! pp X) ... (set! pp saved) brackets. Both are boxed
  * 0/1 results; the lowerer exits before body memory access on zero. */
 static uint64_t enter_process_scope(uint64_t process) {
   dc_goal_runtime *rt=active_runtime;
   if(!rt)return 0;
   if(process>UINT32_MAX){if(rt->error==DC_GOAL_OK)(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);return 0;}
+#ifdef DC_ARENA_JAK_PLAYER
+  jak_beat(DC_JAK_BEAT_SCOPE_ENTER,(uint32_t)process,0,0,0);
+#endif
   return (uint64_t)dc_goal_enter_known_scope(rt,(uint32_t)process);
 }
 static uint64_t leave_process_scope(uint64_t previous_process) {
   dc_goal_runtime *rt=active_runtime;
   if(!rt)return 0;
   if(previous_process>UINT32_MAX){if(rt->error==DC_GOAL_OK)(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);return 0;}
+#ifdef DC_ARENA_JAK_PLAYER
+  {dc_goal_pp_scope_stack *stack=dc_goal_pp_scope_active(rt);uint32_t leaving=0;
+   if(stack && stack->depth && stack->depth<=DC_GOAL_PP_SCOPE_MAX_DEPTH)
+     leaving=stack->frames[stack->depth-1].lexical_process;
+   jak_beat(DC_JAK_BEAT_SCOPE_LEAVE,leaving,(uint32_t)previous_process,0,0);}
+#endif
   return (uint64_t)dc_goal_leave_known_scope(rt,(uint32_t)previous_process);
 }
 int dc_goal_install_scope_bridge(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_goal_module_result *result) {
@@ -727,6 +802,9 @@ static uint64_t suspend_current(void) {
   }
   /* Original thread-suspend marks the process suspended before returning. */
   set_process_status(rt,fiber->process,"suspended");
+#ifdef DC_ARENA_JAK_PLAYER
+  jak_beat(DC_JAK_BEAT_SUSPEND,fiber->process,fiber->thread,(uint32_t)fiber->phase,0);
+#endif
   dc_goal_fiber_yield(rt,0);
   return rt->error==DC_GOAL_OK;
 }
@@ -812,7 +890,15 @@ static uint64_t thread_resume(uint64_t thread) {
 #ifdef DC_ARENA_LIVE
   {int event;
    dc_arena_live_resume(rt,fiber->process,0);
+#ifdef DC_ARENA_JAK_PLAYER
+   jak_beat(DC_JAK_BEAT_RESUME_BEFORE,fiber->process,fiber->thread,(uint32_t)fiber->phase,0);
+#endif
    event=dc_goal_fiber_step(fiber,0,&out);
+#ifdef DC_ARENA_JAK_PLAYER
+   jak_beat((event==DC_FIBER_YIELDED && rt->error==DC_GOAL_OK && fiber->phase==DC_FIBER_SUSPENDED)
+            ?DC_JAK_BEAT_RESUME_YIELD:DC_JAK_BEAT_RESUME_RETURN,
+            fiber->process,fiber->thread,(uint32_t)fiber->phase,(uint32_t)event);
+#endif
    if(event==DC_FIBER_YIELDED && rt->error==DC_GOAL_OK && fiber->phase==DC_FIBER_SUSPENDED)
      dc_arena_live_resume(rt,fiber->process,1);}
 #elif defined(DC_ARENA_CAMERA)
@@ -832,6 +918,10 @@ static uint64_t thread_resume(uint64_t thread) {
   memcpy(fields+20,&current,4);
   return 0;
 unsupported:
+#ifdef DC_ARENA_JAK_PLAYER
+  jak_beat(DC_JAK_BEAT_RESUME_FAIL,fiber?fiber->process:0,thread<=UINT32_MAX?(uint32_t)thread:0,
+           fiber?(uint32_t)fiber->phase:0,0);
+#endif
   if(rt->error==DC_GOAL_OK)rt->error=DC_GOAL_UNSUPPORTED_TRANSFER;
   return 0;
 }
@@ -903,7 +993,13 @@ static uint64_t reset_and_call(uint64_t thread,uint64_t func) {
   if(!dc_goal_bind_process_context(rt,process,fiber->reservation)){memcpy(fields+20,&current,4);return 0;}
   {uint32_t value=(uint32_t)thread;unsigned char *q=dc_goal_resolve(rt,process+44,4);if(q)memcpy(q,&value,4);}
   set_process_status(rt,process,"running");
+#ifdef DC_ARENA_JAK_PLAYER
+  jak_beat(DC_JAK_BEAT_RESET_BEFORE,process,(uint32_t)thread,(uint32_t)fiber->phase,(uint32_t)func);
+#endif
   if(!dc_goal_call_on_stack(rt,(uint32_t)func,base,bytes,&out))out=0;
+#ifdef DC_ARENA_JAK_PLAYER
+  jak_beat(DC_JAK_BEAT_RESET_AFTER,process,(uint32_t)thread,(uint32_t)fiber->phase,(uint32_t)func);
+#endif
   {enum dc_goal_error error=rt->error;dc_goal_clear_process_context(rt);rt->error=error;}
   memcpy(fields+20,&current,4);
   return out;
@@ -1175,6 +1271,11 @@ static uint64_t cpad_open_native(uint64_t info,uint64_t number){
 }
 static uint64_t cpad_get_data_native(uint64_t info){
   dc_goal_runtime *rt=active_runtime;uint8_t *cpad;
+#ifdef DC_ARENA_JAK_PLAYER
+  {dc_goal_fiber *beat_fiber=dc_goal_fiber_current();
+   jak_beat(DC_JAK_BEAT_PAD,beat_fiber?beat_fiber->process:0,info<=UINT32_MAX?(uint32_t)info:0,
+            beat_fiber?(uint32_t)beat_fiber->phase:0,0);}
+#endif
   if(!rt || info>UINT32_MAX || !(cpad=dc_goal_resolve(rt,(uint32_t)info,132))){if(rt)(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);return 0;}
   dc_goal_cpad_get_data(cpad);
 #ifdef DC_ARENA_LIVE

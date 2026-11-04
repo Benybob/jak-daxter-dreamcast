@@ -889,3 +889,150 @@ frame 0 holds Jak's translation (-1017659.9, 211967.2, -1055179.9) from the
 continue point. So the original target ran enter-state and its first frame;
 the dispatcher then does not return during the second frame.
 `dc_goal_integer_trap_probe` stays empty: no integer trap or (break) fired.
+
+## Second-frame dispatcher hang (AI-assisted)
+
+The C loop in `arena_jak_player.c` records a trace frame only after
+`kernel-dispatcher` returns. During the hang the receipt is still frame 1,
+with attempts 2, resumes 2, pad_services 1, pad_valid 1, and evidence error 0.
+`dc_arena_jak_player_resume` counts only the target process. Those two
+resumes are the target fiber's two completed yields. `attempts` and `resumes`
+stay at 2, so the dispatcher is not re-entering the target. `pad_services`
+increments in `cpad_get_data_native`, which `service-cpads` calls from
+`display-frame-start`. That runs inside the display process, and the active
+tree visits display after the target.
+
+`change-parent` prepends. The pools under `*active-pool*` are therefore
+walked default, entity, target, camera, display. `execute-process-tree`
+saves the next brother before the recursive call. A brother cycle that is
+already linked is followed in that same call. A brother pointer stored
+during the visit is the link the next dispatcher call walks. A child cycle
+is followed in the same call, after the node's function returns.
+`start` / `init-target` link the target under `*target-pool*` and the
+sidekick under the target. That linking returns before the first dispatch.
+The source of `change-parent` does not build a cycle. A cycle among
+camera, sidekick, or display would leave the target counters at 2 and would
+show up as a repeating resume pair in the heartbeat ring below.
+
+`dc_goal_fiber_step` is what `thread_resume` runs. On a suspended fiber it
+restores the stack image and context-swaps into the fiber. `suspend` marks
+the process `suspended` and `dc_goal_fiber_yield` swaps back through
+`dc_goal_context_leave_raw`. The step then sees `DC_FIBER_SUSPENDED`,
+backs up the stack, and returns `DC_FIBER_YIELDED`. `goal_main_thread.c` is
+only the arming preflight (stack, pc, sp, status). It does not perform that
+swap. The second target yield took this path and returned: resumes is 2 and
+the runtime error stayed 0. The context swap is not where this hang sits.
+
+Boot already ran the display process for `DC_LIVE_UPDATES` frames and left
+it in `display-loop`'s `while *run*` body. Each player dispatch is one more
+iteration of that body. `swap-display` → `display-sync` →
+`display-frame-start` calls `service-cpads` before `level-update`. The
+second call is stuck after the target yield and before that pad read:
+target post, the sidekick, the camera pool, or display code above
+`service-cpads`.
+
+`get-or-create-continue!` runs before `start`. Its `'play` plus
+`current-continue` branch is the progress-menu path. This boot takes the
+other branch and passes `*default-continue*` (name `"default"`).
+`target-continue` then takes the default arm. The first resume enters the
+state and suspends after `move-to-point!` and `change-state` of `cam-fixed`.
+That matches the one trace frame. The second resume is the code after that
+suspend: load-state restore, `(execute-command '(teleport))`,
+`change-target`, `change-state` of `cam-string` with parameter 0,
+`*spawn-actors*`, `*teleport*`, then `suspend-for`. `suspend-for` suspends
+on its first iteration. That yield is the one the counters already recorded,
+so that GOAL ran and returned to the dispatcher.
+
+`change-state` with parameter 0 sends `'change-state-no-go`. The handler
+runs the new state's `:enter` and installs its event hook. It does not call
+`enter-state`, so the slave's main thread stays in `cam-free-floating`
+(`cam-master-init` spawned it there) and its trans/post hooks stay the old
+ones. `cam-string`'s `:enter` ran inside the target fiber, before the yield
+that returned. `cam-string`'s `:trans`, which can `cam-slave-go`, is not the
+hook that is installed.
+
+On the first player frame the camera master still has `master-options` bit 2
+clear (`cam-master-init` stores 4). `*target*` is set, and the frame-1
+events are `clear-entity` and `cam-fixed`, which do not set bit 2.
+`master-track-target` therefore takes its short arm, sets bit 2, calls
+`reset-target-tracking`, and returns: the first dispatch did return, and
+display then serviced the pad, so the master got through that arm. The
+second frame is the first time bit 2 is already set. `change-target` of
+`*target*` stores a false drawable target, sets bit 2 again, and resets
+tracking once more, still inside the fiber that returned. After the yield,
+`master-track-target` takes the long arm (`tracking-spline-method-17` and
+`method-22`, then region checks). That arm did not run on frame 1. It is
+the leading place the second call can spin. `method-9`, `method-14`,
+`method-18`, and `method-20` walk `point[].next` until a sentinel or an
+endpoint. `method-18` stops on the end point, not on the sentinel
+`-134250495`. A cycle in that index list stays inside the spline and raises
+no trap. `method-10`, called by `reset-target-tracking`, rebuilds a 0..31
+chain ending at the sentinel, and that call already returned inside the
+target fiber. A cycle would have to be introduced by the long arm itself.
+That is not established.
+
+The same window still includes code that did run on frame 1: target
+`target-no-move-post` (its `(the int time-ratio)` countdown;
+`set-time-ratios` stores `(fmin 4.0 slowdown)` from the previous
+`display-frame-start`), the sidekick, the slave's still-`cam-free-floating`
+body with the fields `cam-string`'s `:enter` rewrote, and the display while
+body above `swap-display`. `level.gc`'s non-suspending `load-continue` loop
+is inside `level-update`, which is after `service-cpads`, so it is outside
+this window.
+
+No original GOAL was changed. The fiber engine was not changed.
+`goal_fiber.c`, `goal_main_thread.c`, `native_context_swap.S`, and
+`pp_scope.c` are not built with `DC_ARENA_JAK_PLAYER`; a guard there would
+not be in this ELF. The Makefile already compiles `goal_bridge.c` as
+`arena_jak_player_bridge.o` with that flag, so the heartbeat lives there
+and no other ELF's object changes.
+
+Heartbeat symbol: `dc_arena_jak_player_heartbeat`. Size: 132 bytes.
+`verify_backend.py --dump dc_arena_jak_player_heartbeat 132` rewrites
+`dump.bin` on each progress sample. Little-endian `uint32` fields:
+
+| offset | field |
+| --- | --- |
+| 0 | `seq`, count of completed samples, stored last |
+| 4 | `site` |
+| 8 | `process` |
+| 12 | `name`, the basic at process+0 |
+| 16 | `thread` |
+| 20 | `phase`, fiber phase (suspended is 3) |
+| 24 | `event` |
+| 28 | `depth`, lexical pp depth |
+| 32 | `status`, the basic at process+32 |
+| 36 | `ring_process[8]` |
+| 68 | `ring_site[8]` |
+| 100 | `ring_name[8]` |
+
+The latest ring slot is `(seq - 1) & 7`. Sites: 1 resume before
+`dc_goal_fiber_step`, 2 step returned yielded and suspended, 3 step returned
+another way (`event` is the fiber event: fail 0, yielded 1, completed 2),
+4 `suspend` about to yield, 5 scope enter (`process` is the entered
+process), 6 scope leave (`process` is the lexical process being left,
+`thread` is the restored outer process), 7 `reset-and-call` before the
+trans/post function (`event` is that function, `thread` is the temporary
+cpu-thread), 8 that call returned, 9 `cpad-get-data` entered (`thread` is
+the cpad-info, `process` is the current fiber), 10 `thread-resume` refused.
+A frozen `seq` is the last bridge before a loop that no longer calls one.
+The process and site of that sample are the loop's entry. A climbing `seq`
+whose ring repeats one process at sites 1, 4, and 2 is that process being
+resumed again inside the same dispatcher call. Sites 5 and 6 repeating are
+a scope bracket spinning. Site 7 frozen on the target is the post body.
+Site 1 frozen on the camera master is the long `master-track-target` arm
+(or whatever that resume called that does not come back to a bridge).
+
+This was not compiled and not run. The 132-byte image has not been dumped.
+Which of the post-yield bodies is the loop, whether a spline `next` index
+cycles, and whether `time-ratio` is the clamped value the post counts, are
+unverified. Flycast, the link, and the other ELFs were not run.
+
+Observed heartbeat (`--dump dc_arena_jak_player_heartbeat 180`; the struct
+now ends with 24-byte `type_name` and `process_name`): `seq` stops at 7953.
+The last events are the target (scope leave, suspend, yield, post call and
+return) and then the `sidekick` process: resume, suspend, yield (site 2,
+event 1, phase 3). No bridge is called after that, so the dispatcher loops in
+GOAL code that resumes nothing: the camera master is never resumed. Leading
+suspect: the process tree walk after the sidekick (a brother/child cycle
+formed during frame 2, or a run of nodes the walk skips).
