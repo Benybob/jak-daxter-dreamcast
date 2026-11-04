@@ -139,6 +139,12 @@ GAME.CGO 7,679,888 to 7,567,488 (-20,320 floats, -15,856 branches, -76,224
 compares). Measured in `target`: moves are mostly free already (same slot);
 the remaining bytes are the per-op load/compute/store templates.
 
+Then: slot coloring prefers a move partner's color when they never interfere,
+and a forwarded constant, symbol pointer, function or static address is not
+emitted at its op at all but straight into the registers of its single read (a
+move hands it on; any other access relowers without it). GAME.CGO 7,567,488 to
+7,415,136 (-152,352); TRA-CODE 91,104.
+
 Two PC-only buffers now take Dreamcast values through `dreamcast_memory_budget.gc`
 (the exporter's budget now also substitutes `defglobalconstant`):
 - `PC_SUBTITLE_FILE_SIZE` 256 KiB to 16 KiB: no subtitle files on the disc yet.

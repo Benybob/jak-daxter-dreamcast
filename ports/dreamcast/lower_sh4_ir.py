@@ -201,6 +201,7 @@ def allocate_slots(function,quads=None):
             if live!=after[i] or incoming!=before[i]: changed=True
             after[i],before[i]=live,incoming
     graph={r['id']:set() for r in function['registers']}
+    kinds={r['id']:r.get('class') for r in function['registers']}
     def edge(a,b):
         if a!=b: graph[a].add(b); graph[b].add(a)
     def clique(values):
@@ -214,18 +215,26 @@ def allocate_slots(function,quads=None):
         clique(op['reads']); clique(writes)
         for value in writes:
             for live in after[i]: edge(value,live)
+    # Moves between values that never interfere prefer one color: the lowering
+    # then skips the move (same slot, same class).
+    partners={}
+    for i in reachable:
+        op=ops[i]
+        if op['kind']=='move' and len(op['reads'])==1 and len(op['writes'])==1:
+            a,b=op['reads'][0],op['writes'][0]
+            if a!=b and kinds.get(a)==kinds.get(b): partners.setdefault(a,[]).append(b); partners.setdefault(b,[]).append(a)
     def color(values):
         colors={}
         for value in sorted(values,key=lambda r:(-len(graph[r]),r)):
             occupied={colors[n] for n in graph[value] if n in colors}
+            preferred=[colors[p] for p in partners.get(value,()) if p in colors and colors[p] not in occupied]
             c=0
             while c in occupied: c+=1
-            colors[value]=c
+            colors[value]=preferred[0] if preferred else c
         return colors
     # Any permutation of colors is valid. Number eight-byte colors by integer
     # access count so the hottest slots land in MOV.L @(disp,R14) range (0..60).
     uses={}
-    kinds={r['id']:r.get('class') for r in function['registers']}
     for i in reachable:
         op=ops[i]
         for value in op['reads']+(op['writes'] if op['kind']!='nop' else []):
@@ -1182,7 +1191,7 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
     # only the next op reads (no label between) has its store deferred, and
     # dropped when that read is the next code emitted. Anything emitted first
     # stores it as usual; a second access lowers the function again without it.
-    forward=set()
+    forward=set(); reader={}
     if optimize and not os.environ.get('DC_SH4_NO_FORWARD'):
         ops=function['instructions']
         jumps={op['target'] for op in ops if op['kind'] in ('goto','branch')}
@@ -1199,7 +1208,7 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
                registers.get(value,{}).get('class') not in ('gpr64','float') or read[0]<=written[0]: continue
             if all(ops[i]['kind']=='nop' for i in range(written[0]+1,read[0])) and \
                not any(i in jumps for i in range(written[0]+1,read[0]+1)):
-                forward.add(value)
+                forward.add(value); reader[value]=read[0]
     # 32-bit values: a gpr64 value whose every store has a high word known to be
     # zero (MOV #0 since the last label, call or other write of that register)
     # keeps only its low word in the slot and loads its high word as MOV #0.
@@ -1211,6 +1220,7 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
         narrow-={function.get('lexical_saved')}|{op['source'] for op in function['instructions'] if op['kind']=='register_address'}
     wide_misses=set()
     consumed=set()  # forwarded values whose slot was never written
+    remat={}  # forwarded constants: value -> emit(low, high) at the read
     deferred=None  # (value, low, high) whose store is e.pending
     e=Emitter()
     local=0
@@ -1225,7 +1235,7 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
             e.add_immediate(15,step); amount-=step
     def address(index):
         if index not in slots: raise ValueError('unknown virtual register')
-        if index in consumed: raise ForwardMiss(index)
+        if index in consumed or index in remat: raise ForwardMiss(index)
         offset=slots[index]
         base,start=max(((14,0),)+tuple(bases),key=lambda b:b[1] if b[1]<=offset else -1)
         e.mov(8,base); offset-=start
@@ -1235,7 +1245,7 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
     def near(index,size):
         # (base, disp) when MOV.L @(disp,base) reaches every word (disp 0..60, scaled by 4).
         if index not in slots: raise ValueError('unknown virtual register')
-        if index in consumed: raise ForwardMiss(index)
+        if index in consumed or index in remat: raise ForwardMiss(index)
         offset=slots[index]
         if offset%4: return None
         for base,start in ((14,0),)+tuple(bases):
@@ -1250,6 +1260,7 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
         return regs
     def load64(index,low=0,high=1):
         if registers[index]['class']!='gpr64': raise ValueError('expected integer virtual value')
+        if index in remat: remat.pop(index)[0](low,high); consumed.add(index); return
         if deferred and deferred[0]==index and (low,high)!=deferred[:0:-1]:  # a swap stores instead
             source_low,source_high=held(index)
             # Parallel move: write low first unless it is the source high.
@@ -1272,6 +1283,7 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
     def load_address(index,reg=2):
         # The low word of a 64-bit base: native addresses are 32 bits.
         if registers[index]['class']!='gpr64': raise ValueError('expected integer virtual value')
+        if index in remat: remat.pop(index)[0](reg,None); consumed.add(index); return
         if deferred and deferred[0]==index:
             source_low,_=held(index)
             if reg!=source_low: e.mov(reg,source_low)
@@ -1304,6 +1316,21 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
             e.pending=emit; deferred=(index,low,high)
         else: emit_store64(index,low,high)
         stored=(len(e.code),index,low,high)
+    def constant_value(index,value=None,symbol=None):
+        # A constant or link-time address. Used once by the next op, it is
+        # emitted there, straight into the registers that read it.
+        def emit(low,high):
+            if symbol: e.literal(low,('symbol',symbol))
+            else: constant(low,value)
+            if high is not None:
+                if symbol: e.immediate(high,0)
+                else: constant(high,value>>32)
+        place_constant(index,emit,not symbol and bool(value>>32))
+    def place_constant(index,emit,wide_high):
+        if index in forward:
+            if index in narrow and wide_high: wide_misses.add(index)
+            remat[index]=(emit,wide_high); return
+        emit(0,1); store64(index)
     def emit_store64(index,low,high):
         at=near(index,8)
         if index in narrow:
@@ -1365,7 +1392,7 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
     def float_base(index):
         # (base, offset from it) for a float slot: FMOV.S has only @Rn and @(R0,Rn).
         if index not in slots: raise ValueError('unknown virtual register')
-        if index in consumed: raise ForwardMiss(index)
+        if index in consumed or index in remat: raise ForwardMiss(index)
         offset=slots[index]
         base,start=max(((14,0),)+tuple(bases),key=lambda b:b[1] if b[1]<=offset else -1)
         return base,offset-start
@@ -1515,6 +1542,8 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
     used={value for op in instructions for value in op['reads']}
     targets={op['target'] for op in instructions if op['kind'] in ('goto','branch')}
     for position,op in enumerate(instructions):
+        for value in remat:  # its reader never loaded it (a slot-sharing move, say)
+            if reader[value]<position: raise ForwardMiss(value)
         entered=e.last_label
         e.label('ir_'+str(position),keep_pending=position not in targets)
         if position not in targets: e.last_label=entered  # fall-through only
@@ -1575,6 +1604,8 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
                 # Never substitute a made-up address for a live GOAL symbol.
                 if all(value not in used for value in writes): continue
                 if not runtime: raise ValueError('live GOAL symbol requires native symbol runtime')
+                if registers[writes[0]]['class']=='gpr64':
+                    constant_value(writes[0],symbol='pointer:'+op['symbol']); continue
                 e.literal(0,('symbol','pointer:'+op['symbol'])); e.immediate(1,0)
                 if registers[writes[0]]['class']=='int128':
                     # desktop movq xmm, gpr: the pointer in the low 64 bits, high 64 zeroed
@@ -1583,18 +1614,17 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
                 continue
             if kind=='native_function':
                 # Import of a loaded native counterpart (resolved and type-checked by the loader).
-                e.literal(0,('symbol','function:'+op['symbol'])); e.immediate(1,0); store64(writes[0])
-                continue
+                constant_value(writes[0],symbol='function:'+op['symbol']); continue
             if kind=='function_address':
                 if not runtime: raise ValueError('function object requires native runtime')
                 if op['function'] not in module: raise ValueError('unresolved function object '+op['function'])
-                e.literal(0,('symbol','function:'+op['function'])); e.immediate(1,0); store64(writes[0])
+                constant_value(writes[0],symbol='function:'+op['function'])
             elif kind=='static_address':
                 if not runtime: raise ValueError('static object requires native runtime')
                 item=statics.get(op['static_id'])
                 if not item or item['kind'] not in ('string','float','pair','structure'):
                     raise ValueError('unsupported/missing static object '+op['static_id'])
-                e.literal(0,('symbol','data:'+op['static_id'])); e.immediate(1,0); store64(writes[0])
+                constant_value(writes[0],symbol='data:'+op['static_id'])
             elif kind=='static_load':
                 # Quadword load of a whole static structure into a 128-bit value.
                 item=statics.get(op['static_id'])
@@ -1767,7 +1797,7 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
                 elif scalar_kind(target['return_type'],runtime) in value_types: store64(writes[0])
                 else: raise ValueError('unsupported linked function return type')
             elif kind=='constant':
-                value=op['value']; constant(0,value); constant(1,value>>32); store64(writes[0])
+                constant_value(writes[0],value=op['value'])
             elif kind=='move' and (registers[reads[0]]['class'] in QUAD or registers[writes[0]]['class'] in QUAD):
                 src,dst=reads[0],writes[0]
                 sc,dc=registers[src]['class'],registers[dst]['class']
@@ -1857,6 +1887,9 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
                 e.mov(4,0); e.mov(5,1); e.mov(6,2); e.mov(7,3); store128(writes[0])
             elif kind=='move':
                 src,dst=reads[0],writes[0]
+                if src in remat and registers[dst]['class']=='gpr64':
+                    # The destination takes the constant: emitted at its read, or stored.
+                    place_constant(dst,*remat.pop(src)); consumed.add(src); continue
                 if dst in narrow and src not in narrow and registers[src]['class']=='gpr64': wide_misses.add(dst)
                 if optimize and slots[src]==slots[dst] and registers[src]['class']==registers[dst]['class'] and                    (src in narrow)==(dst in narrow):
                     coalesced_moves+=1; continue
@@ -1939,6 +1972,7 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
             else: raise ValueError('unsupported typed IR operation '+kind)
         except (ValueError,KeyError,IndexError) as error:
             raise ValueError(f'{function["name"]} IR {position} ({op.get("text",kind)}): {error}') from error
+    if remat: raise ForwardMiss(next(iter(remat)))
     e.label('ir_'+str(len(instructions)))
     if implicit or context_reads or guarded_calls or transfers:
         e.branch('bra','epilogue')
