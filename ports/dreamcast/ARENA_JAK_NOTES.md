@@ -1592,3 +1592,24 @@ every code-entry lookup (fiber start/resume, stack calls, catch).
 
 The node map shows the sidekick in `process-drawable-art-error`, and
 `hud-pickups` and one manipy with state #f. Those are next.
+
+## Daxter's art in a resident main-RAM region (2026-11-04, AI-assisted)
+
+Before this, only eichar loaded: after GAME.CGO, the arena had 1,422,128
+bytes free, enough for eichar (1,318,288) but 557,616 short of sidekick
+(661,456), so `init-sidekick` sat in `process-drawable-art-error`. The
+arena is fixed at boot, but by art load the GAME.CGO loader has freed its
+KOS heap buffers (the symbol-table snapshot, DCSH buffers, zstd context):
+`dc_arena_jak_kos_heap` measured 605,696 free by mallinfo and a largest
+successful malloc of 704,512.
+
+The runtime now has a second outside region, `resident` (main RAM, cached,
+bump-allocated, never freed; `dc_goal_register_resident`,
+`dc_goal_alloc_resident`, accepted by `dc_goal_resolve`). When the pair does
+not fit the arena and KOS can still give sidekick plus 32 KiB, the Jak art
+loader registers a 16-byte-aligned sidekick-sized block and loads
+JAKART.DGO: eichar goes to the arena and sidekick to the resident region.
+Each object relocates against its own base, unchanged otherwise.
+
+Observed (Flycast): 7652 of 7652 pass, `sidekick-short=0`; the node map
+shows the sidekick in its original `sidekick-clone` state.

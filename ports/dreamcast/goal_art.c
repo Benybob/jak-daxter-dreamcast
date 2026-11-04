@@ -175,7 +175,7 @@ int dc_goal_load_art_dgo(dc_goal_runtime *rt,FILE *f,uint32_t expected_payload,d
   unsigned char h[64],v4[16];art_row rows[2];
   uint32_t i,at=64,total=0,base;
 #ifdef DC_ARENA_JAK_PLAYER
-  uint32_t count;
+  uint32_t count,resident=0;unsigned char placed[2]={0,0};
 #endif
   dc_goal_art_result admitted;
   if(result)memset(result,0,sizeof *result);
@@ -207,28 +207,55 @@ int dc_goal_load_art_dgo(dc_goal_runtime *rt,FILE *f,uint32_t expected_payload,d
   }
   if(fseek(f,(long)at,SEEK_SET) || fgetc(f)!=EOF || ferror(f))return fail(rt,DC_GOAL_BAD_MODULE);
   if(total!=expected_payload)return fail(rt,DC_GOAL_BAD_MODULE);
+#ifdef DC_ARENA_JAK_PLAYER
+  /* Objects that do not fit the arena, in order, go to the resident main-RAM
+   * region when one is registered. Each object relocates against its own base.
+   * Admit every placement before reading link tables or modifying symbols. */
+  {uint32_t arena_total=0,resident_total=0,available;
+   if(rt->temporary>rt->capacity || rt->used>rt->capacity-rt->temporary)return fail(rt,DC_GOAL_BAD_ARGUMENT);
+   available=rt->capacity-rt->temporary-rt->used;
+   for(i=0;i<count;++i){
+     if(!resident_total && rows[i].size<=available-arena_total){placed[i]=0;arena_total+=rows[i].size;}
+     else {placed[i]=1;resident_total+=rows[i].size;}
+   }
+   if(resident_total && (!rt->resident_memory || rt->resident_used>rt->resident_capacity ||
+                         resident_total>rt->resident_capacity-rt->resident_used)){
+     /* No room anywhere: the arena refusal records the whole shortfall. */
+     if(!dc_goal_art_admit(rt,total,&admitted)){*result=admitted;return 0;}
+   }
+   if(arena_total && !dc_goal_art_admit(rt,arena_total,&admitted)){*result=admitted;return 0;}
+   if(!arena_total){memset(&admitted,0,sizeof admitted);admitted.before=rt->used;admitted.capacity=rt->capacity;}
+   admitted.payload=total;
+   *result=admitted;result->objects=count;
+   for(i=0;i<count;++i)if(!links(rt,f,&rows[i],NULL,0,result,"art-group"))return 0;
+   ART_PROBE(2);
+   base=arena_total?dc_goal_alloc(rt,arena_total):0;
+   resident=resident_total?dc_goal_alloc_resident(rt,resident_total):0;
+   if((arena_total && !base) || (resident_total && !resident))return 0;
+  }
+  ART_PROBE(3);
+  for(i=0;i<count;++i){
+    uint32_t *at_base=placed[i]?&resident:&base;
+    unsigned char *data=dc_goal_resolve(rt,*at_base,rows[i].size);
+    if(!data || !read_at(f,rows[i].data,data,rows[i].size) || !links(rt,f,&rows[i],data,*at_base,result,"art-group"))
+      return fail(rt,DC_GOAL_BAD_MODULE);
+    result->art[i]=*at_base+4;++result->linked;*at_base+=rows[i].size;
+  }
+#else
   /* Admit the entire pair before reading link tables or modifying symbols. */
   if(!dc_goal_art_admit(rt,total,&admitted)){*result=admitted;return 0;}
-#ifdef DC_ARENA_JAK_PLAYER
-  *result=admitted;result->objects=count;
-  for(i=0;i<count;++i)if(!links(rt,f,&rows[i],NULL,0,result,"art-group"))return 0;
-#else
   *result=admitted;result->objects=2;
   for(i=0;i<2;++i)if(!links(rt,f,&rows[i],NULL,0,result,"art-group"))return 0;
-#endif
   ART_PROBE(2);
   base=dc_goal_alloc(rt,total);if(!base)return 0;
   ART_PROBE(3);
-#ifdef DC_ARENA_JAK_PLAYER
-  for(i=0;i<count;++i){
-#else
   for(i=0;i<2;++i){
-#endif
     unsigned char *data=dc_goal_resolve(rt,base,rows[i].size);
     if(!data || !read_at(f,rows[i].data,data,rows[i].size) || !links(rt,f,&rows[i],data,base,result,"art-group"))
       return fail(rt,DC_GOAL_BAD_MODULE);
     result->art[i]=base+4;++result->linked;base+=rows[i].size;
   }
+#endif
   ART_PROBE(4);
 #ifdef DC_ARENA_JAK_PLAYER
   for(i=0;i<count;++i){

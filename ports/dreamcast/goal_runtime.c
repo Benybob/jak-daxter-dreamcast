@@ -28,6 +28,10 @@ void *dc_goal_resolve(dc_goal_runtime *rt,uint32_t address,uint32_t size) {
       address-rt->extension_base<=rt->extension_used &&
       size<=rt->extension_used-(address-rt->extension_base))
     return rt->extension_memory+(address-rt->extension_base);
+  if (rt->resident_memory && address>=rt->resident_base &&
+      address-rt->resident_base<=rt->resident_used &&
+      size<=rt->resident_used-(address-rt->resident_base))
+    return rt->resident_memory+(address-rt->resident_base);
   fail(rt,DC_GOAL_BOUNDS); return NULL;
 }
 static int read32(dc_goal_runtime *rt,uint32_t at,uint32_t *value) {
@@ -95,6 +99,32 @@ uint32_t dc_goal_alloc_extension(dc_goal_runtime *rt,uint32_t bytes) {
   words=(volatile uint32_t *)(void *)(rt->extension_memory+rt->extension_used);
   for (i=0;i<size/4u;++i) words[i]=0;
   rt->extension_used+=size;
+  return address;
+}
+int dc_goal_register_resident(dc_goal_runtime *rt,void *memory,uint32_t base,uint32_t capacity) {
+  if (!rt || !rt->memory || rt->resident_memory || !memory || ((uintptr_t)memory&15u) || (base&15u) ||
+      !capacity || (capacity&15u) || capacity>UINT32_MAX-base ||
+      (base<rt->base+rt->capacity && rt->base<base+capacity) ||
+      (rt->extension_memory && base<rt->extension_base+rt->extension_capacity &&
+       rt->extension_base<base+capacity)) {
+    (DC_GOAL_NOTE_SITE(2),fail(rt,DC_GOAL_BAD_ARGUMENT)); return 0;
+  }
+  rt->resident_memory=memory; rt->resident_base=base;
+  rt->resident_capacity=capacity; rt->resident_used=0;
+  return 1;
+}
+uint32_t dc_goal_alloc_resident(dc_goal_runtime *rt,uint32_t bytes) {
+  uint32_t size,address;
+  if (!rt || !rt->resident_memory || !bytes || bytes>UINT32_MAX-15u)
+    return (DC_GOAL_NOTE_SITE(2),fail(rt,DC_GOAL_BAD_ARGUMENT));
+  size=(bytes+15u)&~15u;
+  if (rt->resident_used>rt->resident_capacity || size>rt->resident_capacity-rt->resident_used) {
+    dc_goal_last_failed_alloc=size;
+    return fail(rt,DC_GOAL_OUT_OF_MEMORY);
+  }
+  address=rt->resident_base+rt->resident_used;
+  memset(rt->resident_memory+rt->resident_used,0,size);
+  rt->resident_used+=size;
   return address;
 }
 void dc_goal_release_temporary(dc_goal_runtime *rt) {

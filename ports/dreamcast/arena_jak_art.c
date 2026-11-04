@@ -70,12 +70,26 @@ int dc_arena_jak_texture_page_dir(dc_goal_runtime *rt){
   return 1;
 }
 #endif
+#ifdef DC_ARENA_JAK_PLAYER
+#include <malloc.h>
+#include <stdlib.h>
+/* KOS heap at art load: mallinfo free/used, the largest malloc that succeeds
+ * (binary search, freed again), arena. --dump dc_arena_jak_kos_heap 16 */
+volatile uint32_t dc_arena_jak_kos_heap[4];
+static void jak_kos_heap(void){
+  struct mallinfo mi=mallinfo();uint32_t lo=0,hi=8u*1024u*1024u;
+  dc_arena_jak_kos_heap[0]=(uint32_t)mi.fordblks;dc_arena_jak_kos_heap[1]=(uint32_t)mi.uordblks;
+  while(hi-lo>4096u){uint32_t mid=lo+(hi-lo)/2u;void *p=malloc(mid);if(p){free(p);lo=mid;}else hi=mid;}
+  dc_arena_jak_kos_heap[2]=lo;dc_arena_jak_kos_heap[3]=(uint32_t)mi.arena;
+}
+#endif
 int dc_arena_jak_art_load(dc_goal_runtime *rt,uint32_t level){
   dc_goal_art_result result;FILE *f;int ok;
 #ifdef DC_ARENA_JAK_PLAYER
   uint32_t free_bytes,payload;
   const char *path;
   if(!rt || rt->error!=DC_GOAL_OK)return 0;
+  jak_kos_heap();
   if(!dc_arena_jak_texture_page_dir(rt))return 0;
   if(rt->temporary>rt->capacity || rt->used>rt->capacity-rt->temporary)return 0;
   free_bytes=rt->capacity-rt->temporary-rt->used;
@@ -84,6 +98,18 @@ int dc_arena_jak_art_load(dc_goal_runtime *rt,uint32_t level){
   dc_arena_jak_player_evidence.pair_available=free_bytes;
   dc_arena_jak_player_evidence.pair_shortfall=DC_JAK_ART_BYTES>free_bytes?DC_JAK_ART_BYTES-free_bytes:0;
   payload=free_bytes>=DC_JAK_ART_BYTES+65536u?DC_JAK_ART_BYTES:DC_JAK_EICHAR_BYTES;
+  /* The pair does not fit the arena: sidekick goes to a resident region taken
+   * from the KOS heap the GAME.CGO loader freed (its snapshot and buffers),
+   * when that heap still has the whole object plus a working margin. */
+  if(payload!=DC_JAK_ART_BYTES && free_bytes>=DC_JAK_EICHAR_BYTES+65536u && !rt->resident_memory){
+    void *probe=malloc(DC_JAK_SIDEKICK_BYTES+32768u);
+    if(probe){
+      void *block;free(probe);block=memalign(16,DC_JAK_SIDEKICK_BYTES);
+      if(block && dc_goal_register_resident(rt,block,(uint32_t)(uintptr_t)block&0x1fffffffu,DC_JAK_SIDEKICK_BYTES))
+        payload=DC_JAK_ART_BYTES;
+      else {if(block)free(block);rt->error=DC_GOAL_OK;}
+    }
+  }
   path=payload==DC_JAK_ART_BYTES?"/cd/JAKART.DGO":"/cd/EICHAR.DGO";
   dc_arena_jak_player_evidence.sidekick_loaded=0;
 #endif
@@ -97,7 +123,8 @@ int dc_arena_jak_art_load(dc_goal_runtime *rt,uint32_t level){
   dc_arena_jak_art_evidence.slab_live=dc_arena_slab_live;
   dc_arena_jak_art_evidence.slab_high_water=dc_arena_slab_high_water;
 #ifdef DC_ARENA_JAK_PLAYER
-  ok=dc_goal_art_admit(rt,payload,&result);
+  /* With a resident region the arena holds only eichar. */
+  ok=dc_goal_art_admit(rt,rt->resident_memory?DC_JAK_EICHAR_BYTES:payload,&result);
 #else
   ok=dc_goal_art_admit(rt,DC_JAK_ART_BYTES,&result);
 #endif

@@ -35,6 +35,12 @@ typedef struct {
    * and never freed: idle VRAM in the DGO boot, for bulk write-mostly objects. */
   unsigned char *extension_memory;
   uint32_t extension_base,extension_capacity,extension_used;
+  /* A second outside region in main RAM (AI-assisted), registered after boot
+   * from KOS heap the loader freed, bump-allocated and never freed: complete
+   * retail art objects that do not fit the arena. Cached main RAM, so ordinary
+   * byte access and native code reads work. */
+  unsigned char *resident_memory;
+  uint32_t resident_base,resident_capacity,resident_used;
 } dc_goal_runtime;
 
 int dc_goal_init(dc_goal_runtime *rt,void *memory,uint32_t capacity,uint32_t virtual_base);
@@ -53,6 +59,10 @@ void dc_goal_release_temporary(dc_goal_runtime *rt);
  * (VRAM ignores 8-bit writes) and dc_goal_resolve accepts them. */
 int dc_goal_register_extension(dc_goal_runtime *rt,void *memory,uint32_t base,uint32_t capacity);
 uint32_t dc_goal_alloc_extension(dc_goal_runtime *rt,uint32_t bytes);
+/* Registers the resident main-RAM region once, outside the arena and the
+ * extension; dc_goal_resolve accepts its allocations, which are zeroed. */
+int dc_goal_register_resident(dc_goal_runtime *rt,void *memory,uint32_t base,uint32_t capacity);
+uint32_t dc_goal_alloc_resident(dc_goal_runtime *rt,uint32_t bytes);
 /* Size of the most recent arena request that did not fit (diagnostics only). */
 extern uint32_t dc_goal_last_failed_alloc;
 /* First failure of a GOAL-called type bridge (type new, method-set!) since the
