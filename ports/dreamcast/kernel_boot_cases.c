@@ -491,6 +491,19 @@ spawn_done:
   }
 #endif
 #ifdef DC_LEVEL_LOGIC
+  /* Geyser Rock's code (build_level_code.py: training-obs, training-part) links
+   * and runs its startups first, so its deftypes are real before the BSP binds
+   * them; as on PS2 the level's code objects precede its data in TRA.DGO. */
+  {static dc_goal_dgo_result level_code;FILE *file=fopen("/cd/TRA-CODE.DGO","rb");int loaded=0;
+   CHECK(file!=NULL,1,"Geyser Rock level code opens from /cd");
+   if(file){
+     method_set_depth(&rt,1);
+     loaded=dc_goal_load_dgo(&rt,file,sync_code,NULL,&level_code);fclose(file);
+     method_set_depth(&rt,-1);
+   }
+   CHECK(loaded?1:100+rt.error,1,"Geyser Rock level code links and runs each original startup");
+   CHECK(level_code.objects,2,"TRA-CODE holds training-obs and training-part");
+   CHECK(level_code.initializers,2,"both level code files run their top-level startups");}
   /* Geyser Rock's logic BSP (build_logic_bsp.py) through original login. */
   CHECK(dc_level_logic(&rt),1,"original bsp-header login accepts the Geyser Rock logic BSP");
 #endif

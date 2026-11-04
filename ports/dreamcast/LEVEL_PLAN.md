@@ -117,8 +117,23 @@ python ports/dreamcast/verify_backend.py <flycast> ports/dreamcast/jak-dc-level.
   --disc ports/dreamcast/build/level-gdi/jak-arena.gdi --nm <sh-elf-nm> --tests 533 --timeout 300
 ```
 
+### The level's code
+
+`build_level_code.py TRA` compiles the `.o` entries of `dgos/tra.gd`
+(training-obs, training-part) from goal_src after all of GAME.CGO, through the
+same frontend batch and whole-module SH-4 lowering as `build_game_cgo.py`, into
+`build/level-code/TRA-CODE.DGO` (DCSH: 65,520 + 36,742 bytes). Both compiled on
+the first try. `jak-dc-level.elf` loads it from `/cd` with the native DGO loader
+before the BSP, as TRA.DGO orders code before data. Result: **537 of 537**:
+both startups run, the seven training actor types the BSP binds
+(`tra-pontoon`, `training-cam`, `scarecrow-a`/`-b`, `tra-iris-door`,
+`training-water`, `training-part`) are the code's deftypes, not forward types,
+and login still passes. The code costs 75 KB of arena. `warpgate` and
+`warp-gate-switch` come from `villagep-obs` (VILLAGEP.CGO) and stay forward
+types.
+
 Not yet: the bsp-header `relocate` (needs `*level*` loading-level), entity
-birth, collision queries against it, and the level's code.
+birth, collision queries against it.
 
 ## Order
 

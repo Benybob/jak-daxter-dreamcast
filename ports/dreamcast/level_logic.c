@@ -14,7 +14,7 @@ volatile struct {
   uint32_t root,used_before,used_after,payload,pointers,bindings;
   uint32_t trees,login_entry,login_result,used_after_login;
   uint32_t tree_type[8];
-  uint32_t pad[9];
+  uint32_t real_types,pad[8];
 } dc_level_logic_evidence={.version=1};
 typedef char dc_level_logic_evidence_bytes[sizeof dc_level_logic_evidence==128?1:-1];
 
@@ -59,6 +59,15 @@ int dc_level_logic(dc_goal_runtime *rt){
   dc_level_logic_evidence.login_result=(uint32_t)((one_fn)(uintptr_t)login)(root);
   dc_level_logic_evidence.used_after_login=rt->used;
   if(rt->error!=DC_GOAL_OK || dc_level_logic_evidence.login_result!=root)return stop(rt,6);
+  /* The level's own actor types are the deftypes of its code, not forward
+   * types (a forward type has no parent). */
+  {static const char *const own[]={"tra-pontoon","training-cam","scarecrow-a","scarecrow-b",
+                                   "tra-iris-door","training-water","training-part"};
+   for(i=0;i<sizeof own/sizeof own[0];++i){
+     uint32_t t=named(rt,own[i]);
+     if(t && word(rt,t+4)!=0)++dc_level_logic_evidence.real_types;
+   }
+   if(dc_level_logic_evidence.real_types!=sizeof own/sizeof own[0])return stop(rt,8);}
   dc_level_logic_evidence.stage=7;
   return 1;
 }
