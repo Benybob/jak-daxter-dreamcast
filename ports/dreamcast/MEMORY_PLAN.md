@@ -96,6 +96,23 @@ for slots beyond @(60,R14), and every value is an 8-byte pair even when it is
 a 32-bit pointer. A register allocator and 32-bit values in single registers
 remain the largest saving left.
 
+First two steps toward it (`lower_sh4_ir.py`, 2026-11-04, AI-assisted):
+- **Far frame windows.** R10..R13 are callee-saved and unused by every template
+  (fiber and catch images already save them), so a function points up to four
+  of them at R14+64k for its most-accessed 64-byte windows. Slots there take one
+  `MOV.L @(disp,Rn)` like near slots. Off with `DC_SH4_NO_FRAME_BASES=1`.
+- **Single-use temporaries in registers.** A gpr64 value written by one op and
+  read only by the next has its store deferred in the emitter; if the read is the
+  next code emitted the store is dropped and the read becomes register moves.
+  Anything else emitted first (or a label that is a branch target) stores it as
+  before; a second access relowers the function without that value. Off with
+  `DC_SH4_NO_FORWARD=1`.
+
+GAME.CGO 8,821,024 to 8,273,520 bytes (-547,504: -378,496 windows, -169,008
+forwarding); KERNEL.CGO 214,096 to 210,368; TRA-CODE 102,464 to 98,784. Flycast:
+kernel 90/532, runtime-goal 870, Jak 7652, level 539. Lowering GAME.CGO takes
+about 2 minutes longer (function snapshots for the retry).
+
 Two PC-only buffers now take Dreamcast values through `dreamcast_memory_budget.gc`
 (the exporter's budget now also substitutes `defglobalconstant`):
 - `PC_SUBTITLE_FILE_SIZE` 256 KiB to 16 KiB: no subtitle files on the disc yet.

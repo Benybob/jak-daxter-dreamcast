@@ -5,6 +5,8 @@ This is native code generation, without a C transpiler or interpreter. Unknown
 operations/types fail closed. Full game/runtime support remains future work.
 """
 import argparse
+import copy
+import os
 import json
 from pathlib import Path
 import re
@@ -793,7 +795,18 @@ def suspend_idiom(function):
                                 [b for b in function['fixed_registers'] if b['register']!=index],
                 suspend_process=index)
 
+class ForwardMiss(Exception):
+    """A forwarded single-use value was accessed a second time."""
+
 def compile_function(function,module=None,runtime=False,optimize=True,statics=None):
+    # Lowering rewrites the function in place; a retry starts from the original.
+    snapshot=copy.deepcopy(function); excluded=set()
+    while True:
+        try: return lower_function(function,module,runtime,optimize,statics,frozenset(excluded))
+        except ForwardMiss as miss:
+            excluded.add(miss.args[0]); function.clear(); function.update(copy.deepcopy(snapshot))
+
+def lower_function(function,module,runtime,optimize,statics,excluded):
     semantic_types={r['id']:r['type'] for r in function['registers']}
     if runtime:
         # Preserve semantic types in exported IR, use original-type-system ABI
@@ -1147,6 +1160,44 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
         stack_region=frame
         frame+=16+stack_objects*8
     if frame>4096: raise ValueError('bootstrap stack frame too large')
+    # Far frame windows. R10..R13 are callee-saved and no template touches them,
+    # so up to four hold R14+64k for the most-accessed 64-byte windows past
+    # MOV.L @(disp,R14) range; a slot there is one displacement access too.
+    bases=[]
+    if optimize and frame>64 and not os.environ.get('DC_SH4_NO_FRAME_BASES'):
+        weight={}
+        for op in function['instructions']:
+            for value in op['reads']+(op['writes'] if op['kind']!='nop' else []):
+                offset=slots.get(value)
+                if offset is not None and offset>=64:
+                    weight[offset//64]=weight.get(offset//64,0)+(6 if offset<=127 else 10)
+        chosen=sorted(k for k in sorted(weight,key=lambda k:-weight[k])[:4] if weight[k]>12)
+        bases=[(10+n,k*64) for n,k in enumerate(chosen)]
+    saved=16+4*len(bases)  # PR, R14, R8, R9 and the bases, above the frame
+    # Single-use temporaries stay in registers: a gpr64 value one op writes and
+    # only the next op reads (no label between) has its store deferred, and
+    # dropped when that read is the next code emitted. Anything emitted first
+    # stores it as usual; a second access lowers the function again without it.
+    forward=set()
+    if optimize and not os.environ.get('DC_SH4_NO_FORWARD'):
+        ops=function['instructions']
+        jumps={op['target'] for op in ops if op['kind'] in ('goto','branch')}
+        defs={}; uses={}
+        for position,op in enumerate(ops):
+            if op['kind']=='nop': continue
+            for value in op['reads']: uses.setdefault(value,[]).append(position)
+            for value in op['writes']: defs.setdefault(value,[]).append(position)
+        pinned=addressed|zero_entry|false_entry|set(excluded)|{p['register'] for p in function['parameters']}
+        pinned.add(function.get('lexical_saved'))
+        for value,written in defs.items():
+            read=uses.get(value,())
+            if len(written)!=1 or len(read)!=1 or value in pinned or \
+               registers.get(value,{}).get('class')!='gpr64' or read[0]<=written[0]: continue
+            if all(ops[i]['kind']=='nop' for i in range(written[0]+1,read[0])) and \
+               not any(i in jumps for i in range(written[0]+1,read[0]+1)):
+                forward.add(value)
+    consumed=set()  # forwarded values whose slot was never written
+    deferred=None  # (value, low, high) whose store is e.pending
     e=Emitter()
     local=0
     coalesced_moves=0
@@ -1160,45 +1211,77 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
             e.add_immediate(15,step); amount-=step
     def address(index):
         if index not in slots: raise ValueError('unknown virtual register')
-        e.mov(8,14)
+        if index in consumed: raise ForwardMiss(index)
         offset=slots[index]
+        base,start=max(((14,0),)+tuple(bases),key=lambda b:b[1] if b[1]<=offset else -1)
+        e.mov(8,base); offset-=start
         if not offset: return
         if offset<=127: e.add_immediate(8,offset)
         else: e.constant(9,offset); e.add(8,9)
     def near(index,size):
-        # A slot whose every word MOV.L @(disp,R14) reaches (disp 0..60, scaled by 4).
+        # (base, disp) when MOV.L @(disp,base) reaches every word (disp 0..60, scaled by 4).
         if index not in slots: raise ValueError('unknown virtual register')
+        if index in consumed: raise ForwardMiss(index)
         offset=slots[index]
-        return offset//4 if offset%4==0 and offset+size-4<=60 else None
+        if offset%4: return None
+        for base,start in ((14,0),)+tuple(bases):
+            if start<=offset and offset-start+size-4<=60: return base,(offset-start)//4
+        return None
     stored=None  # (code position, slot value, low, high) of the last store64
+    def held(index):
+        """The registers of a deferred value, its store dropped (never emitted), or None."""
+        nonlocal deferred
+        if deferred is None or deferred[0]!=index: return None
+        regs=deferred[1:]; e.pending=None; deferred=None; consumed.add(index)
+        return regs
     def load64(index,low=0,high=1):
         if registers[index]['class']!='gpr64': raise ValueError('expected integer virtual value')
+        if deferred and deferred[0]==index and (low,high)!=deferred[:0:-1]:  # a swap stores instead
+            source_low,source_high=held(index)
+            # Parallel move: write low first unless it is the source high.
+            if low!=source_high:
+                if low!=source_low: e.mov(low,source_low)
+                if high!=source_high: e.mov(high,source_high)
+            else: e.mov(high,source_high); e.mov(low,source_low)
+            return
         # Reloading what was just stored, into the same registers, with no label
         # between (no other path in), is a no-op.
         if stored==(len(e.code),index,low,high) and e.last_label!=len(e.code): return
-        d=near(index,8)
-        if d is not None:
-            e.word(0x50e0|low<<8|d); e.word(0x50e0|high<<8|(d+1)); return  # mov.l @(disp,r14),Rn
+        at=near(index,8)
+        if at is not None:
+            b,d=at; e.word(0x5000|low<<8|b<<4|d); e.word(0x5000|high<<8|b<<4|(d+1)); return  # mov.l @(disp,Rb),Rn
         address(index); e.load(low,8); e.add_immediate(8,4); e.load(high,8)
     def load_address(index,reg=2):
         # The low word of a 64-bit base: native addresses are 32 bits.
         if registers[index]['class']!='gpr64': raise ValueError('expected integer virtual value')
-        d=near(index,8)
-        if d is not None: e.word(0x50e0|reg<<8|d)
+        if deferred and deferred[0]==index:
+            source_low,_=held(index)
+            if reg!=source_low: e.mov(reg,source_low)
+            return
+        at=near(index,8)
+        if at is not None: b,d=at; e.word(0x5000|reg<<8|b<<4|d)
         else: address(index); e.load(reg,8)
     def offset_base(offset):
         if not offset: return
         if -128<=offset<=127: e.add_immediate(2,offset)
         else: constant(3,offset); e.add(2,3)
     def store64(index,low=0,high=1):
-        nonlocal stored
+        nonlocal stored,deferred
         if registers[index]['class']!='gpr64': raise ValueError('expected integer virtual value')
-        d=near(index,8)
-        if d is not None:
-            e.word(0x1e00|low<<4|d); e.word(0x1e00|high<<4|(d+1))  # mov.l Rm,@(disp,r14)
+        if index in forward:
+            e.flush()
+            def emit():
+                nonlocal deferred
+                deferred=None; emit_store64(index,low,high)
+            e.pending=emit; deferred=(index,low,high)
+        else: emit_store64(index,low,high)
+        stored=(len(e.code),index,low,high)
+    def emit_store64(index,low,high):
+        at=near(index,8)
+        if at is not None:
+            b,d=at; e.word(0x1000|b<<8|low<<4|d); e.word(0x1000|b<<8|high<<4|(d+1))  # mov.l Rm,@(disp,Rb)
         else:
             address(index); e.store(8,low); e.add_immediate(8,4); e.store(8,high)
-        stored=(len(e.code),index,low,high)
     def stack_object_address(slot,dest):
         if stack_region is None: raise ValueError('stack address without a stack object region')
         e.mov(8,14)
@@ -1213,9 +1296,10 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
     def load128(index,regs=(4,5,6,7)):
         """Four little-endian words of a 128-bit slot: lo64=(regs[0],regs[1])."""
         if registers[index]['class'] not in QUAD: raise ValueError('expected 128-bit virtual value')
-        d=near(index,16)
-        if d is not None:
-            for n,reg in enumerate(regs): e.word(0x50e0|reg<<8|(d+n))
+        at=near(index,16)
+        if at is not None:
+            b,d=at
+            for n,reg in enumerate(regs): e.word(0x5000|reg<<8|b<<4|(d+n))
             return
         address(index)
         for n,reg in enumerate(regs):
@@ -1223,9 +1307,10 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
             e.load(reg,8)
     def store128(index,regs=(4,5,6,7)):
         if registers[index]['class'] not in QUAD: raise ValueError('expected 128-bit virtual value')
-        d=near(index,16)
-        if d is not None:
-            for n,reg in enumerate(regs): e.word(0x1e00|reg<<4|(d+n))
+        at=near(index,16)
+        if at is not None:
+            b,d=at
+            for n,reg in enumerate(regs): e.word(0x1000|b<<8|reg<<4|(d+n))
             return
         address(index)
         for n,reg in enumerate(regs):
@@ -1309,8 +1394,13 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
         scope_flag_address(); e.immediate(0,value); e.store(8,0)
     # Preserve GCC callee-saved address scratch registers and PR.
     e.word(0x4f22)
-    for reg in (14,8,9): e.rr(0x2006,15,reg)
+    for reg in (14,8,9)+tuple(b for b,_ in bases): e.rr(0x2006,15,reg)
     adjust_stack(-frame); e.mov(14,15)
+    previous=(14,0)
+    for base,start in bases:
+        e.mov(base,previous[0]); step=start-previous[1]
+        while step: e.add_immediate(base,min(step,127)); step-=min(step,127)
+        previous=(base,start)
     if lexical: set_scope_flag(0)
     if vectors:
         e.immediate(0,0)
@@ -1348,7 +1438,7 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
                 if position<2: e.mov(a,4+position*2); e.mov(b,5+position*2)
                 else:
                     e.mov(8,14)
-                    offset=frame+16+(position-2)*8
+                    offset=frame+saved+(position-2)*8
                     if offset<=127: e.add_immediate(8,offset)
                     else: constant(9,offset); e.add(8,9)
                     e.load(a,8); e.add_immediate(8,4); e.load(b,8)
@@ -1359,7 +1449,7 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
             if gpr_args<2: store64(index,4+gpr_args*2,5+gpr_args*2)
             else:
                 e.mov(8,14)
-                offset=frame+16+(gpr_args-2)*8
+                offset=frame+saved+(gpr_args-2)*8
                 if offset<=127: e.add_immediate(8,offset)
                 else: constant(9,offset); e.add(8,9)
                 e.load(0,8); e.add_immediate(8,4); e.load(1,8); store64(index)
@@ -1370,7 +1460,7 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
     targets={op['target'] for op in instructions if op['kind'] in ('goto','branch')}
     for position,op in enumerate(instructions):
         entered=e.last_label
-        e.label('ir_'+str(position))
+        e.label('ir_'+str(position),keep_pending=position not in targets)
         if position not in targets: e.last_label=entered  # fall-through only
         kind=op['kind']; reads=op['reads']; writes=op['writes']
         try:
@@ -1812,11 +1902,11 @@ def compile_function(function,module=None,runtime=False,optimize=True,statics=No
         e.label('process_entry_failure'); e.immediate(0,0); e.immediate(1,0)
         if function['return_type']=='float': e.word(0xf08d)  # defined zero on refusal
     e.label('epilogue'); e.mov(15,14); adjust_stack(frame)
-    for reg in (9,8,14): e.rr(0x6006,reg,15)
+    for reg in tuple(b for b,_ in reversed(bases))+(9,8,14): e.rr(0x6006,reg,15)
     e.word(0x4f26); e.ret()
     data,relocations,layout=e.finish_with_stats(relax=True,literal_islands=True,far_branches=True)
     instruction_bytes=layout['instruction_bytes']
-    return data,{'name':function['name'],'bytes':len(data),'stack_bytes':frame+16,'relocations':relocations,
+    return data,{'name':function['name'],'bytes':len(data),'stack_bytes':frame+saved,'relocations':relocations,
                 'optimization':'stack_slot_reuse' if optimize else 'stack_baseline','instruction_stream_bytes':instruction_bytes,
                 'stack_slot_count':frame//8,'virtual_register_count':len(registers),
                 **({'zero_locals':list(function['zero_locals'])} if function.get('zero_locals') else {}),

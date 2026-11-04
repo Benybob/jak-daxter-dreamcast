@@ -17,8 +17,14 @@ class Emitter:
         self.branches=[]
         self.literals=[]
         self.last_label=-1
+        self.pending=None  # deferred code, emitted before the next word or label
 
-    def word(self,value): self.code+=struct.pack('<H',value)
+    def flush(self):
+        if self.pending: pending,self.pending=self.pending,None; pending()
+
+    def word(self,value):
+        if self.pending: self.flush()
+        self.code+=struct.pack('<H',value)
 
     @staticmethod
     def reg(value):
@@ -58,17 +64,22 @@ class Emitter:
         else: self.literal(dst,('integer',value&0xffffffff))
 
     def literal(self,dst,key):
+        self.flush()  # the recorded offset is this instruction's
         offset=len(self.code)
         self.word(0xd000|self.reg(dst)<<8)
         self.literals.append((offset,key))
 
-    def label(self,name):
+    def label(self,name,keep_pending=False):
+        # A label is another way in: deferred code lands before it, unless the
+        # caller knows no branch targets it.
+        if not keep_pending: self.flush()
         if name in self.labels: raise ValueError('duplicate label')
         self.labels[name]=len(self.code)
         self.last_label=len(self.code)
 
     def branch(self,kind,target):
         if kind not in ('bt','bf','bra','bsr'): raise ValueError('unsupported branch')
+        self.flush()
         offset=len(self.code)
         self.word({'bt':0x8900,'bf':0x8b00,'bra':0xa000,'bsr':0xb000}[kind])
         self.branches.append((offset,kind,target))
