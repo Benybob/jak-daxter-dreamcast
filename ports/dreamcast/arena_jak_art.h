@@ -11,4 +11,7 @@ typedef struct {
 extern volatile dc_jak_art_evidence dc_arena_jak_art_evidence;
 extern char dc_arena_jak_art_reason[96];
 int dc_arena_jak_art_load(dc_goal_runtime *,uint32_t level);
+#ifdef DC_ARENA_JAK_PLAYER
+int dc_arena_jak_texture_page_dir(dc_goal_runtime *);
+#endif
 #endif

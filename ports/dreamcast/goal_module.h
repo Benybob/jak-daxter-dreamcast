@@ -32,6 +32,19 @@ typedef struct { uint32_t entry,bytes,symbol; } dc_goal_code_entry_info;
  * must be pinned and quiescent; out is separate caller-owned C storage.
  * Clears out on failure. Successful lookup never executes the function. */
 int dc_goal_code_entry(dc_goal_runtime *rt,uint32_t entry,dc_goal_code_entry_info *out);
+/* Optional read-only refusal receipt (AI-assisted), ISC. Same authentication
+ * and error contract as code_entry; never accepts a damaged record. */
+enum dc_goal_code_refusal {
+  DC_CODE_ACCEPTED,DC_CODE_ARGUMENT,DC_CODE_ADDRESS,DC_CODE_RUNTIME,
+  DC_CODE_RECORD_ADDRESS,DC_CODE_RECORD_FIELDS,DC_CODE_RECORD_SPAN,
+  DC_CODE_RECORD_SYMBOL,DC_CODE_CHAIN_TAIL,DC_CODE_FUNCTION,
+  DC_CODE_EXPORT_SYMBOL /* caller required a different export owner */
+};
+typedef struct {
+  uint32_t reason,index,at,previous_entry,entry,bytes,symbol,next,head,count;
+} dc_goal_code_diagnostic;
+int dc_goal_code_entry_diagnose(dc_goal_runtime *,uint32_t,dc_goal_code_entry_info *,
+                                dc_goal_code_diagnostic *);
 /* As dc_goal_load_module_data, with the export named temporary (a top-level
  * startup) placed in the arena's temporary top region (dc_goal_alloc_temporary)
  * and known through rt->temporary_* instead of the code registry. At most one

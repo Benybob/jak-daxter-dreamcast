@@ -34,7 +34,7 @@ def archive_objects(path):
         raise ValueError('archive tail')
 
 
-def decode_v4(obj):
+def decode_v4(obj, root='art-group'):
     """Return data, pointer offsets and (name, method count, offsets) bindings.
 
     The variable-length delta low bits are length flags, not address bits.
@@ -112,8 +112,8 @@ def decode_v4(obj):
     all_sites = pointers + [at for _, _, offsets in bindings for at in offsets]
     if len(set(all_sites)) != len(all_sites):
         raise ValueError('overlapping relocations')
-    if not any(n == 'art-group' and 0 in offsets and m is not None for n, m, offsets in bindings):
-        raise ValueError('root is not art-group')
+    if not any(n == root and 0 in offsets and m is not None for n, m, offsets in bindings):
+        raise ValueError(f'root is not {root}')
     return data, pointers, bindings
 
 
@@ -128,8 +128,12 @@ def stage(source, out):
     out = out.resolve()
     if not out.is_relative_to((PORT / 'build').resolve()):
         raise ValueError('retail data output must be under ports/dreamcast/build/')
-    selected = {}
+    selected, tpage_dir = {}, None
     for index, name, obj in archive_objects(source):
+        if name == 'dir-tpages' and u32(obj, 8) == 4:
+            if tpage_dir is not None:
+                raise ValueError('ambiguous duplicate dir-tpages')
+            tpage_dir = obj
         # GAME.CGO also contains a v3 code object called sidekick. Select DATA.
         if name in WANTED and u32(obj, 8) == 4:
             if name in selected:
@@ -137,6 +141,9 @@ def stage(source, out):
             selected[name] = (index, obj)
     if set(selected) != set(WANTED):
         raise ValueError('missing complete player art')
+    if tpage_dir is None:
+        raise ValueError('missing dir-tpages')
+    tpage_data = decode_v4(tpage_dir, 'texture-page-dir')[0]
     rows, archive = [], bytearray(header(2, 'JAKART.DGO'))
     for name in sorted(WANTED, key=lambda n: selected[n][0]):
         index, obj = selected[name]
@@ -157,11 +164,17 @@ def stage(source, out):
     eichar = selected['eichar'][1]
     (out / 'EICHAR.DGO').write_bytes(header(1, 'EICHAR.DGO') +
         header(len(eichar), 'eichar') + eichar + bytes((-len(eichar)) % 16))
+    # The texture page directory original texture-page-dir.relocate installs as
+    # *texture-page-dir*; art login writes through it.
+    (out / 'DIR-TPAGES.DGO').write_bytes(header(1, 'DIR-TPAGES.DGO') +
+        header(len(tpage_dir), 'dir-tpages') + tpage_dir + bytes((-len(tpage_dir)) % 16))
     total = sum(r['resident_bytes'] for r in rows)
     manifest = dict(ai_assisted=True, license='ISC (tools only; retail data is user owned)',
                     source=str(source.resolve()), source_sha256=hashlib.sha256(source.read_bytes()).hexdigest(),
                     archive_sha256=hashlib.sha256(archive).hexdigest(), archive_bytes=len(archive),
-                    resident_bytes=total, objects=rows)
+                    resident_bytes=total, objects=rows,
+                    dir_tpages=dict(file_bytes=len(tpage_dir), resident_bytes=len(tpage_data),
+                                    sha256=hashlib.sha256(tpage_dir).hexdigest()))
     (out / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
     # Metadata only. Never embed the 2 MB disc payload in the executable/boot image.
     sizes = {r['name']: r['resident_bytes'] for r in rows}
@@ -169,7 +182,8 @@ def stage(source, out):
         '/* Generated player art sizes (AI-assisted), ISC; no retail bytes. */\n'
         f'#define DC_JAK_EICHAR_BYTES {sizes["eichar"]}u\n'
         f'#define DC_JAK_SIDEKICK_BYTES {sizes["sidekick"]}u\n'
-        f'#define DC_JAK_ART_BYTES {total}u\n')
+        f'#define DC_JAK_ART_BYTES {total}u\n'
+        f'#define DC_JAK_TPAGE_DIR_BYTES {len(tpage_data)}u\n')
     return manifest
 
 

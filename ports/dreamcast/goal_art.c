@@ -4,6 +4,47 @@
 #include <string.h>
 
 typedef struct {uint32_t data,size,link,length;} art_row;
+#ifdef DC_ARENA_JAK_PLAYER
+typedef struct {
+  uint32_t step,used,symbol,type_word,prev_value,next_type;
+  uint32_t symbol_type,symbol_type_tag,symbol_type_methods;
+  /* Little-endian words at symbol-type object offsets 0, 4, 8, 12, 16, 20. */
+  uint32_t symbol_type_header[6];
+} dc_goal_art_probe_row;
+volatile struct {uint32_t version,count;dc_goal_art_probe_row row[8];} dc_goal_art_symbol_probe={.version=1};
+typedef char dc_goal_art_probe_bytes[sizeof dc_goal_art_symbol_probe==488?1:-1];
+static uint32_t probe_mem(dc_goal_runtime *rt,uint32_t address,void *out,uint32_t n){
+  uint32_t offset;
+  if(!rt || !rt->memory || address<rt->base)return 0;
+  offset=address-rt->base;
+  if(offset>rt->used || n>rt->used-offset)return 0;
+  memcpy(out,rt->memory+offset,n);return 1;
+}
+void dc_goal_art_probe(dc_goal_runtime *rt,uint32_t step){
+  volatile dc_goal_art_probe_row *row;uint32_t symbol=0,w=0xffffffffu,i;uint16_t half=0xffffu;
+  if(dc_goal_art_symbol_probe.count>=8)return;
+  row=&dc_goal_art_symbol_probe.row[dc_goal_art_symbol_probe.count++];
+  row->step=step;row->used=rt?rt->used:0;row->symbol_type=rt?rt->symbol_type:0;
+  row->symbol=row->type_word=row->prev_value=row->next_type=0xffffffffu;
+  row->symbol_type_tag=0xffffffffu;row->symbol_type_methods=0xffffu;
+  for(i=0;i<6u;++i)row->symbol_type_header[i]=0xffffffffu;
+  if(rt && probe_mem(rt,rt->code_registry_head+8u,&symbol,4))row->symbol=symbol;
+  if(symbol>16u){
+    if(probe_mem(rt,symbol-4u,&w,4))row->type_word=w;
+    if(probe_mem(rt,symbol-8u,&w,4))row->prev_value=w;
+    if(probe_mem(rt,symbol+4u,&w,4))row->next_type=w;
+  }
+  if(row->symbol_type>16u){
+    if(probe_mem(rt,row->symbol_type-4u,&w,4))row->symbol_type_tag=w;
+    if(probe_mem(rt,row->symbol_type+14u,&half,2))row->symbol_type_methods=half;
+    for(i=0;i<6u;++i)
+      if(probe_mem(rt,row->symbol_type+i*4u,&w,4))row->symbol_type_header[i]=w;
+  }
+}
+#define ART_PROBE(n) dc_goal_art_probe(rt,(n))
+#else
+#define ART_PROBE(n) ((void)0)
+#endif
 static uint32_t word(const unsigned char *p){
   return p[0]|(uint32_t)p[1]<<8|(uint32_t)p[2]<<16|(uint32_t)p[3]<<24;
 }
@@ -50,7 +91,7 @@ static void put(unsigned char *data,uint32_t at,uint32_t value){memcpy(data+at,&
  * All types must already be defined by native GAME.CGO. New resource symbols
  * are interned only in the apply pass, with the normal native symbol identity. */
 static int links(dc_goal_runtime *rt,FILE *f,const art_row *row,unsigned char *data,
-                 uint32_t base,dc_goal_art_result *result){
+                 uint32_t base,dc_goal_art_result *result,const char *root_type){
   unsigned char *table=malloc(row->length);
   uint32_t p=12,at=0,value,count,fixing=0,root=0;
   int ok=0;
@@ -115,7 +156,7 @@ static int links(dc_goal_runtime *rt,FILE *f,const art_row *row,unsigned char *d
       if(delta>row->size || at>row->size-delta)goto done;
       at+=delta;
       if(!site(f,row,data,at,&value) || value!=UINT32_MAX)goto done;
-      if(is_type && !strcmp(name,"art-group") && !at)root=1;
+      if(is_type && root_type && !strcmp(name,root_type) && !at)root=1;
       if(data){put(data,at,target);++result->bindings;}
       if(p>=row->length)goto done;
       if(!table[p]){++p;break;}
@@ -140,6 +181,7 @@ int dc_goal_load_art_dgo(dc_goal_runtime *rt,FILE *f,uint32_t expected_payload,d
   if(result)memset(result,0,sizeof *result);
   if(!rt || !f || !result || !relocate)return fail(rt,DC_GOAL_BAD_ARGUMENT);
   if(rt->error!=DC_GOAL_OK)return 0;
+  ART_PROBE(1);
 #ifdef DC_ARENA_JAK_PLAYER
   if(!read_at(f,0,h,64))return fail(rt,DC_GOAL_BAD_MODULE);
   count=word(h);
@@ -169,22 +211,25 @@ int dc_goal_load_art_dgo(dc_goal_runtime *rt,FILE *f,uint32_t expected_payload,d
   if(!dc_goal_art_admit(rt,total,&admitted)){*result=admitted;return 0;}
 #ifdef DC_ARENA_JAK_PLAYER
   *result=admitted;result->objects=count;
-  for(i=0;i<count;++i)if(!links(rt,f,&rows[i],NULL,0,result))return 0;
+  for(i=0;i<count;++i)if(!links(rt,f,&rows[i],NULL,0,result,"art-group"))return 0;
 #else
   *result=admitted;result->objects=2;
-  for(i=0;i<2;++i)if(!links(rt,f,&rows[i],NULL,0,result))return 0;
+  for(i=0;i<2;++i)if(!links(rt,f,&rows[i],NULL,0,result,"art-group"))return 0;
 #endif
+  ART_PROBE(2);
   base=dc_goal_alloc(rt,total);if(!base)return 0;
+  ART_PROBE(3);
 #ifdef DC_ARENA_JAK_PLAYER
   for(i=0;i<count;++i){
 #else
   for(i=0;i<2;++i){
 #endif
     unsigned char *data=dc_goal_resolve(rt,base,rows[i].size);
-    if(!data || !read_at(f,rows[i].data,data,rows[i].size) || !links(rt,f,&rows[i],data,base,result))
+    if(!data || !read_at(f,rows[i].data,data,rows[i].size) || !links(rt,f,&rows[i],data,base,result,"art-group"))
       return fail(rt,DC_GOAL_BAD_MODULE);
     result->art[i]=base+4;++result->linked;base+=rows[i].size;
   }
+  ART_PROBE(4);
 #ifdef DC_ARENA_JAK_PLAYER
   for(i=0;i<count;++i){
 #else
@@ -193,5 +238,46 @@ int dc_goal_load_art_dgo(dc_goal_runtime *rt,FILE *f,uint32_t expected_payload,d
     if(!relocate(rt,result->art[i],context) || rt->error!=DC_GOAL_OK)return fail(rt,DC_GOAL_BAD_FUNCTION);
     ++result->relocated;
   }
+  ART_PROBE(5);
   return 1;
 }
+#ifdef DC_ARENA_JAK_PLAYER
+/* One retail v4 dir-tpages object. The callback must invoke original
+ * texture-page-dir.relocate, which only stores this in *texture-page-dir*.
+ * The DGO size includes the zero pad to 16 bytes, so EOF matches the art loader. */
+int dc_goal_load_tpage_dir(dc_goal_runtime *rt,FILE *f,uint32_t expected_payload,
+                           dc_goal_art_relocate relocate,void *context){
+  unsigned char h[64],v4[16];
+  art_row row;
+  dc_goal_art_result result;
+  uint32_t size,base,total,tail,at;
+  unsigned char *data;
+  if(!rt || !f || !relocate || !expected_payload)return fail(rt,DC_GOAL_BAD_ARGUMENT);
+  if(rt->error!=DC_GOAL_OK)return 0;
+  if(!read_at(f,0,h,64))return fail(rt,DC_GOAL_BAD_MODULE);
+  if(word(h)!=1 || !name_is(h+4,"DIR-TPAGES.DGO"))return fail(rt,DC_GOAL_BAD_MODULE);
+  if(!read_at(f,64,h,64) || !name_is(h+4,"dir-tpages"))return fail(rt,DC_GOAL_BAD_MODULE);
+  size=word(h);
+  if(size<64 || size>1024u*1024u || (size&15u) || !read_at(f,128,v4,16))return fail(rt,DC_GOAL_BAD_MODULE);
+  row=(art_row){144,word(v4+12),0,word(v4+4)};
+  if(word(v4)!=UINT32_MAX || word(v4+8)!=4 || row.size<32 || (row.size&15u) ||
+     row.length<14 || row.length>65536u || row.size>size-16u ||
+     row.length>size-16u-row.size)return fail(rt,DC_GOAL_BAD_MODULE);
+  row.link=row.data+row.size;
+  total=row.size;
+  tail=row.link+row.length;
+  at=128u+size;
+  while(tail<at){unsigned char b;if(!read_at(f,tail++,&b,1) || b)return fail(rt,DC_GOAL_BAD_MODULE);}
+  if(fseek(f,(long)at,SEEK_SET) || fgetc(f)!=EOF || ferror(f))return fail(rt,DC_GOAL_BAD_MODULE);
+  if(total!=expected_payload)return fail(rt,DC_GOAL_BAD_MODULE);
+  if(!dc_goal_art_admit(rt,total,&result))return 0;
+  if(!links(rt,f,&row,NULL,0,&result,"texture-page-dir"))return 0;
+  base=dc_goal_alloc(rt,total);if(!base)return 0;
+  data=dc_goal_resolve(rt,base,row.size);
+  if(!data || !read_at(f,row.data,data,row.size) ||
+     !links(rt,f,&row,data,base,&result,"texture-page-dir"))
+    return fail(rt,DC_GOAL_BAD_MODULE);
+  if(!relocate(rt,base+4,context) || rt->error!=DC_GOAL_OK)return fail(rt,DC_GOAL_BAD_FUNCTION);
+  return 1;
+}
+#endif

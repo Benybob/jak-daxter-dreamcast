@@ -9,6 +9,8 @@
 #endif
 #ifdef DC_ARENA_JAK_PLAYER
 #include "arena_jak_player.h"
+#include "arena_jak_exports.h"
+#include "goal_art.h"
 #endif
 #include <stdio.h>
 #include <string.h>
@@ -112,8 +114,26 @@ int dc_arena_jak_finish(dc_goal_runtime *rt){
           dc_arena_jak_evidence.target_after==dc_arena_jak_evidence.target_before,9,
           "jak ORIGINAL art lookup returns without runtime fault or fabricated data");
 #if defined(DC_ARENA_JAK_ART) || defined(DC_ARENA_JAK_PLAYER)
+#ifdef DC_ARENA_JAK_PLAYER
+  /* Snapshot provenance before original login. This is not a new check: login
+   * still runs, and the player check remains the only refusal. The query must
+   * not clear or create the runtime fault or its site. */
+  {
+    enum dc_goal_error saved_error=rt->error;
+    uint32_t saved_site=dc_goal_error_site;
+    dc_arena_jak_exports(rt,0);
+    rt->error=saved_error;
+    dc_goal_error_site=saved_site;
+  }
+#endif
   REQUIRE(dc_arena_jak_art_load(rt,level),10,dc_arena_jak_art_reason);
+#ifdef DC_ARENA_JAK_PLAYER
+  dc_goal_art_probe(rt,6);
+#endif
   art=(uint32_t)((five_fn)(uintptr_t)lookup)(dir,word(rt,sg),rt->s7,named(rt,"global"),version);
+#ifdef DC_ARENA_JAK_PLAYER
+  dc_goal_art_probe(rt,7);
+#endif
   ++dc_arena_jak_evidence.lookup_calls;dc_arena_jak_evidence.art_result=art;
   REQUIRE(rt->error==DC_GOAL_OK && object(rt,art,"art-group",32),10,
           "jak ORIGINAL lookup finds real relocated eichar after original login");

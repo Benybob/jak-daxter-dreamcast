@@ -14,43 +14,71 @@ static int code_error(dc_goal_runtime *rt,enum dc_goal_error error) {
   if(rt) rt->error=error;
   return 0;
 }
-int dc_goal_code_entry(dc_goal_runtime *rt,uint32_t entry,dc_goal_code_entry_info *out) {
+int dc_goal_code_entry_diagnose(dc_goal_runtime *rt,uint32_t entry,dc_goal_code_entry_info *out,
+                                dc_goal_code_diagnostic *diagnostic) {
   uint32_t at,i,previous_entry=UINT32_MAX;
   code_record found={0,0,0,0};
+  /* The walk overwrites this; a match must be restored after the chain tail. */
+  dc_goal_code_diagnostic matched={0};
+  int matched_saved=0;
+#define REFUSE(error,why) do {if(diagnostic)diagnostic->reason=(why);return code_error(rt,(error));}while(0)
+  if(diagnostic) {
+    memset(diagnostic,0,sizeof *diagnostic);
+    if(rt){diagnostic->head=rt->code_registry_head;diagnostic->count=rt->code_registry_count;}
+  }
   if(out) memset(out,0,sizeof *out);
-  if(!rt || !rt->memory || !out) return code_error(rt,DC_GOAL_BAD_ARGUMENT);
-  if(!entry || entry==rt->s7 || (entry&3u)) return code_error(rt,DC_GOAL_BAD_FUNCTION);
+  if(!rt || !rt->memory || !out) REFUSE(DC_GOAL_BAD_ARGUMENT,DC_CODE_ARGUMENT);
+  if(!entry || entry==rt->s7 || (entry&3u)) REFUSE(DC_GOAL_BAD_FUNCTION,DC_CODE_ADDRESS);
   if(rt->used>rt->capacity || rt->code_registry_count>rt->used/sizeof(code_record))
-    return code_error(rt,DC_GOAL_BAD_MODULE);
+    REFUSE(DC_GOAL_BAD_MODULE,DC_CODE_RUNTIME);
   at=rt->code_registry_head;
   for(i=0;i<rt->code_registry_count;++i) {
     code_record record;
     const void *p;
+    if(diagnostic){diagnostic->index=i;diagnostic->at=at;diagnostic->previous_entry=previous_entry;}
     if(!at || (at&15u) || !(p=dc_goal_resolve(rt,at,sizeof record)))
-      return code_error(rt,DC_GOAL_BAD_MODULE);
+      REFUSE(DC_GOAL_BAD_MODULE,DC_CODE_RECORD_ADDRESS);
     memcpy(&record,p,sizeof record);
+    if(diagnostic){diagnostic->entry=record.entry;diagnostic->bytes=record.bytes;
+      diagnostic->symbol=record.symbol;diagnostic->next=record.next;}
     if(record.entry<4u || (record.entry&3u) || record.bytes<2u ||
        (record.bytes&1u) || record.bytes>UINT32_MAX-4u || record.entry>=previous_entry || record.entry>at ||
-       record.bytes>at-record.entry || (record.next && record.next>=at) ||
-       !dc_goal_resolve(rt,record.entry-4u,record.bytes+4u) ||
-       dc_goal_type_of(rt,record.symbol)!=rt->symbol_type)
-      return code_error(rt,DC_GOAL_BAD_MODULE);
-    if(record.entry==entry) found=record;
+       record.bytes>at-record.entry || (record.next && record.next>=at))
+      REFUSE(DC_GOAL_BAD_MODULE,DC_CODE_RECORD_FIELDS);
+    if(!dc_goal_resolve(rt,record.entry-4u,record.bytes+4u))
+      REFUSE(DC_GOAL_BAD_MODULE,DC_CODE_RECORD_SPAN);
+    if(dc_goal_type_of(rt,record.symbol)!=rt->symbol_type)
+      REFUSE(DC_GOAL_BAD_MODULE,DC_CODE_RECORD_SYMBOL);
+    if(record.entry==entry) {
+      found=record;
+      if(diagnostic) { matched=*diagnostic; matched_saved=1; }
+    }
     previous_entry=record.entry;
     at=record.next;
   }
-  if(at) return code_error(rt,DC_GOAL_BAD_MODULE);
+  if(at) REFUSE(DC_GOAL_BAD_MODULE,DC_CODE_CHAIN_TAIL);
   /* A resident temporary startup is an exact entry outside the chain. */
   if(!found.entry && entry==rt->temporary_entry && rt->temporary_symbol &&
      dc_goal_resolve(rt,entry-4u,rt->temporary_bytes+4u) &&
      dc_goal_type_of(rt,rt->temporary_symbol)==rt->symbol_type) {
     found.entry=entry;found.bytes=rt->temporary_bytes;found.symbol=rt->temporary_symbol;
+    if(diagnostic) {
+      matched=*diagnostic;
+      matched.entry=found.entry;matched.bytes=found.bytes;matched.symbol=found.symbol;
+      matched.at=0;matched.next=0;matched.index=rt->code_registry_count;
+      matched_saved=1;
+    }
   }
+  if(diagnostic && matched_saved) *diagnostic=matched;
   if(!found.entry || dc_goal_type_of(rt,entry)!=rt->function_type ||
      dc_goal_symbol_value(rt,found.symbol)!=entry)
-    return code_error(rt,DC_GOAL_BAD_FUNCTION);
+    REFUSE(DC_GOAL_BAD_FUNCTION,DC_CODE_FUNCTION);
   out->entry=found.entry;out->bytes=found.bytes;out->symbol=found.symbol;
   rt->error=DC_GOAL_OK;return 1;
+#undef REFUSE
+}
+int dc_goal_code_entry(dc_goal_runtime *rt,uint32_t entry,dc_goal_code_entry_info *out) {
+  return dc_goal_code_entry_diagnose(rt,entry,out,NULL);
 }
 static const char *import_name(const char *symbol,enum import_kind *kind) {
   static const char *prefixes[]={"cell:","pointer:","function:","type:","data:","deftype:"};

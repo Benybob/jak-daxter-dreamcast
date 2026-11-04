@@ -802,3 +802,24 @@ Final link size/placement, 16 MiB fit, extra startup allocation on target, digit
 renderer output, original prerequisite calls, actual spawn faults, player motion,
 following camera and physical hardware remain unverified. No build_dreamcast.py,
 Flycast or Git-state-changing command was run.
+
+## Texture page directory before art login (AI-assisted)
+
+Jak's art login (`adgif-shader-login-fast`, texture.gc:2037) writes through
+`*texture-page-dir*`. Nothing in this boot loaded `dir-tpages`, so the global
+stayed `#f` and login wrote a packed shader pointer into the `symbol` type
+object (num_methods 9 became 52201); the following export check then refused
+every original export. See JAK_CORRUPTION_DIAGNOSIS.md.
+
+`stage_jak_art.py` now also writes `DIR-TPAGES.DGO` (the retail v4
+`dir-tpages` object from GAME.CGO, 19,328 resident bytes) and
+`DC_JAK_TPAGE_DIR_BYTES`. `dc_arena_jak_art_load` loads it first and runs the
+original `texture-page-dir` relocate (method 7), which sets
+`*texture-page-dir*`; a directory that is absent or not installed refuses the
+art load with its own reason. Restage, rebuild the ELF and the GDI as above.
+
+Observed in Flycast with the commands above: 7002 checks pass; the export check
+(17001) now passes. The run stops at 17003, "jak ORIGINAL start creates and
+publishes an original typed target": `start` returns a target, but the runtime
+error is BAD_ARGUMENT from goal_bridge.c:582 (`note_root_member` refuses the
+spawned target's scope).

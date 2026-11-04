@@ -5,6 +5,8 @@
 #ifdef DC_ARENA_JAK_PLAYER
 #include "arena_jak_player.h"
 #include "arena_jak.h"
+#include "arena_jak_exports.h"
+#include "goal_art.h"
 #include "goal_main_start.h"
 #include "goal_bridge.h"
 #include "build/jak-art-disc/jak_art_sizes.h"
@@ -26,10 +28,6 @@ static uint32_t named(dc_goal_runtime *rt,const char *name){
  enum dc_goal_error error=rt->error;uint32_t s=dc_goal_find(rt,name),v=s?word(rt,s):0;
  if(error!=DC_GOAL_OK)rt->error=error;
  return v;
-}
-static uint32_t entry(dc_goal_runtime *rt,const char *name){
- uint32_t s=dc_goal_find(rt,name),v=s?word(rt,s):0;dc_goal_code_entry_info info;
- return rt->error==DC_GOAL_OK && dc_goal_code_entry(rt,v,&info) && info.symbol==s?v:0;
 }
 static int typed(dc_goal_runtime *rt,uint32_t p,const char *type,uint32_t bytes){
  uint32_t t=named(rt,type);
@@ -112,13 +110,20 @@ int dc_arena_jak_player_run(dc_goal_runtime *rt,uint32_t cp){
  uint32_t address=(uint32_t)(uintptr_t)observe_read;
  dc_goal_code_export fn={"dc-arena-jak-read-pad",code,12,NULL,0};dc_goal_module_result loaded;
  runtime=rt;dc_arena_jak_player_evidence.phase=1;
+ dc_goal_art_probe(rt,8);
  CHECK(rt && rt->error==DC_GOAL_OK && !dc_goal_fiber_current() && dc_goal_process_spans_registered(rt)==1,
        12,"jak original spawn retains live process ownership and scope ledgers");
- start=entry(rt,"start");dispatch=entry(rt,"kernel-dispatcher");original_read=entry(rt,"read-pad");
- dc_arena_jak_player_evidence.init_entry=entry(rt,"init-target");
+ /* Query every export separately, retaining the first failure. The separate
+  * receipt keeps raw addresses even when provenance refuses them. */
+ ok=dc_arena_jak_exports(rt,1);
+ start=dc_arena_jak_exports_evidence.stages[1].exports[0].value;
+ dispatch=dc_arena_jak_exports_evidence.stages[1].exports[1].value;
+ original_read=dc_arena_jak_exports_evidence.stages[1].exports[2].value;
+ dc_arena_jak_player_evidence.init_entry=dc_arena_jak_exports_evidence.stages[1].exports[3].value;
  dc_arena_jak_player_evidence.read_entry=original_read;
- CHECK(start && dispatch && original_read && dc_arena_jak_player_evidence.init_entry,
+ CHECK(ok && start && dispatch && original_read && dc_arena_jak_player_evidence.init_entry,
        13,"jak start/init-target/dispatcher/read-pad authenticate exact original exports");
+ ok=0;
  listener=named(rt,"*listener-process*");bytes=word(rt,listener+80)-(listener-4u);
  CHECK(typed(rt,listener,"process",112) && bytes>=112 && dc_goal_resolve(rt,listener-4,bytes) &&
        dc_goal_note_process_span(rt,listener,bytes,NULL) && dc_goal_bind_process_context(rt,listener,bytes),

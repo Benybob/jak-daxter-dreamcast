@@ -40,12 +40,44 @@ static int relocate(dc_goal_runtime *rt,uint32_t art,void *context){
   ++dc_arena_jak_art_evidence.relocate_calls;
   return rt->error==DC_GOAL_OK;
 }
+#ifdef DC_ARENA_JAK_PLAYER
+/* Original texture-page-dir.relocate only sets *texture-page-dir*. Without it
+ * the global stays #f and adgif-shader-login-fast writes through #f into the
+ * symbol type object during art login. */
+static int relocate_dir(dc_goal_runtime *rt,uint32_t dir,void *context){
+  typedef void (*relocate_fn)(uint64_t,uint64_t,uint64_t);
+  uint32_t type=named(rt,"texture-page-dir"),fn=dc_goal_get_method(rt,type,7);
+  dc_goal_code_entry_info info;
+  (void)context;
+  if(rt->error!=DC_GOAL_OK || !type || type==rt->s7 || !fn || word(rt,dir-4)!=type ||
+     !dc_goal_code_entry(rt,fn,&info) || info.symbol!=dc_goal_find(rt,"(method relocate texture-page-dir)"))
+    return 0;
+  ((relocate_fn)(uintptr_t)fn)(dir,named(rt,"global"),0);
+  return rt->error==DC_GOAL_OK;
+}
+int dc_arena_jak_texture_page_dir(dc_goal_runtime *rt){
+  uint32_t dir,type;FILE *f;int ok;
+  if(!rt || rt->error!=DC_GOAL_OK)return 0;
+  f=fopen("/cd/DIR-TPAGES.DGO","rb");
+  if(!f){snprintf(dc_arena_jak_art_reason,sizeof dc_arena_jak_art_reason,"jak art: staged /cd/DIR-TPAGES.DGO is absent");return 0;}
+  ok=dc_goal_load_tpage_dir(rt,f,DC_JAK_TPAGE_DIR_BYTES,relocate_dir,NULL);fclose(f);
+  dir=named(rt,"*texture-page-dir*");type=named(rt,"texture-page-dir");
+  if(!ok || rt->error!=DC_GOAL_OK || dir<4 || dir==rt->s7 || !type || word(rt,dir-4)!=type){
+    snprintf(dc_arena_jak_art_reason,sizeof dc_arena_jak_art_reason,
+      "jak art: *texture-page-dir* not set by original relocate (error %d)",(int)rt->error);
+    return 0;
+  }
+  return 1;
+}
+#endif
 int dc_arena_jak_art_load(dc_goal_runtime *rt,uint32_t level){
   dc_goal_art_result result;FILE *f;int ok;
 #ifdef DC_ARENA_JAK_PLAYER
   uint32_t free_bytes,payload;
   const char *path;
-  if(!rt || rt->error!=DC_GOAL_OK || rt->temporary>rt->capacity || rt->used>rt->capacity-rt->temporary)return 0;
+  if(!rt || rt->error!=DC_GOAL_OK)return 0;
+  if(!dc_arena_jak_texture_page_dir(rt))return 0;
+  if(rt->temporary>rt->capacity || rt->used>rt->capacity-rt->temporary)return 0;
   free_bytes=rt->capacity-rt->temporary-rt->used;
   /* Keep the exact pair deficit without raising/clearing an OOM just to
    * choose the permitted one-object path. Login/symbol costs come afterwards. */

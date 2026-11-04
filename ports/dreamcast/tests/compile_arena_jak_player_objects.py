@@ -18,7 +18,8 @@ flags = ['-O2', '-fno-builtin', '-m4-single', '-ml', '-mfsrra', '-mfsca',
          '-I'+str(KOS/'addons/include'), '-I'+str(SDK/'kos-ports/include')]
 mode = ['-DDC_ARENA_COEXIST', '-DDC_ARENA_FLY', '-DDC_ARENA_LIVE', '-DDC_ARENA_JAK', '-DDC_ARENA_JAK_PLAYER']
 sources = ['arena_jak_main.c', 'arena_coexist.c', 'kernel_boot_cases.c', 'goal_pad.c', 'arena_live.c',
-           'arena_live_render.c', 'arena_jak.c', 'arena_jak_art.c', 'goal_art.c', 'arena_jak_player.c']
+           'arena_live_render.c', 'arena_jak.c', 'arena_jak_art.c', 'goal_art.c', 'arena_jak_exports.c',
+           'goal_module.c', 'arena_jak_player.c']
 for source in sources:
     extra = []
     if source == 'arena_jak_main.c':
