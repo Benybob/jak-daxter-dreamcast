@@ -880,3 +880,12 @@ Observed in Flycast with that change: checks 16 to 19 pass (7011 checks pass).
 The run then never completes: it stops inside the first call to the original
 `kernel-dispatcher` (just before check 20), which is where Jak's first state
 runs. Flycast logs no exception; the verifier times out.
+
+`verify_backend.py --dump` now also writes `dump.bin` at each progress
+sample, so a run that never completes still leaves the latest bytes.
+Observed during the hang (`dc_arena_jak_player_evidence`): active 1, phase 2,
+attempts 2, resumes 2, pad_services 1, pad_valid 1, frames 1, error 0. Trace
+frame 0 holds Jak's translation (-1017659.9, 211967.2, -1055179.9) from the
+continue point. So the original target ran enter-state and its first frame;
+the dispatcher then does not return during the second frame.
+`dc_goal_integer_trap_probe` stays empty: no integer trap or (break) fired.

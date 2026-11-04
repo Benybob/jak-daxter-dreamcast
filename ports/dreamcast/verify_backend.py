@@ -20,7 +20,7 @@ parser.add_argument('--tests',type=int,default=None)
 parser.add_argument('--suite',choices=('codegen','runtime','runtime-goal','objects','projection','movement','collision','world-manifest','view-clip','camera','sectors','compression','render-io','gpu-catalog','render-cache','world-view','frustum','render-base','training-render','instances','village','flythrough','arena-game','arena-camera','arena-live'),default='codegen')
 parser.add_argument('--timeout',type=float,default=30,help='Native completion deadline in seconds, 1..300')
 parser.add_argument('--capture',action='store_true',help='Capture completed RGB565 framebuffer before recording terminal success')
-parser.add_argument('--dump',nargs=2,metavar=('SYMBOL','BYTES'),help='Also write BYTES of a guest symbol to dump.bin at the end')
+parser.add_argument('--dump',nargs=2,metavar=('SYMBOL','BYTES'),help='Also write BYTES of a guest symbol to dump.bin at the end and on each progress sample')
 args=parser.parse_args()
 from verify_arena_live import capture_contract
 try:
@@ -91,11 +91,12 @@ local function vblank()
   if not terminal and samples%60~=1 then return end
   if terminal then
     CAPTURE_CALL
-    if METRICS~=0 then
-      local m=assert(io.open(METRICS_OUTPUT,'wb'))
-      for i=0,METRIC_BYTES-1 do m:write(string.char(flycast.memory.read8(METRICS+i))) end
-      m:close()
-    end
+  end
+  -- Also on each progress sample, so a hang still leaves the latest bytes.
+  if METRICS~=0 then
+    local m=assert(io.open(METRICS_OUTPUT,'wb'))
+    for i=0,METRIC_BYTES-1 do m:write(string.char(flycast.memory.read8(METRICS+i))) end
+    m:close()
   end
   local f=assert(io.open(terminal and OUTPUT or PROGRESS,'wb'))
   for i=0,127 do f:write(string.char(flycast.memory.read8(ADDRESS+i))) end
