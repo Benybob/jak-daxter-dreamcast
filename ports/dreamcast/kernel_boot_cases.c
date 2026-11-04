@@ -22,6 +22,7 @@
 #include "runtime_cases.h"
 #ifdef DC_LEVEL_LOGIC
 #include "level_logic.h"
+#include "level_dgo_rpc.h"
 #endif
 #ifdef DC_ARENA_JAK
 #include "arena_jak.h"
@@ -423,6 +424,26 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
        CHECK(rt.error,DC_GOAL_OK,"display process activates and arms display-loop");
        dc_goal_set_symbol(&rt,dc_goal_find(&rt,"*run*"),dc_goal_find(&rt,"#t"));
        dc_goal_set_symbol(&rt,dc_goal_find(&rt,"*dproc*"),dproc);
+#ifdef DC_LEVEL_LOGIC
+  /* Geyser Rock's code (build_level_code.py: training-obs, training-part) links
+   * and runs its startups first, so its deftypes are real before the BSP binds
+   * them; as on PS2 the level's code objects precede its data in TRA.DGO. */
+  {static dc_goal_dgo_result level_code;FILE *file=fopen("/cd/TRA-CODE.DGO","rb");int loaded=0;
+   CHECK(file!=NULL,1,"Geyser Rock level code opens from /cd");
+   if(file){
+     method_set_depth(&rt,1);
+     loaded=dc_goal_load_dgo(&rt,file,sync_code,NULL,&level_code);fclose(file);
+     method_set_depth(&rt,-1);
+   }
+   CHECK(loaded?1:100+rt.error,1,"Geyser Rock level code links and runs each original startup");
+   CHECK(level_code.objects,2,"TRA-CODE holds training-obs and training-part");
+   CHECK(level_code.initializers,2,"both level code files run their top-level startups");}
+       /* Then the original load-state wants Geyser Rock displayed; display-loop's
+        * level-update loads it through RPC-DGO (level_dgo_rpc.c), logs it in,
+        * births it and makes it active. */
+       dc_level_dgo_install(&rt);
+       CHECK(dc_level_want(&rt),1,"original load-state wants Geyser Rock loaded and displayed");
+#endif
        before=word(&rt,entry(&rt,"*display*"),REAL_INTEGRAL_FRAMES);
        for(frame=0;frame<DISPLAY_FRAMES && rt.error==DC_GOAL_OK;++frame){
          dc_goal_error_site=0;
@@ -436,6 +457,9 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
        dc_boot_display_frames=completed;
        CHECK(completed,DISPLAY_FRAMES,"original display-loop runs and suspends each frame, headless");
        CHECK(rt.error,DC_GOAL_OK,"display-loop frames leave no runtime fault");
+#ifdef DC_LEVEL_LOGIC
+       CHECK(dc_level_check(&rt),1,"original level loading makes Geyser Rock active with its bsp attached");
+#endif
        /* Every swap-display's display-frame-start counts at least one frame. */
        CHECK(word(&rt,entry(&rt,"*display*"),REAL_INTEGRAL_FRAMES)-before>=DISPLAY_FRAMES,1,
              "*display* real-integral-frame-counter advances every frame");
@@ -489,23 +513,6 @@ spawn_done:
     free(image);
     CHECK(rt.symbol_count==symbols && rt.used==used,1,"refused DGOs link nothing");
   }
-#endif
-#ifdef DC_LEVEL_LOGIC
-  /* Geyser Rock's code (build_level_code.py: training-obs, training-part) links
-   * and runs its startups first, so its deftypes are real before the BSP binds
-   * them; as on PS2 the level's code objects precede its data in TRA.DGO. */
-  {static dc_goal_dgo_result level_code;FILE *file=fopen("/cd/TRA-CODE.DGO","rb");int loaded=0;
-   CHECK(file!=NULL,1,"Geyser Rock level code opens from /cd");
-   if(file){
-     method_set_depth(&rt,1);
-     loaded=dc_goal_load_dgo(&rt,file,sync_code,NULL,&level_code);fclose(file);
-     method_set_depth(&rt,-1);
-   }
-   CHECK(loaded?1:100+rt.error,1,"Geyser Rock level code links and runs each original startup");
-   CHECK(level_code.objects,2,"TRA-CODE holds training-obs and training-part");
-   CHECK(level_code.initializers,2,"both level code files run their top-level startups");}
-  /* Geyser Rock's logic BSP (build_logic_bsp.py) through original login. */
-  CHECK(dc_level_logic(&rt),1,"original bsp-header login accepts the Geyser Rock logic BSP");
 #endif
 #if defined(DC_ARENA_COEXIST) && !defined(DC_ARENA_JAK_PLAYER)
   if(!dc_arena_finish(&rt))goto done;

@@ -22,6 +22,10 @@ int dc_goal_art_admit(dc_goal_runtime *,uint32_t bytes,dc_goal_art_result *);
  * logic BSP from build_logic_bsp.py is one such object. */
 int dc_goal_load_v4_single(dc_goal_runtime *,FILE *,const char *dgo_name,const char *object_name,
                            const char *root_type,uint32_t *root,dc_goal_art_result *);
+/* One v4 data object of a DGO linked in place at dest (16-byte aligned guest
+ * memory that already resolves), any root type, forward types interned. */
+int dc_goal_link_v4_at(dc_goal_runtime *,FILE *,uint32_t object_at,uint32_t object_bytes,
+                       uint32_t dest,uint32_t *data_bytes);
 int dc_goal_load_art_dgo(dc_goal_runtime *,FILE *,uint32_t expected_payload,
                          dc_goal_art_relocate,void *,dc_goal_art_result *);
 #ifdef DC_ARENA_JAK_PLAYER

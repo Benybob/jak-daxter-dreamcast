@@ -1978,6 +1978,23 @@ static uint64_t pc_kopen_native(uint64_t fs,uint64_t name,uint64_t mode){
   return fs;
 }
 static uint64_t pc_kclose_native(uint64_t fs){return fs;}
+dc_goal_rpc_hook dc_goal_rpc_handler;
+dc_goal_link_hook dc_goal_link_begin_handler;
+static uint64_t rpc_call_native(uint64_t port,uint64_t fno,uint64_t async,uint64_t send,
+                                uint64_t send_bytes,uint64_t recv,uint64_t recv_bytes) {
+  return dc_goal_rpc_handler?dc_goal_rpc_handler(port,fno,async,send,send_bytes,recv,recv_bytes):0;
+}
+static uint64_t link_begin_native(uint64_t data,uint64_t name,uint64_t length,uint64_t heap,uint64_t flags) {
+  if(dc_goal_link_begin_handler)return dc_goal_link_begin_handler(data,name,length,heap,flags);
+  if(active_runtime && active_runtime->error==DC_GOAL_OK)active_runtime->error=DC_GOAL_UNSUPPORTED_TRANSFER;
+  return 0;
+}
+/* The hooked linker links each object completely in link-begin. */
+static uint64_t link_resume_native(void) {
+  if(dc_goal_link_begin_handler)return 1;
+  if(active_runtime && active_runtime->error==DC_GOAL_OK)active_runtime->error=DC_GOAL_UNSUPPORTED_TRANSFER;
+  return 0;
+}
 /* Desktop pc_memmove (kmachine.cpp): PC ultimate-memcpy is (__mem-move dst src
  * size). Original process relocate moves an image of 2560 bytes or more with it,
  * so without it dead-pool-heap compaction updates the record but copies nothing.
@@ -1994,7 +2011,7 @@ static uint64_t pc_mem_move_native(uint64_t dst,uint64_t src,uint64_t size) {
   else {dc_goal_mem_move_probe[1]++;dc_goal_mem_move_probe[5]=(uint32_t)rt->error;}
   return 0;
 }
-#define DC_PC_SERVICES 52
+#define DC_PC_SERVICES 54
 /* Coexistence only stashes requests on the GOAL stack (AI-assisted), ISC. */
 #ifdef DC_ARENA_COEXIST
 uint64_t dc_arena_syncv(void);
@@ -2046,8 +2063,11 @@ int dc_goal_install_pc_services(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_g
   functions[k]=(dc_goal_code_export){"pc-rand",code[k],12,NULL,0};targets[k++]=(uint32_t)(uintptr_t)pc_rand_native;
   functions[k]=(dc_goal_code_export){"__read-ee-timer",code[k],12,NULL,0};targets[k++]=(uint32_t)(uintptr_t)read_ee_timer_native;
   functions[k]=(dc_goal_code_export){"__mem-move",code[k],12,NULL,0};targets[k++]=(uint32_t)(uintptr_t)pc_mem_move_native;
+  functions[k]=(dc_goal_code_export){"link-begin",code[k],12,NULL,0};targets[k++]=(uint32_t)(uintptr_t)link_begin_native;
+  functions[k]=(dc_goal_code_export){"link-resume",code[k],12,NULL,0};targets[k++]=(uint32_t)(uintptr_t)link_resume_native;
   for(i=0;i<sizeof void_setters/sizeof void_setters[0];++i){
     functions[k]=(dc_goal_code_export){void_setters[i],code[k],12,NULL,0};targets[k++]=(uint32_t)(uintptr_t)pc_zero_native;
+    if(!strcmp(void_setters[i],"rpc-call"))targets[k-1]=(uint32_t)(uintptr_t)rpc_call_native;
 #ifdef DC_ARENA_COEXIST
     if(!strcmp(void_setters[i],"syncv"))targets[k-1]=(uint32_t)(uintptr_t)dc_arena_syncv;
     if(!strcmp(void_setters[i],"__send-gfx-dma-chain"))targets[k-1]=(uint32_t)(uintptr_t)dc_arena_chain;

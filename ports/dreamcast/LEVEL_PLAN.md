@@ -132,8 +132,43 @@ and login still passes. The code costs 75 KB of arena. `warpgate` and
 `warp-gate-switch` come from `villagep-obs` (VILLAGEP.CGO) and stay forward
 types.
 
-Not yet: the bsp-header `relocate` (needs `*level*` loading-level), entity
-birth, collision queries against it.
+### Original level loading (Flycast, 538 of 538)
+
+`jak-dc-level.elf` now loads Geyser Rock the way the game does. Before the
+headless display-loop frames it loads TRA-CODE.DGO, installs the DGO server
+(`level_dgo_rpc.c`) and calls the original `want-levels` and
+`want-display-level` of `*load-state*` for `'training`. Then display-loop's
+original `level-update` does the rest: `load-state update!` calls
+`level-get-for-use`, `alloc-levels!` takes two level heaps, `load-begin` sends
+the RPC-DGO request, `load-continue` links the object, `login-begin` and
+`level-update-after-load` log it in, and the next frame births it and makes it
+active. `dc_level_check` then asks the original `level-status`: `'active`; the
+bsp-header the original relocate attached points back at the level, with all
+152 actors.
+
+Pieces:
+- **Level heaps.** `dreamcast_memory_budget.gc` sets `LEVEL_HEAP_SIZE` and
+  `LEVEL_HEAP_SIZE_DEBUG` to 1 MiB (PS2 10,416 KiB). GAME.CGO was rebuilt; the
+  kernel boot still passes 90 and 532.
+- **RPC-DGO server** (`level_dgo_rpc.c`). The shared bridge binds original
+  `rpc-call`, `link-begin` and `link-resume` to optional hooks
+  (`dc_goal_rpc_handler`, `dc_goal_link_begin_handler`); without them every
+  other ELF behaves as before. The server reads each object to the request's
+  `bt` (align64 of the heap's current) and links a v4 data object in place
+  there (`dc_goal_link_v4_at`); `link-begin` advances the heap past it and,
+  with execute-login, calls its original relocate (method 7). Loading is
+  synchronous, so `rpc-busy?` stays 0.
+- **The file name.** With vis off, `load-begin` asks for `<name>.DGO`, so the
+  disc holds the logic BSP as `TRAINING.DGO`.
+- **A pending fault.** `load-begin` kmallocs two 2 MiB load buffers from the
+  1 MiB heap; they are refused (as PS2 would refuse) and leave a BAD_ARGUMENT
+  pending. The server records it (`prior_error`) and starts clean, as the IOP
+  never saw EE faults. The buffers are not needed: objects go straight to `bt`.
+
+Not yet: level code served through the same RPC (it loads at boot), the
+level's art groups and texture pages, actor spawning over later frames,
+collision queries, and the level inside the Jak ELF (its arena has no room for
+two level heaps).
 
 ## Order
 

@@ -1,21 +1,21 @@
-/* A level's logic BSP through original login (AI-assisted), ISC.
- * After the DGO boot, links /cd/TRA-LOGIC.DGO (build_logic_bsp.py from the
- * owner's TRA.DGO), checks it is an original bsp-header whose drawable trees
- * are the kept logic trees, and calls the original (method login bsp-header).
- * That logs in the drawable-tree-array, then the actor, collide-fragment and
- * ambient trees, then the level's adgif shaders. --dump dc_level_logic_evidence 128 */
+/* Geyser Rock through original level loading (AI-assisted), ISC.
+ * The DGO boot's display-loop runs original level-update. Before it, this asks
+ * the original load-state for 'training, displayed: load-state update! then
+ * calls level-get-for-use, which allocates the level heaps, load-begin sends the
+ * RPC-DGO request (served by level_dgo_rpc.c from /cd/TRA.DGO, the logic BSP),
+ * load-continue links it (bsp-header relocate attaches it to the loading level),
+ * login-begin and level-update-after-load log it in, and a later frame births it
+ * and makes it active. The level's code (TRA-CODE.DGO) is loaded at boot first.
+ * --dump dc_level_logic_evidence 128 */
 #include "level_logic.h"
-#include "goal_art.h"
 #include "goal_module.h"
 #include <string.h>
 
 volatile struct {
   uint32_t version,stage,error,site,sticky;
-  uint32_t root,used_before,used_after,payload,pointers,bindings;
-  uint32_t trees,login_entry,login_result,used_after_login;
-  uint32_t tree_type[8];
-  uint32_t real_types,pad[8];
-} dc_level_logic_evidence={.version=1};
+  uint32_t level,status,bsp,bsp_type_ok,bsp_level,want_result;
+  uint32_t real_types,actors,pad[19];
+} dc_level_logic_evidence={.version=2};
 typedef char dc_level_logic_evidence_bytes[sizeof dc_level_logic_evidence==128?1:-1];
 
 static uint32_t named(dc_goal_runtime *rt,const char *name){
@@ -29,45 +29,50 @@ static int stop(dc_goal_runtime *rt,uint32_t stage){
   dc_level_logic_evidence.site=dc_goal_error_site;dc_level_logic_evidence.sticky=dc_goal_sticky_error;
   return 0;
 }
-int dc_level_logic(dc_goal_runtime *rt){
-  typedef uint64_t (*one_fn)(uint64_t);
-  dc_goal_art_result result;dc_goal_code_entry_info info;
-  uint32_t root=0,type,trees,n,i,login;FILE *f;int ok;
-  if(!rt || rt->error!=DC_GOAL_OK)return 0;
-  dc_level_logic_evidence.used_before=rt->used;
-  f=fopen("/cd/TRA-LOGIC.DGO","rb");
-  if(!f)return stop(rt,1);
-  ok=dc_goal_load_v4_single(rt,f,"TRA-LOGIC.DGO","training-vis","bsp-header",&root,&result);
-  fclose(f);
-  dc_level_logic_evidence.payload=result.payload;dc_level_logic_evidence.pointers=result.pointers;
-  dc_level_logic_evidence.bindings=result.bindings;dc_level_logic_evidence.used_after=rt->used;
-  if(!ok)return stop(rt,2);
-  dc_level_logic_evidence.root=root;
-  type=named(rt,"bsp-header");
-  if(!type || word(rt,root-4)!=type)return stop(rt,3);
-  /* drawable-trees is at +40 from the tag; drawable-group length (int16) at +6
-   * and data[] at +32, both from that array's tag. */
-  trees=word(rt,root+36);
-  {const unsigned char *p=dc_goal_resolve(rt,trees+2,2);n=p?(uint32_t)(p[0]|p[1]<<8):0;}
-  dc_level_logic_evidence.trees=n;
-  if(word(rt,trees-4)!=named(rt,"drawable-tree-array") || n<1 || n>8)return stop(rt,4);
-  for(i=0;i<n;++i)dc_level_logic_evidence.tree_type[i]=word(rt,word(rt,trees+28+4*i)-4);
-  login=dc_goal_get_method(rt,type,9);
-  dc_level_logic_evidence.login_entry=login;
-  if(!dc_goal_code_entry(rt,login,&info) || info.symbol!=dc_goal_find(rt,"(method login bsp-header)"))
-    return stop(rt,5);
-  dc_level_logic_evidence.login_result=(uint32_t)((one_fn)(uintptr_t)login)(root);
-  dc_level_logic_evidence.used_after_login=rt->used;
-  if(rt->error!=DC_GOAL_OK || dc_level_logic_evidence.login_result!=root)return stop(rt,6);
-  /* The level's own actor types are the deftypes of its code, not forward
-   * types (a forward type has no parent). */
+int dc_level_want(dc_goal_runtime *rt){
+  typedef uint64_t (*three_fn)(uint64_t,uint64_t,uint64_t);
+  uint32_t state=named(rt,"*load-state*"),want=named(rt,"(method want-levels load-state)");
+  uint32_t display=named(rt,"(method want-display-level load-state)"),training=dc_goal_intern(rt,"training");
+  if(!rt || rt->error!=DC_GOAL_OK || !state || !want || !display || !training)return stop(rt,1);
+  dc_level_logic_evidence.want_result=(uint32_t)((three_fn)(uintptr_t)want)(state,training,rt->s7);
+  ((three_fn)(uintptr_t)display)(state,training,dc_goal_intern(rt,"display"));
+  if(rt->error!=DC_GOAL_OK)return stop(rt,2);
+  dc_level_logic_evidence.stage=3;
+  return 1;
+}
+int dc_level_check(dc_goal_runtime *rt){
+  typedef uint64_t (*two_fn)(uint64_t,uint64_t);
+  uint32_t group=named(rt,"*level*"),get=named(rt,"(method level-get level-group)");
+  uint32_t status=named(rt,"(method level-status level-group)"),training=dc_goal_find(rt,"training");
+  uint32_t level,bsp,i,types=named(rt,"bsp-header");
+  if(!rt || !group || !get || !status || !training)return stop(rt,4);
+  dc_level_logic_evidence.status=(uint32_t)((two_fn)(uintptr_t)status)(group,training);
+  level=(uint32_t)((two_fn)(uintptr_t)get)(group,training);
+  dc_level_logic_evidence.level=level;
+  if(rt->error!=DC_GOAL_OK || dc_level_logic_evidence.status!=dc_goal_find(rt,"active"))return stop(rt,5);
+  /* Find the level's bsp field by its contents: a bsp-header whose level field
+   * (+120 from the object, retail layout) is this level. */
+  for(i=0;i<256u && !dc_level_logic_evidence.bsp;i+=4){
+    uint32_t candidate=word(rt,level+i);
+    if(candidate>4u && candidate!=rt->s7 && word(rt,candidate-4u)==types && word(rt,candidate+120u)==level)
+      dc_level_logic_evidence.bsp=candidate;
+  }
+  rt->error=DC_GOAL_OK;
+  bsp=dc_level_logic_evidence.bsp;
+  if(!bsp)return stop(rt,6);
+  dc_level_logic_evidence.bsp_type_ok=1;dc_level_logic_evidence.bsp_level=word(rt,bsp+120u);
+  /* actors (+108): a drawable-inline-array-actor, length int16 at +2. */
+  {uint32_t actors=word(rt,bsp+108u);const unsigned char *p=actors?dc_goal_resolve(rt,actors+2u,2):NULL;
+   dc_level_logic_evidence.actors=p?(uint32_t)(p[0]|p[1]<<8):0;}
+  rt->error=DC_GOAL_OK;
+  /* The level's own actor types are its code's deftypes (a forward type has no parent). */
   {static const char *const own[]={"tra-pontoon","training-cam","scarecrow-a","scarecrow-b",
                                    "tra-iris-door","training-water","training-part"};
    for(i=0;i<sizeof own/sizeof own[0];++i){
      uint32_t t=named(rt,own[i]);
      if(t && word(rt,t+4)!=0)++dc_level_logic_evidence.real_types;
    }
-   if(dc_level_logic_evidence.real_types!=sizeof own/sizeof own[0])return stop(rt,8);}
-  dc_level_logic_evidence.stage=7;
+   if(dc_level_logic_evidence.real_types!=sizeof own/sizeof own[0])return stop(rt,7);}
+  dc_level_logic_evidence.stage=8;
   return 1;
 }

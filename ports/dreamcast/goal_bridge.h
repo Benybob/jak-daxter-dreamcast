@@ -128,4 +128,13 @@ int dc_goal_install_catch_bridge(dc_goal_runtime *,dc_goal_cache_sync,dc_goal_mo
  * extension region (dc_goal_register_extension). Placed count, and their bytes. */
 int dc_goal_place_in_extension(dc_goal_runtime *rt,const char *type_name,uint32_t min_bytes);
 uint32_t dc_goal_extension_placed(uint32_t *bytes);
+/* IOP-side DGO loading and the C linker (AI-assisted). Original rpc-call,
+ * link-begin and link-resume are bound in every ELF; they forward to these
+ * hooks when set. Without a hook rpc-call answers 0 as before (no IOP), and
+ * link-begin/link-resume refuse with UNSUPPORTED_TRANSFER. */
+typedef uint64_t (*dc_goal_rpc_hook)(uint64_t port,uint64_t fno,uint64_t async,uint64_t send,
+                                     uint64_t send_bytes,uint64_t recv,uint64_t recv_bytes);
+typedef uint64_t (*dc_goal_link_hook)(uint64_t data,uint64_t name,uint64_t length,uint64_t heap,uint64_t flags);
+extern dc_goal_rpc_hook dc_goal_rpc_handler;
+extern dc_goal_link_hook dc_goal_link_begin_handler;
 #endif

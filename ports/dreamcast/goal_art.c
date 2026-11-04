@@ -167,12 +167,38 @@ static int links(dc_goal_runtime *rt,FILE *f,const art_row *row,unsigned char *d
       if(!table[p]){++p;break;}
     }
   }
-  if(p>=row->length || !root)goto done;
+  /* A NULL root_type accepts any root (the DGO server links whatever object comes). */
+  if(p>=row->length || (root_type && !root))goto done;
   while(p<row->length)if(table[p++])goto done;
   ok=1;
 done:
   free(table);
   return ok?1:fail(rt,DC_GOAL_BAD_MODULE);
+}
+/* One v4 data object of a DGO, linked in place at a guest address (the level
+ * heap). object_at is the file offset of its 16-byte v4 header, object_bytes its
+ * DGO size. Any root type; forward types interned. *data_bytes is the linked
+ * data's size: the object occupies [dest, dest+*data_bytes). Runs no GOAL code. */
+int dc_goal_link_v4_at(dc_goal_runtime *rt,FILE *f,uint32_t object_at,uint32_t object_bytes,
+                       uint32_t dest,uint32_t *data_bytes){
+  unsigned char v4[16],*data;art_row row;dc_goal_art_result result;uint32_t tail,end;
+  if(data_bytes)*data_bytes=0;
+  if(!rt || !f || !data_bytes || (dest&15u))return fail(rt,DC_GOAL_BAD_ARGUMENT);
+  if(rt->error!=DC_GOAL_OK)return 0;
+  memset(&result,0,sizeof result);
+  if(object_bytes<64 || (object_bytes&15u) || !read_at(f,object_at,v4,16))return fail(rt,DC_GOAL_BAD_MODULE);
+  row=(art_row){object_at+16u,word(v4+12),0,word(v4+4)};
+  if(word(v4)!=UINT32_MAX || word(v4+8)!=4 || row.size<32 || (row.size&15u) ||
+     row.length<14 || row.length>1024u*1024u || row.size>object_bytes-16u ||
+     row.length>object_bytes-16u-row.size)return fail(rt,DC_GOAL_BAD_MODULE);
+  row.link=row.data+row.size;tail=row.link+row.length;end=object_at+object_bytes;
+  while(tail<end){unsigned char b;if(!read_at(f,tail++,&b,1) || b)return fail(rt,DC_GOAL_BAD_MODULE);}
+  if(!links(rt,f,&row,NULL,0,&result,NULL,1))return 0;
+  data=dc_goal_resolve(rt,dest,row.size);
+  if(!data || !read_at(f,row.data,data,row.size) || !links(rt,f,&row,data,dest,&result,NULL,1))
+    return fail(rt,DC_GOAL_BAD_MODULE);
+  *data_bytes=row.size;
+  return 1;
 }
 int dc_goal_load_v4_single(dc_goal_runtime *rt,FILE *f,const char *dgo_name,const char *object_name,
                            const char *root_type,uint32_t *root,dc_goal_art_result *result){
