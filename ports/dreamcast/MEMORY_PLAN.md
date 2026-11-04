@@ -79,3 +79,33 @@ buffers) from 1 to 6 MiB, the staged romdisk from 6 to 8 MiB.
 VRAM and sound RAM can't hold GOAL code or objects that native code reads in its inner
 loops: the CPU reads both slowly and can't execute from them usefully. Their value is
 taking bulk data out of main RAM so the arena can hold code and objects.
+
+## GAME.CGO census and two PC-only buffers (2026-11-04, AI-assisted)
+
+Measured from `dc_boot_memory_trace` (arena use after every GAME.CGO object)
+with each object's compiled function bytes from its lowering manifest: the 326
+objects take 8,874,848 bytes, **6,334,194 of it code** and 2,540,654 data.
+Largest data: collide-cache-h 356,776, sparticle 332,830, sprite 297,120,
+subtitle 264,180. The 19 objects from `goal_src/jak1/pc/` (PC port only, not in
+retail GAME.CGO) take 1,020,208 bytes; dropping them means a non-PC_PORT
+target, which the port still relies on.
+
+Code density: in `target` (290,275 bytes, 141,537 instructions), 33% of
+instructions are loads or stores of R14 frame slots, plus address arithmetic
+for slots beyond @(60,R14), and every value is an 8-byte pair even when it is
+a 32-bit pointer. A register allocator and 32-bit values in single registers
+remain the largest saving left.
+
+Two PC-only buffers now take Dreamcast values through `dreamcast_memory_budget.gc`
+(the exporter's budget now also substitutes `defglobalconstant`):
+- `PC_SUBTITLE_FILE_SIZE` 256 KiB to 16 KiB: no subtitle files on the disc yet.
+- `BIG_COLLIDE_CACHE_SIZE` 5000 to 460 triangles: the PC port mallocs this
+  overflow area unconditionally for `activate-big-collide-cache!`, which no Jak
+  1 code calls; 460 is the original cache size.
+
+Result: the DGO boot's arena use fell from 10,673,456 to 10,137,296 bytes
+(536,160 bytes, 90 and 532 still pass).
+
+Building the exporter: run ninja from the 8.3 short path of `og-current`
+(`C:\Users\SULLIN~1\DOCUME~1\...`) with TMP/TEMP set; from the long path, ar
+fails on draco object paths longer than 260 characters.

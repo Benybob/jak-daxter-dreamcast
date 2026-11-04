@@ -21,3 +21,13 @@
 ;; and a compact allocation agree, and the player's art fits beside them.
 (defconstant LEVEL_HEAP_SIZE (* 512 1024))
 (defconstant LEVEL_HEAP_SIZE_DEBUG (* 512 1024))
+
+;; pc/subtitle.gc: the PC port's subtitle text heap. PC 256 KiB. The Dreamcast
+;; disc carries no subtitle files yet, and load-subtitle-text-info refuses a
+;; file that would overrun its heap ("Game subtitle heap overrun!").
+(defconstant PC_SUBTITLE_FILE_SIZE (* 16 1024))
+
+;; collide-cache-h.gc: under PC_PORT, room for 5000 extra collide-cache triangles
+;; is malloc'd at startup for activate-big-collide-cache!, which no Jak 1 code
+;; calls. The original cache holds 460; this keeps the overflow area that size.
+(defglobalconstant BIG_COLLIDE_CACHE_SIZE 460)

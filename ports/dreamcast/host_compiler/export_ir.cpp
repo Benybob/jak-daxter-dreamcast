@@ -242,21 +242,27 @@ static json instruction(IR* ir,const StaticNames& statics,const TypeSystem& type
   return output;
 }
 
-// Dreamcast target constants (AI-assisted): (defconstant NAME VALUE) forms from a
-// budget file replace the value of any defconstant of NAME, wherever it appears in
-// a source (including inside #cond/#if), as the source is read. The files on disk
-// are unchanged; each export records which names it substituted.
-using TargetConstants=std::unordered_map<std::string,goos::Object>;
+// Dreamcast target constants (AI-assisted): (defconstant NAME VALUE) and
+// (defglobalconstant NAME VALUE) forms from a budget file replace the value of a
+// definition of the same kind of NAME, wherever it appears in a source (including
+// inside #cond/#if), as the source is read. The files on disk are unchanged; each
+// export records which names it substituted.
+struct TargetConstant { std::string kind; goos::Object definition; };
+using TargetConstants=std::unordered_map<std::string,TargetConstant>;
+static bool constant_kind(const goos::Object& head) {
+  return head.is_symbol("defconstant") || head.is_symbol("defglobalconstant");
+}
 static TargetConstants read_target_constants(Compiler& compiler,const std::string& path) {
   TargetConstants out;
   auto forms=compiler.get_goos().reader.read_from_file({path}).as_pair()->cdr;
   while(forms.is_pair()) {
     const auto form=forms.as_pair()->car;
-    if(!form.is_pair() || !form.as_pair()->car.is_symbol("defconstant") || !form.as_pair()->cdr.is_pair() ||
+    if(!form.is_pair() || !constant_kind(form.as_pair()->car) || !form.as_pair()->cdr.is_pair() ||
        !form.as_pair()->cdr.as_pair()->car.is_symbol())
-      throw std::runtime_error("target constants file may only contain (defconstant NAME VALUE)");
+      throw std::runtime_error("target constants file may only contain (defconstant NAME VALUE) or (defglobalconstant NAME VALUE)");
     const auto name=form.as_pair()->cdr.as_pair()->car.as_symbol().name_ptr;
-    if(!out.emplace(name,form.as_pair()->cdr).second) throw std::runtime_error("duplicate target constant");
+    if(!out.emplace(name,TargetConstant{form.as_pair()->car.as_symbol().name_ptr,form.as_pair()->cdr}).second)
+      throw std::runtime_error("duplicate target constant");
     forms=forms.as_pair()->cdr;
   }
   return out;
@@ -265,9 +271,11 @@ static void apply_target_constants(goos::Object& object,const TargetConstants& c
                                    std::vector<std::string>& applied) {
   if(!object.is_pair()) return;
   auto* pair=object.as_pair();
-  if(pair->car.is_symbol("defconstant") && pair->cdr.is_pair() && pair->cdr.as_pair()->car.is_symbol()) {
+  if(constant_kind(pair->car) && pair->cdr.is_pair() && pair->cdr.as_pair()->car.is_symbol()) {
     const auto found=constants.find(pair->cdr.as_pair()->car.as_symbol().name_ptr);
-    if(found!=constants.end()) { pair->cdr=found->second; applied.push_back(found->first); return; }
+    if(found!=constants.end() && pair->car.is_symbol(found->second.kind)) {
+      pair->cdr=found->second.definition; applied.push_back(found->first); return;
+    }
   }
   for(goos::Object at=object;at.is_pair();at=at.as_pair()->cdr) apply_target_constants(at.as_pair()->car,constants,applied);
 }
