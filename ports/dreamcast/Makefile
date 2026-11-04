@@ -814,6 +814,16 @@ romdisk_stage.o: romdisk_stage.c
 jak-dc-kernel-dgo.elf: kernel_boot_main.o kernel_dgo_cases.o kernel_vf_fixture.o goal_dgo.o goal_dgo_zst.o romdisk_stage.o $(ZSTD_OBJS) build/kernel-dgo-romdisk.o $(KERNEL_BOOT_LIBS) build/mips2c/libdcmips2c.a
 	kos-c++ -o $@ $^ -Wl,--section-start=.dc_stage=0x8cd80000
 
+# The DGO boot, then a level's logic BSP from /cd through original login
+# (AI-assisted), ISC. Disc: build/level-disc with TRA-LOGIC.DGO. A disc boot loads
+# the flat binary, so the boot romdisk sits low, as in the Jak ELF.
+level_kernel_cases.o: kernel_boot_cases.c level_logic.h goal_dgo.h goal_dgo_zst.h goal_bridge.h goal_fiber.h goal_main_start.h runtime_cases.h build/game_cgo_order.h build/vf_cases.h mips2c_dc.h mips2c_cases.h build/mips2c/mips2c_cases_expect.h
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -DDC_KERNEL_DGO -DDC_LEVEL_LOGIC -I. -c kernel_boot_cases.c -o $@
+level_logic.o: level_logic.c level_logic.h goal_art.h goal_module.h goal_runtime.h
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -I. -c $< -o $@
+jak-dc-level.elf: kernel_boot_main.o level_kernel_cases.o kernel_vf_fixture.o goal_dgo.o goal_dgo_zst.o romdisk_stage.o level_logic.o goal_art.o $(ZSTD_OBJS) build/kernel-dgo-romdisk.o $(KERNEL_BOOT_LIBS) build/mips2c/libdcmips2c.a
+	kos-c++ -o $@ $^ -Wl,--section-start=.dc_stage=0x8cb00000
+
 # GOAL's 60-frame boot with PVR clears and a separate slab (AI-assisted), ISC.
 # Separate objects keep the headless DGO boot's services and VRAM map unchanged.
 arena_coexist.o: arena_coexist.c goal_runtime.h goal_fiber.h goal_kos_stack.h

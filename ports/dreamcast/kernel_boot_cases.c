@@ -20,6 +20,9 @@
 #include "process_spans.h"
 #include "pp_scope.h"
 #include "runtime_cases.h"
+#ifdef DC_LEVEL_LOGIC
+#include "level_logic.h"
+#endif
 #ifdef DC_ARENA_JAK
 #include "arena_jak.h"
 #endif
@@ -486,6 +489,10 @@ spawn_done:
     free(image);
     CHECK(rt.symbol_count==symbols && rt.used==used,1,"refused DGOs link nothing");
   }
+#endif
+#ifdef DC_LEVEL_LOGIC
+  /* Geyser Rock's logic BSP (build_logic_bsp.py) through original login. */
+  CHECK(dc_level_logic(&rt),1,"original bsp-header login accepts the Geyser Rock logic BSP");
 #endif
 #if defined(DC_ARENA_COEXIST) && !defined(DC_ARENA_JAK_PLAYER)
   if(!dc_arena_finish(&rt))goto done;

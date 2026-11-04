@@ -201,7 +201,7 @@ def disc_identity(path):
     return result
 
 
-def build(elf, template, roots, out):
+def build(elf, template, roots, out, required=('EICHAR.DGO', 'JAKART.DGO')):
     out = out.resolve()
     if not out.is_relative_to((PORT / 'build').resolve()):
         raise ValueError('disc output (including private retail data) must stay under build/')
@@ -215,7 +215,7 @@ def build(elf, template, roots, out):
                 if name in files:
                     raise ValueError('duplicate staged path: ' + name)
                 files[name] = source.read_bytes()
-    for name in ('EICHAR.DGO', 'JAKART.DGO'):
+    for name in required:
         if name not in files:
             raise ValueError('missing staged ' + name)
     elf_data = elf.read_bytes()
@@ -247,9 +247,12 @@ def main():
     parser.add_argument('--ip-template', type=Path, required=True, help='KOS utils/makeip/rsrc/templates/ip.tmpl')
     parser.add_argument('--staged', type=Path, action='append', required=True, help='merge this staged directory at /cd (repeatable)')
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--require', action='append',
+                        help='staged file the disc must contain (repeatable; default EICHAR.DGO and JAKART.DGO)')
     args = parser.parse_args()
     try:
-        result = build(args.elf, args.ip_template, args.staged, args.output)
+        result = build(args.elf, args.ip_template, args.staged, args.output,
+                       tuple(args.require) if args.require else ('EICHAR.DGO', 'JAKART.DGO'))
     except (OSError, ValueError) as error:
         parser.error(str(error))
     print(json.dumps({k: result[k] for k in ('elf_sha256', 'boot_bytes', 'boot_sha256', 'disc')}, indent=2))

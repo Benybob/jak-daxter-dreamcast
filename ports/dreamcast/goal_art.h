@@ -16,6 +16,12 @@ typedef struct {
  * Refuses any preexisting runtime fault and never silently clears one. */
 typedef int (*dc_goal_art_relocate)(dc_goal_runtime *,uint32_t art,void *);
 int dc_goal_art_admit(dc_goal_runtime *,uint32_t bytes,dc_goal_art_result *);
+/* One retail v4 data object in a one-object DGO named dgo_name, whose object is
+ * object_name and whose root is a basic of root_type. Admits, links (pointers,
+ * symbols, types) and returns the root object; runs no GOAL code. A level's
+ * logic BSP from build_logic_bsp.py is one such object. */
+int dc_goal_load_v4_single(dc_goal_runtime *,FILE *,const char *dgo_name,const char *object_name,
+                           const char *root_type,uint32_t *root,dc_goal_art_result *);
 int dc_goal_load_art_dgo(dc_goal_runtime *,FILE *,uint32_t expected_payload,
                          dc_goal_art_relocate,void *,dc_goal_art_result *);
 #ifdef DC_ARENA_JAK_PLAYER

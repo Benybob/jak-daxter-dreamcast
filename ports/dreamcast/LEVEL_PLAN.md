@@ -85,9 +85,44 @@ Not yet shown: that original `login`, entity birth and collision accept it.
 Tie collision (11,744 bytes of `collide-frag-mesh` under Geyser Rock's ties)
 is dropped with the tie trees.
 
+## Original login accepts it (Flycast)
+
+`jak-dc-level.elf` is the DGO boot (532 checks) plus one phase
+(`level_logic.c`, `-DDC_LEVEL_LOGIC`): it reads `/cd/TRA-LOGIC.DGO`, links it
+with `dc_goal_load_v4_single` (`goal_art.c`), checks the root is a typed
+`bsp-header` whose `drawable-trees` is a `drawable-tree-array`, and calls the
+original `(method login bsp-header)` (method 9, authenticated by its code
+entry). Result: **533 of 533**. 378,128 bytes linked, 3,545 pointers and 3,111
+bindings, 3 trees (actor, collide-fragment, ambient), login returned the header
+and left no fault. `--dump dc_level_logic_evidence 128`.
+
+Two things it needed:
+- Level data binds actor types its own code defines later (`tra-pontoon`,
+  `training-cam`, `warpgate`, `scarecrow-a`...). The original linker interns a
+  forward type for those; the art loader refused them. `links()` now takes a
+  flag, and only the single-object level loader interns forward types
+  (`dc_goal_intern_type`, the binding's method count). 20 new symbols.
+- A disc boot loads the flat binary, so this ELF links its boot romdisk at
+  0x8cb00000 like the Jak ELF; at 0x8cd80000 `KERNEL.CGO` did not open.
+  `make_boot_gdi.py --require` names the staged files the disc must have.
+
+Build and run (from the repo root; `build/level-disc` holds TRA-LOGIC.DGO):
+
+```text
+python ports/dreamcast/build_logic_bsp.py <TRA.DGO>
+make ... jak-dc-level.elf
+python ports/dreamcast/make_boot_gdi.py ports/dreamcast/jak-dc-level.elf --ip-template <ip.tmpl> \
+  --staged ports/dreamcast/build/level-disc --require TRA-LOGIC.DGO --output ports/dreamcast/build/level-gdi
+python ports/dreamcast/verify_backend.py <flycast> ports/dreamcast/jak-dc-level.elf \
+  --disc ports/dreamcast/build/level-gdi/jak-arena.gdi --nm <sh-elf-nm> --tests 533 --timeout 300
+```
+
+Not yet: the bsp-header `relocate` (needs `*level*` loading-level), entity
+birth, collision queries against it, and the level's code.
+
 ## Order
 
-1. Done: the logic-BSP builder above.
+1. Done: the logic-BSP builder above, and original login of its output.
 2. Make 1 MB: measure the boot again with the register allocator work or a
    smaller actor heap, and return the loader's KOS heap to the arena.
 3. Load Geyser Rock's logic BSP, art and code through the original

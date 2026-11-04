@@ -90,8 +90,12 @@ static void put(unsigned char *data,uint32_t at,uint32_t value){memcpy(data+at,&
  * arena payload. The compact original link table is the only malloc buffer.
  * All types must already be defined by native GAME.CGO. New resource symbols
  * are interned only in the apply pass, with the normal native symbol identity. */
+/* forward: a type binding to a type no module has defined yet interns a forward
+ * type with the binding's method count, as the original linker's intern_type
+ * does (level data names actor types its own code defines later). Otherwise all
+ * types must already be defined by native GAME.CGO. */
 static int links(dc_goal_runtime *rt,FILE *f,const art_row *row,unsigned char *data,
-                 uint32_t base,dc_goal_art_result *result,const char *root_type){
+                 uint32_t base,dc_goal_art_result *result,const char *root_type,int forward){
   unsigned char *table=malloc(row->length);
   uint32_t p=12,at=0,value,count,fixing=0,root=0;
   int ok=0;
@@ -134,6 +138,7 @@ static int links(dc_goal_runtime *rt,FILE *f,const art_row *row,unsigned char *d
       uint32_t symbol=dc_goal_intern(rt,name);
       if(!symbol || rt->error!=DC_GOAL_OK)goto done;
       target=is_type?dc_goal_symbol_value(rt,symbol):symbol;
+      if(is_type && forward && (!target || target==rt->s7))target=dc_goal_intern_type(rt,name,(uint16_t)(kind&127u));
       if(is_type && (!target || target==rt->s7 || dc_goal_type_of(rt,target)!=rt->type_type))goto done;
     }
     for(;;){
@@ -168,6 +173,34 @@ static int links(dc_goal_runtime *rt,FILE *f,const art_row *row,unsigned char *d
 done:
   free(table);
   return ok?1:fail(rt,DC_GOAL_BAD_MODULE);
+}
+int dc_goal_load_v4_single(dc_goal_runtime *rt,FILE *f,const char *dgo_name,const char *object_name,
+                           const char *root_type,uint32_t *root,dc_goal_art_result *result){
+  unsigned char h[64],v4[16],*data;art_row row;uint32_t size,base,tail,at;
+  if(result)memset(result,0,sizeof *result);
+  if(root)*root=0;
+  if(!rt || !f || !dgo_name || !object_name || !root_type || !root || !result)return fail(rt,DC_GOAL_BAD_ARGUMENT);
+  if(rt->error!=DC_GOAL_OK)return 0;
+  if(!read_at(f,0,h,64) || word(h)!=1 || !name_is(h+4,dgo_name))return fail(rt,DC_GOAL_BAD_MODULE);
+  if(!read_at(f,64,h,64) || !name_is(h+4,object_name))return fail(rt,DC_GOAL_BAD_MODULE);
+  size=word(h);
+  if(size<64 || size>8u*1024u*1024u || (size&15u) || !read_at(f,128,v4,16))return fail(rt,DC_GOAL_BAD_MODULE);
+  row=(art_row){144,word(v4+12),0,word(v4+4)};
+  if(word(v4)!=UINT32_MAX || word(v4+8)!=4 || row.size<32 || (row.size&15u) ||
+     row.length<14 || row.length>1024u*1024u || row.size>size-16u ||
+     row.length>size-16u-row.size)return fail(rt,DC_GOAL_BAD_MODULE);
+  row.link=row.data+row.size;tail=row.link+row.length;at=128u+size;
+  while(tail<at){unsigned char b;if(!read_at(f,tail++,&b,1) || b)return fail(rt,DC_GOAL_BAD_MODULE);}
+  if(fseek(f,(long)at,SEEK_SET) || fgetc(f)!=EOF || ferror(f))return fail(rt,DC_GOAL_BAD_MODULE);
+  if(!dc_goal_art_admit(rt,row.size,result))return 0;
+  result->objects=1;
+  if(!links(rt,f,&row,NULL,0,result,root_type,1))return 0;
+  base=dc_goal_alloc(rt,row.size);if(!base)return 0;
+  data=dc_goal_resolve(rt,base,row.size);
+  if(!data || !read_at(f,row.data,data,row.size) || !links(rt,f,&row,data,base,result,root_type,1))
+    return fail(rt,DC_GOAL_BAD_MODULE);
+  result->linked=1;result->art[0]=base+4;*root=base+4;
+  return 1;
 }
 int dc_goal_load_art_dgo(dc_goal_runtime *rt,FILE *f,uint32_t expected_payload,dc_goal_art_relocate relocate,
                        void *context,dc_goal_art_result *result){
@@ -227,7 +260,7 @@ int dc_goal_load_art_dgo(dc_goal_runtime *rt,FILE *f,uint32_t expected_payload,d
    if(!arena_total){memset(&admitted,0,sizeof admitted);admitted.before=rt->used;admitted.capacity=rt->capacity;}
    admitted.payload=total;
    *result=admitted;result->objects=count;
-   for(i=0;i<count;++i)if(!links(rt,f,&rows[i],NULL,0,result,"art-group"))return 0;
+   for(i=0;i<count;++i)if(!links(rt,f,&rows[i],NULL,0,result,"art-group",0))return 0;
    ART_PROBE(2);
    base=arena_total?dc_goal_alloc(rt,arena_total):0;
    resident=resident_total?dc_goal_alloc_resident(rt,resident_total):0;
@@ -237,7 +270,7 @@ int dc_goal_load_art_dgo(dc_goal_runtime *rt,FILE *f,uint32_t expected_payload,d
   for(i=0;i<count;++i){
     uint32_t *at_base=placed[i]?&resident:&base;
     unsigned char *data=dc_goal_resolve(rt,*at_base,rows[i].size);
-    if(!data || !read_at(f,rows[i].data,data,rows[i].size) || !links(rt,f,&rows[i],data,*at_base,result,"art-group"))
+    if(!data || !read_at(f,rows[i].data,data,rows[i].size) || !links(rt,f,&rows[i],data,*at_base,result,"art-group",0))
       return fail(rt,DC_GOAL_BAD_MODULE);
     result->art[i]=*at_base+4;++result->linked;*at_base+=rows[i].size;
   }
@@ -245,13 +278,13 @@ int dc_goal_load_art_dgo(dc_goal_runtime *rt,FILE *f,uint32_t expected_payload,d
   /* Admit the entire pair before reading link tables or modifying symbols. */
   if(!dc_goal_art_admit(rt,total,&admitted)){*result=admitted;return 0;}
   *result=admitted;result->objects=2;
-  for(i=0;i<2;++i)if(!links(rt,f,&rows[i],NULL,0,result,"art-group"))return 0;
+  for(i=0;i<2;++i)if(!links(rt,f,&rows[i],NULL,0,result,"art-group",0))return 0;
   ART_PROBE(2);
   base=dc_goal_alloc(rt,total);if(!base)return 0;
   ART_PROBE(3);
   for(i=0;i<2;++i){
     unsigned char *data=dc_goal_resolve(rt,base,rows[i].size);
-    if(!data || !read_at(f,rows[i].data,data,rows[i].size) || !links(rt,f,&rows[i],data,base,result,"art-group"))
+    if(!data || !read_at(f,rows[i].data,data,rows[i].size) || !links(rt,f,&rows[i],data,base,result,"art-group",0))
       return fail(rt,DC_GOAL_BAD_MODULE);
     result->art[i]=base+4;++result->linked;base+=rows[i].size;
   }
@@ -298,11 +331,11 @@ int dc_goal_load_tpage_dir(dc_goal_runtime *rt,FILE *f,uint32_t expected_payload
   if(fseek(f,(long)at,SEEK_SET) || fgetc(f)!=EOF || ferror(f))return fail(rt,DC_GOAL_BAD_MODULE);
   if(total!=expected_payload)return fail(rt,DC_GOAL_BAD_MODULE);
   if(!dc_goal_art_admit(rt,total,&result))return 0;
-  if(!links(rt,f,&row,NULL,0,&result,"texture-page-dir"))return 0;
+  if(!links(rt,f,&row,NULL,0,&result,"texture-page-dir",0))return 0;
   base=dc_goal_alloc(rt,total);if(!base)return 0;
   data=dc_goal_resolve(rt,base,row.size);
   if(!data || !read_at(f,row.data,data,row.size) ||
-     !links(rt,f,&row,data,base,&result,"texture-page-dir"))
+     !links(rt,f,&row,data,base,&result,"texture-page-dir",0))
     return fail(rt,DC_GOAL_BAD_MODULE);
   if(!relocate(rt,base+4,context) || rt->error!=DC_GOAL_OK)return fail(rt,DC_GOAL_BAD_FUNCTION);
   return 1;
