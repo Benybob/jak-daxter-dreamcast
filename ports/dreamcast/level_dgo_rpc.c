@@ -50,10 +50,44 @@ static int load_next(uint32_t bt){
   ++dgo_next;dgo_at+=64u+size;
   return 1;
 }
+/* The IOP ramdisk (RPC-RAMDISK, port 2): fill (fno 1) names a file, here a
+ * VIS file, and gives it an ee-id; load (fno 0) copies length bytes at offset of
+ * that file into the receive buffer. The file stays on /cd and is read on
+ * demand instead of being held in IOP memory. --dump dc_level_ramdisk_evidence 48 */
+volatile struct { uint32_t fills,loads,failed,id,bytes,last_offset,last_length; char name[20]; } dc_level_ramdisk_evidence;
+typedef char dc_level_ramdisk_evidence_bytes[sizeof dc_level_ramdisk_evidence==48?1:-1];
+static FILE *ramdisk;static uint32_t ramdisk_id;
+static void ramdisk_rpc(uint64_t fno,uint64_t send,uint64_t recv,uint64_t recv_bytes){
+  unsigned char *msg=send<=UINT32_MAX?dc_goal_resolve(runtime,(uint32_t)send,32):NULL,*out;
+  if(!msg){++dc_level_ramdisk_evidence.failed;return;}
+  if(fno==1){
+    char path[32]="/cd/";unsigned i,n=4;
+    ++dc_level_ramdisk_evidence.fills;
+    if(ramdisk)fclose(ramdisk);
+    for(i=0;i<16 && msg[16+i] && n<sizeof path-1;++i){
+      char c=(char)msg[16+i];path[n++]=(char)(c>='a' && c<='z'?c-32:c);
+      if(i<19)dc_level_ramdisk_evidence.name[i]=path[n-1];
+    }
+    path[n]=0;memcpy(&ramdisk_id,msg+4,4);dc_level_ramdisk_evidence.id=ramdisk_id;
+    if(!(ramdisk=fopen(path,"rb")))++dc_level_ramdisk_evidence.failed;
+  } else if(fno==0){
+    uint32_t id,offset,length;
+    memcpy(&id,msg+4,4);memcpy(&offset,msg+8,4);memcpy(&length,msg+12,4);
+    ++dc_level_ramdisk_evidence.loads;
+    dc_level_ramdisk_evidence.last_offset=offset;dc_level_ramdisk_evidence.last_length=length;
+    if(!ramdisk || id!=ramdisk_id || recv>UINT32_MAX || length>recv_bytes ||
+       !(out=dc_goal_resolve(runtime,(uint32_t)recv,length)) ||
+       fseek(ramdisk,(long)offset,SEEK_SET) || fread(out,1,length,ramdisk)!=length){
+      ++dc_level_ramdisk_evidence.failed;runtime->error=DC_GOAL_OK;return;
+    }
+    dc_level_ramdisk_evidence.bytes+=length;
+  }
+}
 static uint64_t dgo_rpc(uint64_t port,uint64_t fno,uint64_t async,uint64_t send,
                         uint64_t send_bytes,uint64_t recv,uint64_t recv_bytes){
   unsigned char *msg,*reply;uint32_t bt,result=RESULT_ERROR,b1=0;
   (void)async;(void)send_bytes;
+  if(port==2 && runtime){ramdisk_rpc(fno,send,recv,recv_bytes);return 0;}
   if(port!=RPC_DGO || !runtime){++dc_level_dgo_evidence.rpc_other;return 0;}
   if(send>UINT32_MAX || recv>UINT32_MAX || recv_bytes<16 ||
      !(msg=dc_goal_resolve(runtime,(uint32_t)send,32)) || !(reply=dc_goal_resolve(runtime,(uint32_t)recv,16)))

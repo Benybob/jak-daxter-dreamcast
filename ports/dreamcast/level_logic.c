@@ -64,6 +64,13 @@ static uint64_t birth_wrapper(uint64_t bsp){
 /* Diagnostic: calls of the original (method actors-update level-group), and
  * the level fields its vis branch reads. --dump dc_level_actors_probe 32 */
 volatile struct { uint32_t calls,slot,original,display,all_visible,vis_info0,pc_settings,pad; } dc_level_actors_probe;
+/* Jak after the frames: original (target-pos 0) and his state's name, and the
+ * continue point, and the camera master and combiner.
+ * --dump dc_level_target_probe 104 */
+volatile struct { uint32_t target,state,pos[4]; char state_name[24]; uint32_t camera,combiner; char camera_state[24],combiner_state[24]; } dc_level_target_probe;
+/* Children of *camera-pool* after the frames: type and state names.
+ * --dump dc_level_camera_pool_probe 260 */
+volatile struct { uint32_t count; struct { char type[24]; char state[24]; uint32_t status,pad; } row[5]; } dc_level_camera_pool_probe;
 static uint64_t actors_wrapper(uint64_t group){
   typedef uint64_t (*one_fn)(uint64_t);
   ++dc_level_actors_probe.calls;
@@ -159,6 +166,39 @@ int dc_level_check(dc_goal_runtime *rt){
    uint32_t links_type=named(rt,"entity-links-array"),links=0;
    dc_level_spawn_probe.spawn_actors=named(rt,"*spawn-actors*");
    dc_level_spawn_probe.level=level;
+   {uint32_t pool=named(rt,"*camera-pool*"),pp=pool?word(rt,pool+16u):0,n=0;
+    while(pp && pp!=rt->s7 && n<16u){
+      uint32_t proc=word(rt,pp);const char *nm;unsigned k;
+      if(!proc || proc==rt->s7)break;
+      if(n<5u){
+        nm=dc_goal_symbol_name(rt,word(rt,word(rt,proc-4u)));
+        for(k=0;nm && nm[k] && k<23u;++k)dc_level_camera_pool_probe.row[n].type[k]=nm[k];
+        nm=word(rt,proc+52u)!=rt->s7?dc_goal_symbol_name(rt,word(rt,word(rt,proc+52u))):NULL;
+        for(k=0;nm && nm[k] && k<23u;++k)dc_level_camera_pool_probe.row[n].state[k]=nm[k];
+        dc_level_camera_pool_probe.row[n].status=word(rt,proc+32u);
+        nm=dc_goal_symbol_name(rt,dc_level_camera_pool_probe.row[n].status);
+        if(nm && !dc_level_camera_pool_probe.row[n].state[0])
+          for(k=0;nm[k] && k<22u;++k)dc_level_camera_pool_probe.row[n].state[k+1u]=nm[k];
+      }
+      ++n;pp=word(rt,proc+12u);
+    }
+    dc_level_camera_pool_probe.count=n;rt->error=DC_GOAL_OK;}
+   {typedef uint64_t (*one_fn)(uint64_t);uint32_t t=named(rt,"*target*"),fn=named(rt,"target-pos"),v;
+    const char *n;unsigned k;
+    dc_level_target_probe.target=t;
+    if(t && t!=rt->s7){
+      dc_level_target_probe.state=word(rt,t+52u);
+      n=dc_goal_symbol_name(rt,word(rt,dc_level_target_probe.state));
+      for(k=0;n && n[k] && k<23u;++k)dc_level_target_probe.state_name[k]=n[k];
+      if(fn){v=(uint32_t)((one_fn)(uintptr_t)fn)(0);for(k=0;k<4u;++k)dc_level_target_probe.pos[k]=word(rt,v+4u*k);}
+    }
+    {uint32_t c=named(rt,"*camera*"),m=named(rt,"*camera-combiner*");
+     dc_level_target_probe.camera=c;dc_level_target_probe.combiner=m;
+     if(c && c!=rt->s7){n=dc_goal_symbol_name(rt,word(rt,word(rt,c+52u)));
+       for(k=0;n && n[k] && k<23u;++k)dc_level_target_probe.camera_state[k]=n[k];}
+     if(m && m!=rt->s7){n=dc_goal_symbol_name(rt,word(rt,word(rt,m+52u)));
+       for(k=0;n && n[k] && k<23u;++k)dc_level_target_probe.combiner_state[k]=n[k];}}
+    rt->error=DC_GOAL_OK;}
    dc_level_actors_probe.display=word(rt,level+372u);dc_level_actors_probe.all_visible=word(rt,level+392u);
    dc_level_actors_probe.vis_info0=word(rt,level+404u);dc_level_actors_probe.pc_settings=named(rt,"*pc-settings*");
    dc_level_spawn_probe.birth_named=named(rt,"(method birth bsp-header)");

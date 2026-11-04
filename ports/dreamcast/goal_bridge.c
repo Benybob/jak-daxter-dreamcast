@@ -924,7 +924,9 @@ int dc_goal_note_process_span(dc_goal_runtime *rt,uint32_t process,uint32_t byte
  * startups note allocated-length+112 after the heap validator. Jak start() is
  * the same spawn with the listener bound; only that ELF admits the caller. */
 #ifdef DC_ARENA_JAK_PLAYER
-#define DC_GOAL_BOUND_SPAWN_ADMIT(rt) (execution_context&&execution_heap.runtime==(rt)&&!dc_goal_fiber_current()&&dc_goal_pp_scope_active(rt)&&dc_goal_process_spans_registered(rt)==1)
+/* Also on a running fiber: its process context is bound by thread-resume, as
+ * the listener is for start (a process spawning a child from its own code). */
+#define DC_GOAL_BOUND_SPAWN_ADMIT(rt) (execution_context&&execution_heap.runtime==(rt)&&dc_goal_pp_scope_active(rt)&&dc_goal_process_spans_registered(rt)==1)
 #else
 #define DC_GOAL_BOUND_SPAWN_ADMIT(rt) ((void)(rt),0)
 #endif
@@ -2138,6 +2140,10 @@ int dc_goal_install_pc_services(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_g
   functions[k]=(dc_goal_code_export){"__mem-move",code[k],12,NULL,0};targets[k++]=(uint32_t)(uintptr_t)pc_mem_move_native;
   functions[k]=(dc_goal_code_export){"link-begin",code[k],12,NULL,0};targets[k++]=(uint32_t)(uintptr_t)link_begin_native;
   functions[k]=(dc_goal_code_export){"link-resume",code[k],12,NULL,0};targets[k++]=(uint32_t)(uintptr_t)link_resume_native;
+  /* Kernel loado (kscheme.cpp) loads an object file by name from the host. A
+   * retail disc kernel has nothing to load it from: #f, which original
+   * texture-page-login treats as "not loaded" (0 would be relocated). */
+  functions[k]=(dc_goal_code_export){"loado",code[k],12,NULL,0};targets[k++]=(uint32_t)(uintptr_t)pc_false;
   for(i=0;i<sizeof void_setters/sizeof void_setters[0];++i){
     functions[k]=(dc_goal_code_export){void_setters[i],code[k],12,NULL,0};targets[k++]=(uint32_t)(uintptr_t)pc_zero_native;
     if(!strcmp(void_setters[i],"rpc-call"))targets[k-1]=(uint32_t)(uintptr_t)rpc_call_native;
@@ -2363,11 +2369,20 @@ static int catch_stack_range(uint32_t base,uint32_t bytes,uint32_t p,uint32_t n)
  base=catch_physical(base);p=catch_physical(p);
  return bytes<=0x20000000u-base && p>=base && n<=bytes && p-base<=bytes-n;
 }
+/* The stack a catch lives on: a running fiber's working stack (owner is the
+ * fiber, tagged with bit 0), else the current KOS thread's stack. A catch body
+ * cannot yield (its pp bracket blocks native stack transfers), so a catch made
+ * on a fiber is thrown to and returned from on that same fiber. */
+static int catch_stack_owner(uint32_t *owner,uint32_t *base,uint32_t *bytes){
+ dc_goal_fiber *fiber=dc_goal_fiber_current();kthread_t *thread;
+ if(fiber){*owner=(uint32_t)(uintptr_t)fiber|1u;*base=fiber->stack_base;*bytes=fiber->stack_bytes;return 1;}
+ if(!(thread=(kthread_t *)(uintptr_t)dc_goal_kos_stack_owner()))return 0;
+ *owner=(uint32_t)(uintptr_t)thread;*base=(uint32_t)(uintptr_t)thread->stack;*bytes=thread->stack_size;
+ return 1;
+}
 static int catch_same_stack(const native_catch_frame *f){
- kthread_t *owner;
- if(!f->owner || dc_goal_kos_stack_owner()!=f->owner || dc_goal_fiber_current())return 0;
- owner=(kthread_t *)(uintptr_t)f->owner;
- return (uint32_t)(uintptr_t)owner->stack==f->base && owner->stack_size==f->bytes;
+ uint32_t owner,base,bytes;
+ return f->owner && catch_stack_owner(&owner,&base,&bytes) && owner==f->owner && base==f->base && bytes==f->bytes;
 }
 static int catch_auth(native_catch_frame *f){
  dc_goal_runtime *rt=f->runtime;dc_goal_pp_scope_stack *scopes;uint32_t process;const void *p;
@@ -2399,16 +2414,15 @@ static uint64_t catch_call_body(void *v){
 }
 static uint64_t new_catch_frame(uint64_t allocation,uint64_t type,uint64_t name,uint64_t function,uint64_t params){
  dc_goal_runtime *rt=active_runtime;native_catch_frame frame;dc_goal_pp_scope_stack *scopes;
- dc_goal_code_entry_info code;struct dc_goal_native_regs caller;kthread_t *owner;
+ dc_goal_code_entry_info code;struct dc_goal_native_regs caller;
  uint32_t process,sp;unsigned char *top;uint64_t value;dc_goal_type_fields *schema;
  if(!rt || rt->error!=DC_GOAL_OK)return 0;
  memset(&frame,0,sizeof frame);
  if(allocation>UINT32_MAX || type>UINT32_MAX || name>UINT32_MAX || function>UINT32_MAX || params>UINT32_MAX ||
-    ((uint32_t)allocation&15u) || ((uint32_t)params&7u) || dc_goal_fiber_current() ||
+    ((uint32_t)allocation&15u) || ((uint32_t)params&7u) ||
     !(scopes=dc_goal_pp_scope_active(rt)) || !scopes->depth ||
-    !(frame.owner=dc_goal_kos_stack_owner()))return catch_bad(rt);
+    !catch_stack_owner(&frame.owner,&frame.base,&frame.bytes))return catch_bad(rt);
  if(native_catch_top && native_catch_owner!=frame.owner)return catch_bad(rt);
- owner=(kthread_t *)(uintptr_t)frame.owner;frame.base=(uint32_t)(uintptr_t)owner->stack;frame.bytes=owner->stack_size;
  __asm__ volatile("mov r15,%0":"=r"(sp));
  if(!catch_stack_range(frame.base,frame.bytes,(uint32_t)allocation,176) ||
     !catch_stack_range(frame.base,frame.bytes,(uint32_t)params,48) ||
@@ -2460,8 +2474,9 @@ static int process_held(uint32_t process){
 static uint64_t catch_throw_dispatch(uint64_t object,uint64_t value){
  dc_goal_runtime *rt=active_runtime;native_catch_frame *f;
  if(!rt || rt->error!=DC_GOAL_OK)return 0;
- if(object>UINT32_MAX || !native_catch_top || !native_catch_owner ||
-    dc_goal_kos_stack_owner()!=native_catch_owner)return catch_bad(rt);
+ {uint32_t owner,base,bytes;
+  if(object>UINT32_MAX || !native_catch_top || !native_catch_owner ||
+     !catch_stack_owner(&owner,&base,&bytes) || owner!=native_catch_owner)return catch_bad(rt);}
  /* Only trusted active C descriptors are traversed. A guest pointer is a key,
   * never a descriptor address. No discarded inner descriptor is retained. */
  for(f=native_catch_top;f && f->object!=(uint32_t)object;f=f->previous){}

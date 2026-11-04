@@ -221,6 +221,38 @@ the display frames then run him beside the loading level.
   With the generic bridge the scope entry refused them (BAD_ARGUMENT).
 - The disc adds EICHAR.DGO and DIR-TPAGES.DGO from `build/jak-art-disc`.
 
+### Actors are born (Flycast, 539 of 539, 180 frames)
+
+With Jak at Geyser Rock's `training-start` (original `get-continue-by-name`),
+the original camera follows him into the level, the level asks the IOP
+ramdisk for its VIS file, and original `actors-update` births actors: 90
+processes under `*entity-pool*` after 180 frames (training-cam, viewer, eco,
+...). Jak is in `target-stance-ambient` at (-1316.8, 6.9, 1057.8) m, the camera
+at (-1325.1, 11.3, 1063.3) m. What it took:
+- **Process spawns from a running process.** `run-function-in-process` runs
+  every init under a catch frame; the catch bridge only supported catches on
+  the root C stack, so a spawn from a process's own code (target-continue's
+  `cam-start`, every actor birth) left the child `initialize-dead` without
+  running its init. A catch now lives on whichever stack makes it: a running
+  fiber's working stack, or the KOS thread's. Its body cannot yield (the pp
+  bracket blocks stack transfers), so it is thrown to and returns on the same
+  stack. The Jak bridge's spawn admission now also applies under a fiber's
+  bound process context.
+- **loado.** Original `texture-page-login` asks the C kernel's `loado` for any
+  texture page not resident; the port had none, so a missing-function stub
+  returned 0, which GOAL treats as a page and relocates. It now answers #f, as
+  a disc kernel with nothing to load from would.
+- **The IOP ramdisk** (RPC port 2, `level_dgo_rpc.c`): fill opens `/cd/` plus
+  the requested name (`TRA.VIS`, staged at `build/level-disc/VIS/TRA.VIS` and
+  the disc root) and load reads the requested range on demand.
+- **The continue point.** `get-or-create-continue!` gave the default continue
+  at the origin; Geyser Rock's new-game point is `training-start`.
+- **TEST LIMITATION.** Every Geyser Rock continue point also wants village1
+  displayed, whose 1.5 MB logic BSP does not fit; `target-continue` waits for
+  it. `level_player.c` clears that continue point's `lev1` before `start`.
+  Loading village1 alongside is a memory problem still open.
+- `jak-dc-level.elf` runs 180 display frames.
+
 Not yet: level code served through the same RPC (it loads at boot), the
 level's art groups and texture pages, actor spawning over later frames,
 collision queries, and the level inside the Jak ELF (its arena has no room for

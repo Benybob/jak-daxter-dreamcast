@@ -419,6 +419,9 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
       * the post-deactivation dispatch supplies the required 61st update.
       * Keep the original update-count check intact (AI-assisted), ISC. */
      enum {DISPLAY_FRAMES=61,REAL_INTEGRAL_FRAMES=804};
+#elif defined(DC_LEVEL_LOGIC)
+     /* Room for the level load, target-continue and the camera to settle. */
+     enum {DISPLAY_FRAMES=180,REAL_INTEGRAL_FRAMES=804};
 #else
      enum {DISPLAY_FRAMES=60,REAL_INTEGRAL_FRAMES=804};
 #endif
