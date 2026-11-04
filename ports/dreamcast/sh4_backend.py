@@ -176,22 +176,43 @@ class Emitter:
             return None
         return 'read' if hi==n or lo==n else None
 
-    def remove_dead_writes(self):
+    def remove_dead_writes(self,budget=96):
         """Drop side-effect-free register writes (MOV #imm, MOV Rm,Rn, frame slot and
-        literal loads) whose register is overwritten before any read on the straight
-        path that follows. A branch, call or return ends the path as a read."""
+        literal loads) whose register is overwritten before any read on every path
+        that follows: conditional branches go both ways and BRA runs its delay slot
+        first. Calls, returns, other jumps and paths longer than budget instructions
+        count as reads."""
         if self.pending: raise ValueError('deferred code outstanding')
         literal_at={offset for offset,_ in self.literals}
         words=[struct.unpack_from('<H',self.code,offset)[0] for offset in range(0,len(self.code),2)]
+        target={offset//2:(kind,self.labels[name]//2) if name in self.labels else ('stop',None)
+                for offset,kind,name in self.branches}
+        def overwritten(start,n):
+            seen=set(); paths=[start]; steps=0
+            while paths:
+                j=paths.pop()
+                while True:
+                    if j in seen: break  # a cycle with no read of Rn never reads it
+                    if j>=len(words) or steps>budget: return False
+                    seen.add(j); steps+=1
+                    kind,to=target.get(j,(None,None))
+                    if kind in ('bt','bf'): paths.append(to); j+=1; continue
+                    if kind=='bra':
+                        use=self._uses(words[j+1],n) if j+1<len(words) else 'read'
+                        if use=='write': break
+                        if use: return False
+                        j=to; continue
+                    use=self._uses(words[j],n)
+                    if use=='write': break
+                    if use: return False
+                    j+=1
+            return True
         dead=set()
         for i,word in enumerate(words):
             top,n,m=word>>12,word>>8&15,word>>4&15
             if not (top==0xe or top==0x6 and word&15==3 and m!=n or top==0x5 and 10<=m<=14 or
                     top==0xd and 2*i in literal_at) or n==15 or i and self._delayed(words[i-1]): continue
-            for following in words[i+1:]:
-                use=self._uses(following,n)
-                if use=='write': dead.add(2*i)
-                if use: break
+            if overwritten(i+1,n): dead.add(2*i)
         if not dead: return 0
         ordered=sorted(dead)
         def moved(offset): return offset-2*bisect_left(ordered,offset)

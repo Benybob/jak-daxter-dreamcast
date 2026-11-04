@@ -428,6 +428,16 @@ class DeadWriteTest(unittest.TestCase):
         self.assertEqual(e.remove_dead_writes(),0)
         self.assertEqual(bytes(e.code),before)
 
+    def test_both_branch_paths_are_followed(self):
+        e=Emitter(); e.immediate(1,0); e.rr(0x2008,0,0); e.branch('bt','x')  # tst r0,r0; bt
+        e.immediate(1,2); e.label('x'); e.word(0x51e1); e.ret()  # both paths reload r1
+        self.assertEqual(e.remove_dead_writes(),2)
+        e=Emitter(); e.immediate(1,0); e.rr(0x2008,0,0); e.branch('bt','x')
+        e.immediate(1,2); e.label('x'); e.add(2,1); e.ret()  # the taken path reads r1
+        self.assertEqual(e.remove_dead_writes(),0)
+        e=Emitter(); e.immediate(1,0); e.branch('bra','x'); e.add(2,1); e.label('x'); e.immediate(1,4); e.ret()
+        self.assertEqual(e.remove_dead_writes(),1)  # BRA's target overwrites; the skipped read is unreachable
+
     def test_r0_implicit_reads_keep_writes(self):
         e=Emitter(); e.immediate(0,8); e.word(0xf0e7)  # fmov.s fr0,@(r0,r14)
         e.immediate(0,1); e.ret()

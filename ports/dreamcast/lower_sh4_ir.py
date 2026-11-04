@@ -1178,7 +1178,7 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
         chosen=sorted(k for k in sorted(weight,key=lambda k:-weight[k])[:4] if weight[k]>12)
         bases=[(10+n,k*64) for n,k in enumerate(chosen)]
     saved=16+4*len(bases)  # PR, R14, R8, R9 and the bases, above the frame
-    # Single-use temporaries stay in registers: a gpr64 value one op writes and
+    # Single-use temporaries stay in registers: a gpr64 or float value one op writes and
     # only the next op reads (no label between) has its store deferred, and
     # dropped when that read is the next code emitted. Anything emitted first
     # stores it as usual; a second access lowers the function again without it.
@@ -1196,7 +1196,7 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
         for value,written in defs.items():
             read=uses.get(value,())
             if len(written)!=1 or len(read)!=1 or value in pinned or \
-               registers.get(value,{}).get('class')!='gpr64' or read[0]<=written[0]: continue
+               registers.get(value,{}).get('class') not in ('gpr64','float') or read[0]<=written[0]: continue
             if all(ops[i]['kind']=='nop' for i in range(written[0]+1,read[0])) and \
                not any(i in jumps for i in range(written[0]+1,read[0]+1)):
                 forward.add(value)
@@ -1362,17 +1362,35 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
             e.rr(0xf00a,8,base+n)  # FMOV.S FRm,@R8
     # Float slots index R14 by R0 (FMOV.S has no displacement form). No caller
     # holds a value in R0 across a float slot access.
-    def load_float(index,reg=0):
+    def float_base(index):
+        # (base, offset from it) for a float slot: FMOV.S has only @Rn and @(R0,Rn).
         if index not in slots: raise ValueError('unknown virtual register')
+        if index in consumed: raise ForwardMiss(index)
         offset=slots[index]
-        if not offset: e.word(0xf008|(reg<<8)|(14<<4)); return
-        if offset<=127: e.immediate(0,offset); e.word(0xf006|(reg<<8)|(14<<4)); return
+        base,start=max(((14,0),)+tuple(bases),key=lambda b:b[1] if b[1]<=offset else -1)
+        return base,offset-start
+    def load_float(index,reg=0):
+        if deferred and deferred[0]==index:
+            source,_=held(index)
+            if reg!=source: e.word(0xf00c|reg<<8|source<<4)  # FMOV FRm,FRn
+            return
+        base,offset=float_base(index)
+        if not offset: e.word(0xf008|(reg<<8)|(base<<4)); return
+        if offset<=127: e.immediate(0,offset); e.word(0xf006|(reg<<8)|(base<<4)); return
         address(index); e.word(0xf008|(reg<<8)|(8<<4))
     def store_float(index,reg=0):
-        if index not in slots: raise ValueError('unknown virtual register')
-        offset=slots[index]
-        if not offset: e.word(0xf00a|(14<<8)|(reg<<4)); return
-        if offset<=127: e.immediate(0,offset); e.word(0xf007|(14<<8)|(reg<<4)); return
+        nonlocal deferred
+        if index in forward:
+            e.flush()
+            def emit():
+                nonlocal deferred
+                deferred=None; emit_store_float(index,reg)
+            e.pending=emit; deferred=(index,reg,None)
+        else: emit_store_float(index,reg)
+    def emit_store_float(index,reg):
+        base,offset=float_base(index)
+        if not offset: e.word(0xf00a|(base<<8)|(reg<<4)); return
+        if offset<=127: e.immediate(0,offset); e.word(0xf007|(base<<8)|(reg<<4)); return
         address(index); e.word(0xf00a|(8<<8)|(reg<<4))
     def constant(reg,value):
         value&=0xffffffff
@@ -1397,7 +1415,14 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
             e.rr(0xf004,0,0); e.branch('bf',done)
             e.rr(0xf004,1,1); e.branch('bt',target); e.label(done)
         else: raise ValueError('unsupported float comparison')
-    def condition(kind,signed,target):
+    def condition(kind,signed,target,low_only=False):
+        # low_only: both high halves are zero, so every comparison (signed too, as
+        # both values are in 0..2^32-1) is the unsigned one of the low halves.
+        if low_only:
+            if kind not in ('eq','ne','lt','le','gt','ge'): raise ValueError('unsupported comparison')
+            if kind in ('eq','ne'): e.rr(0x3000,0,2)
+            else: e.rr(0x3006 if kind in ('gt','lt') else 0x3002,*((0,2) if kind in ('gt','ge') else (2,0)))
+            e.branch('bf' if kind=='ne' else 'bt',target); return
         other=label_name(); done=label_name()
         e.rr(0x3000,1,3)  # high halves equal?
         if kind in ('eq','ne'):
@@ -1888,6 +1913,9 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
                     if op.get('signed'): raise ValueError('signed flag unsupported for float branch')
                     load_float(reads[0],0); load_float(reads[1],1)
                     float_condition(op['condition'],'ir_'+str(op['target']))
+                elif reads[0] in narrow and reads[1] in narrow:
+                    load_address(reads[0],0); load_address(reads[1],2)
+                    condition(op['condition'],op['signed'],'ir_'+str(op['target']),low_only=True)
                 else:
                     load64(reads[0]); load64(reads[1],2,3)
                     condition(op['condition'],op['signed'],'ir_'+str(op['target']))

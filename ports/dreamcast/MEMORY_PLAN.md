@@ -130,6 +130,15 @@ GAME.CGO 8,273,520 to 7,679,888 (-238,352 32-bit values, -355,280 dead writes):
 192,784, TRA-CODE 92,608. All Flycast suites pass. GAME.CGO now lowers in
 about 14 minutes (most functions lower twice).
 
+Three more: single-use float temporaries forward like gpr64 ones (FMOV FRm,FRn
+at the read), and float slots address from the nearest frame base; dead-write
+removal follows both ways of BT/BF and BRA through its delay slot (a 96-step
+budget); a branch whose operands are both 32-bit compares only the low words
+(unsigned, which equals the signed 64-bit order for values in 0..2^32-1).
+GAME.CGO 7,679,888 to 7,567,488 (-20,320 floats, -15,856 branches, -76,224
+compares). Measured in `target`: moves are mostly free already (same slot);
+the remaining bytes are the per-op load/compute/store templates.
+
 Two PC-only buffers now take Dreamcast values through `dreamcast_memory_budget.gc`
 (the exporter's budget now also substitutes `defglobalconstant`):
 - `PC_SUBTITLE_FILE_SIZE` 256 KiB to 16 KiB: no subtitle files on the disc yet.
