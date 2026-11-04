@@ -16,7 +16,8 @@
 ;; heap. PS2 10,416 KiB (debug 11,000 / 25,600 KiB). On Dreamcast a level keeps
 ;; only its logic BSP, art and allocations resident (LEVEL_PLAN.md: Geyser
 ;; Rock's logic BSP is 378,128 bytes); render data is drawn from converted
-;; packages. 1 MiB each, both values, so level-get-for-use's debug allocation
-;; and a compact allocation agree.
-(defconstant LEVEL_HEAP_SIZE (* 1024 1024))
-(defconstant LEVEL_HEAP_SIZE_DEBUG (* 1024 1024))
+;; packages. Geyser Rock uses about 400 KB after birth (logic BSP plus entity
+;; tables). 512 KiB each, both values, so level-get-for-use's debug allocation
+;; and a compact allocation agree, and the player's art fits beside them.
+(defconstant LEVEL_HEAP_SIZE (* 512 1024))
+(defconstant LEVEL_HEAP_SIZE_DEBUG (* 512 1024))

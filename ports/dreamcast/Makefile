@@ -817,13 +817,26 @@ jak-dc-kernel-dgo.elf: kernel_boot_main.o kernel_dgo_cases.o kernel_vf_fixture.o
 # The DGO boot, then a level's logic BSP from /cd through original login
 # (AI-assisted), ISC. Disc: build/level-disc with TRA.DGO (the logic BSP) and TRA-CODE.DGO. A disc boot loads
 # the flat binary, so the boot romdisk sits low, as in the Jak ELF.
-level_kernel_cases.o: kernel_boot_cases.c level_logic.h level_dgo_rpc.h goal_dgo.h goal_dgo_zst.h goal_bridge.h goal_fiber.h goal_main_start.h runtime_cases.h build/game_cgo_order.h build/vf_cases.h mips2c_dc.h mips2c_cases.h build/mips2c/mips2c_cases_expect.h
+level_kernel_cases.o: kernel_boot_cases.c level_logic.h level_dgo_rpc.h level_player.h goal_dgo.h goal_dgo_zst.h goal_bridge.h goal_fiber.h goal_main_start.h runtime_cases.h build/game_cgo_order.h build/vf_cases.h mips2c_dc.h mips2c_cases.h build/mips2c/mips2c_cases_expect.h
 	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -DDC_KERNEL_DGO -DDC_LEVEL_LOGIC -I. -c kernel_boot_cases.c -o $@
 level_logic.o: level_logic.c level_logic.h goal_module.h goal_runtime.h
 	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -I. -c $< -o $@
 level_dgo_rpc.o: level_dgo_rpc.c level_dgo_rpc.h goal_art.h goal_bridge.h goal_runtime.h
 	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -I. -c $< -o $@
-jak-dc-level.elf: kernel_boot_main.o level_kernel_cases.o kernel_vf_fixture.o goal_dgo.o goal_dgo_zst.o romdisk_stage.o level_logic.o level_dgo_rpc.o goal_art.o $(ZSTD_OBJS) build/kernel-dgo-romdisk.o $(KERNEL_BOOT_LIBS) build/mips2c/libdcmips2c.a
+# The player in the level ELF: eichar and the texture-page directory through the
+# Jak loader paths of goal_art.c (single-object EICHAR.DGO, dc_goal_load_tpage_dir).
+level_player.o: level_player.c level_player.h goal_art.h goal_bridge.h goal_main_start.h goal_module.h build/jak-art-disc/jak_art_sizes.h
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -DDC_ARENA_JAK_PLAYER -I. -c $< -o $@
+level_goal_art.o: goal_art.c goal_art.h goal_runtime.h
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -DDC_ARENA_JAK_PLAYER -I. -c $< -o $@
+# Original start's spawns (target, sidekick, HUD) under the bound listener, and the
+# shrink-follow ledger: the Jak player's bridge and span ledger, without the
+# arena renderer's coexistence flags.
+level_goal_bridge.o: goal_bridge.c $(wildcard *.h)
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -DDC_ARENA_JAK_PLAYER -I. -c $< -o $@
+level_process_spans.o: process_spans.c $(wildcard *.h)
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -DDC_ARENA_JAK_PLAYER -I. -c $< -o $@
+jak-dc-level.elf: kernel_boot_main.o level_kernel_cases.o kernel_vf_fixture.o goal_dgo.o goal_dgo_zst.o romdisk_stage.o level_logic.o level_dgo_rpc.o level_player.o level_goal_art.o level_goal_bridge.o level_process_spans.o $(ZSTD_OBJS) build/kernel-dgo-romdisk.o $(filter-out goal_bridge.o process_spans.o,$(KERNEL_BOOT_LIBS)) build/mips2c/libdcmips2c.a
 	kos-c++ -o $@ $^ -Wl,--section-start=.dc_stage=0x8cb00000
 
 # GOAL's 60-frame boot with PVR clears and a separate slab (AI-assisted), ISC.

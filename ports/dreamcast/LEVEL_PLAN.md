@@ -202,6 +202,25 @@ target or camera process, and the camera position is the origin, about
 player in the level (its camera inside the boxes) and an IOP ramdisk server
 for the VIS file, as the PC port's overlord provides.
 
+### Jak in the level ELF (Flycast, 539 of 539)
+
+To put a camera in the level, `jak-dc-level.elf` now spawns Jak too
+(`level_player.c`, the Jak ELF's player path without its arena renderer):
+the texture-page directory and eichar load from `/cd` through their original
+relocate methods, the original `get-or-create-continue!` gives the continue
+point, original `start 'play` runs with the listener as caller, and the
+target's armed main thread on `*dram-stack*` is imported as a native fiber;
+the display frames then run him beside the loading level.
+- Room: `LEVEL_HEAP_SIZE` is now 512 KiB per level (Geyser Rock uses about
+  400 KB after birth), so eichar (1,318,288 bytes) fits beside the two level
+  heaps; 1.54 MB of arena is free after the player starts.
+- The level ELF links the Jak player's bridge and span ledger
+  (`level_goal_bridge.o`, `level_process_spans.o`, `-DDC_ARENA_JAK_PLAYER`
+  without the arena renderer flags): start's spawns (target, sidekick, HUD)
+  are admitted under the bound listener and the ledger follows shrunk heaps.
+  With the generic bridge the scope entry refused them (BAD_ARGUMENT).
+- The disc adds EICHAR.DGO and DIR-TPAGES.DGO from `build/jak-art-disc`.
+
 Not yet: level code served through the same RPC (it loads at boot), the
 level's art groups and texture pages, actor spawning over later frames,
 collision queries, and the level inside the Jak ELF (its arena has no room for

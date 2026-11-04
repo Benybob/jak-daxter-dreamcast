@@ -23,6 +23,7 @@
 #ifdef DC_LEVEL_LOGIC
 #include "level_logic.h"
 #include "level_dgo_rpc.h"
+#include "level_player.h"
 #endif
 #ifdef DC_ARENA_JAK
 #include "arena_jak.h"
@@ -454,6 +455,9 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
         * births it and makes it active. */
        dc_level_dgo_install(&rt);
        CHECK(dc_level_want(&rt),1,"original load-state wants Geyser Rock loaded and displayed");
+       /* Jak: eichar, then original start 'play at the original continue point;
+        * his armed main thread runs in the display frames (level_player.c). */
+       CHECK(dc_level_player(&rt),1,"original start spawns Jak at the original continue point");
 #endif
        before=word(&rt,entry(&rt,"*display*"),REAL_INTEGRAL_FRAMES);
        for(frame=0;frame<DISPLAY_FRAMES && rt.error==DC_GOAL_OK;++frame){
