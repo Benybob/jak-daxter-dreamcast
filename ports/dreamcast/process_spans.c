@@ -85,6 +85,7 @@ int dc_goal_process_span_room(dc_goal_runtime *r){
 }
 #ifdef DC_ARENA_JAK_PLAYER
 static uint32_t span_field(dc_goal_runtime *r,uint32_t address);
+void dc_arena_jak_player_note_shrink(dc_goal_runtime *rt,uint32_t process,uint32_t span_bytes);
 #endif
 int dc_goal_process_span_note(dc_goal_runtime *r,uint32_t process,uint32_t bytes,dc_goal_process_span *out){
  uint32_t at,offset;dc_goal_process_span made;
@@ -106,6 +107,7 @@ int dc_goal_process_span_note(dc_goal_runtime *r,uint32_t process,uint32_t bytes
  if(at>0&&process-registered_rows[at-1].process<registered_rows[at-1].bytes){
   uint32_t prev=registered_rows[at-1].process,length=span_field(r,prev+68u);
   dc_goal_span_overlap_note(r,process,bytes,prev,registered_rows[at-1].bytes);
+  dc_arena_jak_player_note_shrink(r,prev,registered_rows[at-1].bytes);
   if(length!=0xffffffffu&&length<=UINT32_MAX-112u&&length+112u<=process-prev&&next_generation!=UINT64_MAX){
    registered_rows[at-1].bytes=length+112u;registered_rows[at-1].generation=++next_generation;
    ++dc_goal_span_overlap_probe.followed;

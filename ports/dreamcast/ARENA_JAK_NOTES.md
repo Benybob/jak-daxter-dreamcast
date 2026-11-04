@@ -1194,3 +1194,353 @@ that address is not a process (no type). 0x0c25d4d4 lies inside the record of
 the pool member 0x0c25d324 whose ledger row was shrunk to its original
 record (0x540 bytes) earlier. So the hang is the original walk following a
 child link that does not lead to a process.
+
+## Bad child ppointer after shrink-heap
+
+The walk stops because `0x0c260784`'s child word is `0x0c25d4d4`, and the
+word at that address is `0x0c260cc4`. `jak_tree_deref` loads the word at the
+ppointer and then `self` at +24. Stop 3 stores that `self` when the load
+worked, and the word at `fault_pp` when it did not. Either way the address
+the dispatcher would follow has no process type. Original
+`execute-process-tree` does not check the type. It loads `self` of whatever
+that word is and keeps walking. That is the frame-2 hang after the sidekick
+yield.
+
+### What a ppointer is
+
+`process-tree` fields, retail `offset-assert` then this port (retail minus
+4): `name` 4/0, `mask` 8/4, `parent` 12/8, `brother` 16/12, `child` 20/16,
+`ppointer` 24/20, `self` 28/24. `child`, `brother`, and `parent` hold
+`(pointer process)` values. `ppointer->process` (`gkernel-h.gc` 378-383) is
+`(if pp (-> pp 0 self))`: the word at the ppointer, then `self`.
+
+`process-tree` `new` and `process` `new` set `self` to the process and
+`ppointer` to `(&-> this self)` (`gkernel.gc` 288-289 and 342-343). For a
+process whose address is 4 mod 16, `&self` is 12 mod 16. `0x0c25d324` is 4
+mod 16, so it is a normal carved member. `0x0c25d4d4` is 4 mod 16, so it is
+not `&self` of a member carved the same way.
+
+A dead-pool-heap member is different. `dead-pool-heap-rec` is a packed
+structure, 12 bytes: `process` at 0, `prev` at 4, `next` at 8
+(`all-types.gc` 1823-1832). The recs are the pool's inline dynamic
+`process-list` (retail offset 104, port +100), inside the pool object,
+ahead of the pool heap. `dead-pool-heap` `new` sets the heap base to
+`(align16 (-> this process-list allocated-length))` (`gkernel.gc` 1131),
+which is the slot just past the last rec. `get-process` (`gkernel.gc`
+1285-1287) stores the new process in `rec.process` and sets the process's
+`ppointer` to `(&-> rec process)`. That address is the rec itself. It lives
+in the pool object, below every member. `0x0c25d4d4` is `0x0c25d324+0x1b0`,
+inside a member, so it is not a rec and not `(&-> rec process)`.
+
+`return-process` sets `rec.process` to `*null-process*` (`gkernel.gc`
+1352). `*null-process*` is a real global process (`gkernel.gc` 2430) and
+has a type. The word `0x0c260cc4` has none, so the slot is not a rec still
+holding `*null-process*` or a live member. `get-process` also sets the
+pool's own child to `(&-> rec process)` (`gkernel.gc` 1298). That child is
+the pool node's child, and the pools in this walk are the `0x0c3559xx`
+nodes, not `0x0c260784`.
+
+`change-parent` (`gkernel.gc` 2076-2078) is the writer that links a live
+process: the new parent's `child` becomes `(-> this ppointer)`, and `this`
+`brother` becomes the old first child. The value it stores is whatever
+`ppointer` the child already has. A legitimate value is `&self` or a rec.
+`0x0c25d4d4` is neither, so `change-parent` stores it only when that
+child's `ppointer` field has already been overwritten with this address.
+`process` `new` stores `#f` in `child` (`gkernel.gc` 340). `change-to-last-brother`
+rewrites a parent's `child` only to splice out its first child (`gkernel.gc`
+2144). No spawn on this path writes a heap address into `ppointer`.
+
+`process` `relocate` (`relocate.gc` 25) adds the move offset to the word at
+`ppointer` (`(&+! (-> this ppointer 0) arg0)`). If some process's
+`ppointer` were already `0x0c25d4d4`, a later relocate would add its offset
+to the word there. That can change the slot after init. It is not shown to
+be the store that produced `0x0c260cc4`.
+
+### Where `0x0c25d4d4` sits
+
+`0x0c25d324 + 0x4070 = 0x0c261394` is the original member.
+`0x0c25d324 + 0x540 = 0x0c25d864` is the next carve, and `0x540 = 0x4d0 + 112`.
+`0x0c25d4d4` is `0x1b0` bytes into the member, inside the kept `0x540`.
+`0x0c260784` is `0x0c25d324 + 0x3460`. `0x540 < 0x3460 < 0x4070`, so that
+node was carved in the tail `shrink-heap` gave back. `0x0c260cc4` is
+`0x0c25d324 + 0x39a0`, also in that tail, and it is `0x0c260784 + 0x540`.
+
+The brother gaps, low address to high, are `0x0c260d34 - 0x0c260784 = 0x5b0`,
+then `0x4c0`, then `0x420`. `0x5b0 - 112 = 0x540`. If those siblings were
+carved back to back, `0x0c260784`'s record at the next carve was `0x5b0`
+bytes and its `allocated-length` was `0x540`. `gap-location` (`gkernel.gc`
+1142-1143) is `process + process.size + allocated-length - 4`, and the next
+object is that pointer plus 4, which is `process + allocated-length + 112`.
+For length `0x540` the next object is `0x0c260d34`. `heap-top` is
+`stack + allocated-length`, and `stack` is the dynamic at port +108, so
+`heap-top = 0x0c260784 + 0x6c + 0x540 = 0x0c260d30`. The saved word
+`0x0c260cc4` is `process + allocated-length`: 108 bytes below `heap-top`
+and 112 bytes below the next object. It is 4 mod 16, the alignment of a
+GOAL object pointer. It is the address of neither `heap-top` nor the next
+process.
+
+`0x0c260794` (`0x0c260784 + 16`, the child field) is outside
+`0x0c25d324`'s kept record. The backup copy of `0x0c25d324` does not write
+that child field.
+
+### Shrink follows `heap-cur`
+
+`shrink-heap` (`gkernel.gc` 1355-1377) runs from `run-function-in-process`
+only when the pool type is `dead-pool-heap` and status is `'initialize-go`
+(`gkernel.gc` 2238-2241). It sets
+
+```text
+allocated-length = (&- heap-cur stack)
+heap-top         = (&-> stack allocated-length)
+```
+
+and sets the `heap-shrunk` mask. A length of `0x4d0` means `heap-cur` was
+`stack + 0x4d0` at that moment. `stack` is port +108 (`0x6c`), so
+`heap-cur = 0x0c25d324 + 0x53c = 0x0c25d860`, four bytes before the next
+member `0x0c25d864`. `0x0c25d4d4` is below that top. The cut kept the slot.
+
+The ledger does not choose the length. On an overlap, `process_spans.c`
+reads the guest word at the previous process +68 and, when `length + 112`
+fits before the new process, sets the row to that many bytes. That is the
+same boundary `gap-location` carves. `shrink_left_span` does the same read
+when the process's last scope is left and nothing still holds it. The
+overlap probe fired, so `0x0c25d324` was still held at scope leave and the
+follow path is the one that copied `0x4d0`.
+
+`activate` (`gkernel.gc` 2184) sets `heap-base` and `heap-cur` to
+`(&+ stack (-> type heap-base))` before `(new 'process 'cpu-thread ... PROCESS_STACK_SAVE_SIZE stack-top)`.
+`PROCESS_STACK_SAVE_SIZE` is 256 (`gkernel-h.gc` 58). `cpu-thread` `new`
+ignores the allocation symbol and, for the main thread, does
+`heap-cur = align16(heap-cur) + type.size + stack-size` (`gkernel.gc`
+219-221). `type.size` is `0x80` (`all-types.gc` 1805). From an aligned
+heap start the bump is `0x180`. The C process allocator is not on this
+path. `dc_goal_process_new_basic` is what `(new 'process <basic>)` reaches
+(`goal_bridge.c` `new_basic` / `new_object`); `cpu-thread` `new` writes
+`heap-cur` itself.
+
+For heap-base `H`, the cpu-thread therefore ends at `stack + H + 0x180`.
+Length `0x4d0` keeps `0x350 - H` bytes past that. `H = #xb0` ends the
+thread at `stack + 0x230` and keeps another `0x2a0` bytes. The `0x4d0` cut
+is the heap top GOAL had, including objects past the cpu-thread. It is not
+a ledger row trimmed back to an empty heap.
+
+### The slot is the main-thread backup, for the HUD heap-bases
+
+`stack = process + 0x6c`. The main-thread object is placed at the aligned
+`heap-cur`, which `activate` just set to `stack + H`. The backup image
+starts at the thread object +124 (`THREAD_BACKUP_OFF` in
+`goal_thread_stack.c`; cpu-thread's dynamic `stack` is retail offset 128).
+That is the range `[process + 0xec + H, process + 0x1ec + H)` for a 256-byte
+backup. `process + 0x1b0` is inside it when `H <= 0xc4`. The offset into
+the backup is `0xc4 - H`.
+
+`activate-hud` (`hud-classes.gc` 1416-1422) spawns six processes from
+`*default-dead-pool*` (`process-spawn`'s default `:from`, `gstate.gc`
+92-100) `:to` the target: `hud-pickups`, `hud-money`, `hud-fuel-cell`,
+`hud-health`, `hud-buzzers`, `hud-power`. Their heap-bases (`all-types.gc`
+22437-22507):
+
+| type | heap-base | `process+0x1b0` |
+| --- | --- | --- |
+| `hud-pickups`, `hud-health`, `hud-buzzers` | `#xb0` | backup + `0x14` |
+| `hud-money`, `hud-power` | `#xc0` | backup + 4 |
+| `hud-fuel-cell` | `#xd0` | 12 bytes before the backup, `freg` 5 |
+
+`hud-money-all` is also `#xd0` and is not spawned here (`activate-hud` sets
+that part to `#f`). `freg` 0 is at port +92 (retail `rreg` at 40, seven
+`uint64`s, then eight floats). Port +112 is `freg` 5. `thread-suspend`
+stores `freg` 5 (`gkernel.gc` 703).
+
+The backup word is copied from the live stack. `dc_goal_thread_stack_backup`
+(`goal_thread_stack.c`) copies `[sp, stack-top)` to thread+124, and
+`goal_fiber.c` calls it on a yield. GOAL `thread-suspend` does the same
+copy in its stack loop (`gkernel.gc` 714-719) and also writes the `freg`s.
+`0x0c260cc4` is a saved stack word (or, if this member's heap-base is
+`#xd0`, the saved `freg` 5), not a `rec.process` update.
+
+`shrink-heap` runs after the init's `go` has suspended once, and before any
+process is carved in the freed tail. The first image in the backup cannot
+yet point at `0x0c260784`. The frame-2 value is a later suspend. The
+shrink-time word at `process+0x1b0` records the init `go`. The frame-2 word
+is the later image.
+
+`init-target` (`logic-target.gc` 1250, 1260) calls `activate-hud` and then
+`(process-spawn sidekick :init init-sidekick :from *16k-dead-pool* :to self)`.
+`change-parent` prepends, so at the end of `init-target` the sidekick is
+the target's first child. `0x0c23dd04` is the first child of `0x0c248004`
+in this walk (depth 3, visited immediately after it). The four
+`0x0c26xxxx` nodes are its later brothers, so they are children of
+`0x0c248004` and not children of `0x0c23dd04`. A spawn parented to the
+target after `init-target` would have prepended a different first child;
+the type tag in the new shrink row is what names `0x0c23dd04`. The walk
+follows a child before the next brother and `max_depth` stayed 3 until
+this edge, so those earlier brothers had no child. Brothers after
+`0x0c260784` were not visited. `hud-init-by-other`
+(`hud.gc` 278-300) calls `init-particles!` and `(go hud-hidden)`. The base
+`init-particles!` (`hud.gc` 123-125) allocates nothing. `hud-hidden`'s
+`:enter` walks `(-> self child)` (`hud.gc` 163-166), so a HUD may have
+children later; its init does not `process-spawn` them. `:from` on every
+spawn here is a dead pool. The target and the sidekick come from fixed
+pools (`*target-dead-pool*`, `*16k-dead-pool*`), which `shrink-heap` does
+not resize.
+
+A child carved inside `0x0c25d324`'s heap would be a process (4 mod 16)
+whose `ppointer` is `&self` (12 mod 16) or a rec outside the heap. The bad
+address is 4 mod 16, it is below `heap-cur`, and the next member did not
+overlap it. `(new 'process <process-subtype>)` on the C path is refused by
+`process_heap_type_allowed` while spans are registered, before any bump of
+`heap-cur`. That gate is unchanged.
+
+### What is still open
+
+The type of `0x0c25d324` decides whether `0x0c25d4d4` is backup+`0x14`,
+backup+4, or `freg` 5. The type of `0x0c260784` (tree-walk type word
+`0x0c1c855c`) and the writer of its child field are still open.
+`change-parent` would store `0x0c25d4d4` only from a `ppointer` field that
+already held it. The shrink snapshot of that node's `child` separates "the
+link existed when its init returned" from "something stored it later".
+
+### The record
+
+No GOAL change, no ledger-policy change, and no change to
+`goal_process_heap.c`. The C allocator already advances `heap-cur` for the
+basics it places. The cpu-thread bump is GOAL and never enters
+`dc_goal_process_new_basic`. The production callers of that function are
+`new_basic` and `new_object` in `goal_bridge.c`. This ELF already compiles
+that file as `arena_jak_player_bridge.o` and `process_spans.c` as
+`arena_jak_player_spans.o`, both with `ARENA_JAK_PLAYER_FLAGS`
+(`-DDC_ARENA_JAK_PLAYER`). Other ELFs compile the same sources without the
+flag, so the new function and both call sites are inside the flag. No
+Makefile edit.
+
+`goal_process_heap.o` stays in `KERNEL_BOOT_LIBS` and is shared. A later
+change that has to live in `goal_process_heap.c` needs a Jak-only object,
+on the pattern of those two rules: a recipe
+`arena_jak_player_process_heap.o: goal_process_heap.c` compiled with
+`$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) $(ARENA_JAK_PLAYER_FLAGS) -I. -c $< -o $@`,
+that object added to the `jak-dc-arena-jak.elf` prerequisites, and
+`goal_process_heap.o` added to the `filter-out` that already drops
+`goal_bridge.o` and `process_spans.o` from that ELF's `KERNEL_BOOT_LIBS`.
+This diagnostic does not do that. `process_heap_type_allowed` still refuses
+a nested process.
+
+Symbol `dc_arena_jak_player_heap`. Size 1928 bytes. Little-endian `uint32`,
+version 1. Loads use a raw 4-byte copy, the same bounds check as
+`span_field`: outside the arena's used range the field is `0xffffffff`.
+Nothing here calls `dc_goal_resolve`, and `rt->error` is left alone.
+
+`new_basic` and `new_object` record every `'process` allocation that
+actually calls `dc_goal_process_new_basic`. `alloc_count` counts all of
+them. `wide_count` counts those whose bound span is `0x4070` (the default
+`#x4000` stack plus the 112-byte process). The first 40 of that class are
+stored. `cur` is `heap-cur` (port +84) before the bump. `dest` is the
+object pointer `dc_goal_process_new_basic` returned, or 0. A 0 destination
+on any span increments `fail_count` and keeps the first failure's process,
+type, and size. `process_heap_type_allowed` returning 0 increments
+`refused` and keeps the first process, type, and size; a `pp` scope denial
+is not an allocation and is not counted. `new_structure` still refuses a
+process heap. Before that return, a bound process heap whose type fits in
+32 bits increments `structure_refused` and keeps the first process and type.
+
+`dc_arena_jak_player_note_shrink` records the process, the ledger span it
+was called with, and these guest words: `allocated-length` +68, `heap-base`
++76, `heap-top` +80, `heap-cur` +84, `child` +16, `ppointer` +20,
+`main-thread` +40, the type tag at process-4, and the word at
+`process+0x1b0`. One call is in `shrink_left_span`, after the length is
+read, and only when the noted span is still larger than `length+112` and
+the process is not held (the held case returns earlier, which is why the
+overlap path exists). The other call is the overlap follow in
+`process_spans.c`, immediately after `dc_goal_span_overlap_note`, with the
+previous row's process and its bytes before the row is updated. The same
+process can appear twice: once at scope leave, once when the next member is
+carved. `shrink[0 .. shrink_kept)` is the earliest 16. `ring` is the latest
+8, index `(old ring_count) & 7`. `shrink_count` and `ring_count` count
+every call. A shrink past the first 16 is absent from the prefix; one that
+is not among the last 8 is absent from the ring.
+
+```text
+verify_backend.py --dump dc_arena_jak_player_heap 1928
+```
+
+Dump it at the same sidekick yield as `dc_arena_jak_player_tree_walk`. The
+image is cumulative from boot. Header, then the rows:
+
+| offset | field |
+| --- | --- |
+| 0 | `version` = 1 |
+| 4 | `alloc_count` |
+| 8 | `wide_count` |
+| 12 | `alloc_kept`, at most 40 |
+| 16 | `fail_count` |
+| 20 | `fail_process`, `fail_type` at 24, `fail_bytes` at 28 |
+| 32 | `refused` |
+| 36 | `refused_process`, `refused_type` at 40, `refused_bytes` at 44 |
+| 48 | `structure_refused` |
+| 52 | `structure_process`, `structure_type` at 56 |
+| 60 | `shrink_count` |
+| 64 | `shrink_kept`, at most 16 |
+| 68 | `ring_count` |
+| 72 | `alloc[40]`, 20 bytes each: `process`, `dest`, `bytes`, `cur`, `span` |
+| 872 | `shrink[16]`, 44 bytes each |
+| 1576 | `ring[8]`, the same 44-byte row |
+
+Each shrink row is `process`, `base`, `top`, `current`, `length`, `child`,
+`ppointer`, `main_thread`, `type_tag`, `span_bytes`, `slot_1b0`.
+
+Find `0x0c25d324` and `0x0c260784` in `shrink[0 .. shrink_kept)` and in the
+last `min(ring_count, 8)` ring slots (the newest is `(ring_count - 1) & 7`).
+`0x0c25d324` should show `length` `0x4d0`, `current` and `top` `0x0c25d860`,
+and `span_bytes` `0x4070` on the overlap call. `H = base - (process + 0x6c)`.
+`slot_1b0` is in the backup when `H <= 0xc4`, at backup offset `0xc4 - H`,
+with the backup starting at `main_thread + 124`. Match `H` to the table
+above. `type_tag` is the word at process-4; the symbol name is the word at
+that type +0, which is the tree walk's `type_name`. `slot_1b0` at this
+shrink is the init `go`. `0x0c260cc4` shows up there only if that bit
+pattern was already on the stack before `0x0c260784` existed.
+
+`0x0c260784`'s `child` is the discriminator. `0x0c25d4d4` means the link
+was already stored when this snapshot was taken (its init `go`, on the
+scope-leave row). The false symbol, or 0, means no child was linked yet and
+the frame-2 edge was stored later. Its `ppointer` should be a rec, outside
+the heap; a value of `0x0c25d4d4` means that field was already overwritten
+by shrink time, which is the condition under which `change-parent` would
+publish it.
+
+For the alloc rows with `process == 0x0c25d324`, add `bytes` of the rows
+whose `dest` is not 0. `current - base` at the shrink should equal that sum
+plus the GOAL cpu-thread bump `0x180`, plus any `stack-size-set!` bump
+(`gkernel.gc` 195-198, only while `heap-cur` still sits just past the
+thread). Equivalently, `current` should be `base + (0x4d0 - H)`. The first
+stored row for this process has `cur` before that allocation; `cur - base`
+on that row is the bump already done, and `0x180` is the cpu-thread. The
+`*16k-dead-pool*` is one process with stack `(* 16 1024)` (`gkernel.gc`
+2437). `process` `new` stores that as `allocated-length`, and the ledger
+notes `allocated-length + 112`, so the sidekick's span is `0x4070` too.
+Its allocations share this prefix and are separated by `process`. The pool
+is fixed, so neither shrink site records it. `init-target`
+allocates the target's own `(new 'process ...)` objects (`joint-mod`,
+`fact-info-target`, `ambient-sound`, `water-control`, `align-control`) on
+the target's fixed pool, whose span is not `0x4070`, so they stay out of
+the prefix. `wide_count > 40` means the stored prefix stopped early and
+later `0x4070` allocations are only in the counters. `fail_count` above 0
+is a process-heap `new` that returned 0 and did not bump `heap-cur`.
+`refused` above 0 is a `new` that `process_heap_type_allowed` rejected: a
+process subtype, or the process schema or span table failing closed.
+That is evidence to read, not a reason to let the nested `new` through.
+
+This was not compiled and not run. The 1928-byte image has not been dumped.
+Flycast, the link, and the other ELFs were not run.
+
+Observed `dc_arena_jak_player_heap` at the hang (alloc rows are process,
+dest, bytes, cur-before, span): alloc_count 39, wide 18, fail 0, refused 0,
+7 shrinks (all on the overlap-follow path; slot_1b0 0 in every row).
+- Rows 4 and 5: process 0x0c260964 allocates 0x8c bytes at 0x0c260d04 and
+  then 0x1a0 bytes at the same 0x0c260d04, with cur 0x0c260d00 both times:
+  the first allocation did not advance heap-cur, so the two objects overlap.
+- Rows 0-2: process 0x0c260444 (shrunk to length 0x4b0) allocates three 0xa0
+  objects at 0x0c260784, 0x0c260824, 0x0c2608c4. 0x0c260784 is the tree node
+  whose child link is bad: it is an object in 0x0c260444's heap, not a pool
+  member.
+- Shrink rows: 0x0c260444 len 0x4b0, 0x0c260964 0x4d0, 0x0c260ea4 0x3a0,
+  0x0c268f84 0x4d0, 0x0c271064 0x450, 0x0c271524 0x3b0, 0x0c271944 0x4a0;
+  current == top in each.

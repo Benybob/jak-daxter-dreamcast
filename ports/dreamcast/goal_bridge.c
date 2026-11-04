@@ -176,6 +176,113 @@ static uint64_t method_set(uint64_t type,uint64_t index,uint64_t method) {
   return dc_goal_method_set(rt,(uint32_t)type,(uint32_t)index,(uint32_t)method,
                             enable && dc_goal_symbol_value(rt,enable)!=0);
 }
+#ifdef DC_ARENA_JAK_PLAYER
+/* Process-heap allocations and the heap words read when a dead-pool record
+ * shrinks. Raw guest loads only: dc_goal_resolve would clobber rt->error.
+ * Jak ELF only. --dump dc_arena_jak_player_heap 1928 */
+typedef struct { uint32_t process,dest,bytes,cur,span; } dc_jak_heap_alloc;
+typedef struct {
+  uint32_t process,base,top,current,length,child,ppointer,main_thread,type_tag,span_bytes,slot_1b0;
+} dc_jak_heap_shrink;
+enum { DC_JAK_HEAP_ALLOC_KEEP=40, DC_JAK_HEAP_SHRINK_KEEP=16, DC_JAK_HEAP_RING=8 };
+typedef struct {
+  uint32_t version,alloc_count,wide_count,alloc_kept;
+  uint32_t fail_count,fail_process,fail_type,fail_bytes;
+  uint32_t refused,refused_process,refused_type,refused_bytes;
+  uint32_t structure_refused,structure_process,structure_type;
+  uint32_t shrink_count,shrink_kept,ring_count;
+  dc_jak_heap_alloc alloc[DC_JAK_HEAP_ALLOC_KEEP];
+  dc_jak_heap_shrink shrink[DC_JAK_HEAP_SHRINK_KEEP];
+  dc_jak_heap_shrink ring[DC_JAK_HEAP_RING];
+} dc_arena_jak_player_heap_image;
+volatile dc_arena_jak_player_heap_image dc_arena_jak_player_heap={.version=1};
+typedef char dc_jak_heap_alloc_bytes[sizeof(dc_jak_heap_alloc)==20?1:-1];
+typedef char dc_jak_heap_shrink_bytes[sizeof(dc_jak_heap_shrink)==44?1:-1];
+typedef char dc_jak_heap_ring_mask[DC_JAK_HEAP_RING==8?1:-1];
+typedef char dc_arena_jak_player_heap_bytes[sizeof(dc_arena_jak_player_heap_image)==1928?1:-1];
+static uint32_t jak_guest_word(dc_goal_runtime *rt,uint32_t address) {
+  uint32_t value=0xffffffffu,offset;
+  if(!rt || !rt->memory || address<rt->base) return value;
+  offset=address-rt->base;
+  if(offset>rt->used || 4u>rt->used-offset) return value;
+  memcpy(&value,rt->memory+offset,4);
+  return value;
+}
+static void jak_heap_publish(volatile uint32_t *dst,const void *src,unsigned bytes) {
+  uint32_t words[11],i,n;
+  if(bytes>sizeof words) return;
+  memset(words,0,sizeof words);
+  memcpy(words,src,bytes);
+  n=bytes/4u;
+  for(i=0;i<n;++i) dst[i]=words[i];
+}
+static void jak_heap_refuse(uint32_t type,uint32_t bytes) {
+  uint32_t n=dc_arena_jak_player_heap.refused++;
+  if(n) return;
+  dc_arena_jak_player_heap.refused_process=active_process_heap.process;
+  dc_arena_jak_player_heap.refused_type=type;
+  dc_arena_jak_player_heap.refused_bytes=bytes;
+}
+static void jak_heap_structure(uint32_t type) {
+  uint32_t n=dc_arena_jak_player_heap.structure_refused++;
+  if(n) return;
+  dc_arena_jak_player_heap.structure_process=active_process_heap.process;
+  dc_arena_jak_player_heap.structure_type=type;
+}
+/* alloc_count is every new that reached dc_goal_process_new_basic. The stored
+ * rows are the first 40 whose noted span is the default 0x4000 stack (0x4070). */
+static void jak_heap_alloc(uint32_t type,uint32_t bytes,uint32_t cur,uint32_t made) {
+  uint32_t span=active_process_heap.allocation_bytes,n;
+  dc_jak_heap_alloc row;
+  dc_arena_jak_player_heap.alloc_count++;
+  if(!made) {
+    n=dc_arena_jak_player_heap.fail_count++;
+    if(!n) {
+      dc_arena_jak_player_heap.fail_process=active_process_heap.process;
+      dc_arena_jak_player_heap.fail_type=type;
+      dc_arena_jak_player_heap.fail_bytes=bytes;
+    }
+  }
+  if(span!=0x4070u) return;
+  n=dc_arena_jak_player_heap.wide_count++;
+  if(n>=DC_JAK_HEAP_ALLOC_KEEP) return;
+  row.process=active_process_heap.process;
+  row.dest=made; row.bytes=bytes; row.cur=cur; row.span=span;
+  jak_heap_publish((volatile uint32_t *)&dc_arena_jak_player_heap.alloc[n],&row,sizeof row);
+  dc_arena_jak_player_heap.alloc_kept=n+1u;
+}
+static void jak_heap_shrink_fill(dc_goal_runtime *rt,uint32_t process,uint32_t span_bytes,
+                                 dc_jak_heap_shrink *row) {
+  memset(row,0,sizeof *row);
+  row->process=process; row->span_bytes=span_bytes;
+  if(process>UINT32_MAX-0x1b0u) {
+    row->base=row->top=row->current=row->length=row->child=row->ppointer=0xffffffffu;
+    row->main_thread=row->type_tag=row->slot_1b0=0xffffffffu;
+    return;
+  }
+  row->length=jak_guest_word(rt,process+68u);
+  row->base=jak_guest_word(rt,process+76u);
+  row->top=jak_guest_word(rt,process+80u);
+  row->current=jak_guest_word(rt,process+84u);
+  row->child=jak_guest_word(rt,process+16u);
+  row->ppointer=jak_guest_word(rt,process+20u);
+  row->main_thread=jak_guest_word(rt,process+40u);
+  row->type_tag=jak_guest_word(rt,process-4u);
+  row->slot_1b0=jak_guest_word(rt,process+0x1b0u);
+}
+void dc_arena_jak_player_note_shrink(dc_goal_runtime *rt,uint32_t process,uint32_t span_bytes) {
+  dc_jak_heap_shrink row; uint32_t n,ring;
+  if(!rt || process<4u) return;
+  jak_heap_shrink_fill(rt,process,span_bytes,&row);
+  n=dc_arena_jak_player_heap.shrink_count++;
+  ring=dc_arena_jak_player_heap.ring_count++;
+  if(n<DC_JAK_HEAP_SHRINK_KEEP) {
+    jak_heap_publish((volatile uint32_t *)&dc_arena_jak_player_heap.shrink[n],&row,sizeof row);
+    dc_arena_jak_player_heap.shrink_kept=n+1u;
+  }
+  jak_heap_publish((volatile uint32_t *)&dc_arena_jak_player_heap.ring[ring&7u],&row,sizeof row);
+}
+#endif
 static int process_family(dc_goal_runtime *rt,uint32_t type) {
   uint32_t root=dc_goal_symbol_value(rt,rt->s7+DC_FIX_SYM_PROCESS_TYPE);
   dc_goal_type_fields *schema;
@@ -299,9 +406,24 @@ static uint64_t new_basic(uint64_t heap,uint64_t type) {
     return global_basic_new(rt,(uint32_t)type,fields->allocated_size);
   if(heap==rt->s7+DC_FIX_SYM_PROCESS_TYPE && active_process_heap.runtime==rt) {
     uint32_t lexical;
-    if(!process_heap_type_allowed(rt,(uint32_t)type))return 0;
+    if(!process_heap_type_allowed(rt,(uint32_t)type)) {
+#ifdef DC_ARENA_JAK_PLAYER
+      jak_heap_refuse((uint32_t)type,fields->allocated_size);
+#endif
+      return 0;
+    }
     if(scope_resolve(rt,&lexical)==DC_GOAL_PP_SCOPE_DENIED)return 0;
+#ifdef DC_ARENA_JAK_PLAYER
+    {
+      uint32_t proc=active_process_heap.process;
+      uint32_t cur=proc<=UINT32_MAX-84u?jak_guest_word(rt,proc+84u):0xffffffffu;
+      uint32_t made=dc_goal_process_new_basic(&active_process_heap,(uint32_t)type,fields->allocated_size);
+      jak_heap_alloc((uint32_t)type,fields->allocated_size,cur,made);
+      return made;
+    }
+#else
     return dc_goal_process_new_basic(&active_process_heap,(uint32_t)type,fields->allocated_size);
+#endif
   }
   (DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT); return 0;
 }
@@ -313,6 +435,10 @@ static uint64_t new_structure(uint64_t heap,uint64_t type) {
   dc_goal_type_fields *fields;
   if (!rt) return 0;
   if(dc_goal_pp_scope_blocks_transfer(rt) && rt->error!=DC_GOAL_OK)return 0;
+#ifdef DC_ARENA_JAK_PLAYER
+  if(heap==rt->s7+DC_FIX_SYM_PROCESS_TYPE && active_process_heap.runtime==rt && type<=UINT32_MAX)
+    jak_heap_structure((uint32_t)type);
+#endif
   if ((heap_kind(rt,heap)!=HEAP_GLOBAL && heap_kind(rt,heap)!=HEAP_ADDRESS) || type>UINT32_MAX ||
       !dc_goal_is_subtype(rt,(uint32_t)type,rt->structure_type) || dc_goal_is_subtype(rt,(uint32_t)type,rt->basic_type)) {
     (DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT); return 0;
@@ -376,9 +502,24 @@ static uint64_t new_object(uint64_t heap,uint64_t type,uint64_t size) {
     return global_basic_new(rt,(uint32_t)type,(uint32_t)size);
   if(heap==rt->s7+DC_FIX_SYM_PROCESS_TYPE && active_process_heap.runtime==rt) {
     uint32_t lexical;
-    if(!process_heap_type_allowed(rt,(uint32_t)type))return 0;
+    if(!process_heap_type_allowed(rt,(uint32_t)type)) {
+#ifdef DC_ARENA_JAK_PLAYER
+      jak_heap_refuse((uint32_t)type,(uint32_t)size);
+#endif
+      return 0;
+    }
     if(scope_resolve(rt,&lexical)==DC_GOAL_PP_SCOPE_DENIED)return 0;
+#ifdef DC_ARENA_JAK_PLAYER
+    {
+      uint32_t proc=active_process_heap.process;
+      uint32_t cur=proc<=UINT32_MAX-84u?jak_guest_word(rt,proc+84u):0xffffffffu;
+      uint32_t made=dc_goal_process_new_basic(&active_process_heap,(uint32_t)type,(uint32_t)size);
+      jak_heap_alloc((uint32_t)type,(uint32_t)size,cur,made);
+      return made;
+    }
+#else
     return dc_goal_process_new_basic(&active_process_heap,(uint32_t)type,(uint32_t)size);
+#endif
   }
   (DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT); return 0;
 }
@@ -653,6 +794,10 @@ static int shrink_left_span(dc_goal_runtime *rt,uint32_t process) {
     rt->error=prior;dc_goal_error_site=site;return 1;  /* not a noted process */
   }
   memcpy(&length,fields+68,4);
+#ifdef DC_ARENA_JAK_PLAYER
+  if(length<=UINT32_MAX-112u && span.bytes>length+112u)
+    dc_arena_jak_player_note_shrink(rt,process,span.bytes);
+#endif
   if(length>UINT32_MAX-112u || span.bytes<=length+112u)return 1;
   return dc_goal_process_span_shrink(rt,&span,length+112u,NULL);
 }
