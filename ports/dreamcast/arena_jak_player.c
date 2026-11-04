@@ -9,6 +9,7 @@
 #include "goal_art.h"
 #include "goal_main_start.h"
 #include "goal_bridge.h"
+#include "process_spans.h"
 #include "build/jak-art-disc/jak_art_sizes.h"
 #include <math.h>
 #include <stdio.h>
@@ -29,6 +30,10 @@ static uint32_t named(dc_goal_runtime *rt,const char *name){
  if(error!=DC_GOAL_OK)rt->error=error;
  return v;
 }
+volatile struct {
+ uint32_t bytes,target_length,resolved,typed,w28,top,w36,w40,w44,cp,w48,span_found,span_bytes,error,site,w32;
+ char w36_name[32],w32_name[32];
+} dc_arena_jak_thread_probe;
 static int typed(dc_goal_runtime *rt,uint32_t p,const char *type,uint32_t bytes){
  uint32_t t=named(rt,type);
  return p>=4 && (p&15u)==4 && t && t!=rt->s7 && dc_goal_resolve(rt,p-4,bytes) && word(rt,p-4)==t;
@@ -138,6 +143,26 @@ int dc_arena_jak_player_run(dc_goal_runtime *rt,uint32_t cp){
  thread=word(rt,target+40);bytes=word(rt,target+68)+112u;
  dram=named(rt,"*dram-stack*");base=(dram+12u+15u)&~15u;top=(dram+0x8000u)&~15u;
  dc_arena_jak_player_evidence.thread=thread;
+ {/* Diagnostic: each condition of the armed-thread check, in order. */
+  dc_goal_process_span existing;
+  dc_arena_jak_thread_probe.bytes=bytes;dc_arena_jak_thread_probe.target_length=word(rt,target+68);
+  dc_arena_jak_thread_probe.resolved=dc_goal_resolve(rt,target-4,bytes)!=NULL;
+  dc_arena_jak_thread_probe.typed=typed(rt,thread,"cpu-thread",124);
+  dc_arena_jak_thread_probe.w28=word(rt,thread+28);dc_arena_jak_thread_probe.top=top;
+  dc_arena_jak_thread_probe.w36=word(rt,thread+36);dc_arena_jak_thread_probe.w40=word(rt,thread+40);
+  dc_arena_jak_thread_probe.w44=word(rt,thread+44);dc_arena_jak_thread_probe.cp=cp;
+  dc_arena_jak_thread_probe.w48=word(rt,thread+48);
+  uint32_t site=dc_goal_error_site;
+  dc_arena_jak_thread_probe.span_found=dc_goal_process_span_lookup(rt,target,&existing);
+  dc_arena_jak_thread_probe.span_bytes=dc_arena_jak_thread_probe.span_found?existing.bytes:0;
+  {dc_goal_code_entry_info info;const char *n;size_t k;
+   dc_arena_jak_thread_probe.w32=word(rt,thread+32);
+   if(dc_goal_code_entry(rt,dc_arena_jak_thread_probe.w36,&info) && (n=dc_goal_symbol_name(rt,info.symbol)))
+     for(k=0;n[k] && k<31;++k)dc_arena_jak_thread_probe.w36_name[k]=n[k];
+   if(dc_goal_code_entry(rt,dc_arena_jak_thread_probe.w32,&info) && (n=dc_goal_symbol_name(rt,info.symbol)))
+     for(k=0;n[k] && k<31;++k)dc_arena_jak_thread_probe.w32_name[k]=n[k];}
+  dc_arena_jak_thread_probe.error=rt->error;dc_arena_jak_thread_probe.site=dc_goal_error_site;
+  rt->error=DC_GOAL_OK;dc_goal_error_site=site;}
  CHECK(bytes>=192 && dc_goal_resolve(rt,target-4,bytes) && typed(rt,thread,"cpu-thread",124) &&
        word(rt,thread+36)==dc_arena_jak_player_evidence.init_entry && word(rt,thread+40)==0 &&
        word(rt,thread+44)==cp && word(rt,thread+48)==0 && word(rt,thread+28)==top &&

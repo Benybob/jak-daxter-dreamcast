@@ -823,3 +823,14 @@ Observed in Flycast with the commands above: 7002 checks pass; the export check
 publishes an original typed target": `start` returns a target, but the runtime
 error is BAD_ARGUMENT from goal_bridge.c:582 (`note_root_member` refuses the
 spawned target's scope).
+
+## Start runs init-target; the thread is armed at enter-state (AI-assisted)
+
+Observed in Flycast after the span ledger follows original shrink-heap: 7003
+checks pass. `start` creates and publishes the typed target (17003). 17004
+fails on one field only: `dc_arena_jak_thread_probe` shows the target's thread
+word +36 is `enter-state`, not `init-target`. The original process-spawn
+already ran init-target in the process and its `go` armed the thread for the
+first state. Stack top, the continue point (+44) and the zero words match.
+Checks 16 and 17 still describe the earlier plan, where init-target had not
+run; they need to expect the original enter-state arming instead.
