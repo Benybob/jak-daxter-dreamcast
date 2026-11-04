@@ -207,6 +207,11 @@ int dc_arena_jak_player_run(dc_goal_runtime *rt,uint32_t cp){
  CHECK(dc_goal_set_symbol(rt,read_symbol,dc_arena_jak_player_evidence.read_shim),
        19,"jak read-pad observer installed around authenticated original body");
  installed=1;dc_arena_jak_player_evidence.active=1;dc_arena_jak_player_evidence.phase=2;
+#ifdef DC_JAK_NO_COMPACT
+ /* Diagnostic only: original actors-update compacts *nk-dead-pool* when
+  * *compact-actors* is true. */
+ {uint32_t s=dc_goal_find(rt,"*compact-actors*");if(s)dc_goal_set_symbol(rt,s,rt->s7);}
+#endif
  for(slot=0;slot<DC_JAK_PLAYER_FRAMES;++slot){
   dc_jak_player_frame row={0};dc_goal_pad_state sample;
   prev_resumes=dc_arena_jak_player_evidence.resumes;prev_pads=dc_arena_jak_player_evidence.pad_valid;

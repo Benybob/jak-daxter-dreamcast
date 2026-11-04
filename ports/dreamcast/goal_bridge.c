@@ -159,9 +159,40 @@ static uint64_t new_pair(uint64_t heap,uint64_t type,uint64_t car,uint64_t cdr) 
 static uint64_t type_of(uint64_t object) {
   return active_runtime?dc_goal_type_of(active_runtime,(uint32_t)object):0;
 }
+#ifdef DC_ARENA_JAK_PLAYER
+/* Redefinitions of an existing type whose methods differ from its parent's:
+ * new_type copies the parent's table over them. --dump dc_arena_jak_player_retype 452 */
+volatile struct { uint32_t count,kept,pad[2]; struct { uint32_t type,overridden,pc; char name[24],caller[32]; } row[7]; } dc_arena_jak_player_retype;
+static const char *jak_function_name(dc_goal_runtime *rt,uint32_t pc);
+static void jak_retype(dc_goal_runtime *rt,uint32_t symbol,uint32_t parent,uint32_t pc) {
+  uint32_t type=dc_goal_symbol_value(rt,symbol),i,n,over=0;dc_goal_type_fields *f;
+  enum dc_goal_error e=rt->error;
+  if(type && (f=dc_goal_resolve(rt,type,sizeof *f)))
+    for(i=0;i<f->num_methods && i<32u;++i)
+      if(dc_goal_get_method(rt,type,(uint16_t)i)!=dc_goal_get_method(rt,parent,(uint16_t)i))over|=1u<<i;
+  rt->error=e;
+  if(!over)return;
+  {const char *nm=dc_goal_symbol_name(rt,symbol);
+   if(!nm || (strcmp(nm,"process") && strcmp(nm,"cpu-thread") && strcmp(nm,"thread") &&
+      strcmp(nm,"process-tree") && strcmp(nm,"dead-pool-heap") && strcmp(nm,"process-drawable")))return;}
+  n=dc_arena_jak_player_retype.count++;
+  if(n>=7u)return;
+  dc_arena_jak_player_retype.row[n].type=type;dc_arena_jak_player_retype.row[n].overridden=over;
+  dc_arena_jak_player_retype.row[n].pc=pc;
+  {const char *nm=dc_goal_symbol_name(rt,symbol),*c=jak_function_name(rt,pc);unsigned k;
+   for(k=0;k<24u;++k)dc_arena_jak_player_retype.row[n].name[k]=0;
+   for(k=0;nm && nm[k] && k<23u;++k)dc_arena_jak_player_retype.row[n].name[k]=nm[k];
+   for(k=0;k<32u;++k)dc_arena_jak_player_retype.row[n].caller[k]=0;
+   for(k=0;c && c[k] && k<31u;++k)dc_arena_jak_player_retype.row[n].caller[k]=c[k];}
+  dc_arena_jak_player_retype.kept=n+1u;
+}
+#endif
 static uint64_t new_type(uint64_t symbol,uint64_t parent,uint64_t flags) {
   uint32_t type;
   if(!active_runtime)return 0;
+#ifdef DC_ARENA_JAK_PLAYER
+  jak_retype(active_runtime,(uint32_t)symbol,(uint32_t)parent,(uint32_t)(uintptr_t)__builtin_return_address(0));
+#endif
   type=dc_goal_new_type(active_runtime,(uint32_t)symbol,(uint32_t)parent,flags);
   if(!type && dc_goal_sticky_error==DC_GOAL_OK)
     dc_goal_sticky_error=active_runtime->error!=DC_GOAL_OK?active_runtime->error:DC_GOAL_BAD_TYPE;
@@ -208,6 +239,7 @@ static uint32_t jak_guest_word(dc_goal_runtime *rt,uint32_t address) {
   memcpy(&value,rt->memory+offset,4);
   return value;
 }
+static void jak_reloc_note(dc_goal_runtime *rt,uint32_t site);
 static void jak_heap_publish(volatile uint32_t *dst,const void *src,unsigned bytes) {
   uint32_t words[11],i,n;
   if(bytes>sizeof words) return;
@@ -250,6 +282,84 @@ static void jak_heap_alloc(uint32_t type,uint32_t bytes,uint32_t cur,uint32_t ma
   row.dest=made; row.bytes=bytes; row.cur=cur; row.span=span;
   jak_heap_publish((volatile uint32_t *)&dc_arena_jak_player_heap.alloc[n],&row,sizeof row);
   dc_arena_jak_player_heap.alloc_kept=n+1u;
+}
+/* A process-heap allocation whose heap-cur is behind the cursor the previous
+ * allocation on the same process left. Records both sides' type and GOAL
+ * caller. --dump dc_arena_jak_player_rewind 2436 */
+typedef struct {
+  uint32_t process,prev_next,cur,prev_type,prev_pc,type,pc;
+  char prev_type_name[16],prev_fn[24],type_name[16],fn[24],proc_type[16],proc_name[16],prev_owner[16];
+} dc_jak_heap_rewind;
+typedef struct { uint32_t process,next,type,pc,owner_type; } dc_jak_heap_last;
+volatile struct {
+  uint32_t version,count,kept,tracked;
+  dc_jak_heap_rewind row[4];
+  dc_jak_heap_last last[32];
+  uint32_t events;
+  struct { uint32_t process,cur; char type_name[16]; } event[48];
+} dc_arena_jak_player_rewind={.version=1};
+typedef char dc_jak_heap_rewind_bytes[sizeof(dc_arena_jak_player_rewind)==2436?1:-1];
+static void jak_copy_name(volatile char *dst,const char *name,unsigned n) {
+  unsigned i;
+  for(i=0;i<n;++i)dst[i]=0;
+  for(i=0;name && name[i] && i+1<n;++i)dst[i]=name[i];
+}
+static const char *jak_type_name(dc_goal_runtime *rt,uint32_t type) {
+  uint32_t symbol=jak_guest_word(rt,type);
+  return symbol==0xffffffffu?NULL:dc_goal_symbol_name(rt,symbol);
+}
+static const char *jak_function_name(dc_goal_runtime *rt,uint32_t pc) {
+  uint32_t at=rt->code_registry_head,i;
+  for(i=0;i<rt->code_registry_count && at;++i) {
+    uint32_t record[4],offset=at-rt->base;
+    if(at<rt->base || offset>rt->used || 16u>rt->used-offset)return NULL;
+    memcpy(record,rt->memory+offset,16);
+    if(pc>=record[0] && pc-record[0]<record[1])return dc_goal_symbol_name(rt,record[2]);
+    at=record[3];
+  }
+  return NULL;
+}
+static void jak_heap_rewind(dc_goal_runtime *rt,uint32_t type,uint32_t cur,uint32_t made,
+                            uint32_t bytes,uint32_t pc) {
+  uint32_t proc=active_process_heap.process,n,i;
+  volatile dc_jak_heap_last *last=NULL;
+  for(i=0;i<dc_arena_jak_player_rewind.tracked;++i)
+    if(dc_arena_jak_player_rewind.last[i].process==proc){last=&dc_arena_jak_player_rewind.last[i];break;}
+  if(!last || cur<last->next) {
+    n=dc_arena_jak_player_rewind.events++;
+    if(n<48u) {
+      dc_arena_jak_player_rewind.event[n].process=proc; dc_arena_jak_player_rewind.event[n].cur=cur;
+      jak_copy_name(dc_arena_jak_player_rewind.event[n].type_name,jak_type_name(rt,jak_guest_word(rt,proc-4u)),16);
+    }
+  }
+  if(last && cur<last->next) {
+    n=dc_arena_jak_player_rewind.count++;
+    if(n<4u) {
+      volatile dc_jak_heap_rewind *row=&dc_arena_jak_player_rewind.row[n];
+      row->process=proc; row->prev_next=last->next; row->cur=cur;
+      row->prev_type=last->type; row->prev_pc=last->pc;
+      row->type=type; row->pc=pc;
+      jak_copy_name(row->prev_type_name,jak_type_name(rt,row->prev_type),16);
+      jak_copy_name(row->prev_fn,jak_function_name(rt,row->prev_pc),24);
+      jak_copy_name(row->type_name,jak_type_name(rt,type),16);
+      jak_copy_name(row->fn,jak_function_name(rt,pc),24);
+      jak_copy_name(row->prev_owner,jak_type_name(rt,last->owner_type),16);
+      jak_copy_name(row->proc_type,jak_type_name(rt,jak_guest_word(rt,proc-4u)),16);
+      {uint32_t name=jak_guest_word(rt,proc),length=jak_guest_word(rt,name),k;
+       for(k=0;k<16;++k)row->proc_name[k]=0;
+       if(length<64u && name<rt->base+rt->used-80u)
+         for(k=0;k<length && k<15;++k)row->proc_name[k]=(char)rt->memory[name+4u+k-rt->base];}
+      dc_arena_jak_player_rewind.kept=n+1u;
+    }
+  }
+  if(!made)return;
+  if(!last) {
+    i=dc_arena_jak_player_rewind.tracked;
+    if(i>=32u)return;
+    last=&dc_arena_jak_player_rewind.last[i]; last->process=proc;
+    dc_arena_jak_player_rewind.tracked=i+1u;
+  }
+  last->next=made-4u+((bytes+15u)&~15u); last->type=type; last->pc=pc; last->owner_type=jak_guest_word(rt,proc-4u);
 }
 static void jak_heap_shrink_fill(dc_goal_runtime *rt,uint32_t process,uint32_t span_bytes,
                                  dc_jak_heap_shrink *row) {
@@ -419,6 +529,8 @@ static uint64_t new_basic(uint64_t heap,uint64_t type) {
       uint32_t cur=proc<=UINT32_MAX-84u?jak_guest_word(rt,proc+84u):0xffffffffu;
       uint32_t made=dc_goal_process_new_basic(&active_process_heap,(uint32_t)type,fields->allocated_size);
       jak_heap_alloc((uint32_t)type,fields->allocated_size,cur,made);
+      jak_heap_rewind(rt,(uint32_t)type,cur,made,fields->allocated_size,
+                      (uint32_t)(uintptr_t)__builtin_return_address(0));
       return made;
     }
 #else
@@ -458,6 +570,9 @@ static uint64_t asize_of_basic(uint64_t object) {
   dc_goal_type_fields *fields;
   uint32_t type;
   if(!rt)return 0;
+#ifdef DC_ARENA_JAK_PLAYER
+  jak_reloc_note(rt,100u);
+#endif
   type=dc_goal_type_of(rt,(uint32_t)object);
   if(!type || !dc_goal_is_subtype(rt,type,rt->basic_type)){if(rt->error==DC_GOAL_OK)(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);return 0;}
   fields=dc_goal_resolve(rt,type,sizeof(*fields));
@@ -475,7 +590,7 @@ static uint64_t copy_basic(uint64_t object,uint64_t heap) {
   if(dc_goal_pp_scope_blocks_transfer(rt) && rt->error!=DC_GOAL_OK)return 0;
   type=dc_goal_type_of(rt,(uint32_t)object);
   if(!type || !dc_goal_is_subtype(rt,type,rt->basic_type)){if(rt->error==DC_GOAL_OK)(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);return 0;}
-  if(dc_goal_get_method(rt,type,4)!=dc_goal_symbol_value(rt,dc_goal_find(rt,"dc-c-basic-asize-of"))){
+  if(dc_goal_get_method(rt,type,5)!=dc_goal_symbol_value(rt,dc_goal_find(rt,"dc-c-basic-asize-of"))){
     rt->error=DC_GOAL_UNSUPPORTED_TRANSFER;return 0;
   }
   bytes=(uint32_t)asize_of_basic(object);
@@ -515,6 +630,8 @@ static uint64_t new_object(uint64_t heap,uint64_t type,uint64_t size) {
       uint32_t cur=proc<=UINT32_MAX-84u?jak_guest_word(rt,proc+84u):0xffffffffu;
       uint32_t made=dc_goal_process_new_basic(&active_process_heap,(uint32_t)type,(uint32_t)size);
       jak_heap_alloc((uint32_t)type,(uint32_t)size,cur,made);
+      jak_heap_rewind(rt,(uint32_t)type,cur,made,(uint32_t)size,
+                      (uint32_t)(uintptr_t)__builtin_return_address(0));
       return made;
     }
 #else
@@ -631,11 +748,17 @@ int dc_goal_install_type_bridges(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_
   for (i=0;i<8;++i) { memcpy(code[i],stub,12); memcpy(code[i]+8,&targets[i],4); }
   if (!dc_goal_load_module(rt,functions,8,sync,NULL,result)) return 0;
 #define BRIDGE(name) dc_goal_symbol_value(rt,dc_goal_find(rt,name))
-  /* kscheme defaults: object asize-of 4 / copy 6, then basic's, both propagated
-   * to fixed kernel types made before this, like structure new below. */
+  /* kscheme defaults (goal_constants.h: length 4, asize-of 5, copy 6): object
+   * length and asize-of are the zero function and copy is copy_fixed; basic
+   * keeps the zero length and has asize_of_basic and copy_basic. All propagate
+   * to fixed kernel types made before this, like structure new below. Original
+   * process relocate walks a heap with asize-of, so a basic without its own
+   * (trsqv) must get asize_of_basic here, not an empty slot 5. */
   if (!dc_goal_method_set(rt,rt->object_type,4,BRIDGE("dc-c-zero-func"),1) ||
+      !dc_goal_method_set(rt,rt->object_type,5,BRIDGE("dc-c-zero-func"),1) ||
       !dc_goal_method_set(rt,rt->object_type,6,BRIDGE("dc-c-copy-fixed"),1) ||
-      !dc_goal_method_set(rt,rt->basic_type,4,BRIDGE("dc-c-basic-asize-of"),1) ||
+      !dc_goal_method_set(rt,rt->basic_type,4,BRIDGE("dc-c-zero-func"),1) ||
+      !dc_goal_method_set(rt,rt->basic_type,5,BRIDGE("dc-c-basic-asize-of"),1) ||
       !dc_goal_method_set(rt,rt->basic_type,6,BRIDGE("dc-c-basic-copy"),1)) return 0;
 #undef BRIDGE
   return dc_goal_set_method(rt,rt->type_type,0,dc_goal_symbol_value(rt,dc_goal_find(rt,"dc-c-type-new"))) &&
@@ -935,6 +1058,75 @@ static int jak_tree_note(dc_jak_player_tree_walk *out,uint32_t *seen,uint32_t *u
   if(depth>out->max_depth) out->max_depth=depth;
   *unique+=1u; out->nodes=*unique; return 0;
 }
+/* *kernel-context* words at each tree walk: relocating-process/min/max/offset
+ * show whether dead-pool-heap compaction relocated a process.
+ * Words 16..79: 256 bytes from the stop-3 fault target minus 4.
+ * Words 80..143: 16-byte type names of the first 16 walk visits.
+ * --dump dc_arena_jak_player_kernel_context 576 */
+volatile uint32_t dc_arena_jak_player_kernel_context[144];
+/* Method 5 (asize-of) and 7 (relocate) of the relocated types, and the GOAL
+ * function names. --dump dc_arena_jak_player_methods 448 */
+volatile struct { uint32_t type,m4,m7; char n4[24],n7[24]; } dc_arena_jak_player_methods[7];
+/* Code registry entries of the original kernel asize-of methods (0 = absent):
+ * process, cpu-thread, dead-pool-heap, then the registry count. */
+volatile uint32_t dc_arena_jak_player_asize_entries[4];
+static void jak_asize_entries(dc_goal_runtime *rt) {
+  static const char *const want[3]={"(method asize-of process)","(method asize-of cpu-thread)","(method asize-of dead-pool-heap)"};
+  uint32_t at=rt->code_registry_head,i,k;
+  dc_arena_jak_player_asize_entries[3]=rt->code_registry_count;
+  for(i=0;i<rt->code_registry_count && at;++i) {
+    uint32_t record[4],offset=at-rt->base;const char *n;
+    if(at<rt->base || offset>rt->used || 16u>rt->used-offset)return;
+    memcpy(record,rt->memory+offset,16);
+    n=dc_goal_symbol_name(rt,record[2]);
+    for(k=0;k<3u;++k)if(n && !strcmp(n,want[k]))dc_arena_jak_player_asize_entries[k]=record[0];
+    at=record[3];
+  }
+}
+static void jak_methods(dc_goal_runtime *rt) {
+  jak_asize_entries(rt);
+  static const char *const names[7]={"process","process-drawable","manipy","hud","hud-fuel-cell","cpu-thread","trsqv"};
+  unsigned i;
+  for(i=0;i<7u;++i) {
+    uint32_t s=dc_goal_find(rt,names[i]),type=s?jak_guest_word(rt,s):0;
+    dc_arena_jak_player_methods[i].type=type;
+    dc_arena_jak_player_methods[i].m4=type?dc_goal_get_method(rt,type,5):0;
+    dc_arena_jak_player_methods[i].m7=type?dc_goal_get_method(rt,type,7):0;
+    jak_copy_name(dc_arena_jak_player_methods[i].n4,jak_function_name(rt,dc_arena_jak_player_methods[i].m4),24);
+    jak_copy_name(dc_arena_jak_player_methods[i].n7,jak_function_name(rt,dc_arena_jak_player_methods[i].m7),24);
+  }
+}
+static void jak_kernel_context(dc_goal_runtime *rt) {
+  jak_methods(rt);
+  uint32_t symbol=dc_goal_find(rt,"*kernel-context*"),value,i;
+  value=symbol?jak_guest_word(rt,symbol):0;
+  dc_arena_jak_player_kernel_context[0]=value;
+  for(i=1;i<16;++i)dc_arena_jak_player_kernel_context[i]=value?jak_guest_word(rt,value+4u*(i-1u)):0;
+}
+/* Relocations seen at heartbeat sites and inside the default asize-of the
+ * original process relocate loop calls: a row when relocating-process, min
+ * or offset changes. --dump dc_arena_jak_player_reloc 1160 */
+typedef struct { uint32_t seq,site,process,min,max,offset,ppointer,rec_process,self; } dc_jak_reloc_row;
+volatile struct { uint32_t count,pad; dc_jak_reloc_row row[32]; } dc_arena_jak_player_reloc;
+typedef char dc_jak_reloc_bytes[sizeof(dc_arena_jak_player_reloc)==1160?1:-1];
+static uint32_t jak_reloc_last[3];
+static void jak_reloc_note(dc_goal_runtime *rt,uint32_t site) {
+  static uint32_t symbol; uint32_t context,proc,min,offset,n;
+  dc_jak_reloc_row row;
+  if(!rt)return;
+  if(!symbol){enum dc_goal_error e=rt->error;symbol=dc_goal_find(rt,"*kernel-context*");rt->error=e;}
+  if(!symbol || (context=jak_guest_word(rt,symbol))==0xffffffffu)return;
+  proc=jak_guest_word(rt,context+24u); min=jak_guest_word(rt,context+28u); offset=jak_guest_word(rt,context+36u);
+  if(proc==jak_reloc_last[0] && min==jak_reloc_last[1] && offset==jak_reloc_last[2])return;
+  jak_reloc_last[0]=proc; jak_reloc_last[1]=min; jak_reloc_last[2]=offset;
+  row.seq=dc_arena_jak_player_heartbeat.seq; row.site=site; row.process=proc; row.min=min;
+  row.max=jak_guest_word(rt,context+32u); row.offset=offset;
+  row.ppointer=jak_guest_word(rt,proc+20u); row.rec_process=jak_guest_word(rt,row.ppointer);
+  row.self=jak_guest_word(rt,proc+24u);
+  n=dc_arena_jak_player_reloc.count++;
+  {const uint32_t *w=(const uint32_t *)(const void *)&row;volatile uint32_t *d=(volatile uint32_t *)&dc_arena_jak_player_reloc.row[n&31u];unsigned i;
+   for(i=0;i<9u;++i)d[i]=w[i];}
+}
 static void jak_tree_walk(dc_goal_runtime *rt) {
   enum dc_goal_error saved=rt->error; uint32_t saved_site=dc_goal_error_site;
   dc_jak_player_tree_walk out; unsigned char raw[36];
@@ -944,6 +1136,7 @@ static void jak_tree_walk(dc_goal_runtime *rt) {
   uint32_t words[sizeof(dc_jak_player_tree_walk)/4u];
   memset(&out,0,sizeof out);
   out.seq=dc_arena_jak_player_heartbeat.seq;
+  jak_kernel_context(rt);
   symbol=dc_goal_find(rt,"*active-pool*");
   if(!symbol || !jak_tree_u32(rt,symbol,&root) || !root || root==rt->s7 || !jak_tree_object(rt,root,raw)) {
     out.root=root; out.stop=3; out.to_process=root; goto publish;
@@ -984,6 +1177,14 @@ static void jak_tree_walk(dc_goal_runtime *rt) {
      }}
   }
 publish:
+  if(out.stop==3 && out.to_process>=4u)
+    for(i=0;i<64u;++i)dc_arena_jak_player_kernel_context[16u+i]=jak_guest_word(rt,out.to_process-4u+4u*i);
+  for(i=0;i<16u && i<out.nodes;++i) {
+    const char *n=dc_goal_symbol_name(rt,out.visit[i].type_name);char name[16];unsigned k;
+    memset(name,0,sizeof name);
+    for(k=0;n && n[k] && k<15u;++k)name[k]=n[k];
+    for(k=0;k<4u;++k){uint32_t w;memcpy(&w,name+4u*k,4);dc_arena_jak_player_kernel_context[80u+4u*i+k]=w;}
+  }
   memcpy(words,&out,sizeof out);
   for(i=0;i<sizeof words/sizeof words[0];++i) ((volatile uint32_t *)&dc_arena_jak_player_tree_walk)[i]=words[i];
   rt->error=saved; dc_goal_error_site=saved_site;
@@ -1012,6 +1213,7 @@ static void jak_beat(uint32_t site,uint32_t process,uint32_t thread,uint32_t pha
      for(;k<24;++k)dc_arena_jak_player_heartbeat.process_name[k]=0;}
     rt->error=saved;
   }
+  jak_reloc_note(rt,site);
   dc_arena_jak_player_heartbeat.site=site;
   dc_arena_jak_player_heartbeat.process=process;
   dc_arena_jak_player_heartbeat.name=name;
@@ -1703,6 +1905,22 @@ static uint64_t pc_kopen_native(uint64_t fs,uint64_t name,uint64_t mode){
   return fs;
 }
 static uint64_t pc_kclose_native(uint64_t fs){return fs;}
+/* Desktop pc_memmove (kmachine.cpp): PC ultimate-memcpy is (__mem-move dst src
+ * size). Original process relocate moves an image of 2560 bytes or more with it,
+ * so without it dead-pool-heap compaction updates the record but copies nothing.
+ * Both guest ranges must resolve; a refused range faults and copies nothing. */
+/* --dump dc_goal_mem_move_probe 24: calls, refused, last dst, src, size, error. */
+volatile uint32_t dc_goal_mem_move_probe[6];
+static uint64_t pc_mem_move_native(uint64_t dst,uint64_t src,uint64_t size) {
+  dc_goal_runtime *rt=active_runtime;unsigned char *to,*from;
+  dc_goal_mem_move_probe[0]++;dc_goal_mem_move_probe[2]=(uint32_t)dst;dc_goal_mem_move_probe[3]=(uint32_t)src;dc_goal_mem_move_probe[4]=(uint32_t)size;
+  if(!rt || !size)return 0;
+  if(dst>UINT32_MAX || src>UINT32_MAX || size>UINT32_MAX){(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);return 0;}
+  to=dc_goal_resolve(rt,(uint32_t)dst,(uint32_t)size);from=to?dc_goal_resolve(rt,(uint32_t)src,(uint32_t)size):NULL;
+  if(to && from)memmove(to,from,(size_t)size);
+  else {dc_goal_mem_move_probe[1]++;dc_goal_mem_move_probe[5]=(uint32_t)rt->error;}
+  return 0;
+}
 #define DC_PC_SERVICES 52
 /* Coexistence only stashes requests on the GOAL stack (AI-assisted), ISC. */
 #ifdef DC_ARENA_COEXIST
@@ -1754,6 +1972,7 @@ int dc_goal_install_pc_services(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_g
   functions[k]=(dc_goal_code_export){"kset-language",code[k],12,NULL,0};targets[k++]=(uint32_t)(uintptr_t)kset_language_native;
   functions[k]=(dc_goal_code_export){"pc-rand",code[k],12,NULL,0};targets[k++]=(uint32_t)(uintptr_t)pc_rand_native;
   functions[k]=(dc_goal_code_export){"__read-ee-timer",code[k],12,NULL,0};targets[k++]=(uint32_t)(uintptr_t)read_ee_timer_native;
+  functions[k]=(dc_goal_code_export){"__mem-move",code[k],12,NULL,0};targets[k++]=(uint32_t)(uintptr_t)pc_mem_move_native;
   for(i=0;i<sizeof void_setters/sizeof void_setters[0];++i){
     functions[k]=(dc_goal_code_export){void_setters[i],code[k],12,NULL,0};targets[k++]=(uint32_t)(uintptr_t)pc_zero_native;
 #ifdef DC_ARENA_COEXIST

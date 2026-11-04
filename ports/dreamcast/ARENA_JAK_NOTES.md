@@ -1544,3 +1544,36 @@ dest, bytes, cur-before, span): alloc_count 39, wide 18, fail 0, refused 0,
 - Shrink rows: 0x0c260444 len 0x4b0, 0x0c260964 0x4d0, 0x0c260ea4 0x3a0,
   0x0c268f84 0x4d0, 0x0c271064 0x450, 0x0c271524 0x3b0, 0x0c271944 0x4a0;
   current == top in each.
+
+## Compaction, asize-of and __mem-move (2026-11-04, AI-assisted)
+
+The second-frame hang was not a heap-cur bug. The repeated allocation
+address is a reused slot: the PC HUD's `manipy` icon (missing art) dies,
+and `hud-pickups` is carved where it was (`dc_arena_jak_player_rewind`,
+1088+ bytes, logs process-heap reuse and the previous owner's type).
+
+The broken tree link came from original dead-pool-heap compaction
+(`actors-update` → `compact *nk-dead-pool*` → `relocate`):
+
+- `hud-fuel-cell`'s child record pointed at a zeroed 0x70-byte region,
+  and `hud-health` sat right after it. The manipy's `relocate` updated its
+  record (the first statement) and then stopped before copying anything.
+- Cause: the kscheme default methods were installed in the wrong slot. The
+  method IDs are length 4, asize-of 5, copy 6 (`common/goal_constants.h`).
+  The port put `asize_of_basic` in slot 4 and left asize-of (5) unset on
+  `object` and `basic`, so a basic without its own asize-of (the manipy's
+  `trsqv`) had no size method in the relocate heap walk. Now object 4/5
+  are the zero function, basic 4 is zero and basic 5 is `asize_of_basic`,
+  as desktop `kscheme.cpp` does. `copy_basic` checks slot 5.
+- A process of 2560 bytes or more moves with `ultimate-memcpy`, which on
+  PC is `(__mem-move dst src size)`. The port had no `__mem-move`; it is
+  now a bounded native `memmove` (desktop `pc_memmove`). The manipys,
+  which set `heap-shrunk` and keep their 16 KiB heap, move through it.
+
+Observed (Flycast): with compaction disabled for diagnosis
+(`-DDC_JAK_NO_COMPACT` sets `*compact-actors*` #f), 7652 of 7652 pass,
+160 frames. With compaction on and both fixes, the run gets past the
+second frame to 7283 checks and `__mem-move` runs twice (0x4070 bytes).
+
+`verify_backend.py --dump` also takes a raw P1 address (0x8c...), to read
+a GOAL object such as `*kernel-context*` live during a hang.

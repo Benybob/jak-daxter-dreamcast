@@ -20,7 +20,7 @@ parser.add_argument('--tests',type=int,default=None)
 parser.add_argument('--suite',choices=('codegen','runtime','runtime-goal','objects','projection','movement','collision','world-manifest','view-clip','camera','sectors','compression','render-io','gpu-catalog','render-cache','world-view','frustum','render-base','training-render','instances','village','flythrough','arena-game','arena-camera','arena-live'),default='codegen')
 parser.add_argument('--timeout',type=float,default=30,help='Native completion deadline in seconds, 1..300')
 parser.add_argument('--capture',action='store_true',help='Capture completed RGB565 framebuffer before recording terminal success')
-parser.add_argument('--dump',nargs=2,metavar=('SYMBOL','BYTES'),help='Also write BYTES of a guest symbol to dump.bin at the end and on each progress sample')
+parser.add_argument('--dump',nargs=2,metavar=('SYMBOL','BYTES'),help='Also write BYTES of a guest symbol (or a raw 0x8c... address) to dump.bin at the end and on each progress sample')
 args=parser.parse_args()
 from verify_arena_live import capture_contract
 try:
@@ -54,10 +54,16 @@ metrics_match=re.search(r'^([0-9a-fA-F]+)\s+\w\s+_?dc_base_metrics$',symbols,re.
 metrics_address=int(metrics_match[1],16) if args.suite=='render-base' and metrics_match else 0
 metrics_bytes=40
 if args.dump:
-    dump_match=re.search(r'^([0-9a-fA-F]+)\s+\w\s+_?'+re.escape(args.dump[0])+'$',symbols,re.MULTILINE)
-    if not dump_match: parser.error(args.dump[0]+' symbol missing')
     if metrics_address: parser.error('--dump and render-base metrics are exclusive')
-    metrics_address,metrics_bytes=int(dump_match[1],16),int(args.dump[1])
+    if re.fullmatch(r'0x[0-9a-fA-F]{8}',args.dump[0]):
+        # A raw P1 address (0x8c...), e.g. a GOAL object found by an earlier dump.
+        metrics_address=int(args.dump[0],16)
+        if not 0x8c000000<=metrics_address<0x8d000000: parser.error('raw --dump address must be P1 main RAM')
+    else:
+        dump_match=re.search(r'^([0-9a-fA-F]+)\s+\w\s+_?'+re.escape(args.dump[0])+'$',symbols,re.MULTILINE)
+        if not dump_match: parser.error(args.dump[0]+' symbol missing')
+        metrics_address=int(dump_match[1],16)
+    metrics_bytes=int(args.dump[1])
 out=args.output.resolve(); out.mkdir(parents=True,exist_ok=True)
 result_path=out/'target.bin'; result_path.unlink(missing_ok=True)
 progress_path=out/'progress.bin'; progress_path.unlink(missing_ok=True)
