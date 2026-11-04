@@ -697,6 +697,152 @@ typedef struct {
 } dc_jak_player_heartbeat;
 volatile dc_jak_player_heartbeat dc_arena_jak_player_heartbeat;
 typedef char dc_arena_jak_player_heartbeat_bytes[sizeof(dc_jak_player_heartbeat)==180?1:-1];
+/* Read-only shape of *active-pool* at a yield. Brother and child are ppointers.
+ * The word at a ppointer is the object; that object's self (+24) is the process
+ * execute-process-tree recurses on. error and dc_goal_error_site are restored. */
+enum {DC_JAK_TREE_CAP=256,DC_JAK_TREE_KEEP=16,DC_JAK_TREE_CHILD=1,DC_JAK_TREE_BROTHER=2};
+enum {DC_JAK_PT_BROTHER=12,DC_JAK_PT_CHILD=16,DC_JAK_PT_SELF=24,DC_JAK_PT_STATUS=32};
+typedef struct {
+  uint32_t process;
+  uint32_t type_name; /* symbol word at the type object +0; 0 if unread */
+  uint32_t status;    /* process+32 */
+} dc_jak_tree_visit;
+typedef struct {
+  uint32_t seq;          /* heartbeat seq of this yield */
+  uint32_t nodes;        /* visits, including the repeated node on a cycle */
+  uint32_t max_depth;    /* *active-pool* is depth 0 */
+  uint32_t cycle;        /* 1 if a process address occurred twice */
+  uint32_t stop;         /* 0 done, 1 cycle, 2 cap, 3 unresolved link */
+  uint32_t root;         /* *active-pool* symbol value */
+  uint32_t from_process; /* node whose child or brother held the edge */
+  uint32_t from_type;
+  uint32_t from_status;
+  uint32_t to_process;   /* process that edge dereferenced to */
+  uint32_t to_type;
+  uint32_t to_status;
+  uint32_t link;         /* 1 child, 2 brother, 0 none */
+  uint32_t fault_pp;     /* ppointer that did not become a process; else 0 */
+  dc_jak_tree_visit visit[DC_JAK_TREE_KEEP];
+} dc_jak_player_tree_walk;
+volatile dc_jak_player_tree_walk dc_arena_jak_player_tree_walk;
+typedef char dc_arena_jak_player_tree_walk_bytes[sizeof(dc_jak_player_tree_walk)==248?1:-1];
+static int jak_tree_u32(dc_goal_runtime *rt,uint32_t addr,uint32_t *out) {
+  const unsigned char *p;
+  if(addr<4u || addr>UINT32_MAX-3u) return 0;
+  p=dc_goal_resolve(rt,addr,4);
+  if(!p) return 0;
+  memcpy(out,p,4); return 1;
+}
+static int jak_tree_object(dc_goal_runtime *rt,uint32_t process,unsigned char raw[36]) {
+  const unsigned char *p;
+  if(process<4u || process>UINT32_MAX-35u) return 0;
+  p=dc_goal_resolve(rt,process,36);
+  if(!p) return 0;
+  memcpy(raw,p,36); return 1;
+}
+static uint32_t jak_tree_type_name(dc_goal_runtime *rt,uint32_t process) {
+  uint32_t type=0,symbol=0; const unsigned char *p;
+  if(process<8u || process>UINT32_MAX-3u) return 0;
+  p=dc_goal_resolve(rt,process-4u,4);
+  if(!p) return 0;
+  memcpy(&type,p,4);
+  if(type<4u || type>UINT32_MAX-3u) return 0;
+  p=dc_goal_resolve(rt,type,4);
+  if(!p) return 0;
+  memcpy(&symbol,p,4); return symbol;
+}
+static uint32_t jak_tree_at(const unsigned char raw[36],unsigned off) {
+  uint32_t v; memcpy(&v,raw+off,4); return v;
+}
+static int jak_tree_seen(const uint32_t *seen,uint32_t n,uint32_t process) {
+  uint32_t i; for(i=0;i<n;++i) if(seen[i]==process) return 1; return 0;
+}
+/* 1 = process, 0 = could not. *slot is the word at the ppointer. */
+static int jak_tree_deref(dc_goal_runtime *rt,uint32_t pp,uint32_t *process,uint32_t *slot) {
+  uint32_t obj=0,self=0;
+  *process=0; *slot=0;
+  if(!jak_tree_u32(rt,pp,&obj)) return 0;
+  *slot=obj;
+  if(!obj || obj==rt->s7 || obj>UINT32_MAX-27u || !jak_tree_u32(rt,obj+DC_JAK_PT_SELF,&self)) return 0;
+  *process=self;
+  return self && self!=rt->s7;
+}
+static int jak_tree_note(dc_jak_player_tree_walk *out,uint32_t *seen,uint32_t *unique,
+                         uint32_t process,uint32_t type,uint32_t status,uint32_t depth,
+                         uint32_t from_process,uint32_t from_type,uint32_t from_status,uint32_t link) {
+  if(jak_tree_seen(seen,*unique,process)) {
+    out->cycle=1; out->stop=1; out->nodes=*unique+1u; out->link=link;
+    if(depth>out->max_depth) out->max_depth=depth;
+    out->from_process=from_process; out->from_type=from_type; out->from_status=from_status;
+    out->to_process=process; out->to_type=type; out->to_status=status;
+    if(*unique<DC_JAK_TREE_KEEP) {
+      out->visit[*unique].process=process; out->visit[*unique].type_name=type;
+      out->visit[*unique].status=status;
+    }
+    return 1;
+  }
+  if(*unique>=DC_JAK_TREE_CAP) { out->stop=2; out->nodes=*unique; return 1; }
+  seen[*unique]=process;
+  if(*unique<DC_JAK_TREE_KEEP) {
+    out->visit[*unique].process=process; out->visit[*unique].type_name=type;
+    out->visit[*unique].status=status;
+  }
+  if(depth>out->max_depth) out->max_depth=depth;
+  *unique+=1u; out->nodes=*unique; return 0;
+}
+static void jak_tree_walk(dc_goal_runtime *rt) {
+  enum dc_goal_error saved=rt->error; uint32_t saved_site=dc_goal_error_site;
+  dc_jak_player_tree_walk out; unsigned char raw[36];
+  static uint32_t seen[DC_JAK_TREE_CAP];
+  static struct { uint32_t pp,depth,from_process,from_type,from_status,link; } frame[DC_JAK_TREE_CAP];
+  uint32_t unique=0,sp=0,symbol,root=0,proc,slot,pp,brother,child,type,status,i;
+  uint32_t words[sizeof(dc_jak_player_tree_walk)/4u];
+  memset(&out,0,sizeof out);
+  out.seq=dc_arena_jak_player_heartbeat.seq;
+  symbol=dc_goal_find(rt,"*active-pool*");
+  if(!symbol || !jak_tree_u32(rt,symbol,&root) || !root || root==rt->s7 || !jak_tree_object(rt,root,raw)) {
+    out.root=root; out.stop=3; out.to_process=root; goto publish;
+  }
+  out.root=root;
+  type=jak_tree_type_name(rt,root); status=jak_tree_at(raw,DC_JAK_PT_STATUS);
+  if(jak_tree_note(&out,seen,&unique,root,type,status,0,0,0,0,0)) goto publish;
+  child=jak_tree_at(raw,DC_JAK_PT_CHILD);
+  if(child && child!=rt->s7) {
+    frame[0].pp=child; frame[0].depth=1; frame[0].from_process=root;
+    frame[0].from_type=type; frame[0].from_status=status; frame[0].link=DC_JAK_TREE_CHILD;
+    sp=1;
+  }
+  while(sp) {
+    pp=frame[sp-1u].pp;
+    if(!pp || pp==rt->s7) { --sp; continue; }
+    proc=0; slot=0;
+    if(!jak_tree_deref(rt,pp,&proc,&slot) || !jak_tree_object(rt,proc,raw)) {
+      out.stop=3; out.fault_pp=pp; out.to_process=proc?proc:slot; out.link=frame[sp-1u].link;
+      out.from_process=frame[sp-1u].from_process; out.from_type=frame[sp-1u].from_type;
+      out.from_status=frame[sp-1u].from_status; break;
+    }
+    {uint32_t depth=frame[sp-1u].depth,from_process=frame[sp-1u].from_process;
+     uint32_t from_type=frame[sp-1u].from_type,from_status=frame[sp-1u].from_status;
+     uint32_t link=frame[sp-1u].link;
+     brother=jak_tree_at(raw,DC_JAK_PT_BROTHER);
+     type=jak_tree_type_name(rt,proc); status=jak_tree_at(raw,DC_JAK_PT_STATUS);
+     child=jak_tree_at(raw,DC_JAK_PT_CHILD);
+     /* Save the next brother before descending, as execute-process-tree does. */
+     frame[sp-1u].pp=brother; frame[sp-1u].link=DC_JAK_TREE_BROTHER;
+     if(jak_tree_note(&out,seen,&unique,proc,type,status,depth,from_process,from_type,from_status,link))
+       break;
+     if(child && child!=rt->s7) {
+       if(sp>=DC_JAK_TREE_CAP) { out.stop=2; break; }
+       frame[sp].pp=child; frame[sp].depth=depth+1u; frame[sp].from_process=proc;
+       frame[sp].from_type=type; frame[sp].from_status=status; frame[sp].link=DC_JAK_TREE_CHILD;
+       ++sp;
+     }}
+  }
+publish:
+  memcpy(words,&out,sizeof out);
+  for(i=0;i<sizeof words/sizeof words[0];++i) ((volatile uint32_t *)&dc_arena_jak_player_tree_walk)[i]=words[i];
+  rt->error=saved; dc_goal_error_site=saved_site;
+}
 static void jak_beat(uint32_t site,uint32_t process,uint32_t thread,uint32_t phase,uint32_t event) {
   uint32_t seq=dc_arena_jak_player_heartbeat.seq+1u,slot=(seq-1u)&(DC_JAK_BEAT_RING-1u);
   uint32_t depth=0,status=0,name=0;dc_goal_runtime *rt=active_runtime;
@@ -733,6 +879,8 @@ static void jak_beat(uint32_t site,uint32_t process,uint32_t thread,uint32_t pha
   dc_arena_jak_player_heartbeat.ring_site[slot]=site;
   dc_arena_jak_player_heartbeat.ring_name[slot]=name;
   dc_arena_jak_player_heartbeat.seq=seq;
+  /* Every yield. The image that remains is the yield that never returns. */
+  if(site==DC_JAK_BEAT_RESUME_YIELD && rt) jak_tree_walk(rt);
 }
 #endif
 /* Compiled original (set! pp X) ... (set! pp saved) brackets. Both are boxed

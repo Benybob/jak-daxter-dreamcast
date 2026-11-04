@@ -1036,3 +1036,161 @@ event 1, phase 3). No bridge is called after that, so the dispatcher loops in
 GOAL code that resumes nothing: the camera master is never resumed. Leading
 suspect: the process tree walk after the sidekick (a brother/child cycle
 formed during frame 2, or a run of nodes the walk skips).
+
+## Process tree walk at the hang
+
+`jak_beat` now takes a read-only walk of the live tree on every site 2
+(`DC_JAK_BEAT_RESUME_YIELD`). The walk is capped at 256 processes. The image
+that remains is the yield that never returns to another bridge. On the hang
+that yield is the sidekick, so the frozen image is the tree after the
+sidekick's resume has returned and before the camera master is resumed.
+
+The walk starts at the value of `*active-pool*`. Symbol lookup is
+`dc_goal_find`. Every word after that is a `dc_goal_resolve` read of 4 or 36
+bytes. `rt->error` and `dc_goal_error_site` are saved before those reads and
+restored before `jak_beat` returns. The walk writes no GOAL memory and does
+not call `run-logic?`, trans, post, or resume.
+
+Port field offsets are the retail `offset-assert` values minus 4. That is the
+same shift as process status at +32 (retail 36), `allocated-length` at +68
+(retail 72), and `next-state` at +72 (retail 76). `all-types.gc` puts
+`process-tree` `name` at 4, `mask` at 8, `parent` at 12, `brother` at 16,
+`child` at 20, `ppointer` at 24, and `self` at 28. On this port those are
++0, +4, +8, +12, +16, +20, and +24, which is also the layout in
+`PROCESS_TREE_NATIVE.md` and the process constructors.
+
+`parent`, `brother`, and `child` hold ppointers. `#f` is `rt->s7`; a zero
+word ends the chain the same way. `new` of `process-tree` stores the process
+in `self` and sets `ppointer` to `(&-> this self)` (`gkernel.gc` 288-289). A
+dead-pool-heap process instead points `ppointer` at `(&-> rec process)`
+(`gkernel.gc` 1287); that word is the process. `ppointer->process`
+(`gkernel-h.gc` 378-383) is `(if pp (-> pp 0 self))`: load the word at the
+ppointer, then load `self` at +24 of that object. With the constructor
+invariant both words are the process address. The walk visits that `self`
+value, which is the object `execute-process-tree` recurses on.
+
+Visit order matches `execute-process-tree` (`gkernel.gc` 1543-1558): record
+the node, then the first child, that child's subtree, then the brother that
+was loaded before the child walk. The C walk records every node. It does not
+apply the mask tests, `run-logic?`, or the `'dead` prune, so a cycle that
+sits only under a node whose callback returns `'dead` shows up here and is
+not a path the dispatcher follows. The dispatcher is already inside this
+call. It saved the sidekick's next brother before the sidekick callback, so
+a brother stored on the sidekick during this frame is the link the next
+dispatcher call walks. Children of the sidekick, and any brother not yet
+loaded, are read now by both walks.
+
+`execute-process-tree` calls its function, and that function calls the
+main-thread `resume-hook`, only for some nodes. The function is the
+`kernel-dispatcher` lambda (`gkernel.gc` 1607-1680). There is no
+`*kernel-mask*` global. The mask that gates the function is
+`*kernel-context*` `prevent-from-run`, initialized to
+`(process-mask execute sleep)` (`gkernel.gc` 97-105, bits 0 and 6).
+`apply-settings` copies the `process-mask` setting over that field
+(`settings.gc` 146). The default setting is the same execute|sleep pair
+(`settings.gc` 259). The bit names are in `gkernel-h.gc` 82-110.
+
+The function is not called, and the resume is not called, when any of these
+hold. Children are still walked, because the `or` result is not the symbol
+`'dead`:
+
+- The node mask has `process-tree` (bit 8). Organizational pools take this
+  path. `*active-pool*` and the named pools are this kind of node.
+- `prevent-from-run` shares any bit with the node mask. `run-logic?` is not
+  called in that case. The initial bits are `execute` and `sleep`. A later
+  `process-mask` setting can add `pause`, `menu`, `progress`, `movie`, and
+  the other bits.
+- `run-logic?` returns false. The base method returns `#t`
+  (`gkernel.gc` 1518-1521).
+
+When the function does run, the resume-hook is still skipped when:
+
+- Status is `'dead'`. The lambda returns the symbol `'dead'`, and
+  `execute-process-tree` does not walk the children.
+- Status is neither `'waiting-to-run'` nor `'suspended'`. The `cond` has no
+  clause for the other statuses (`ready`, `running`, and the rest), so the
+  result is `#f`. Children are walked.
+- Status is `'waiting-to-run'` or `'suspended'`, a trans-hook runs, and that
+  hook leaves status `'dead'`. The lambda returns `'dead` before the resume.
+  Children are not walked.
+- Status is `'waiting-to-run'` or `'suspended'` and the mask has
+  `sleep-code` (bit 7). Status becomes `'suspended` and the resume-hook is
+  not called. The post-hook still runs.
+
+The brother loop (`gkernel.gc` 1555-1557) loads the next brother ppointer
+before the recursive call and has no visited set. It stops when that
+ppointer is `#f`. Two shapes fail to return:
+
+- A cycle in brother ppointers. The brother saved before the call is the one
+  the loop follows, so a store into the node being visited does not change
+  this call's next brother. A cycle already in the chain, or a brother
+  stored into a node whose brother has not been loaded yet, spins the
+  `while`.
+- A cycle through a child ppointer, including a descendant whose brother
+  chain returns to an ancestor. The child is followed after the function
+  returns, and the recursion does not return.
+
+The mask tests, a false `run-logic?`, `sleep-code`, and a status other than
+`'waiting-to-run'` or `'suspended'` skip the resume and then walk each child
+once, or walk none when the callback returns `'dead'`. They do not visit a
+node again. An endless dispatcher walk is a cycle in the child and brother
+ppointers this call follows. `iterate-process-tree` (`gkernel.gc` 1525-1541)
+uses the same brother loop and only skips its function for the
+`process-tree` bit. The dispatcher calls `execute-process-tree`.
+
+Symbol `dc_arena_jak_player_tree_walk`. Size 248 bytes. Little-endian
+`uint32` fields. `seq` is published with the rest of the image, after the
+heartbeat `seq` for that yield.
+
+```text
+verify_backend.py --dump dc_arena_jak_player_tree_walk 248
+```
+
+| offset | field |
+| --- | --- |
+| 0 | `seq`, heartbeat seq of this yield |
+| 4 | `nodes`, visits recorded, including the repeated node |
+| 8 | `max_depth`, `*active-pool*` is 0 |
+| 12 | `cycle`, 1 when a process address occurred twice |
+| 16 | `stop`: 0 the chains ended, 1 cycle, 2 the 256-node cap, 3 a link did not resolve |
+| 20 | `root`, the `*active-pool*` value |
+| 24 | `from_process`, the node whose child or brother held the edge |
+| 28 | `from_type`, symbol word at that node's type +0 |
+| 32 | `from_status`, word at that node +32 |
+| 36 | `to_process`, the process the edge dereferenced to |
+| 40 | `to_type` |
+| 44 | `to_status` |
+| 48 | `link`: 0 none, 1 child, 2 brother |
+| 52 | `fault_pp`, the ppointer that did not become a process; else 0 |
+| 56 | `visit[16]`, the first 16 nodes in walk order, 12 bytes each |
+
+Each visit is `process` at +0, `type_name` at +4, `status` at +8.
+`type_name` is the symbol word at the type object +0 (the type tag is the
+word at process-4). `status` is the symbol word at process+32. On a cycle,
+`from_*` and `to_*` are the two ends of the edge. The same address on both
+ends is a node whose child or brother dereferences to itself. On stop 3,
+`to_process` is the `self` word when that load worked, and the word at
+`fault_pp` when it did not. `visit` entries past `nodes` are zero. Stop 2
+with `cycle` 0 means 256 distinct processes were recorded and a further new
+one was not entered; a cycle past that cap is outside this image.
+
+Reading the dump: `cycle` 1 with `link` 2 is the brother `while` spinning.
+`cycle` 1 with `link` 1 is the child recursion spinning. `stop` 0 means the
+links from `*active-pool*` are finite, so the hang is inside the next node's
+`run-logic?` or inside its callback before a bridge. Trans and post go
+through `reset-and-call` (heartbeat sites 7 and 8). The main-thread resume
+is site 1. The sidekick yield is the last bridge, so none of those ran for
+the camera master. `stop` 3 is a ppointer, a `self` word, or a 36-byte
+process header that `dc_goal_resolve` refused. `seq` here should match the
+heartbeat `seq` of that same yield.
+
+This was not compiled and not run. The 248-byte image has not been dumped.
+Flycast, the link, and the other ELFs were not run.
+
+Observed tree walk at the sidekick's yield (`dc_arena_jak_player_tree_walk`):
+11 nodes, max depth 3, no cycle, stop 3. Node 0x0c260784 (type word
+0x0c1c855c) has a child ppointer 0x0c25d4d4 whose word is 0x0c260cc4, and
+that address is not a process (no type). 0x0c25d4d4 lies inside the record of
+the pool member 0x0c25d324 whose ledger row was shrunk to its original
+record (0x540 bytes) earlier. So the hang is the original walk following a
+child link that does not lead to a process.
