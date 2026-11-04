@@ -59,11 +59,35 @@ against about 100 KB free. That room has to come from the options in
 allocator), the 984 KiB `*nk-dead-pool*` sized for the level actually loaded,
 and the KOS loader buffers returned to the arena after boot.
 
+## Logic BSP builder (done)
+
+`build_logic_bsp.py <DGO>` writes `build/logic-bsp/<LEVEL>-LOGIC.DGO` (one
+retail-format v4 object) and a JSON report. `bsp_graph.py` splits the BSP into
+objects at 16-aligned basic tags, folding pieces nothing points into
+(inline-array elements, array content-type tags) into the object before them.
+The builder removes the render trees from `drawable-trees` (length rewritten,
+kept trees first, freed slots zeroed and no longer relocated), keeps
+everything reachable from the bsp-header without entering a render tree,
+compacts it, remaps every pointer and binding, re-encodes the link table and
+decodes the result to check that the pointer and binding tables round-trip.
+It refuses if any kept pointer reaches dropped data.
+`tests/test_logic_bsp.py` round-trips synthetic tables (runs of 255 and
+more, an exact multiple of 255, 1- to 4-byte binding deltas).
+
+| Level | BSP data | Logic BSP | Kept trees | Dropped trees |
+| --- | ---: | ---: | --- | --- |
+| INT | 782,336 | 44,576 | actor, collide-fragment, ambient | render |
+| TRA | 4,507,296 | 378,128 | actor, collide-fragment, ambient | tfrag, 2 instance-tie, lowres-tfrag, instance-shrub |
+| BEA | 6,320,464 | 994,832 | actor, collide-fragment, ambient | tfrag, trans-tfrag, instance-tie, instance-shrub |
+| VI1 | 7,415,392 | 1,509,632 | actor, collide-fragment, ambient | tfrag, trans-, lowres-, dirt-tfrag, 3 instance-tie, instance-shrub |
+
+Not yet shown: that original `login`, entity birth and collision accept it.
+Tie collision (11,744 bytes of `collide-frag-mesh` under Geyser Rock's ties)
+is dropped with the tie trees.
+
 ## Order
 
-1. A logic-BSP builder for TRA.DGO, with host tests that the rebuilt object's
-   relocations and bindings are complete and that every remaining reference
-   resolves.
+1. Done: the logic-BSP builder above.
 2. Make 1 MB: measure the boot again with the register allocator work or a
    smaller actor heap, and return the loader's KOS heap to the arena.
 3. Load Geyser Rock's logic BSP, art and code through the original
