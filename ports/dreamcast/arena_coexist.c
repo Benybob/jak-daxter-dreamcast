@@ -23,11 +23,30 @@ typedef char arena_telemetry_layout[sizeof dc_backend==128?1:-1];
 extern const int romdisk_size;
 int dc_stage_romdisk_at(void *);
 
+#ifdef DC_ARENA_JAK_PLAYER
+#include "arena_jak_memory.h"
+#include <string.h>
+enum {SLAB_BYTES=DC_JAK_RENDER_SLAB_BYTES,ARENA_BYTES=DC_JAK_ARENA_BYTES,DMA_BYTES=3506176,
+#else
 enum {SLAB_BYTES=2621440,ARENA_BYTES=11010048,DMA_BYTES=3506176,
+#endif
       /* dma-buffer new adds its type's size minus 4, rounded to 16. */
       EXTENSION_BYTES=DMA_BYTES+64};
 static void *extension,*boot_romdisk,*slab,*root_stack;
 static uint32_t root_owner,root_stack_bytes,scenes;
+#ifdef DC_ARENA_JAK_PLAYER
+static unsigned char *combined;
+static dc_goal_runtime *boot_runtime;
+static uint32_t boot_borrow;
+/* The old 1.94 MB boot image does not fit the smaller renderer slab. Store it
+ * across the unused GOAL tail and slab until all boot files close. The runtime
+ * capacity is reduced at prepare, protecting that tail even when the loader
+ * releases temporary top-level code. No second malloc or extra RAM is needed. */
+void *dc_arena_jak_root_alloc(size_t alignment,size_t bytes){
+ return combined && alignment==32 && bytes==ARENA_BYTES+32u?combined:NULL;
+}
+void dc_arena_jak_root_free(void *p){if(p==combined){free(combined);combined=NULL;}}
+#endif
 #ifdef DC_ARENA_FLY
 static void *fly_romdisk;
 static uint32_t fly_bytes;
@@ -80,6 +99,11 @@ int dc_arena_fly_check(uint64_t actual,uint64_t expected,const char *name){retur
  * borrowed the slab before any renderer owner existed; now return all of it. */
 int dc_arena_fly_release_boot(uint32_t *available){
  if(!check(fs_romdisk_unmount("/rd"),0,"arena fly boot romdisk unmounted"))return 0;
+#ifdef DC_ARENA_JAK_PLAYER
+ if(!boot_runtime || boot_runtime->temporary || boot_runtime->capacity!=ARENA_BYTES-boot_borrow ||
+    boot_runtime->used>boot_runtime->capacity)return 0;
+ boot_runtime->capacity=ARENA_BYTES;
+#endif
  dc_arena_slab_init(slab,SLAB_BYTES);boot_romdisk=NULL;
  if(!check(fly_romdisk && fs_romdisk_mount("/rd",(const uint8 *)fly_romdisk,0)==0,1,
            "arena fly level romdisk mounted at /rd"))return 0;
@@ -109,6 +133,9 @@ uint64_t dc_arena_chain(uint64_t bank,uint64_t chain){
 }
 
 int dc_arena_stage(void){
+#ifdef DC_ARENA_JAK_PLAYER
+  dc_jak_memory_layout plan={0};
+#endif
   pvr_init_params_t params={.opb_sizes={PVR_BINSIZE_32,0,PVR_BINSIZE_32,0,PVR_BINSIZE_32},
     .vertex_buf_size=256*1024,.opb_overflow_count=1};
   kthread_t *owner=thd_get_current();
@@ -150,12 +177,36 @@ int dc_arena_stage(void){
   CHECK(disjoint(flydisk_data,(uint32_t)flydisk_size,fly_romdisk,fly_bytes),1,
         "arena fly level copy ranges differ");
   copy_vram(fly_romdisk,flydisk_data,(uint32_t)flydisk_size);
+#ifdef DC_ARENA_JAK_PLAYER
+  combined=memalign(32,ARENA_BYTES+32u+SLAB_BYTES);
+  slab=combined?combined+ARENA_BYTES+32u:NULL;
+#else
   slab=memalign(32,SLAB_BYTES);
+#endif
   CHECK(slab!=NULL,1,"arena renderer slab allocated before GOAL arena");
+#ifdef DC_ARENA_JAK_PLAYER
+  CHECK(combined && SLAB_BYTES+ARENA_BYTES==13u*1024u*1024u &&
+        dc_jak_memory_plan((uint32_t)romdisk_size,&plan),1,
+        "jak arena and slab share the original combined RAM budget");
+#else
   CHECK(disjoint(slab,SLAB_BYTES,romdisk_data,(uint32_t)romdisk_size),1,
         "arena fly slab below staged boot source");
+#endif
+#ifdef DC_ARENA_JAK_PLAYER
+  /* combined+16 is the GOAL base. Leave its final 16 bytes as an alignment
+   * gap and borrow an aligned tail sufficient for the entire boot image. */
+  boot_borrow=plan.borrowed;
+  boot_romdisk=combined+plan.boot_offset;
+  /* The large allocation may cover the staged source. memmove handles either
+   * overlap direction before any GOAL writes. dc_stage_romdisk_at would copy
+   * forward and corrupt an overlapping source. */
+  CHECK(fs_romdisk_unmount("/rd"),0,"jak boot source unmounted before overlapping move");
+  memmove(boot_romdisk,romdisk_data,(uint32_t)romdisk_size);
+  CHECK(fs_romdisk_mount("/rd",(const uint8 *)boot_romdisk,0),0,"jak protected tail boot mounted");
+#else
   boot_romdisk=slab;
   CHECK(dc_stage_romdisk_at(boot_romdisk),1,"arena fly boot borrows slab before renderer starts");
+#endif
 #else
   CHECK(pvr_mem_available()>=(uint32_t)romdisk_size+DMA_BYTES,1,"arena VRAM fits boot romdisk and DMA payload");
   extension=pvr_mem_malloc(EXTENSION_BYTES);
@@ -172,6 +223,11 @@ int dc_arena_stage(void){
 }
 int dc_arena_prepare(dc_goal_runtime *rt){
   CHECK(rt->capacity,ARENA_BYTES,"arena reduced GOAL capacity");
+#ifdef DC_ARENA_JAK_PLAYER
+  CHECK(rt->memory==combined+16 && rt->temporary==0 && rt->used<=rt->capacity-boot_borrow,1,
+        "jak boot tail protects unallocated GOAL bytes");
+  rt->capacity-=boot_borrow;boot_runtime=rt;
+#endif
   CHECK(disjoint(slab,SLAB_BYTES,rt->memory,rt->capacity),1,"arena renderer slab outside GOAL arena");
   CHECK(disjoint(extension,EXTENSION_BYTES,rt->memory,rt->capacity),1,"arena extension outside GOAL arena");
   CHECK(disjoint(boot_romdisk,(uint32_t)romdisk_size,rt->memory,rt->capacity),1,"arena boot romdisk outside GOAL arena");

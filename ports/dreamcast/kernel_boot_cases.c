@@ -23,6 +23,9 @@
 #ifdef DC_ARENA_JAK
 #include "arena_jak.h"
 #endif
+#ifdef DC_ARENA_JAK_PLAYER
+#include "arena_jak_player.h"
+#endif
 #if defined(DC_ARENA_LIVE)
 #include "arena_live.h"
 #elif defined(DC_ARENA_CAMERA)
@@ -450,6 +453,11 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
 #endif
     CHECK(rt.error,DC_GOAL_OK,"dispatcher frame after the process died succeeds");
     CHECK(dc_goal_fiber_clear(&fiber),1,"dead process's fiber clears");
+#ifdef DC_ARENA_JAK_PLAYER
+    /* Keep the live ledgers and scope metadata through original target spawn.
+     * Its original DRAM-stack main is explicitly imported by the Jak runner. */
+    if(!dc_arena_finish(&rt) || !dc_arena_jak_finish(&rt))goto done;
+#endif
     CHECK(dc_goal_pp_scope_detach(&scopes,&rt),1,"quiescent scope metadata detaches");
 spawn_done:
     rt.error=DC_GOAL_OK;dc_goal_clear_process_context(&rt);
@@ -479,10 +487,10 @@ spawn_done:
     CHECK(rt.symbol_count==symbols && rt.used==used,1,"refused DGOs link nothing");
   }
 #endif
-#ifdef DC_ARENA_COEXIST
+#if defined(DC_ARENA_COEXIST) && !defined(DC_ARENA_JAK_PLAYER)
   if(!dc_arena_finish(&rt))goto done;
 #endif
-#ifdef DC_ARENA_JAK
+#if defined(DC_ARENA_JAK) && !defined(DC_ARENA_JAK_PLAYER)
   /* Retain the completed digital-camera evidence before probing dependencies.
    * A missing original player dependency is terminal FAIL, never a free-camera
    * success relabeled as Jak. No existing ELF compiles this branch. */
@@ -491,7 +499,9 @@ spawn_done:
   snprintf(description,description_bytes,"BOOT GOAL=%lu arena=%lu/%lu startup=%lu symbols=%lu",
            (unsigned long)code_bytes,(unsigned long)rt.used,(unsigned long)capacity,
            (unsigned long)(rt.used-before),(unsigned long)rt.symbol_count);
-#ifdef DC_ARENA_LIVE
+#ifdef DC_ARENA_JAK_PLAYER
+  dc_arena_jak_player_report(description,description_bytes);
+#elif defined(DC_ARENA_LIVE)
   dc_arena_live_report(description,description_bytes,rt.used,capacity);
 #elif defined(DC_ARENA_CAMERA)
   dc_arena_camera_report(description,description_bytes,rt.used,capacity);

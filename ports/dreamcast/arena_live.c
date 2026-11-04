@@ -1,5 +1,8 @@
 /* Original camera drives rendering; guarded separate mode (AI-assisted), ISC. */
 #ifdef DC_ARENA_LIVE
+#ifdef DC_ARENA_JAK_PLAYER
+#include "arena_jak_player.h"
+#endif
 #include "arena_live.h"
 #include "goal_bridge.h"
 #include "arena_game.h" /* Layout constants only; arena_game.o is not linked. */
@@ -226,6 +229,9 @@ int dc_arena_live_initialize(dc_goal_runtime *rt){
 }
 void dc_arena_live_resume(dc_goal_runtime *rt,uint32_t process,int completed){
   volatile dc_arena_camera_process *p;uint32_t type;
+#ifdef DC_ARENA_JAK_PLAYER
+  if(dc_arena_jak_player_active()){dc_arena_jak_player_resume(rt,process,completed);return;}
+#endif
   if(rt!=runtime || process<4)return;
   type=word(rt,process-4);
   if(type==master_type)p=&dc_arena_live_evidence.master;
@@ -238,6 +244,9 @@ void dc_arena_live_resume(dc_goal_runtime *rt,uint32_t process,int completed){
 }
 void dc_arena_live_pad(dc_goal_runtime *rt,uint32_t pad){
   unsigned char *b;
+#ifdef DC_ARENA_JAK_PLAYER
+  if(dc_arena_jak_player_active()){dc_arena_jak_player_pad(rt,pad);return;}
+#endif
   if(rt!=runtime || !(b=span(rt,pad,132)))return;
   ++dc_arena_live_evidence.pad_services;
   if(!(b[0]&128) && word(rt,pad+32)==word(rt,value(rt,bank_sym)+4)){

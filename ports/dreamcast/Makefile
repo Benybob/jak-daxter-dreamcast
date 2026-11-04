@@ -948,5 +948,53 @@ arena_jak_input.o: arena_live_input.c arena_live.h arena_live_math.h
 	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) $(ARENA_JAK_FLAGS) -I. -c $< -o $@
 arena_jak_kernel_cases.o: kernel_boot_cases.c $(wildcard *.h) build/game_cgo_order.h build/vf_cases.h build/mips2c/mips2c_cases_expect.h
 	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -DDC_KERNEL_DGO $(ARENA_JAK_FLAGS) -I. -c $< -o $@
-jak-dc-arena-jak.elf: kernel_boot_main.o arena_jak_kernel_cases.o kernel_vf_fixture.o arena_jak_dgo.o goal_dgo_zst.o arena_fly_romdisk_stage.o arena_live_coexist.o arena_live_goal_bridge.o arena_live_goal_pad.o arena_jak_live.o arena_live_math.o arena_jak_input.o arena_live_assets.o arena_live_render.o arena_jak.o arena_jak_debug.o arena_slab.o $(ARENA_FLY_RENDER) render_world_view_scalar.o render_world_view_gate.o render_frustum.o instance_pass.o $(ZSTD_OBJS) build/kernel-dgo-romdisk.o build/arena-live-romdisk.o $(filter-out goal_bridge.o goal_pad.o,$(KERNEL_BOOT_LIBS)) build/mips2c/libdcmips2c.a
+jak-dc-arena-jak.elf: arena_jak_player_main.o arena_jak_player_kernel.o kernel_vf_fixture.o arena_jak_dgo.o goal_dgo_zst.o arena_fly_romdisk_stage.o arena_jak_player_coexist.o arena_live_goal_bridge.o arena_jak_player_pad.o arena_jak_player_live.o arena_live_math.o arena_jak_input.o arena_live_assets.o arena_jak_player_render.o arena_jak_player_probe.o arena_jak_player_art.o arena_jak_player_data.o arena_jak_player.o arena_jak_debug.o arena_slab.o $(ARENA_FLY_RENDER) render_world_view_scalar.o render_world_view_gate.o render_frustum.o instance_pass.o $(ZSTD_OBJS) build/kernel-dgo-romdisk.o build/arena-live-romdisk.o $(filter-out goal_bridge.o goal_pad.o,$(KERNEL_BOOT_LIBS)) build/mips2c/libdcmips2c.a
 	addr=$$(cat build/arena-live-section.txt) && kos-c++ -o $@ $^ -Wl,--section-start=.dc_stage=0x8cb00000 -Wl,--section-start=.dc_fly=$$addr -lm
+
+
+# Complete retail art admission; separate executable, existing Jak stays at its
+# measured missing-art refusal. No retail bytes in either romdisk (AI-assisted), ISC.
+ARENA_JAK_ART_FLAGS=$(ARENA_JAK_FLAGS) -DDC_ARENA_JAK_ART
+build/jak-art-disc/jak_art_sizes.h:
+	@echo 'run stage_jak_art.py on your extracted GAME.CGO; see ARENA_JAK_NOTES.md' && false
+arena_jak_art_probe.o: arena_jak.c arena_jak_art.h arena_jak.h arena_live.h
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) $(ARENA_JAK_ART_FLAGS) -I. -c $< -o $@
+arena_jak_art.o: arena_jak_art.c arena_jak_art.h goal_art.h build/jak-art-disc/jak_art_sizes.h
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) $(ARENA_JAK_ART_FLAGS) -I. -c $< -o $@
+goal_art.o: goal_art.c goal_art.h goal_runtime.h
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -I. -c $< -o $@
+jak-dc-arena-jak-art.elf: kernel_boot_main.o arena_jak_kernel_cases.o kernel_vf_fixture.o arena_jak_dgo.o goal_dgo_zst.o arena_fly_romdisk_stage.o arena_live_coexist.o arena_live_goal_bridge.o arena_live_goal_pad.o arena_jak_live.o arena_live_math.o arena_jak_input.o arena_live_assets.o arena_live_render.o arena_jak_art_probe.o arena_jak_art.o goal_art.o arena_jak_debug.o arena_slab.o $(ARENA_FLY_RENDER) render_world_view_scalar.o render_world_view_gate.o render_frustum.o instance_pass.o $(ZSTD_OBJS) build/kernel-dgo-romdisk.o build/arena-live-romdisk.o $(filter-out goal_bridge.o goal_pad.o,$(KERNEL_BOOT_LIBS)) build/mips2c/libdcmips2c.a
+	addr=$$(cat build/arena-live-section.txt) && kos-c++ -o $@ $^ -Wl,--section-start=.dc_stage=0x8cb00000 -Wl,--section-start=.dc_fly=$$addr -lm
+
+# Private fixture-derived split and original-target replay (AI-assisted), ISC.
+# Only jak-dc-arena-jak.elf uses these objects. The old art admission ELF and
+# every live/game/fly/headless ELF retain their objects, recipes and budgets.
+ARENA_JAK_RENDER_MARGIN ?= 65536
+ARENA_JAK_RENDER_EVIDENCE ?=
+# Optional larger aligned reserve. Smaller than measured+margin is a C error.
+ARENA_JAK_RENDER_SLAB_BYTES ?=
+ARENA_JAK_PLAYER_FLAGS=$(ARENA_JAK_FLAGS) -DDC_ARENA_JAK_PLAYER $(if $(ARENA_JAK_RENDER_SLAB_BYTES),-DDC_JAK_RENDER_SLAB_BYTES=$(ARENA_JAK_RENDER_SLAB_BYTES))
+.PHONY: arena-jak-budget-refresh
+arena-jak-budget-refresh:
+build/arena-jak-budget/budget.h: arena-jak-budget-refresh measure_arena_jak_renderer.py tests/arena_jak_slab_probe.c build/arena_live_fixture.h
+	$(PYTHON) measure_arena_jak_renderer.py --assets $(ARENA_LIVE_ASSET_DIR) --margin $(ARENA_JAK_RENDER_MARGIN) $(if $(ARENA_JAK_RENDER_EVIDENCE),--evidence $(ARENA_JAK_RENDER_EVIDENCE))
+arena_jak_player_main.o: arena_jak_main.c runtime_main.c
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -DDC_KERNEL_BOOT -c $< -o $@
+arena_jak_player_coexist.o: arena_coexist.c arena_jak_memory.h build/arena-jak-budget/budget.h
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) $(ARENA_JAK_PLAYER_FLAGS) -I. -c $< -o $@
+arena_jak_player_kernel.o: kernel_boot_cases.c $(wildcard *.h)
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -DDC_KERNEL_DGO $(ARENA_JAK_PLAYER_FLAGS) -I. -c $< -o $@
+arena_jak_player_pad.o: goal_pad.c goal_pad.h
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) $(ARENA_JAK_PLAYER_FLAGS) -I. -c $< -o $@
+arena_jak_player_live.o: arena_live.c $(wildcard *.h)
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) $(ARENA_JAK_PLAYER_FLAGS) -I. -c $< -o $@
+arena_jak_player_render.o: arena_live_render.c $(wildcard *.h) build/arena-jak-budget/budget.h
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) $(ARENA_JAK_PLAYER_FLAGS) $(ARENA_FLY_ALLOC) -I. -c $< -o $@
+arena_jak_player_probe.o: arena_jak.c $(wildcard *.h)
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) $(ARENA_JAK_PLAYER_FLAGS) -I. -c $< -o $@
+arena_jak_player_art.o: arena_jak_art.c $(wildcard *.h) build/jak-art-disc/jak_art_sizes.h build/arena-jak-budget/budget.h
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) $(ARENA_JAK_PLAYER_FLAGS) -I. -c $< -o $@
+arena_jak_player_data.o: goal_art.c goal_art.h
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) $(ARENA_JAK_PLAYER_FLAGS) -I. -c $< -o $@
+arena_jak_player.o: arena_jak_player.c $(wildcard *.h)
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) $(ARENA_JAK_PLAYER_FLAGS) -I. -c $< -o $@

@@ -1,5 +1,558 @@
 (AI-assisted)
 
+## Disc follow-up: runnable GDI input for verify_backend (AI-assisted), ISC
+
+This section supersedes the statements below that the generic verifier cannot
+mount a disc. The supplied real `build/arena-jak-review/result.json` was read:
+**6996/6997 FAIL**, case **16997**, `jak art: staged /cd/EICHAR.DGO is absent`,
+ELF SHA-256 `8e2aa6c2b1883a9e9f33c33f39f7c27354a81b65f9f744d8cdf33ba2099c9fa2`.
+It was not rerun. No ELF was linked or executed in this follow-up.
+
+### Choice (a), with measured sizes
+
+`make_boot_gdi.py` now writes a three-track GDI using Python's standard library.
+The inspected work tree has KOS `scramble.c`, makeip sources and its 32768-byte
+`utils/makeip/rsrc/templates/ip.tmpl`; no runnable scramble, makeip, mkisofs,
+genisoimage, xorriso or cdi4dc was found in the searched tree/SDK or on the
+appended PATH. MinGW gcc and sh-elf-gcc are available. Windows System32 tar
+(libarchive) is an independent ISO reader. No external writer was needed.
+
+The generated `build/arena-jak-gdi/jak-arena.gdi` is:
+
+```text
+3
+1 0 4 2048 track01.iso 0
+2 6015 0 2352 track02.raw 0
+3 45000 4 2048 track03.iso 0
+```
+
+| Generated component | Bytes | Contents |
+| --- | ---: | --- |
+| Track 1, low-density ISO | 12,011,520 | All 1,294 files from the three staged roots below, including EICHAR.DGO, JAKART.DGO, boot files and existing live fixture subdirectories |
+| Track 2, silent audio | 705,600 | 300 sectors of 2352 bytes; starts after a 150-sector gap |
+| Track 3, boot ISO at LBA 45000 | 14,823,424 | IP.BIN and 1ST_READ.BIN |
+| 1ST_READ.BIN inside track 3 | 14,747,648 | Flat load image from the existing ELF, entry 0x8c010000, end 0x8ce20800 |
+| EICHAR.DGO inside track 1 | 1,349,088 | Complete staged original eichar object |
+| JAKART.DGO inside track 1 | 2,025,088 | Complete staged eichar and sidekick objects |
+
+The low-density track occupies 5,865 sectors. Audio ends at LBA 6314, well
+before the high-density track at 45000. The ELF's three file-backed PT_LOADs
+are placed at their exact VMAs, with zero-filled gaps; an ELF header is **not**
+copied to the CPU entry point. The flat image matched `sh-elf-objcopy -O binary`
+byte for byte (SHA-256
+`eb50bc8c460ec92fbaba9488a21da4c3bea4fb136d783a2cb85a0747c1c26c58`).
+The writer rejects other entry points, non-SH ELF, overlapping segments and
+segments outside the stock 16 MiB map. It changes no runtime memory reserve.
+
+This split follows the inspected local sources: Flycast `core/imgread/gdi.cpp`
+requires data/audio/data with track 3 at 45000; `Disc::GetBaseFAD` and reios
+boot that track and **do not descramble GDI**. Thus 1ST_READ.BIN is unscrambled.
+KOS `fs_iso9660.c:init_percd` requests `cdrom_read_toc(..., false)` and
+`cdrom_locate_data_track` selects the last data track in that TOC. Flycast's
+`libGDR_GetToc` exposes only tracks 1/2 for that low-density request. Hence
+art must be in **track 1**, not solely in the high-density boot filesystem.
+Each ISO's extents are absolute disc LBAs (base 0 or 45000). The independent
+reader tests both bases, both endian path tables, multi-sector directories,
+every staged file hash, bootstrap metadata/CRC and exact boot bytes. ISO names
+are uppercase with ;1 versions and relaxed '-' / multiple dots to preserve
+fixture paths; KOS's case-insensitive `fncompare` handles these names.
+
+Option (b) was not selected: **EICHAR.DGO alone exceeds the 1,081,024-byte
+VRAM remainder in ARENA_FLY_NOTES.md by 268,064 bytes**, before the existing
+level romdisk, textures, chunk overhead or headroom. The pair exceeds it by
+944,064 bytes. A new art loan would require changing the existing VRAM owners.
+This GDI adds no VRAM or GOAL arena allocation. Existing embedded boot/render
+romdisks remain the runtime sources; their staged copies are on disc for
+inspection/future migration. This does not implement asynchronous streaming
+or the packed-level reader in DISC_STREAMING_PLAN.md. It is an emulator GDI,
+not a burnable CD-R image or a physical GD-ROM timing result.
+
+### Exact reviewer commands
+
+From the repository root in a configured KOS shell, first rebuild the current
+player ELF if needed. **This make/link command was not run here.** Keep the
+existing boot and live fixture staging. Regenerate art from your own extracted
+GAME.CGO if `build/jak-art-disc` is missing (the `stage_jak_art.py` command below).
+
+```sh
+make -C ports/dreamcast CFLAGS='-std=c99 -Wall -Wextra -Werror' ARENA_JAK_RENDER_MARGIN=65536 jak-dc-arena-jak.elf
+```
+
+From the repository root, these image generation and host audit commands were
+run here. The template path points at the inspected work-tree KOS checkout;
+another checkout can use `$KOS_BASE/utils/makeip/rsrc/templates/ip.tmpl`.
+All output, including private retail bytes, stays under `build/`.
+
+```sh
+python ports/dreamcast/make_boot_gdi.py ports/dreamcast/jak-dc-arena-jak.elf --ip-template ../../kos-source/utils/makeip/rsrc/templates/ip.tmpl --staged ports/dreamcast/build/jak-art-disc --staged ports/dreamcast/build/kernel-dgo-rd --staged ports/dreamcast/build/arena-live-disc --output ports/dreamcast/build/arena-jak-gdi
+python -m unittest discover -s ports/dreamcast/tests -p test_boot_gdi.py -v
+```
+
+Rebuild the GDI after **every ELF change**. `manifest.json` binds the ELF,
+boot payload and all disc tracks by SHA-256. The verifier rejects an ELF hash
+mismatch or changed disc/track bytes before launching; moving the image
+directory is allowed. Keep the GDI, all three tracks and manifest together.
+
+Reviewer execution, **not run here**; `FLYCAST` and `NM` name the reviewer's
+working executables. The ELF still supplies nm addresses and `elf_sha256`.
+`--disc` supplies the **only** Flycast content argument. Default bare-ELF
+behavior, Reios, the 16 MiB setting, strict pass criteria and timeout limits
+are unchanged. `result.json` additionally records the disc and track hashes.
+Use new output directories to preserve older evidence.
+
+```sh
+python ports/dreamcast/verify_backend.py "$FLYCAST" ports/dreamcast/jak-dc-arena-jak.elf --disc ports/dreamcast/build/arena-jak-gdi/jak-arena.gdi --nm "$NM" --output ports/dreamcast/build/arena-jak-disc-player-review --tests 7652 --timeout 300 --dump dc_arena_jak_player_evidence 7804
+python ports/dreamcast/verify_arena_jak_player.py ports/dreamcast/build/arena-jak-disc-player-review/dump.bin
+```
+
+The source-derived complete-success count remains **7652/7652**, including
+651 original-player checks. This is not an observed result. The disc supplies
+the missing file so execution can attempt original relocation/login and then
+the existing authenticated `start` / `init-target` spawn route. A real login,
+spawn, sidekick or world dependency failure must remain FAIL, with its first
+fault preserved. The offline auditor must also pass; process allocation alone
+is not player success. The bare-ELF negative control still expects 6996/6997
+at the supplied absent-file refusal with this ELF.
+
+If the player run fails, repeat the same command with new output directories
+and `--dump dc_arena_jak_evidence 212` (reason at offset 116),
+`--dump dc_arena_jak_art_evidence 100` (admission/relocation/login), or
+`--dump dc_arena_live_evidence 39476` (inherited camera proof). The backend
+runner captures the selected dump on terminal failure too. Do not change
+`--tests` to make an earlier refusal pass.
+
+### Validation actually run in this follow-up
+
+- GDI generation command above; **7 host tests passed**, including a real
+  1,294-file byte/hash audit and mock-only GDI/CDI/default verifier launches.
+  Terminal failure stayed nonzero; stale ELF and altered disc were rejected
+  before subprocess launch. No test launched an emulator.
+- `sh-elf-readelf -l` on the existing ELF, `sh-elf-objcopy -O binary`, and a
+  Python byte comparison with the generated boot image: exact match.
+- Windows `C:/Windows/System32/tar.exe` listed 1,304 track-1 entries and
+  extracted EICHAR.DGO byte-identically (SHA-256
+  `8a898bf490ab0e8c394d7e15abea04d66250fbf0e185ba949edbdf6ea5857532`).
+  Directly listing isolated track03.iso failed because its extents are absolute
+  LBAs. A host-only view with the track at LBA 45000 and its PVD also at sector
+  16 let libarchive list/extract 1ST_READ.BIN and match all 14,747,648 objcopy
+  bytes. That view is an audit artifact, not the boot image.
+- `python ports/dreamcast/tests/compile_arena_jak_player_objects.py`: **10
+  individual SH-4 objects** compiled at O2/C99/Wall/Wextra/Werror, using the
+  requested full sh-elf-gcc path. Tool directories appended to PATH.
+- `python ports/dreamcast/verify_backend.py --help`, Python `py_compile` on
+  the writer/verifier/tests, and `git diff --check` passed.
+
+Unverified: actual GDI acceptance/boot, the KOS `/cd` read on SH-4, successful
+original art login and target spawn, sidekick deficit/behavior, the 7652 target
+count, player input/motion, original world/collision loading, follow rendering,
+and physical hardware. Host filesystem/payload checks cannot establish these.
+No build_dreamcast.py, Flycast, ELF link or Git-state-changing command ran.
+
+## Current follow-up: fixture-derived split and guarded original-target replay
+
+ISC. This section supersedes the memory proposal and explicit blocker 11 in the
+historical notes below. Only **`jak-dc-arena-jak.elf`** selects
+`DC_ARENA_JAK_PLAYER` and the new private objects. Other ELF recipes retain their
+dependencies, flags, split and execution path, including the earlier optional
+`jak-dc-arena-jak-art.elf`. No ELF was linked or executed here. A replay runner
+and strict receipts have been implemented and compiled; **successful original
+target execution has not been observed**. There is no passing player dump.
+
+### Measured CPU renderer need and the split
+
+The latest recorded numeric slab peak found in the supplied evidence is still
+**1,255,392 bytes**: `build/arena-game-review/result.json`, a 2438/2438 PASS.
+`build/arena-live-fix-review/result.json` records a newer **6984/6984** PASS, but
+its 39,476-byte camera dump contains no renderer slab counter. Do not invent a
+new target high-water from that dump. Its actual 181 camera positions were
+decoded and replayed through the host CPU allocation probe instead.
+
+`measure_arena_jak_renderer.py` compiles the real CPU package reader, block
+cache, draw window, instance cells and slab allocator, then feeds the private
+fixture and original-camera positions through them. GPU rasterization and
+original SH-4 execution are excluded. GPU slot pointers and material header
+allocations use SH-4 byte sizes; host cache pointers make its metadata larger
+than SH-4. File tokens use the same 8-byte payload/32-byte slab accounting.
+Every malloc is charged alignment and the real slab header. The selected
+capacity is replayed again to check fragmentation/allocation failure.
+
+| Executed host replay | Peak slab bytes |
+| --- | ---: |
+| Current 181-row fixture prediction | 1,367,584 |
+| Supplied completed original-camera dump | 1,367,584 |
+| 169 queries sweeping the accepted +/-6 m X/Z domain | 1,367,584 |
+| Busier 49-position grid, +/-24 m at 8 m spacing | **1,441,856** |
+
+The busier grid stays inside the staged beach crop, using the same 4960 faces,
+5112 vertices, 10899 remap entries, 539192-byte cache budget, 400 instance
+records and 363044-byte instance package. It is a host stress route, not an
+original recording. It **failed** `block cache window residency` at the first
+proposed 1,433,120-byte slab: its real host need exceeded that reserve by
+**8,736 bytes**. The final split includes this measured need:
+
+| Final default | Bytes |
+| --- | ---: |
+| Renderer measured host maximum | 1,441,856 |
+| Explicit margin | **65,536** |
+| Renderer slab (32-byte aligned) | **1,507,392** |
+| GOAL arena | **12,124,096** |
+| Combined budget, unchanged | **13,631,488** |
+| Returned from old 2,621,440-byte slab | **1,114,048** |
+
+No renderer geometry, texture, recording, window or cache capacity was reduced.
+The generated `build/arena-jak-budget/budget.h` and `budget.json` record the
+fixture SHA-256, relevant private-file hashes, replay results and margin.
+The supplied completed camera dump SHA-256 was
+`1f90338d6bbfa309d2eda6f342b8b1a6201723cc60517ec8d36175e57dd609e2`.
+Make regenerates the budget before compiling its private objects.
+`ARENA_JAK_RENDER_MARGIN` defaults to 65536. Optional
+`ARENA_JAK_RENDER_SLAB_BYTES` may increase the aligned reserve; compilation
+rejects a value below measured need plus margin. `ARENA_JAK_RENDER_EVIDENCE`
+optionally adds a completed live dump to the fixture replay. The default build
+uses fixture data and the two host stress routes without requiring an old dump.
+
+This is a budget for this fixture. An attempted 81-position +/-32 m host sweep
+failed the **existing 400-record instance capacity**, even with the old slab.
+No fit is claimed for other levels, larger catalogs, a real player camera path
+outside these bounds, or later texture/animation rendering allocations.
+
+### Boot staging and exact art admission
+
+The boot romdisk is **1,939,456 bytes**, larger than the final renderer slab.
+Simply shrinking its old backing allocation would overflow it. Jak's private
+main now uses one allocation for GOAL, a 16-byte end gap and the slab. Before
+any GOAL writes, `memmove` places the boot image across the unused GOAL tail
+and the slab, handling overlap with the ELF's high staged source. Its
+**432,064 borrowed bytes** are excluded from runtime capacity during boot:
+**11,692,032 bytes** are initially allocatable. This uses capacity protection,
+not `temporary`, because the code loader releases temporary startup segments
+after each object. Only after all boot files close and `/rd` unmounts is full
+12,124,096-byte capacity restored and the renderer slab initialized. The real
+host allocator passed an overlapping-copy/exact-capacity/OOM/copy-integrity
+test of this layout. Final KOS link placement remains unverified.
+
+At the old **10,673,360-byte** snapshot, the real host allocator now has
+**1,450,736 free bytes**. Complete eichar (1,318,288 resident bytes) loads with
+**132,448 bytes left**; eichar plus sidekick (1,979,744 bytes) remains
+**529,008 bytes short**. These are executed admission checks at the old
+snapshot, not a claim about current Jak RAM. Debug startup, symbol strings,
+continue creation, observers and original login add allocations.
+
+`stage_jak_art.py` now also emits `/cd/EICHAR.DGO`: one complete original retail
+object, **1,349,088 archive bytes**. The original two-object `JAKART.DGO` remains
+byte-identical. The single-object loader uses the same native retail data
+relocations and authenticated original `art-group.relocate`/login/registration;
+it does not execute retail MIPS. Host tests compared **all 1,318,288 linked
+bytes**, including **18,523 pointer fixes**, against an independent decoder.
+Original login was a double in that test. No animation/resource indices were
+trimmed, and no placeholder skeleton or target is allocated by C.
+
+At the actual load boundary the runner records whole-pair free bytes and exact
+payload shortfall. It selects the pair only with an additional 64 KiB available;
+otherwise it admits complete eichar. The 100-byte art receipt records actual
+post-login arena use. The player receipt records `sidekick_available` and
+`sidekick_shortfall = max(0, 661456 - sidekick_available)` after the replay (or
+its first failure), unless sidekick was loaded. Thus subsequent allocations
+are reflected in the reported remaining deficit. **There is no current
+on-target sidekick deficit measurement yet.**
+
+Original `init-target` still unconditionally spawns `init-sidekick`; it has not
+been patched or bypassed. With eichar alone, that child cannot acquire sidekick
+art and may enter its original art-error path. Sidekick is not counted as a
+working character. Whether its failure permits this original target path to
+continue is unverified. If it blocks/faults, the runner must FAIL; no C repair
+or suppressed runtime fault turns it into success.
+
+### Original execution checks and receipts
+
+After the completed digital free-camera proof, while the original ownership
+and lexical scope ledgers remain registered, the Jak-only runner:
+
+1. Authenticates original `start`, `init-target`, `kernel-dispatcher`, `read-pad`
+   and the existing original continue/art lookup exports.
+2. Binds the original listener as caller and calls original `start 'play cp`.
+   It requires original `*target*` publication, target type, and the original
+   armed main-thread image containing exact `init-target` and `cp` words.
+3. Imports that existing main thread into a native fiber on its original
+   DRAM working stack, preserving the original dispatcher/resume-hook route.
+4. Runs **160 dispatcher returns**, feeding a separate hardware recording:
+   slots 0..31 neutral, 32..63 joyx=+96, 64..95 neutral, 96..127 joyx=-96,
+   128..159 neutral. Extra hardware reads never advance a slot. Original
+   `service-cpads` and byte mapping remain the input route.
+5. Observes the authenticated original `read-pad` body through a temporary
+   call wrapper. Both main and original post-hook execution must have the
+   runtime's authenticated target identity. It requires completed calls,
+   neutral/moving magnitude differences, original-created control/cpad linkage,
+   increasing real target resumptions, finite real positions, moving X/Z
+   responses and settling during final neutral input. It rejects art-error.
+   The original binding is restored on success and failure.
+
+No target/control/state/position/follow matrix is written by this runner. The
+earlier camera proof is frozen while player callbacks collect separate data.
+The C beach renderer is not run for these extra player dispatches. Original
+display/camera code continues; **no following-camera renderer proof or active
+GOAL level/BSP/collision world is supplied**. Those dependencies may produce
+the first genuine original-code refusal, which must be preserved.
+
+`dc_arena_jak_player_evidence` is version 1, **7804 bytes**: 31 u32 words named
+by `verify_arena_jak_player.WORDS`, then 160 48-byte rows (`<6IiI4f`). Each row
+holds sequence/state/status, completed target resumes, original read-pad
+returns, valid pad services, joyx/buttons, real control translation and pad
+magnitude. The existing 212-byte Jak and 39476-byte camera ABIs remain intact;
+the 100-byte art receipt is now linked by this ELF too. Success requires the
+standalone player auditor and all backend checks, not just a spawned object.
+Zero player counters, a missing disc, art-error or incomplete replay cannot pass.
+
+### Reviewer commands and expected counts
+
+These host/single-object commands were run here (PATH entries appended):
+
+```powershell
+$env:PATH += ';C:/msys64/mingw64/bin;C:/Users/sullins server/Documents/Codex/2026-10-20/continue-our-jak-and-daxter-dreamcast/work/dc-sdk/sh-elf/bin'
+python ports/dreamcast/measure_arena_jak_renderer.py --evidence ports/dreamcast/build/arena-live-fix-review/dump.bin
+python -m unittest discover -s ports/dreamcast/tests -p test_arena_jak_player.py -v
+python -m unittest discover -s ports/dreamcast/tests -p test_arena_jak.py -v
+python -m unittest discover -s ports/dreamcast/tests -p test_jak_art.py -v
+python -m unittest discover -s ports/dreamcast/tests -p test_arena_live.py -v
+python ports/dreamcast/tests/compile_arena_jak_player_objects.py
+python ports/dreamcast/tests/compile_jak_art_objects.py
+python ports/dreamcast/tests/check_arena_jak_isolation.py
+git diff --check
+```
+
+Expected host results: **5 new player tests**, 6 Jak tests, 5 art tests and 4
+live tests pass. Ten private SH-4 objects compile, plus three legacy art
+objects, at O2/C99/Wall/Wextra/Werror with the requested full sh-elf-gcc path.
+Isolation compares **49** old-mode preprocessing outputs, including legacy
+Jak, and all existing Makefile content except Jak's dependency line. Existing
+non-sound ELF hashes were checked against the prior-session snapshot.
+
+The player host test also ran `stage_jak_art.stage` on the manifest's owner's
+GAME.CGO. To regenerate manually, use the earlier `stage_jak_art.py` command
+below. Keep both staged archives at the root of the reviewer's mounted disc;
+neither is embedded in either romdisk. No disc image was created here.
+
+Build command for a configured KOS reviewer shell, **not run here**, from
+`ports/dreamcast`:
+
+```sh
+make CFLAGS='-std=c99 -Wall -Wextra -Werror' ARENA_JAK_RENDER_MARGIN=65536 jak-dc-arena-jak.elf
+```
+
+The source-derived all-success backend expectation is **7652/7652**:
+the old 6996 passing checks, 2 extra split/staging checks, 2 original art load/
+lookup checks, the successful art-object check, and **651 player checks**.
+Two inherited ledger teardown checks execute after the player phase. This is
+an expected count, **not an observed target result**. With no mounted art
+disc, expect **6996/6997 FAIL**, case **16997**, with the explicit absent-file
+reason. Actual original login/spawn/world failures may occur sooner.
+
+The generic `verify_backend.py` launches an ELF without mounting a disc. Its
+old commands below are insufficient for successful player review. A reviewer
+must provide `/cd/EICHAR.DGO` (and `/cd/JAKART.DGO` if pair admission is wanted)
+in their configured Dreamcast session and capture `dc_backend`,
+`dc_arena_jak_player_evidence` (7804), `dc_arena_jak_art_evidence` (100),
+`dc_arena_jak_evidence` (212), and `dc_arena_live_evidence` (39476). After such a
+capture, offline command (**not run on a real player receipt here**):
+
+```sh
+python3 verify_arena_jak_player.py build/arena-jak-player-review/dump.bin
+```
+
+Unverified: ELF link/placement/16 MiB KOS fit; physical GD-ROM staging and timing;
+SH-4 slab peak/fragmentation; real art relocate/login/merc texture dependencies;
+current actual art/sidekick deficit; successful target init, main/post
+resumptions, states and pad response; sidekick omission behavior; original
+world/collision/level loading; following camera and player rendering; hardware.
+No build_dreamcast.py, Flycast, git add/commit/stash/checkout or other Git
+mutation was run.
+
+## Historical prior-session record (superseded where stated above)
+
+ISC. **2026-11-03 follow-up: complete retail art staging and a separate memory
+admission probe.** The supplied `build/arena-jak-review/result.json` records the
+user's **6996/6997** missing-eichar result. It was read, not rerun. Every existing
+ELF, including `jak-dc-arena-jak.elf`, remains byte-identical. The new optional
+target is `jak-dc-arena-jak-art.elf`. Only three individual SH-4 objects were
+compiled here; no ELF link, build_dreamcast.py, Flycast, or Git mutation ran.
+
+## Real archive, real sizes
+
+The owner's extracted `iso_data/jak1/CGO/GAME.CGO` contains the v4 **data** objects
+`eichar` (zero-based object 306) and `sidekick` (307). `ART.CGO` contains them too.
+A scan of the extracted CGO/DGO archives found no eichar in a level DGO.
+GAME.CGO also has an earlier **v3 code** object named sidekick: selection must
+check the version, not just the name. `goal_src/jak1/dgos/game.gd` lists
+`eichar-ag.go` and `sidekick-ag.go` after the common texture pages. The native
+326-module GAME.CGO staging contains compiled sources, not these data objects.
+
+`stage_jak_art.py` extracts just the two complete data objects, in their original
+order, into ignored `build/jak-art-disc/JAKART.DGO`. It validates the v4/v2 link
+headers, every pointer and binding, unique relocation sites, and the root art
+type/name. The manifest records original object indices and SHA-256s; tests
+compare every staged object byte to the owner's source archive. No frames,
+joints, models or resources were replaced or removed. This is minimal at the
+**whole retail object** granularity, not a proven minimal animation working set.
+
+| Object | File bytes | Resident data bytes | Link bytes | Pointer fixes |
+| --- | ---: | ---: | ---: | ---: |
+| eichar | 1,348,960 | 1,318,288 | 30,656 | 18,523 |
+| sidekick | 675,936 | 661,456 | 14,464 | 9,778 |
+| Total | 2,024,896 | **1,979,744** | 45,120 | **28,301** |
+
+The archive is **2,025,088 bytes**, including its three 64-byte headers. It stays
+on disc staging, outside the boot/render romdisks; it must not be added to the
+2.5 MiB renderer slab or the existing VRAM image. Texture pages and level BSP /
+collision / entity data are not staged by this tool. Original merc texture login
+and any additional dependencies have not been exercised.
+
+## Original loading path and native data counterpart
+
+`game/kernel/jak1/klink.cpp`'s `jak1_work_v2` copies the data, adds its new base
+to pointer words, and applies symbol/type links using `common/klink.cpp`'s
+`c_symlink2`. Its finish calls method **7**, `relocate`, on the root basic.
+`goal_art.c` implements that native data path for this two-object archive.
+It streams each payload directly into the arena and holds only one compact
+link table on the C heap (at most 30,656 bytes for this input). It never loads or
+executes retail MIPS instructions. The unchanged `goal_dgo.c` remains the DCSH
+**code** loader; no retail-format fallback was added to existing ELFs.
+
+Original `joint.gc:683` implements `art-group.relocate`. It validates the file,
+calls original `login` for the default loading level, and calls original
+`set-loaded-art` on that level's directory. `joint.gc:667` logs in the group's
+elements; `loader.gc:73` registers it. `level.gc:1392` normally selects the
+default loading level during common loading. The isolated adapter selects that
+same original inline level only around the authenticated original relocate
+call, restores the previous loading level even on a runtime fault, and never
+writes directory entries or target/control fields itself. The following lookup
+uses the same original loader method as the existing Jak prerequisite probe.
+
+`init-target` unconditionally spawns sidekick after initializing Jak's skeleton
+(`logic-target.gc:1259` vicinity). Staging eichar alone would omit that next
+art dependency. The new native data loader has host relocation evidence; its
+original SH-4 relocate/login callback has **not** run here.
+
+## Memory result and smallest proposed fix
+
+`ARENA_INTEGRATION_PLAN.md`'s combined split is still authoritative:
+**11,010,048 bytes GOAL + 2,621,440 bytes renderer slab**. The 2.8 MiB spare
+figure in `LEVEL_STREAMING.md` describes the older 13 MiB arena before the slab
+was split off. Its village renderer measurements are not free GOAL memory.
+
+Using the exact existing `build/arena-review/result.json` snapshot of
+**10,673,360 bytes used**, the native allocator was executed on the host with
+that capacity/use, not simulated with a different allocation rule:
+
+| Admission at the recorded snapshot | Bytes |
+| --- | ---: |
+| Available arena tail | 336,688 |
+| eichar alone shortfall | **981,600** |
+| eichar + sidekick shortfall | **1,643,056** |
+
+It refused with `OUT_OF_MEMORY`, requested 1,979,744 bytes, and left the bump,
+symbol count and next arena byte unchanged. A 16-byte-smaller exact-fit test
+refused by exactly 16 bytes; exact fit passed after resource symbols had already
+been interned. Resource symbol strings are **additional** allocations when
+missing (the host fixture's 65 new symbols used 2,000 bytes). Login, texture and
+level allocations are not included in this payload-only admission.
+
+These are exact numbers **at that recorded snapshot**, not a new Jak RAM dump.
+The supplied Jak dump is only the old 212-byte evidence and has no arena-used
+field. The Jak debug initializer also consumes 8,000 bytes, and live observation
+has additional allocations. The new probe records current `used`, `capacity`,
+`temporary`, available bytes and exact payload shortfall at the actual load
+boundary, plus renderer slab live/high-water. It invokes the real allocator on
+refusal, before opening `/cd/JAKART.DGO`, before interning art symbols, and before
+any original art callback or target spawn. It does not turn this refusal into
+a passing test. **Current Jak shortfall awaits that probe; no exact current
+on-target number is claimed.**
+
+The smallest proposed change is a **private budget for a subsequent new ELF**:
+return unused renderer reserve to the arena, then trim the shared actor heap
+by the remaining shortfall plus measured startup headroom. For scale, the
+recorded arena-game slab high-water is 1,255,392 bytes. A 1.25 MiB slab would
+return 1,310,720 bytes, leaving 332,336 bytes of the recorded pair deficit.
+Reducing `PROCESS_HEAP_SIZE` by 384 KiB (984 KiB to 600 KiB) would return another
+393,216 bytes and leave **60,880 bytes** at that old snapshot, before the new
+debug/observer/symbol/login needs. The target and sidekick use their existing
+48/16 KiB fixed pools, not this shared actor heap. This is a concrete candidate,
+**not a demonstrated fit**: the live slab high-water, fragmentation, actor-heap
+use, load transients and current deficit must first be read from the new probe.
+It may need more headroom. No shared budget constant, slab size, original GOAL
+body or boot asset was changed here. Animation paging is a larger alternative;
+removing animations without preserving original art indices is not this fix.
+
+## Reviewer commands for this follow-up
+
+These first commands were run here (the source path below is the owner's copy):
+
+```powershell
+$env:PATH += ';C:/msys64/mingw64/bin;C:/Users/sullins server/Documents/Codex/2026-10-20/continue-our-jak-and-daxter-dreamcast/work/dc-sdk/sh-elf/bin'
+python ports/dreamcast/stage_jak_art.py 'C:/Users/sullins server/Documents/Codex/2026-10-20/continue-our-jak-and-daxter-dreamcast/work/jak-project/iso_data/jak1/CGO/GAME.CGO'
+python -m unittest discover -s ports/dreamcast/tests -p test_jak_art.py -v
+python -m unittest discover -s ports/dreamcast/tests -p test_arena_jak.py -v
+python ports/dreamcast/tests/compile_jak_art_objects.py
+git diff --check
+```
+
+New tests: five passed. The host compares **all 1,979,744 linked bytes**, including
+28,301 pointer fixes and 14,501 symbol/type bindings, against a separate Python
+decoder, and exercises real missing-symbol allocation, exact-fit, temporary-top
+accounting, prior fault preservation, malformed data rejection and the new
+budget wrapper. The original art login callback is a double in these host
+tests. Existing Jak tests: six passed, 926 assertions each at O2/fast-math plus
+768 observer assertions. Three separate SH-4 objects compiled at
+O2/C99/Wall/Wextra/Werror with KOS headers and the requested full compiler path.
+Seven old-mode preprocessing comparisons (including Jak) and the complete
+existing Makefile prefix match HEAD. Existing non-sound ELF hashes match the
+pre-edit snapshot in `build/jak-art-validation/before.json`.
+
+The following build/reviewer execution commands were **NOT run here**. In a
+configured KOS shell, from `ports/dreamcast`:
+
+```sh
+make CFLAGS='-std=c99 -Wall -Wextra -Werror' jak-dc-arena-jak-art.elf
+python3 verify_backend.py "$FLYCAST" jak-dc-arena-jak-art.elf --nm "$NM" --output build/jak-art-review --tests 6997 --timeout 300 --dump dc_arena_jak_art_evidence 100
+```
+
+Expected at the unchanged budget: **FAIL, 6996 passed / 6997 total**, case 16997,
+`jak art RAM: need 1979744 free <actual> short <actual> (payload only)`. This
+expectation inherits the user's completed digital camera recording; it is not
+an observed run. No mounted disc is needed to obtain this memory refusal. If a
+later private budget admits the pair, the disc must expose `JAKART.DGO` at its
+root (`/cd/JAKART.DGO`). The staging directory is not a built/mounted disc image.
+That path calls original relocation/login, then original lookup, but still
+ends at the existing explicit spawn-integration blocker 11; it is **not a
+player-state implementation**. Do not call `start` merely to replace a missing
+art refusal with an unmeasured target error state.
+
+Decode the 100-byte memory evidence without starting an emulator:
+
+```python
+from pathlib import Path
+import struct
+w = struct.unpack('<25I', Path('build/jak-art-review/dump.bin').read_bytes())
+assert w[0] == 1 and w[1:3] == (1318288, 661456)
+before, capacity, temporary, needed, available, short = w[4:10]
+assert available == capacity - temporary - before
+assert needed == 1979744 and short == needed - available > 0
+assert w[3] == max(0, 1318288 - available)
+assert w[10:17] == (0,) * 7  # objects/linked/relocated/fixes/art pointers
+assert w[17:22] == (before, 2, needed, 0, 0)  # after, OOM, request, entry, calls
+print('used/capacity/temp', before, capacity, temporary)
+print('pair shortfall', short, 'eichar shortfall', w[3])
+print('slab reserve/live/high-water', w[22:25])
+```
+
+Unverified: new ELF link/placement, current on-target deficit, raw-data load
+timing and C-heap peak, original art relocate/login and texture dependencies,
+successful spawn, target states/resumptions, original player response to recorded
+pad input, follow camera, real level data, and hardware. Existing player counters
+remain zero. This follow-up establishes the data and a reproducible memory
+blocker; it does not claim that original player code ran.
+
+## Earlier milestone 5 record
+
 ISC. Milestone 5: original camera debug data and an original-player prerequisite
 probe. `jak-dc-arena-jak.elf` is a new Makefile target, **not a completed Jak
 gameplay milestone**. No ELF was linked and no Flycast was run in this session.

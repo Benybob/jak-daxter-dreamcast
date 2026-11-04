@@ -22,7 +22,12 @@
 #ifndef DC_ARENA_FLY_ROOT
 #define DC_ARENA_FLY_ROOT "/rd"
 #endif
+#ifdef DC_ARENA_JAK_PLAYER
+#include "arena_jak_memory.h"
+enum {VERTEX_BYTES=DC_ARENA_FLY_VERTEX_BYTES,SLAB_BYTES=DC_JAK_RENDER_SLAB_BYTES};
+#else
 enum {VERTEX_BYTES=DC_ARENA_FLY_VERTEX_BYTES,SLAB_BYTES=2621440};
+#endif
 typedef char arena_fly_path[FLY_FRAMES==DC_LIVE_UPDATES?1:-1];
 extern const int romdisk_size;
 extern volatile uint32_t dc_arena_slab_live,dc_arena_slab_high_water,dc_arena_slab_failures;

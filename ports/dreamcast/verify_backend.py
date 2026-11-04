@@ -13,6 +13,7 @@ import time
 parser=argparse.ArgumentParser(description=__doc__)
 parser.add_argument('flycast',type=Path)
 parser.add_argument('elf',type=Path)
+parser.add_argument('--disc',type=Path,help='Boot this GDI/CDI as the sole content path; keep ELF for symbols and hash (default: boot ELF)')
 parser.add_argument('--nm',type=Path,required=True)
 parser.add_argument('--output',type=Path,required=True)
 parser.add_argument('--tests',type=int,default=None)
@@ -28,6 +29,21 @@ except ValueError as error:
     parser.error(str(error))
 if args.tests<1: parser.error('--tests must be positive')
 if not 1<=args.timeout<=300: parser.error('--timeout must be 1..300 seconds')
+disc=None
+if args.disc:
+    from make_boot_gdi import disc_identity
+    try:
+        disc=disc_identity(args.disc)
+        manifest=args.disc.parent/'manifest.json'
+        if manifest.is_file():
+            provenance=json.loads(manifest.read_text())
+            if 'boot_sha256' in provenance:
+                if provenance['elf_sha256']!=hashlib.sha256(args.elf.read_bytes()).hexdigest():
+                    raise ValueError('disc manifest ELF hash differs; rebuild the disc from this ELF')
+                if any(provenance['disc'].get(k)!=disc.get(k) for k in ('sha256','tracks')):
+                    raise ValueError('disc tracks differ from manifest; rebuild the disc')
+    except (OSError,ValueError,KeyError) as error:
+        parser.error(str(error))
 symbols=subprocess.check_output([str(args.nm),str(args.elf)],text=True)
 match=re.search(r'^([0-9a-fA-F]+)\s+\w\s+_?dc_backend$',symbols,re.MULTILINE)
 if not match: parser.error('dc_backend symbol missing')
@@ -98,7 +114,7 @@ lua=lua.replace('CACHE_OUTPUT',json.dumps((out/'cache-progress.bin').as_posix())
 lua_path.write_text(lua)
 command=[str(exe),'-config','config:UseReios=yes','-config','config:Dreamcast.RamMod32MB=no',
          '-config','config:Debug.SerialConsoleEnabled=no','-config','config:LuaFileName=verify.lua',
-         '-config','audio:backend=null','-config','log:LogToFile=yes',str(args.elf.resolve())]
+         '-config','audio:backend=null','-config','log:LogToFile=yes',str((args.disc or args.elf).resolve())]
 if args.capture:command[1:1]=['-config','config:rend.EmulateFramebuffer=yes']
 with (out/'frontend.log').open('w') as log:
     process=subprocess.Popen(command,cwd=out,env=env,stdout=log,stderr=subprocess.STDOUT,startupinfo=startup)
@@ -126,6 +142,7 @@ names=('magic','version','state','total','passed','failed_case','system_ram','co
 result=dict(zip(names,struct.unpack_from('<12I',data)))
 result['description']=data[48:].split(b'\0',1)[0].decode('utf-8',errors='replace')
 result['elf_sha256']=hashlib.sha256(args.elf.read_bytes()).hexdigest()
+if disc: result['disc']=disc
 result['scope']=('Native typed GOAL subset and codegen/ABI bootstrap; not a complete compiler or game runtime'
                  if args.tests!=17 else 'Native codegen/ABI bootstrap; not an integrated GOAL compiler or game runtime')
 if args.suite=='runtime': result['scope']='Native C runtime layout, symbols, types and bounded allocation foundation; not a complete GOAL kernel or game'

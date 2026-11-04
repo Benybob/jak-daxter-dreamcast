@@ -4,6 +4,12 @@
 #include "arena_jak.h"
 #include "arena_live.h"
 #include "goal_fiber.h"
+#if defined(DC_ARENA_JAK_ART) || defined(DC_ARENA_JAK_PLAYER)
+#include "arena_jak_art.h"
+#endif
+#ifdef DC_ARENA_JAK_PLAYER
+#include "arena_jak_player.h"
+#endif
 #include <stdio.h>
 #include <string.h>
 
@@ -105,15 +111,26 @@ int dc_arena_jak_finish(dc_goal_runtime *rt){
   REQUIRE(error==DC_GOAL_OK && rt->used==before && word(rt,names)==n && word(rt,data)==n &&
           dc_arena_jak_evidence.target_after==dc_arena_jak_evidence.target_before,9,
           "jak ORIGINAL art lookup returns without runtime fault or fabricated data");
+#if defined(DC_ARENA_JAK_ART) || defined(DC_ARENA_JAK_PLAYER)
+  REQUIRE(dc_arena_jak_art_load(rt,level),10,dc_arena_jak_art_reason);
+  art=(uint32_t)((five_fn)(uintptr_t)lookup)(dir,word(rt,sg),rt->s7,named(rt,"global"),version);
+  ++dc_arena_jak_evidence.lookup_calls;dc_arena_jak_evidence.art_result=art;
+  REQUIRE(rt->error==DC_GOAL_OK && object(rt,art,"art-group",32),10,
+          "jak ORIGINAL lookup finds real relocated eichar after original login");
+#endif
   /* Do not call start with an absent art group: initialize-skeleton goes to
    * process-drawable-art-error before a runnable target can be initialized.
    * This is a source-derived prerequisite refusal, not an observed init fault. */
   REQUIRE(object(rt,art,"art-group",32),10,
           "jak spawn blocked: missing eichar art-group in default level (init-target:1230)");
+#ifdef DC_ARENA_JAK_PLAYER
+  return dc_arena_jak_player_run(rt,cp);
+#else
   /* Art alone is insufficient. Keep this mode failing until the remaining
    * original spawn/follow path is implemented and measured, even with new data. */
   REQUIRE(0,11,"jak spawn blocked: level/entity/target execution route still requires integration");
   return 0;
+#endif
 }
 #undef REQUIRE
 #endif

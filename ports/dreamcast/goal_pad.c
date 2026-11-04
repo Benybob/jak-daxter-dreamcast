@@ -32,6 +32,11 @@ static void put32(uint8_t *p,unsigned off,int32_t v){memcpy(p+off,&v,4);}
 
 int dc_goal_pad_read_state(int port,dc_goal_pad_state *out){
 #ifdef DC_ARENA_LIVE
+#ifdef DC_ARENA_JAK_PLAYER
+  extern int dc_arena_jak_player_active(void);
+  extern int dc_arena_jak_player_pad_state(int,dc_goal_pad_state *);
+  if(dc_arena_jak_player_active())return dc_arena_jak_player_pad_state(port,out);
+#endif
   /* This target alone uses a labeled recording through the same cpad state
    * machine and byte mapping. No controller/camera fields bypass the service. */
   extern int dc_arena_live_pad_state(int,dc_goal_pad_state *);
