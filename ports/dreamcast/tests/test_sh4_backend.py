@@ -409,4 +409,34 @@ class AssemblerOracleTest(unittest.TestCase):
         oracle=self.assemble('sts.l pr,@-r15\nmov.l .Lbridge,r1\njsr @r1\nnop\nlds.l @r15+,pr\nadd #3,r0\nrts\nnop\n.align 2\n.Lbridge:\n.long _bridge')
         self.assertEqual(probes()['call_bridge'][0],oracle)
 
+class DeadWriteTest(unittest.TestCase):
+    """remove_dead_writes drops only overwrites that nothing reads (AI-assisted)."""
+    def words(self,e): return [struct.unpack_from('<H',e.code,o)[0] for o in range(0,len(e.code),2)]
+
+    def test_overwritten_before_read_is_dropped_and_labels_move(self):
+        e=Emitter(); e.immediate(1,0); e.label('x'); e.word(0x51e1)  # mov #0,r1; L: mov.l @(4,r14),r1
+        e.immediate(2,5); e.mov(1,2); e.ret()
+        self.assertEqual(e.remove_dead_writes(),2)
+        self.assertEqual(self.words(e),[0xe205,0x6123,0x000b,0x0009])
+        self.assertEqual(e.labels['x'],0)
+
+    def test_reads_branches_calls_and_delay_slots_keep_writes(self):
+        e=Emitter(); e.immediate(1,0); e.add(2,1); e.immediate(1,3); e.ret()  # read by ADD
+        e.immediate(4,1); e.word(0x410b); e.immediate(0,7)  # argument before JSR; delay slot
+        e.immediate(5,2); e.branch('bt','x'); e.immediate(5,3); e.label('x'); e.ret()
+        before=bytes(e.code)
+        self.assertEqual(e.remove_dead_writes(),0)
+        self.assertEqual(bytes(e.code),before)
+
+    def test_r0_implicit_reads_keep_writes(self):
+        e=Emitter(); e.immediate(0,8); e.word(0xf0e7)  # fmov.s fr0,@(r0,r14)
+        e.immediate(0,1); e.ret()
+        self.assertEqual(e.remove_dead_writes(),0)
+
+    def test_dropped_literal_load_leaves_no_pool_entry(self):
+        e=Emitter(); e.constant(1,0x12345678); e.immediate(1,0); e.ret()
+        self.assertEqual(e.remove_dead_writes(),1)
+        data,_=e.finish()
+        self.assertNotIn(struct.pack('<I',0x12345678),data)
+
 if __name__=='__main__': unittest.main()

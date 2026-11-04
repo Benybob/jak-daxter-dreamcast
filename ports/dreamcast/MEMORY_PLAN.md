@@ -113,6 +113,23 @@ forwarding); KERNEL.CGO 214,096 to 210,368; TRA-CODE 102,464 to 98,784. Flycast:
 kernel 90/532, runtime-goal 870, Jak 7652, level 539. Lowering GAME.CGO takes
 about 2 minutes longer (function snapshots for the retry).
 
+Two more (same day):
+- **32-bit values.** A gpr64 value whose every store has a high register known
+  to be zero (MOV #0 since the last label, call or other write of it) keeps only
+  its low word in the slot; its loads set the high register with MOV #0. Assumed
+  for every candidate, and a function relowers once without the values that
+  missed. Off with `DC_SH4_NO_NARROW=1`.
+- **Dead register writes** (`Emitter.remove_dead_writes`). After lowering, a
+  MOV #imm, MOV Rm,Rn, frame-slot load or literal load whose register is
+  overwritten before any read on the straight path after it is deleted; labels,
+  branches and literals move with the code. Branches, calls and returns end the
+  path as reads. Off with `DC_SH4_NO_DEAD_WRITES=1`.
+
+GAME.CGO 8,273,520 to 7,679,888 (-238,352 32-bit values, -355,280 dead writes):
+1,141,136 bytes (12.9%) below the stack baseline of the morning. KERNEL.CGO
+192,784, TRA-CODE 92,608. All Flycast suites pass. GAME.CGO now lowers in
+about 14 minutes (most functions lower twice).
+
 Two PC-only buffers now take Dreamcast values through `dreamcast_memory_budget.gc`
 (the exporter's budget now also substitutes `defglobalconstant`):
 - `PC_SUBTITLE_FILE_SIZE` 256 KiB to 16 KiB: no subtitle files on the disc yet.

@@ -1,4 +1,5 @@
 """Explicit Dreamcast validation context and original source selection (AI-assisted)."""
+import copy
 import hashlib
 import json
 import os
@@ -42,9 +43,14 @@ class FrontendValidationTest(unittest.TestCase):
         self.assertTrue(report['selected_source_preloaded'])
         functions=[f for f in doc['functions'] if not f['top_level']]
         self.assertEqual([f['name'] for f in functions],['valid?'])
-        blob,lowered=compile_function(functions[0],runtime=True,statics={s["id"]:s for s in doc["statics"]})
+        statics={s["id"]:s for s in doc["statics"]}
+        baseline,unoptimized=compile_function(copy.deepcopy(functions[0]),runtime=True,optimize=False,statics=statics)
+        # The stack baseline is large enough to need far branches and pool islands.
+        self.assertTrue(unoptimized['far_branches'] and unoptimized['literal_islands'])
+        blob,lowered=compile_function(functions[0],runtime=True,statics=statics)
         self.assertGreater(len(blob),0)
-        self.assertTrue(lowered['far_branches'] and lowered['literal_islands'])
+        self.assertLess(len(blob),len(baseline))
+        self.assertTrue(lowered['literal_islands'])
         # Printing is an explicit import, not a silent no-op; native tests suppress it.
         self.assertTrue(any(r['symbol']=='cell:format' for r in lowered['relocations']))
 

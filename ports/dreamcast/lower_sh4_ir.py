@@ -798,15 +798,19 @@ def suspend_idiom(function):
 class ForwardMiss(Exception):
     """A forwarded single-use value was accessed a second time."""
 
+class NarrowMiss(Exception):
+    """Values assumed 32-bit were stored with a high word not known to be zero."""
+
 def compile_function(function,module=None,runtime=False,optimize=True,statics=None):
     # Lowering rewrites the function in place; a retry starts from the original.
-    snapshot=copy.deepcopy(function); excluded=set()
+    snapshot=copy.deepcopy(function); excluded=set(); wide=set()
     while True:
-        try: return lower_function(function,module,runtime,optimize,statics,frozenset(excluded))
-        except ForwardMiss as miss:
-            excluded.add(miss.args[0]); function.clear(); function.update(copy.deepcopy(snapshot))
+        try: return lower_function(function,module,runtime,optimize,statics,frozenset(excluded),frozenset(wide))
+        except ForwardMiss as miss: excluded.add(miss.args[0])
+        except NarrowMiss as miss: wide.update(miss.args[0])
+        function.clear(); function.update(copy.deepcopy(snapshot))
 
-def lower_function(function,module,runtime,optimize,statics,excluded):
+def lower_function(function,module,runtime,optimize,statics,excluded,wide_values):
     semantic_types={r['id']:r['type'] for r in function['registers']}
     if runtime:
         # Preserve semantic types in exported IR, use original-type-system ABI
@@ -1196,6 +1200,16 @@ def lower_function(function,module,runtime,optimize,statics,excluded):
             if all(ops[i]['kind']=='nop' for i in range(written[0]+1,read[0])) and \
                not any(i in jumps for i in range(written[0]+1,read[0]+1)):
                 forward.add(value)
+    # 32-bit values: a gpr64 value whose every store has a high word known to be
+    # zero (MOV #0 since the last label, call or other write of that register)
+    # keeps only its low word in the slot and loads its high word as MOV #0.
+    # Optimistic: a store that misses relowers without the value.
+    narrow=set()
+    if optimize and not os.environ.get('DC_SH4_NO_NARROW'):
+        narrow={value for value,r in registers.items() if r['class']=='gpr64'}
+        narrow-=addressed|zero_entry|false_entry|set(wide_values)|{p['register'] for p in function['parameters']}
+        narrow-={function.get('lexical_saved')}|{op['source'] for op in function['instructions'] if op['kind']=='register_address'}
+    wide_misses=set()
     consumed=set()  # forwarded values whose slot was never written
     deferred=None  # (value, low, high) whose store is e.pending
     e=Emitter()
@@ -1248,6 +1262,10 @@ def lower_function(function,module,runtime,optimize,statics,excluded):
         # between (no other path in), is a no-op.
         if stored==(len(e.code),index,low,high) and e.last_label!=len(e.code): return
         at=near(index,8)
+        if index in narrow:
+            if at is not None: b,d=at; e.word(0x5000|low<<8|b<<4|d)
+            else: address(index); e.load(low,8)
+            e.immediate(high,0); return
         if at is not None:
             b,d=at; e.word(0x5000|low<<8|b<<4|d); e.word(0x5000|high<<8|b<<4|(d+1)); return  # mov.l @(disp,Rb),Rn
         address(index); e.load(low,8); e.add_immediate(8,4); e.load(high,8)
@@ -1265,9 +1283,19 @@ def lower_function(function,module,runtime,optimize,statics,excluded):
         if not offset: return
         if -128<=offset<=127: e.add_immediate(2,offset)
         else: constant(3,offset); e.add(2,3)
+    def high_zero(high):
+        """True when the last write of register high since the last label is MOV #0."""
+        position=len(e.code)
+        while position>max(e.last_label,0,len(e.code)-16):
+            position-=2; word=e.code[position]|e.code[position+1]<<8
+            if word==0xe000|high<<8: return True
+            if (word&0xf000) in (0x8000,0xa000,0xb000) or (word&0xf0df) in (0x400b,0x0003) or word==0x000b: return False  # branches, calls
+            if (word>>8&15)==high or not high: return False
+        return False
     def store64(index,low=0,high=1):
         nonlocal stored,deferred
         if registers[index]['class']!='gpr64': raise ValueError('expected integer virtual value')
+        if index in narrow and not high_zero(high): wide_misses.add(index)
         if index in forward:
             e.flush()
             def emit():
@@ -1278,7 +1306,10 @@ def lower_function(function,module,runtime,optimize,statics,excluded):
         stored=(len(e.code),index,low,high)
     def emit_store64(index,low,high):
         at=near(index,8)
-        if at is not None:
+        if index in narrow:
+            if at is not None: b,d=at; e.word(0x1000|b<<8|low<<4|d)
+            else: address(index); e.store(8,low)
+        elif at is not None:
             b,d=at; e.word(0x1000|b<<8|low<<4|d); e.word(0x1000|b<<8|high<<4|(d+1))  # mov.l Rm,@(disp,Rb)
         else:
             address(index); e.store(8,low); e.add_immediate(8,4); e.store(8,high)
@@ -1801,7 +1832,8 @@ def lower_function(function,module,runtime,optimize,statics,excluded):
                 e.mov(4,0); e.mov(5,1); e.mov(6,2); e.mov(7,3); store128(writes[0])
             elif kind=='move':
                 src,dst=reads[0],writes[0]
-                if optimize and slots[src]==slots[dst] and registers[src]['class']==registers[dst]['class']:
+                if dst in narrow and src not in narrow and registers[src]['class']=='gpr64': wide_misses.add(dst)
+                if optimize and slots[src]==slots[dst] and registers[src]['class']==registers[dst]['class'] and                    (src in narrow)==(dst in narrow):
                     coalesced_moves+=1; continue
                 if registers[src]['class']==registers[dst]['class']=='gpr64': load64(src); store64(dst)
                 elif registers[src]['class']==registers[dst]['class']=='float': load_float(src); store_float(dst)
@@ -1904,6 +1936,8 @@ def lower_function(function,module,runtime,optimize,statics,excluded):
     e.label('epilogue'); e.mov(15,14); adjust_stack(frame)
     for reg in tuple(b for b,_ in reversed(bases))+(9,8,14): e.rr(0x6006,reg,15)
     e.word(0x4f26); e.ret()
+    if wide_misses: raise NarrowMiss(wide_misses)
+    if optimize and not os.environ.get('DC_SH4_NO_DEAD_WRITES'): e.remove_dead_writes()
     data,relocations,layout=e.finish_with_stats(relax=True,literal_islands=True,far_branches=True)
     instruction_bytes=layout['instruction_bytes']
     return data,{'name':function['name'],'bytes':len(data),'stack_bytes':frame+saved,'relocations':relocations,

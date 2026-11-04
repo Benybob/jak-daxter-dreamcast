@@ -149,6 +149,60 @@ class Emitter:
             expanded_conditional_branches=(instruction_bytes-len(self.code))//4,literal_islands=0)
 
     @staticmethod
+    def _uses(word,n):
+        """How an instruction uses Rn: 'stop' (control transfer), 'read', 'write' (an
+        overwrite that does not read it) or None. Unsure forms count as reads."""
+        top,hi,lo,low=word>>12,word>>8&15,word>>4&15,word&15
+        if top in (0xa,0xb) or word in (0x000b,0x002b) or word&0xf0df in (0x400b,0x0003): return 'stop'
+        if top==0x8:
+            if hi in (0x9,0xb,0xd,0xf): return 'stop'
+            return 'read' if n==0 or lo==n else None
+        if top in (0x9,0xd,0xe): return 'write' if hi==n else None
+        if top in (0x5,0x6):
+            if lo==n: return 'read'
+            return 'write' if hi==n else None
+        if top==0x0:
+            if word in (0x0008,0x0009,0x0018): return None
+            if (low==0xa and lo in (0,1,5,6)) or word&0xf0ff==0x0029 or (low==2 and lo<5):
+                return 'write' if hi==n else None  # STS, MOVT, STC
+            if low in (0xc,0xd,0xe):  # MOV.x @(R0,Rm),Rn
+                if n==0 or lo==n: return 'read'
+                return 'write' if hi==n else None
+            return 'read' if n==0 or hi==n or lo==n else None
+        if top==0xc: return 'read' if n==0 else None
+        if top==0xf:
+            if low in (6,7) and n==0: return 'read'
+            if low in (6,8,9) and lo==n or low in (7,0xa,0xb) and hi==n: return 'read'
+            return None
+        return 'read' if hi==n or lo==n else None
+
+    def remove_dead_writes(self):
+        """Drop side-effect-free register writes (MOV #imm, MOV Rm,Rn, frame slot and
+        literal loads) whose register is overwritten before any read on the straight
+        path that follows. A branch, call or return ends the path as a read."""
+        if self.pending: raise ValueError('deferred code outstanding')
+        literal_at={offset for offset,_ in self.literals}
+        words=[struct.unpack_from('<H',self.code,offset)[0] for offset in range(0,len(self.code),2)]
+        dead=set()
+        for i,word in enumerate(words):
+            top,n,m=word>>12,word>>8&15,word>>4&15
+            if not (top==0xe or top==0x6 and word&15==3 and m!=n or top==0x5 and 10<=m<=14 or
+                    top==0xd and 2*i in literal_at) or n==15 or i and self._delayed(words[i-1]): continue
+            for following in words[i+1:]:
+                use=self._uses(following,n)
+                if use=='write': dead.add(2*i)
+                if use: break
+        if not dead: return 0
+        ordered=sorted(dead)
+        def moved(offset): return offset-2*bisect_left(ordered,offset)
+        self.code=bytearray(b''.join(self.code[o:o+2] for o in range(0,len(self.code),2) if o not in dead))
+        self.labels={name:moved(offset) for name,offset in self.labels.items()}
+        self.branches=[(moved(offset),kind,target) for offset,kind,target in self.branches]
+        self.literals=[(moved(offset),key) for offset,key in self.literals if offset not in dead]
+        self.last_label=moved(self.last_label) if self.last_label>=0 else -1
+        return len(dead)
+
+    @staticmethod
     def _delayed(word):
         return (word>>12 in (0xa,0xb) or word in (0x000b,0x002b) or
                 word&0xf0ff in (0x400b,0x402b,0x0003,0x0023) or word&0xff00 in (0x8d00,0x8f00))
