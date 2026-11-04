@@ -1070,6 +1070,7 @@ volatile struct { uint32_t type,m4,m7; char n4[24],n7[24]; } dc_arena_jak_player
 /* Code registry entries of the original kernel asize-of methods (0 = absent):
  * process, cpu-thread, dead-pool-heap, then the registry count. */
 volatile uint32_t dc_arena_jak_player_asize_entries[4];
+#ifdef DC_JAK_HEAVY_PROBES
 static void jak_asize_entries(dc_goal_runtime *rt) {
   static const char *const want[3]={"(method asize-of process)","(method asize-of cpu-thread)","(method asize-of dead-pool-heap)"};
   uint32_t at=rt->code_registry_head,i,k;
@@ -1084,7 +1085,9 @@ static void jak_asize_entries(dc_goal_runtime *rt) {
   }
 }
 static void jak_methods(dc_goal_runtime *rt) {
+#ifdef DC_JAK_HEAVY_PROBES
   jak_asize_entries(rt);
+#endif
   static const char *const names[7]={"process","process-drawable","manipy","hud","hud-fuel-cell","cpu-thread","trsqv"};
   unsigned i;
   for(i=0;i<7u;++i) {
@@ -1096,8 +1099,11 @@ static void jak_methods(dc_goal_runtime *rt) {
     jak_copy_name(dc_arena_jak_player_methods[i].n7,jak_function_name(rt,dc_arena_jak_player_methods[i].m7),24);
   }
 }
+#endif
 static void jak_kernel_context(dc_goal_runtime *rt) {
+#ifdef DC_JAK_HEAVY_PROBES
   jak_methods(rt);
+#endif
   uint32_t symbol=dc_goal_find(rt,"*kernel-context*"),value,i;
   value=symbol?jak_guest_word(rt,symbol):0;
   dc_arena_jak_player_kernel_context[0]=value;
@@ -1126,6 +1132,41 @@ static void jak_reloc_note(dc_goal_runtime *rt,uint32_t site) {
   n=dc_arena_jak_player_reloc.count++;
   {const uint32_t *w=(const uint32_t *)(const void *)&row;volatile uint32_t *d=(volatile uint32_t *)&dc_arena_jak_player_reloc.row[n&31u];unsigned i;
    for(i=0;i<9u;++i)d[i]=w[i];}
+}
+/* Every unique walk node (up to 32) with its type name and the name of its
+ * state. --dump dc_arena_jak_player_nodes 1536 */
+volatile struct { uint32_t process,state; char type[20],state_name[24]; } dc_arena_jak_player_nodes[32];
+/* PC sampler: the watchdog interval timer records the interrupted PC and PR,
+ * with the GOAL function holding each. Shows where a hang without bridge calls
+ * spins. Build with -DDC_JAK_HEAVY_PROBES (they slow every yield).
+ * --dump dc_arena_jak_player_pc 560 */
+#include <arch/irq.h>
+volatile struct {
+  uint32_t count,pad[3];
+  struct { uint32_t pc,pr; } ring[32];
+  struct { uint32_t pc,pr; char pc_fn[32],pr_fn[32]; } named[4];
+} dc_arena_jak_player_pc;
+static irq_cb_t jak_pc_chained;
+static dc_goal_runtime *jak_pc_runtime;
+static void jak_pc_sample(irq_t code,irq_context_t *cx,void *data) {
+  dc_goal_runtime *rt=jak_pc_runtime;uint32_t n,slot;
+  if(cx) {
+    n=dc_arena_jak_player_pc.count++;
+    dc_arena_jak_player_pc.ring[n&31u].pc=cx->pc;dc_arena_jak_player_pc.ring[n&31u].pr=cx->pr;
+    if(rt && !(n&15u)) {
+      slot=(n>>4)&3u;
+      dc_arena_jak_player_pc.named[slot].pc=cx->pc;dc_arena_jak_player_pc.named[slot].pr=cx->pr;
+      jak_copy_name(dc_arena_jak_player_pc.named[slot].pc_fn,jak_function_name(rt,cx->pc),32);
+      jak_copy_name(dc_arena_jak_player_pc.named[slot].pr_fn,jak_function_name(rt,cx->pr),32);
+    }
+  }
+  (void)data;
+  if(jak_pc_chained.hdl)jak_pc_chained.hdl(code,cx,jak_pc_chained.data);
+}
+/* Chains the KOS TMU0 handler (the scheduler tick): record, then run it. */
+void dc_arena_jak_player_pc_start(dc_goal_runtime *rt) {
+  jak_pc_runtime=rt;jak_pc_chained=irq_get_handler(EXC_TMU0_TUNI0);
+  irq_set_handler(EXC_TMU0_TUNI0,jak_pc_sample,NULL);
 }
 static void jak_tree_walk(dc_goal_runtime *rt) {
   enum dc_goal_error saved=rt->error; uint32_t saved_site=dc_goal_error_site;
@@ -1177,14 +1218,25 @@ static void jak_tree_walk(dc_goal_runtime *rt) {
      }}
   }
 publish:
+#ifdef DC_JAK_HEAVY_PROBES
+  for(i=0;i<32u;++i) {
+    uint32_t p=i<unique?seen[i]:0,st=p?jak_guest_word(rt,p+52u):0;
+    dc_arena_jak_player_nodes[i].process=p; dc_arena_jak_player_nodes[i].state=st;
+    jak_copy_name(dc_arena_jak_player_nodes[i].type,p?jak_type_name(rt,jak_guest_word(rt,p-4u)):NULL,20);
+    jak_copy_name(dc_arena_jak_player_nodes[i].state_name,
+                  st && st!=rt->s7 && st!=0xffffffffu?dc_goal_symbol_name(rt,jak_guest_word(rt,st)):NULL,24);
+  }
+#endif
   if(out.stop==3 && out.to_process>=4u)
     for(i=0;i<64u;++i)dc_arena_jak_player_kernel_context[16u+i]=jak_guest_word(rt,out.to_process-4u+4u*i);
+#ifdef DC_JAK_HEAVY_PROBES
   for(i=0;i<16u && i<out.nodes;++i) {
     const char *n=dc_goal_symbol_name(rt,out.visit[i].type_name);char name[16];unsigned k;
     memset(name,0,sizeof name);
     for(k=0;n && n[k] && k<15u;++k)name[k]=n[k];
     for(k=0;k<4u;++k){uint32_t w;memcpy(&w,name+4u*k,4);dc_arena_jak_player_kernel_context[80u+4u*i+k]=w;}
   }
+#endif
   memcpy(words,&out,sizeof out);
   for(i=0;i<sizeof words/sizeof words[0];++i) ((volatile uint32_t *)&dc_arena_jak_player_tree_walk)[i]=words[i];
   rt->error=saved; dc_goal_error_site=saved_site;

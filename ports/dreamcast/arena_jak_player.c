@@ -207,6 +207,9 @@ int dc_arena_jak_player_run(dc_goal_runtime *rt,uint32_t cp){
  CHECK(dc_goal_set_symbol(rt,read_symbol,dc_arena_jak_player_evidence.read_shim),
        19,"jak read-pad observer installed around authenticated original body");
  installed=1;dc_arena_jak_player_evidence.active=1;dc_arena_jak_player_evidence.phase=2;
+#ifdef DC_JAK_HEAVY_PROBES
+ {void dc_arena_jak_player_pc_start(dc_goal_runtime *);dc_arena_jak_player_pc_start(rt);}
+#endif
 #ifdef DC_JAK_NO_COMPACT
  /* Diagnostic only: original actors-update compacts *nk-dead-pool* when
   * *compact-actors* is true. */

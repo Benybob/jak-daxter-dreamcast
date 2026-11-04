@@ -1577,3 +1577,18 @@ second frame to 7283 checks and `__mem-move` runs twice (0x4070 bytes).
 
 `verify_backend.py --dump` also takes a raw P1 address (0x8c...), to read
 a GOAL object such as `*kernel-context*` live during a hang.
+
+Result after both fixes, compaction on (Flycast): **7652 of 7652** pass,
+160 frames, 628 pad reads, 62 moves. The apparent stall at about 7280 was
+the probes' own cost: the method, asize-entry and node-name probes and the
+PC sampler walk the 4600-entry code registry at every sidekick yield. They
+are now built only with `-DDC_JAK_HEAVY_PROBES`.
+
+The PC sampler (`dc_arena_jak_player_pc`, 560 bytes) chains the KOS TMU0
+handler and records the interrupted PC/PR; the watchdog interval timer
+produced no samples in Flycast. With the probes on, the remaining hot spot
+is `dc_goal_code_entry_diagnose`, which validates the whole registry chain on
+every code-entry lookup (fiber start/resume, stack calls, catch).
+
+The node map shows the sidekick in `process-drawable-art-error`, and
+`hud-pickups` and one manipy with state #f. Those are next.
