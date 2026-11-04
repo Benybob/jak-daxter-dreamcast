@@ -382,7 +382,33 @@ static uint64_t new_object(uint64_t heap,uint64_t type,uint64_t size) {
   }
   (DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT); return 0;
 }
+#ifdef DC_ARENA_JAK_PLAYER
+/* Diagnostic: the first integer trap's caller and the GOAL function holding it. */
+volatile struct {uint32_t version,count,kind,pc,entry,bytes,symbol;char name[36];} dc_goal_integer_trap_probe={.version=1};
+static void note_integer_trap(uint64_t kind,uint32_t pc) {
+  dc_goal_runtime *rt=active_runtime;uint32_t at,i;
+  if(dc_goal_integer_trap_probe.count++)return;
+  dc_goal_integer_trap_probe.kind=(uint32_t)kind;dc_goal_integer_trap_probe.pc=pc;
+  if(!rt)return;
+  at=rt->code_registry_head;
+  for(i=0;i<rt->code_registry_count && at;++i) {
+    const uint32_t *record=(const uint32_t *)(const void *)dc_goal_resolve(rt,at,16);
+    if(!record)return;
+    if(pc>=record[0] && pc-record[0]<record[1]) {
+      const char *name=dc_goal_symbol_name(rt,record[2]);size_t n;
+      dc_goal_integer_trap_probe.entry=record[0];dc_goal_integer_trap_probe.bytes=record[1];
+      dc_goal_integer_trap_probe.symbol=record[2];
+      for(n=0;name && name[n] && n<35;++n)dc_goal_integer_trap_probe.name[n]=name[n];
+      return;
+    }
+    at=record[3];
+  }
+}
+#endif
 static uint64_t integer_error(uint64_t kind) {
+#ifdef DC_ARENA_JAK_PLAYER
+  note_integer_trap(kind,(uint32_t)(uintptr_t)__builtin_return_address(0));
+#endif
   if (active_runtime) active_runtime->error=kind==1?DC_GOAL_DIVIDE_BY_ZERO:
                                             (kind==2?DC_GOAL_INTEGER_OVERFLOW:DC_GOAL_BAD_ARGUMENT);
   return 0;
@@ -557,20 +583,47 @@ int dc_goal_note_process_span(dc_goal_runtime *rt,uint32_t process,uint32_t byte
   if(!rt || active_runtime!=rt){if(rt&&rt->error==DC_GOAL_OK)(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);return 0;}
   return dc_goal_process_span_note(rt,process,bytes,out);
 }
-/* A startup's process-spawn takes its process from a pool. Dead-pool-heap
- * members are carved by original GOAL from the pool's C-allocated heap, so no C
- * allocator notes them. At the root the spawned process's extent is its own
- * original record: allocated-length plus the 112-byte process, whose heap
- * base/top the process heap validator checks before the extent is noted. */
+/* Dead-pool members are carved by GOAL, so no C allocator notes them. Root
+ * startups note allocated-length+112 after the heap validator. Jak start() is
+ * the same spawn with the listener bound; only that ELF admits the caller. */
+#ifdef DC_ARENA_JAK_PLAYER
+#define DC_GOAL_BOUND_SPAWN_ADMIT(rt) (execution_context&&execution_heap.runtime==(rt)&&!dc_goal_fiber_current()&&dc_goal_pp_scope_active(rt)&&dc_goal_process_spans_registered(rt)==1)
+#else
+#define DC_GOAL_BOUND_SPAWN_ADMIT(rt) ((void)(rt),0)
+#endif
+#ifdef DC_ARENA_JAK_PLAYER
+/* Diagnostic: each condition note_root_member tests, per call (last 4 kept). */
+typedef struct {
+  uint32_t process,root,exec_context,exec_heap_ours,fiber,pp_active,spans,resolved;
+  uint32_t length,heap_open,span_note,error;
+} dc_goal_root_member_row;
+volatile struct {uint32_t version,count;dc_goal_root_member_row row[4];} dc_goal_root_member_probe={.version=1};
+#define ROOT_PROBE(field,value) (probe_row?(probe_row->field=(uint32_t)(value)):0u)
+#else
+#define ROOT_PROBE(field,value) 0u
+#endif
 static int note_root_member(dc_goal_runtime *rt,uint32_t process,dc_goal_process_span *span) {
   enum dc_goal_error prior=rt->error;dc_goal_process_heap candidate;const unsigned char *fields;
-  uint32_t context,length;
-  if(!root_context(rt,&context) || process<4 || !(fields=dc_goal_resolve(rt,process,108)))return 0;
+  uint32_t context,length;int root;
+#ifdef DC_ARENA_JAK_PLAYER
+  volatile dc_goal_root_member_row *probe_row=&dc_goal_root_member_probe.row[dc_goal_root_member_probe.count++&3u];
+  memset((void *)probe_row,0xff,sizeof *probe_row);
+  probe_row->process=process;probe_row->exec_context=execution_context;
+  probe_row->exec_heap_ours=execution_heap.runtime==rt;probe_row->fiber=dc_goal_fiber_current()!=0;
+  probe_row->pp_active=dc_goal_pp_scope_active(rt)!=0;probe_row->spans=dc_goal_process_spans_registered(rt);
+#endif
+  root=root_context(rt,&context);
+  (void)ROOT_PROBE(root,root);
+  if(!(root||DC_GOAL_BOUND_SPAWN_ADMIT(rt)) || process<4 || !(fields=dc_goal_resolve(rt,process,108)))return 0;
+  (void)ROOT_PROBE(resolved,1);
   memcpy(&length,fields+68,4);
+  (void)ROOT_PROBE(length,length);
   if(length>UINT32_MAX-112u){if(prior==DC_GOAL_OK)(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);return 0;}
   rt->error=DC_GOAL_OK;
-  if(!dc_goal_process_heap_open(&candidate,rt,process,length+112u) ||
-     !dc_goal_process_span_note(rt,process,length+112u,span))return 0;
+  if(!dc_goal_process_heap_open(&candidate,rt,process,length+112u)){(void)ROOT_PROBE(heap_open,0);(void)ROOT_PROBE(error,rt->error);return 0;}
+  (void)ROOT_PROBE(heap_open,1);
+  if(!dc_goal_process_span_note(rt,process,length+112u,span)){(void)ROOT_PROBE(span_note,0);(void)ROOT_PROBE(error,rt->error);return 0;}
+  (void)ROOT_PROBE(span_note,1);
   rt->error=prior;return 1;
 }
 int dc_goal_enter_known_scope(dc_goal_runtime *rt,uint32_t process) {
