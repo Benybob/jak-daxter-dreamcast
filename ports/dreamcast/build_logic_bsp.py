@@ -11,6 +11,10 @@ Known gap: Jak 1 tie instances can carry collision through their prototypes'
 collide-frag meshes (11,744 bytes on Geyser Rock). Dropping the tie trees
 drops that collision too.
 
+With --art, the level's art groups (every other v4 object but texture pages)
+come first, in retail DGO order, as <LEVEL>-LEVEL.DGO: original level loading
+links and logs them in as on PS2. Texture pages stay out.
+
 The output stays under build/ (git-ignored); it is derived from user data.
 """
 import argparse
@@ -159,6 +163,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('dgo', type=Path, help="owner's extracted level DGO, e.g. TRA.DGO")
     parser.add_argument('--output', type=Path, default=PORT / 'build/logic-bsp')
+    parser.add_argument('--art', action='store_true', help='art groups first, as <LEVEL>-LEVEL.DGO')
     args = parser.parse_args()
     out_dir = args.output.resolve()
     if not out_dir.is_relative_to((PORT / 'build').resolve()):
@@ -171,11 +176,16 @@ def main():
     out, report = build(obj)
     out_dir.mkdir(parents=True, exist_ok=True)
     stem = args.dgo.stem.upper()
-    (out_dir / f'{stem}-LOGIC.DGO').write_bytes(header(1, f'{stem}-LOGIC.DGO') + header(len(out), name) +
-                                                 out + bytes((-len(out)) % 16))
+    art = [(n, o) for _, n, o in archive_objects(args.dgo)
+           if args.art and u32(o, 8) == 4 and n != name and not n.startswith('tpage-')]
+    kind = 'LEVEL' if args.art else 'LOGIC'
+    body = b''.join(header(len(o), n) + o + bytes((-len(o)) % 16) for n, o in art + [(name, out)])
+    (out_dir / f'{stem}-{kind}.DGO').write_bytes(header(1 + len(art), f'{stem}-{kind}.DGO') + body)
+    if art:
+        report.update(art_groups=[n for n, _ in art], art_bytes=sum(len(o) for _, o in art))
     report.update(name=name, ai_assisted=True, source_sha256=hashlib.sha256(obj).hexdigest(),
                   output_sha256=hashlib.sha256(out).hexdigest())
-    (out_dir / f'{stem}-LOGIC.json').write_text(json.dumps(report, indent=2) + '\n')
+    (out_dir / f'{stem}-{kind}.json').write_text(json.dumps(report, indent=2) + '\n')
     print(json.dumps(report, indent=2))
 
 

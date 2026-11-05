@@ -106,15 +106,20 @@ Two things it needed:
   0x8cb00000 like the Jak ELF; at 0x8cd80000 `KERNEL.CGO` did not open.
   `make_boot_gdi.py --require` names the staged files the disc must have.
 
-Build and run (from the repo root; `build/level-disc` holds TRA-LOGIC.DGO):
+Build and run (from the repo root). Current disc, in `build/level-disc`:
+`TRAINING.DGO` (`TRA-LEVEL.DGO`, art groups and logic BSP), `VILLAGE1.DGO`
+(`VI1-LOGIC.DGO`), `TRA-CODE.DGO`, `VI1-CODE.DGO`, `TRA.VIS`, `VI1.VIS`,
+`EICHAR.DGO`, `DIR-TPAGES.DGO`:
 
 ```text
-python ports/dreamcast/build_logic_bsp.py <TRA.DGO>
+python ports/dreamcast/build_logic_bsp.py --art <TRA.DGO>
+python ports/dreamcast/build_logic_bsp.py <VI1.DGO>
+python ports/dreamcast/build_level_code.py TRA   (and VI1)
 make ... jak-dc-level.elf
 python ports/dreamcast/make_boot_gdi.py ports/dreamcast/jak-dc-level.elf --ip-template <ip.tmpl> \
-  --staged ports/dreamcast/build/level-disc --require TRA-LOGIC.DGO --output ports/dreamcast/build/level-gdi
+  --staged ports/dreamcast/build/level-disc --require TRAINING.DGO --require VILLAGE1.DGO --output ports/dreamcast/build/level-gdi
 python ports/dreamcast/verify_backend.py <flycast> ports/dreamcast/jak-dc-level.elf \
-  --disc ports/dreamcast/build/level-gdi/jak-arena.gdi --nm <sh-elf-nm> --tests 533 --timeout 300
+  --disc ports/dreamcast/build/level-gdi/jak-arena.gdi --nm <sh-elf-nm> --tests 543 --timeout 300
 ```
 
 ### The level's code
@@ -267,6 +272,36 @@ Measured after 180 frames: both levels `'active`; Geyser Rock's heap holds
 under `*entity-pool*` (90 before). The arena ends at 13,076,032 of 13,631,488
 bytes: **555 KB free**. village1's art groups and texture pages are not loaded
 (as for Geyser Rock), so none of its actors would draw, and none is near Jak.
+
+### Geyser Rock's art groups (Flycast, 543 of 543, 2026-11-05)
+
+`build_logic_bsp.py --art TRA.DGO` writes `TRA-LEVEL.DGO`: the level's 11 art
+groups (570,800 bytes: ecovalve, jng-iris-door, plat-eco, pontoonfive,
+scarecrow-a/b, sharkey, trainingcam, warp-gate-switch, warpgate,
+water-anim-training) in retail order, then the logic BSP. The disc serves it as
+`TRAINING.DGO`. Texture pages stay out (1.6 MB; they belong in VRAM). Original
+level loading links each one in the level heap and calls its relocate method;
+art-group relocate adds it to the loading level's art directory, and level
+login logs them in. After 180 frames all 11 are in Geyser Rock's directory
+(`dc_level_spawn_probe.art_groups`), its heap holds 955,552 of 1,703,936 bytes,
+and the arena is unchanged.
+
+Loading 12 objects made the load take minutes in Flycast: the in-place linker's
+validation pass read each pointer word from the disc with its own seek.
+`dc_goal_link_v4_at` now reads an object once, into its destination (heap space
+nothing owns until the link succeeds), and validates from there; symbols are
+still interned only by the apply pass.
+
+**Actors do not run their init yet.** The models are there, but of 115
+processes under `*entity-pool*` 103 are still `'ready` (`ready_actors`): entity
+`birth!` activates them, but `init-from-entity!` never runs (none has a
+draw-control or is in `process-drawable-art-error`). Their methods are valid
+code typed `function`, and each actor's entity reaches its level and that
+level's art directory, so the stop is in `run-function-in-process` or the
+spawn admission around it. The earlier "actors are born" count measured
+processes, not initialized actors. village1's medium-resolution scenery actors
+call a non-function inside `initialize-skeleton` (their art is in village1's
+DGO, not loaded), and `(method update external-…)` does so every frame.
 
 The actor heap (`*nk-dead-pool*`, 984 KiB as on PS2) is not a place to save:
 after those 180 frames original `memory-used` reports 844,120 of 1,007,616

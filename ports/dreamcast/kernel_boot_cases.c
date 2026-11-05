@@ -92,6 +92,7 @@ static void boot_m2c_restore(dc_boot_m2c_saved *saved){
 /* Diagnostics (verify_backend.py --dump): display-loop frames completed, and the
  * error and first refusal site where they stopped. */
 volatile uint32_t dc_boot_display_frames,dc_boot_display_error,dc_boot_display_site;
+volatile uint32_t dc_boot_display_frame;  /* the frame now running, for a run that never ends: --dump dc_boot_display_frame 4 */
 /* Read by verify_backend.py --dump: arena use around every GAME.CGO object. */
 struct dc_boot_memory_trace {uint32_t magic,objects,completed,failed,capacity,before,failed_request,after[DC_GOAL_DGO_MAX_OBJECTS];};
 struct dc_boot_memory_trace dc_boot_memory_trace;
@@ -469,7 +470,7 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
 #endif
        before=word(&rt,entry(&rt,"*display*"),REAL_INTEGRAL_FRAMES);
        for(frame=0;frame<DISPLAY_FRAMES && rt.error==DC_GOAL_OK;++frame){
-         dc_goal_error_site=0;
+         dc_goal_error_site=0;dc_boot_display_frame=frame+1u;
          dispatch();
 #ifdef DC_ARENA_COEXIST
          if(!dc_arena_dispatch(&rt))goto done;

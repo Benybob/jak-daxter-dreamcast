@@ -23,18 +23,21 @@ typedef char dc_level_logic_evidence_bytes[sizeof dc_level_logic_evidence==128?1
 
 /* Why actors are or are not born: the switches actors-update reads, the
  * camera, the level's first entity link and the level itself.
- * --dump dc_level_spawn_probe 736 */
+ * --dump dc_level_spawn_probe 756 */
 volatile struct {
   uint32_t spawn_actors,vis_actors,birth_dist,birth_max,links,links_allocated;
   uint32_t camera[4];
   uint32_t link0[16];
   uint32_t level,birth_named,sticky,heap_used;  /* heap_used: Geyser Rock's level heap */
   uint32_t actor_heap_used,actor_heap_total;     /* original memory-used / memory-total of *nk-dead-pool* */
+  uint32_t art_groups,art_typed;                 /* Geyser Rock's level art-group load-dir: entries, art-groups */
+  uint32_t drawn_actors,art_error_actors;        /* *entity-pool* actors with a draw-control / in process-drawable-art-error */
+  uint32_t ready_actors;                         /* *entity-pool* processes still 'ready (status +32) */
   uint32_t level_words[128];  /* the level object from its tag */
   uint32_t slot[3];           /* bsp-header methods 16..18 */
   char slot_name[3][28];      /* their GOAL function names */
 } dc_level_spawn_probe;
-typedef char dc_level_spawn_probe_bytes[sizeof dc_level_spawn_probe==736?1:-1];
+typedef char dc_level_spawn_probe_bytes[sizeof dc_level_spawn_probe==756?1:-1];
 static uint32_t named(dc_goal_runtime *rt,const char *name){
   uint32_t s=dc_goal_find(rt,name);return s?dc_goal_symbol_value(rt,s):0;
 }
@@ -154,6 +157,17 @@ int dc_level_check(dc_goal_runtime *rt){
    if(other && other!=rt->s7)dc_level_logic_evidence.village1_heap_used=heap_used(rt,other);
    rt->error=DC_GOAL_OK;
    if(dc_level_logic_evidence.village1_status!=dc_goal_find(rt,"active"))return stop(rt,10);}
+  /* Geyser Rock's art groups, linked ahead of its BSP from TRAINING.DGO: original
+   * art-group relocate adds each to the loading level's load-dir (level art-group,
+   * +48; its art-group-array, +8), which level login then logs in. */
+  {uint32_t dir=word(rt,level+48u),array=dir?word(rt,dir+8u):0,type=named(rt,"art-group"),n;
+   dc_level_spawn_probe.art_groups=n=array?word(rt,array):0;
+   for(i=0;i<n && i<64u;++i){
+     uint32_t art=word(rt,array+12u+4u*i);
+     if(art && art!=rt->s7 && word(rt,art-4u)==type)++dc_level_spawn_probe.art_typed;
+   }
+   rt->error=DC_GOAL_OK;
+   if(n!=11u || dc_level_spawn_probe.art_typed!=11u)return stop(rt,11);}
   /* Find the level's bsp field by its contents: a bsp-header whose level field
    * (+120 from the object, retail layout) is this level. */
   for(i=0;i<256u && !dc_level_logic_evidence.bsp;i+=4){
@@ -180,11 +194,18 @@ int dc_level_check(dc_goal_runtime *rt){
   /* Actors the original actors-update births join *entity-pool*: count its
    * children (process-tree: brother +12, child +16, both ppointers). */
   {uint32_t pool=named(rt,"*entity-pool*"),pp=pool?word(rt,pool+16u):0,n=0;
+   uint32_t draw_type=named(rt,"draw-control"),art_error=dc_goal_find(rt,"process-drawable-art-error"),ready=dc_goal_find(rt,"ready");
    while(pp && pp!=rt->s7 && n<512u){
-     uint32_t proc=word(rt,pp);const char *name;unsigned k;
+     uint32_t proc=word(rt,pp),draw,state;const char *name;unsigned k;
      if(!proc || proc==rt->s7)break;
      if(n<4u){name=dc_goal_symbol_name(rt,word(rt,word(rt,proc-4u)));
        for(k=0;name && name[k] && k<15u;++k)dc_level_logic_evidence.spawned_type[n][k]=name[k];}
+     /* initialize-skeleton makes a draw-control (process-drawable draw, +116)
+      * from the actor's art group, or goes to process-drawable-art-error. */
+     draw=word(rt,proc+116u);state=word(rt,proc+52u);
+     if(draw>4u && draw!=rt->s7 && word(rt,draw-4u)==draw_type)++dc_level_spawn_probe.drawn_actors;
+     if(state>4u && state!=rt->s7 && word(rt,state)==art_error)++dc_level_spawn_probe.art_error_actors;
+     if(word(rt,proc+32u)==ready)++dc_level_spawn_probe.ready_actors;  /* activated, init never run */
      ++n;pp=word(rt,proc+12u);
    }
    dc_level_logic_evidence.spawned=n;rt->error=DC_GOAL_OK;}

@@ -77,7 +77,7 @@ int dc_goal_art_admit(dc_goal_runtime *rt,uint32_t bytes,dc_goal_art_result *r){
   }
   return 1;
 }
-static int site(FILE *f,const art_row *row,unsigned char *data,uint32_t at,
+static int site(FILE *f,const art_row *row,const unsigned char *data,uint32_t at,
                 uint32_t *value){
   unsigned char b[4];
   if((at&3u) || at>row->size-4)return 0;
@@ -95,7 +95,8 @@ static void put(unsigned char *data,uint32_t at,uint32_t value){memcpy(data+at,&
  * does (level data names actor types its own code defines later). Otherwise all
  * types must already be defined by native GAME.CGO. */
 static int links(dc_goal_runtime *rt,FILE *f,const art_row *row,unsigned char *data,
-                 uint32_t base,dc_goal_art_result *result,const char *root_type,int forward){
+                 uint32_t base,dc_goal_art_result *result,const char *root_type,int forward,
+                 const unsigned char *source){
   unsigned char *table=malloc(row->length);
   uint32_t p=12,at=0,value,count,fixing=0,root=0;
   int ok=0;
@@ -112,7 +113,7 @@ static int links(dc_goal_runtime *rt,FILE *f,const art_row *row,unsigned char *d
         if(fixing){
           uint32_t i;
           for(i=0;i<count;++i){
-            if(!site(f,row,data,at,&value) || value>=row->size)goto done;
+            if(!site(f,row,data?data:source,at,&value) || value>=row->size)goto done;
             if(data){put(data,at,base+value);++result->pointers;}
             at+=4;
           }
@@ -160,7 +161,7 @@ static int links(dc_goal_runtime *rt,FILE *f,const art_row *row,unsigned char *d
       p+=step;delta&=~3u;
       if(delta>row->size || at>row->size-delta)goto done;
       at+=delta;
-      if(!site(f,row,data,at,&value) || value!=UINT32_MAX)goto done;
+      if(!site(f,row,data?data:source,at,&value) || value!=UINT32_MAX)goto done;
       if(is_type && root_type && !strcmp(name,root_type) && !at)root=1;
       if(data){put(data,at,target);++result->bindings;}
       if(p>=row->length)goto done;
@@ -193,10 +194,13 @@ int dc_goal_link_v4_at(dc_goal_runtime *rt,FILE *f,uint32_t object_at,uint32_t o
      row.length>object_bytes-16u-row.size)return fail(rt,DC_GOAL_BAD_MODULE);
   row.link=row.data+row.size;tail=row.link+row.length;end=object_at+object_bytes;
   while(tail<end){unsigned char b;if(!read_at(f,tail++,&b,1) || b)return fail(rt,DC_GOAL_BAD_MODULE);}
-  if(!links(rt,f,&row,NULL,0,&result,NULL,1))return 0;
+  /* The data is read once, into dest (heap space nothing owns until the link
+   * succeeds); the validation pass reads its pointer words there instead of a
+   * disc seek per word, and only the apply pass interns symbols. */
   data=dc_goal_resolve(rt,dest,row.size);
-  if(!data || !read_at(f,row.data,data,row.size) || !links(rt,f,&row,data,dest,&result,NULL,1))
-    return fail(rt,DC_GOAL_BAD_MODULE);
+  if(!data || !read_at(f,row.data,data,row.size))return fail(rt,DC_GOAL_BAD_MODULE);
+  if(!links(rt,f,&row,NULL,0,&result,NULL,1,data))return 0;
+  if(!links(rt,f,&row,data,dest,&result,NULL,1,NULL))return fail(rt,DC_GOAL_BAD_MODULE);
   *data_bytes=row.size;
   return 1;
 }
@@ -220,10 +224,10 @@ int dc_goal_load_v4_single(dc_goal_runtime *rt,FILE *f,const char *dgo_name,cons
   if(fseek(f,(long)at,SEEK_SET) || fgetc(f)!=EOF || ferror(f))return fail(rt,DC_GOAL_BAD_MODULE);
   if(!dc_goal_art_admit(rt,row.size,result))return 0;
   result->objects=1;
-  if(!links(rt,f,&row,NULL,0,result,root_type,1))return 0;
+  if(!links(rt,f,&row,NULL,0,result,root_type,1,NULL))return 0;
   base=dc_goal_alloc(rt,row.size);if(!base)return 0;
   data=dc_goal_resolve(rt,base,row.size);
-  if(!data || !read_at(f,row.data,data,row.size) || !links(rt,f,&row,data,base,result,root_type,1))
+  if(!data || !read_at(f,row.data,data,row.size) || !links(rt,f,&row,data,base,result,root_type,1,NULL))
     return fail(rt,DC_GOAL_BAD_MODULE);
   result->linked=1;result->art[0]=base+4;*root=base+4;
   return 1;
@@ -286,7 +290,7 @@ int dc_goal_load_art_dgo(dc_goal_runtime *rt,FILE *f,uint32_t expected_payload,d
    if(!arena_total){memset(&admitted,0,sizeof admitted);admitted.before=rt->used;admitted.capacity=rt->capacity;}
    admitted.payload=total;
    *result=admitted;result->objects=count;
-   for(i=0;i<count;++i)if(!links(rt,f,&rows[i],NULL,0,result,"art-group",0))return 0;
+   for(i=0;i<count;++i)if(!links(rt,f,&rows[i],NULL,0,result,"art-group",0,NULL))return 0;
    ART_PROBE(2);
    base=arena_total?dc_goal_alloc(rt,arena_total):0;
    resident=resident_total?dc_goal_alloc_resident(rt,resident_total):0;
@@ -296,7 +300,7 @@ int dc_goal_load_art_dgo(dc_goal_runtime *rt,FILE *f,uint32_t expected_payload,d
   for(i=0;i<count;++i){
     uint32_t *at_base=placed[i]?&resident:&base;
     unsigned char *data=dc_goal_resolve(rt,*at_base,rows[i].size);
-    if(!data || !read_at(f,rows[i].data,data,rows[i].size) || !links(rt,f,&rows[i],data,*at_base,result,"art-group",0))
+    if(!data || !read_at(f,rows[i].data,data,rows[i].size) || !links(rt,f,&rows[i],data,*at_base,result,"art-group",0,NULL))
       return fail(rt,DC_GOAL_BAD_MODULE);
     result->art[i]=*at_base+4;++result->linked;*at_base+=rows[i].size;
   }
@@ -304,13 +308,13 @@ int dc_goal_load_art_dgo(dc_goal_runtime *rt,FILE *f,uint32_t expected_payload,d
   /* Admit the entire pair before reading link tables or modifying symbols. */
   if(!dc_goal_art_admit(rt,total,&admitted)){*result=admitted;return 0;}
   *result=admitted;result->objects=2;
-  for(i=0;i<2;++i)if(!links(rt,f,&rows[i],NULL,0,result,"art-group",0))return 0;
+  for(i=0;i<2;++i)if(!links(rt,f,&rows[i],NULL,0,result,"art-group",0,NULL))return 0;
   ART_PROBE(2);
   base=dc_goal_alloc(rt,total);if(!base)return 0;
   ART_PROBE(3);
   for(i=0;i<2;++i){
     unsigned char *data=dc_goal_resolve(rt,base,rows[i].size);
-    if(!data || !read_at(f,rows[i].data,data,rows[i].size) || !links(rt,f,&rows[i],data,base,result,"art-group",0))
+    if(!data || !read_at(f,rows[i].data,data,rows[i].size) || !links(rt,f,&rows[i],data,base,result,"art-group",0,NULL))
       return fail(rt,DC_GOAL_BAD_MODULE);
     result->art[i]=base+4;++result->linked;base+=rows[i].size;
   }
@@ -357,11 +361,11 @@ int dc_goal_load_tpage_dir(dc_goal_runtime *rt,FILE *f,uint32_t expected_payload
   if(fseek(f,(long)at,SEEK_SET) || fgetc(f)!=EOF || ferror(f))return fail(rt,DC_GOAL_BAD_MODULE);
   if(total!=expected_payload)return fail(rt,DC_GOAL_BAD_MODULE);
   if(!dc_goal_art_admit(rt,total,&result))return 0;
-  if(!links(rt,f,&row,NULL,0,&result,"texture-page-dir",0))return 0;
+  if(!links(rt,f,&row,NULL,0,&result,"texture-page-dir",0,NULL))return 0;
   base=dc_goal_alloc(rt,total);if(!base)return 0;
   data=dc_goal_resolve(rt,base,row.size);
   if(!data || !read_at(f,row.data,data,row.size) ||
-     !links(rt,f,&row,data,base,&result,"texture-page-dir",0))
+     !links(rt,f,&row,data,base,&result,"texture-page-dir",0,NULL))
     return fail(rt,DC_GOAL_BAD_MODULE);
   if(!relocate(rt,base+4,context) || rt->error!=DC_GOAL_OK)return fail(rt,DC_GOAL_BAD_FUNCTION);
   return 1;
