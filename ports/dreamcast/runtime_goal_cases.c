@@ -99,7 +99,7 @@ uint32_t dc_runtime_goal_cases(void *memory,uint32_t capacity,dc_runtime_check c
     CHECK(rt.symbol_count,symbols,"missing call fault bridge rolls back namespace");
   }
   CHECK(dc_goal_install_core_bridges(&rt,sync_code,&bootstrap),1,"core call fault bridge installed before runtime code");
-  CHECK(bootstrap.functions,3,"core installation exposes pair/type/call-error bridges");
+  CHECK(bootstrap.functions,7,"core installation exposes pair/type/call-error bridges and four SH-4 helpers");
   if (!dc_goal_load_module(&rt,goal_runtime_fixture_exports,GOAL_RUNTIME_FIXTURE_EXPORT_COUNT,
                           sync_code,NULL,&fixture)) {
     CHECK(rt.error,0,"compiled fixture module load"); return 0;

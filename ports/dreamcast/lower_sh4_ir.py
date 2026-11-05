@@ -1218,6 +1218,11 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
         narrow={value for value,r in registers.items() if r['class']=='gpr64'}
         narrow-=addressed|zero_entry|false_entry|set(wide_values)|{p['register'] for p in function['parameters']}
         narrow-={function.get('lexical_saved')}|{op['source'] for op in function['instructions'] if op['kind']=='register_address'}
+    # Shared SH-4 helpers (sh4_helpers.py) instead of long inline templates;
+    # the runtime installs them with its core and integer bridges.
+    helpers=optimize and runtime and not os.environ.get('DC_SH4_NO_HELPERS')
+    def helper(name,reg):
+        e.literal(reg,('symbol','function:'+name)); e.word(0x400b|reg<<8); e.nop()  # JSR @Rreg
     # Low-word values: every read uses only the low 32 bits (addresses, narrow
     # stores, 32-bit conversions, call targets, and the low result of add, sub,
     # logic and left shifts). The slot keeps one word, the high register is
@@ -1234,6 +1239,7 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
                 return {0,1} if op['size'] in (1,2,4) and registers[reads[0]]['class']=='gpr64' else {1}
             if kind in ('int_to_float','set_symbol','imul32','idiv32','udiv32','imod32','umod32'): return set(range(len(reads)))
             if kind=='call': return {0}
+            if kind in ('shlv64','shrv64','sarv64') and helpers: return {1}  # the count's low six bits
             if kind=='move' and registers[reads[0]]['class']=='gpr64' and \
                (registers[writes[0]]['class']=='float' or writes[0] in low_word): return {0}
             if kind in ('add64','sub64','and64','or64','xor64','not64','shl64') and writes[0] in low_word:
@@ -1676,6 +1682,9 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
                 store_float(writes[0])
             elif kind=='int_to_float':
                 load_address(reads[0],0); e.word(0x405a); e.word(0xf02d); store_float(writes[0])
+            elif kind=='float_to_int' and helpers:
+                load_float(reads[0]); helper('dc-sh4-float-to-int',2)  # FR0 -> R0:R1
+                store64(writes[0])
             elif kind=='float_to_int':
                 invalid,done=label_name(),label_name()
                 load_float(reads[0])
@@ -1965,6 +1974,13 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
                             for s in steps: e.word({16:0x4028,8:0x4018,2:0x4008,1:0x4000}[s])  # SHLLn R0
                         else: e.immediate(1,count); e.rr(0x400d,0,1)  # SHLD R1,R0
                     store64(writes[0]); continue
+                count=None if variable else op['shift']&63
+                if helpers and (variable or 0<count<32):
+                    # The cross-half sequence lives once in a helper; counts use six bits.
+                    load64(reads[0])
+                    if variable: load_address(reads[1],2)
+                    else: e.immediate(2,count)
+                    helper('dc-sh4-'+kind[:3],3); store64(writes[0]); continue
                 load64(reads[0])
                 if variable: load64(reads[1],2,3)
                 emit_shift64(e,{'shl':'left','shr':'logical','sar':'arithmetic'}[kind[:3]],
@@ -1974,6 +1990,10 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
                 if not runtime: raise ValueError('integer division requires native runtime fault bridge')
                 if len(reads)!=2 or len(writes)!=1: raise ValueError('invalid division operand layout')
                 load_address(reads[0],0); load_address(reads[1],2)
+                if helpers:
+                    helper({'idiv32':'dc-sh4-idiv','udiv32':'dc-sh4-udiv','imod32':'dc-sh4-imod',
+                            'umod32':'dc-sh4-umod'}[kind],1)
+                    store64(writes[0]); continue
                 emit_div32(e,kind in ('idiv32','imod32'),kind in ('imod32','umod32'),label_name())
                 store64(writes[0])
             elif kind=='imul32' or kind in ('add64','sub64','and64','or64','xor64','not64') and writes[0] in low_word:

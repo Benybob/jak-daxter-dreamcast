@@ -1,4 +1,5 @@
 """Actual x86 division oracle and native fault dependency validation (AI-assisted)."""
+import copy
 import json
 import os
 from pathlib import Path
@@ -21,7 +22,15 @@ class DivisionTest(unittest.TestCase):
             'instructions':[{'kind':'idiv32','reads':[0,1],'writes':[0]},
                             {'kind':'return','reads':[0],'writes':[]}]}
         with self.assertRaisesRegex(ValueError,'runtime fault bridge'): compile_function(fn)
-        _,report=compile_function(fn,runtime=True)
+        _,report=compile_function(copy.deepcopy(fn),runtime=True,optimize=False)
         self.assertIn('function:dc-c-integer-error',[r['symbol'] for r in report['relocations']])
+        # Optimized code calls the shared helper, which links to the same bridge.
+        _,report=compile_function(copy.deepcopy(fn),runtime=True)
+        self.assertEqual([r['symbol'] for r in report['relocations'] if r['symbol'].startswith('function:dc-')],
+                         ['function:dc-sh4-idiv'])
         fn['instructions'][0]['reads']=[0]
         with self.assertRaisesRegex(ValueError,'operand layout'): compile_function(fn,runtime=True)
+
+    def test_checked_in_helper_header_matches_the_generator(self):
+        import sh4_helpers
+        self.assertEqual((ROOT/'sh4_helpers.h').read_text(),sh4_helpers.header())

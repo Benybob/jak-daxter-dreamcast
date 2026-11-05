@@ -27,7 +27,7 @@ uint32_t dc_runtime_division_cases(dc_goal_runtime *rt,dc_runtime_check check,vo
   if (!dc_goal_install_integer_bridge(rt,sync,&bridge)) {
     CHECK(rt->error,0,"integer bridge install"); return 0;
   }
-  CHECK(bridge.functions,1,"one boxed integer fault bridge");
+  CHECK(bridge.functions,5,"one boxed integer fault bridge and four SH-4 division helpers");
   if (!dc_goal_load_module(rt,goal_division_fixture_exports,GOAL_DIVISION_FIXTURE_EXPORT_COUNT,sync,NULL,&fixture)) {
     CHECK(rt->error,0,"division fixture load"); return 0;
   }

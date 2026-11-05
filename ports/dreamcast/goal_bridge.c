@@ -13,6 +13,7 @@
 #include "goal_mmi.h"
 #include "goal_pad.h"
 #include "goal_bridge.h"
+#include "sh4_helpers.h"
 #if defined(DC_ARENA_LIVE)
 #include "arena_live.h"
 #elif defined(DC_ARENA_CAMERA)
@@ -766,9 +767,10 @@ int dc_goal_install_core_bridges(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_
   unsigned char code[3][12]={{1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0},
                             {1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0},
                             {1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0}};
-  dc_goal_code_export functions[3]={{"dc-c-pair-new",code[0],12,NULL,0},
+  /* The shared SH-4 helpers lowered code calls (sh4_helpers.py) link here too. */
+  dc_goal_code_export functions[3+DC_SH4_CORE_HELPER_COUNT]={{"dc-c-pair-new",code[0],12,NULL,0},
                                     {"dc-c-type-of",code[1],12,NULL,0},
-                                    {"dc-c-call-error",code[2],12,NULL,0}};
+                                    {"dc-c-call-error",code[2],12,NULL,0},DC_SH4_CORE_HELPERS};
   uint32_t target,entry,global,global_value=0;
   if (!rt || !result) return 0;
   if (active_runtime && active_runtime!=rt) { (DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT); return 0; }
@@ -779,7 +781,7 @@ int dc_goal_install_core_bridges(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_
   target=(uint32_t)(uintptr_t)new_pair; memcpy(code[0]+8,&target,4);
   target=(uint32_t)(uintptr_t)type_of; memcpy(code[1]+8,&target,4);
   target=(uint32_t)(uintptr_t)missing_call; memcpy(code[2]+8,&target,4);
-  if (!dc_goal_load_module(rt,functions,3,sync,NULL,result)) return 0;
+  if (!dc_goal_load_module(rt,functions,3+DC_SH4_CORE_HELPER_COUNT,sync,NULL,result)) return 0;
   entry=dc_goal_symbol_value(rt,dc_goal_find(rt,"dc-c-pair-new"));
   if (!dc_goal_set_method(rt,rt->pair_type,0,entry)) return 0;
   active_runtime=rt;
@@ -843,11 +845,13 @@ int dc_goal_install_type_bridges(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_
 int dc_goal_install_integer_bridge(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_goal_module_result *result) {
   unsigned char code[12]={1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0};
   uint32_t target=(uint32_t)(uintptr_t)integer_error;
-  dc_goal_code_export function={"dc-c-integer-error",code,12,NULL,0};
+  /* The division helpers (sh4_helpers.py) fault through this bridge. */
+  dc_goal_code_export functions[1+DC_SH4_INTEGER_HELPER_COUNT]={{"dc-c-integer-error",code,12,NULL,0},
+                                                                DC_SH4_INTEGER_HELPERS};
   if (!rt || !result) return 0;
   if (active_runtime!=rt) { (DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT); return 0; }
   memcpy(code+8,&target,4);
-  return dc_goal_load_module(rt,&function,1,sync,NULL,result);
+  return dc_goal_load_module(rt,functions,1+DC_SH4_INTEGER_HELPER_COUNT,sync,NULL,result);
 }
 
 

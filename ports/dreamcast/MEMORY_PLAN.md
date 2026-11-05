@@ -223,6 +223,17 @@ Final `target` bytes 171,967 to 169,735. GAME.CGO 6,651,248 to
 Flycast suites pass. Since the morning of 2026-11-04: -2,231,872 bytes
 (25.3%).
 
+Then shared hand-written SH-4 helpers (`sh4_helpers.py`, generated into
+`sh4_helpers.h`, off with `DC_SH4_NO_HELPERS=1`): float-to-int (1,138 uses in
+GAME.CGO), 32-bit divide and remainder, and 64-bit shifts by a variable or
+by 1..31 are written once and called with `MOV.L`, `JSR`, `NOP` and one
+literal per function. The core bridges link the float and shift helpers; the
+integer bridge links the division helpers, which fault through
+`dc-c-integer-error` in the same module. Shared prologue and epilogue
+routines were measured and dropped: the call costs as much as the pushes it
+replaces. GAME.CGO 6,589,152 to **6,560,864** (-28,288), KERNEL.CGO
+163,744, TRA-CODE 84,640. All Flycast suites pass.
+
 Two PC-only buffers now take Dreamcast values through `dreamcast_memory_budget.gc`
 (the exporter's budget now also substitutes `defglobalconstant`):
 - `PC_SUBTITLE_FILE_SIZE` 256 KiB to 16 KiB: no subtitle files on the disc yet.

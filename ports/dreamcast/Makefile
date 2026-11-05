@@ -115,7 +115,7 @@ runtime_cases.o: runtime_cases.h goal_runtime.h goal_layout.h
 goal_runtime.o: goal_runtime.h goal_layout.h
 goal_runtime_dc.o: goal_runtime_dc.c goal_runtime.h goal_layout.h
 goal_module.o: goal_module.h goal_runtime.h goal_layout.h
-goal_bridge.o: goal_bridge.c goal_bridge.h goal_module.h goal_runtime.h goal_layout.h goal_process_heap.h goal_mmi.h goal_pad.h
+goal_bridge.o: goal_bridge.c goal_bridge.h goal_module.h goal_runtime.h goal_layout.h goal_process_heap.h goal_mmi.h goal_pad.h sh4_helpers.h
 goal_mmi.o: goal_mmi.c goal_mmi.h
 goal_pad.o: goal_pad.c goal_pad.h
 goal_process_heap.o: goal_process_heap.c goal_process_heap.h goal_runtime.h goal_layout.h
