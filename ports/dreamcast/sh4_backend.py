@@ -258,6 +258,73 @@ class Emitter:
         self.last_label=moved(self.last_label) if self.last_label>=0 else -1
         return len(dead)
 
+    def fill_call_delay_slots(self,window=8,dead_on=('call_failure',)):
+        """Move an argument setup instruction before JSR @Rm; NOP into the NOP.
+
+        Movable: MOV #imm,Rn, MOV Rm,Rn, MOV.L @(d,Rm),Rn and FSTS FPUL,FRn, when
+        nothing between reads or writes what it touches, no branch lands between,
+        and it writes neither the JSR register nor R15. It may pass a BT/BF only
+        to a label in dead_on whose path ignores argument registers (R4-R7,
+        FR4-FR11); a load never passes a store."""
+        if self.pending: raise ValueError('deferred code outstanding')
+        words=[struct.unpack_from('<H',self.code,offset)[0] for offset in range(0,len(self.code),2)]
+        targets={self.labels[name] for _,_,name in self.branches if name in self.labels}
+        branch_to={offset//2:name for offset,_,name in self.branches}
+        literal_at={offset//2 for offset,_ in self.literals}
+        def store(w):
+            top,low=w>>12,w&15
+            return top in (1,2) or top==0 and low in (4,5,6) or top==0xf and low in (7,0xa,0xb) or \
+                top==4 and low in (2,3) and w>>4&15 in (0,1,2,5,6)
+        def movable(w,jump):
+            """(written register, registers read, floating) or None."""
+            top,n,m=w>>12,w>>8&15,w>>4&15
+            if w&0xf0ff==0xf00d: return n,(),True  # FSTS FPUL,FRn
+            if n in (jump,15): return None
+            if top==0xe: return n,(),False
+            if top==0x6 and w&15==3 and m!=n or top==0x5: return n,(m,),False
+            return None
+        def passes(x,v,y,n,reads,floating):
+            """Can instruction x (writing n, reading reads) move past v at y?"""
+            if y in branch_to and v>>12==0x8:  # BT/BF: only to a path that ignores n
+                return branch_to[y] in dead_on and (4<=n<=11 if floating else 4<=n<=7)
+            if self._uses(v,0)=='stop': return False
+            if floating:  # FPU state and FPUL stay untouched
+                return v>>12!=0xf and v&0xf0ff not in (0x405a,0x4056,0x406a,0x4066)
+            if self._uses(v,n) or any(self._uses(v,r)=='write' for r in reads): return False
+            return not (words[x]>>12==0x5 and store(v))
+        moved={}
+        for j,word in enumerate(words):
+            if j+1>=len(words) or words[j+1]!=0x0009 or 2*j in targets or j==0: continue
+            if word>>12==0xa and j in branch_to:
+                # BRA: the instruction just before runs in its slot unchanged
+                # (no path enters at the BRA), unless PC-relative or control.
+                x=j-1; w=words[x]
+                if x in literal_at or x in branch_to or w>>12 in (0x9,0xd) or w&0xff00==0xc700 or \
+                   w==0x0009 or self._uses(w,0)=='stop' or x and self._delayed(words[x-1]) or x in moved.values():
+                    continue
+                moved[j+1]=x; continue
+            if word&0xf0ff!=0x400b: continue
+            jump=word>>8&15
+            for x in range(j-1,max(-1,j-1-window),-1):
+                if 2*(x+1) in targets or x in moved.values(): break  # a path joins after x
+                if x and self._delayed(words[x-1]): break
+                found=movable(words[x],jump) if x not in literal_at and x not in branch_to else None
+                if found is None: continue  # passed over, checked for whatever moves later
+                n,reads,floating=found
+                if all(passes(x,words[y],y,n,reads,floating) for y in range(x+1,j)): moved[j+1]=x
+                break
+        if not moved: return 0
+        for slot,x in moved.items():
+            struct.pack_into('<H',self.code,2*slot,words[x])
+        dead=sorted(2*x for x in moved.values())
+        def shifted(offset): return offset-2*bisect_left(dead,offset)
+        self.code=bytearray(b''.join(self.code[o:o+2] for o in range(0,len(self.code),2) if o not in set(dead)))
+        self.labels={name:shifted(offset) for name,offset in self.labels.items()}
+        self.branches=[(shifted(offset),kind,target) for offset,kind,target in self.branches]
+        self.literals=[(shifted(offset),key) for offset,key in self.literals]
+        self.last_label=shifted(self.last_label) if self.last_label>=0 else -1
+        return len(moved)
+
     @staticmethod
     def _delayed(word):
         return (word>>12 in (0xa,0xb) or word in (0x000b,0x002b) or
@@ -314,8 +381,12 @@ class Emitter:
                     if conditional:
                         inverse=0x8b00 if kind=='bt' else 0x8900
                         skip=len(code); code.extend(struct.pack('<H',inverse)); instruction_bytes+=2
-                    elif kind!='bra' or words.get(offset+2)!=0x0009:
+                    elif kind!='bra' or offset+2 not in words or self._delayed(words[offset+2]) or \
+                         words[offset+2]>>12 in (0x9,0xd) or words[offset+2]&0xff00==0xc700:
                         raise ValueError('far branch requires BRA with a NOP delay slot')
+                    elif words[offset+2]!=0x0009:
+                        # A filled slot runs first; the jump below keeps R0 and T.
+                        code.extend(self.code[offset+2:offset+4]); instruction_bytes+=2
                     # GCC-compatible writable stack: preserve r0 in the BRAF
                     # delay slot, keep T/PR/r1 intact, and use a relative delta
                     # so copied native modules require no address relocation.

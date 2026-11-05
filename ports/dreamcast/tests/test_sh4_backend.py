@@ -285,13 +285,19 @@ class AssemblerOracleTest(unittest.TestCase):
         self.assertEqual((stats['far_branches'],stats['literal_islands']),(1,1))
 
     def test_far_calls_and_changed_delay_slots_still_reject(self):
-        for kind in ('bsr','bra'):
+        for kind,slot in (('bsr',None),('bra',0x9001)):  # a PC-relative MOV.W cannot move
             e=Emitter(); e.branch(kind,'end')
-            if kind=='bra': struct.pack_into('<H',e.code,2,0xe001)
+            if slot: struct.pack_into('<H',e.code,2,slot)
             for _ in range(2200): e.nop()
             e.label('end'); e.ret()
             with self.subTest(kind=kind),self.assertRaisesRegex(ValueError,'branch range|NOP delay slot'):
                 e.finish(far_branches=True)
+        # A filled BRA slot runs just before the far jump instead.
+        e=Emitter(); e.branch('bra','end'); struct.pack_into('<H',e.code,2,0xe001)
+        for _ in range(2200): e.nop()
+        e.label('end'); e.ret()
+        code,_=e.finish(far_branches=True)
+        self.assertEqual(struct.unpack_from('<2H',code,0),(0xe001,0x2f06))  # mov #1,r0; mov.l r0,@-r15
         e=Emitter(); e.branch('bra','near'); e.nop(); e.label('near'); e.ret()
         self.assertEqual(e.finish(),e.finish(relax=True,literal_islands=True,far_branches=True))
 
@@ -472,6 +478,42 @@ class DeadWriteTest(unittest.TestCase):
         self.assertEqual(e.remove_dead_writes(),1)
         data,_=e.finish()
         self.assertNotIn(struct.pack('<I',0x12345678),data)
+
+class DelaySlotTest(unittest.TestCase):
+    @staticmethod
+    def guarded(setup,failure='call_failure'):
+        e=Emitter(); setup(e)
+        e.literal(2,('symbol','pointer:#f')); e.rr(0x3006,0,2); e.branch('bf',failure)
+        e.word(0x400b); e.nop(); e.ret()
+        e.label(failure); e.ret()
+        return e
+
+    def test_argument_setup_moves_into_the_jsr_delay_slot(self):
+        e=self.guarded(lambda e: e.immediate(5,0))
+        self.assertEqual(e.fill_call_delay_slots(),1)
+        words=DeadWriteTest.words(None,e)
+        self.assertEqual(words[3:5],[0x400b,0xe500])  # jsr @r0; mov #0,r5
+        self.assertEqual(e.labels['call_failure'],2*7)
+        e.finish(relax=True)
+
+    def test_instruction_before_bra_fills_its_slot(self):
+        e=Emitter(); e.word(0x1e03); e.branch('bra','x'); e.label('x'); e.ret()  # mov.l r0,@(12,r14)
+        self.assertEqual(e.fill_call_delay_slots(),1)
+        self.assertEqual(DeadWriteTest.words(None,e)[:2],[0xa000,0x1e03])
+        e.finish(relax=True)
+        # Another path enters at the BRA: the store must stay before it.
+        e=Emitter(); e.label('top'); e.word(0x1e03); e.label('in'); e.branch('bra','top')
+        e.branch('bt','in'); e.ret()
+        self.assertEqual(e.fill_call_delay_slots(),0)
+
+    def test_unsafe_moves_stay(self):
+        # The failure path is not known to ignore r5.
+        self.assertEqual(self.guarded(lambda e: e.immediate(5,0),'elsewhere').fill_call_delay_slots(),0)
+        # r2 is overwritten by the literal before the call.
+        self.assertEqual(self.guarded(lambda e: e.immediate(2,0)).fill_call_delay_slots(),0)
+        # A slot load never passes a store.
+        def load_then_store(e): e.word(0x55e3); e.word(0x1e04)  # mov.l @(12,r14),r5; mov.l r0,@(16,r14)
+        self.assertEqual(self.guarded(load_then_store).fill_call_delay_slots(),0)
 
 class TrampolineTest(unittest.TestCase):
     @staticmethod

@@ -2071,6 +2071,7 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
     e.word(0x4f26); e.ret()
     if wide_misses: raise NarrowMiss(wide_misses)
     if optimize and not os.environ.get('DC_SH4_NO_DEAD_WRITES'): e.remove_dead_writes()
+    if optimize and not os.environ.get('DC_SH4_NO_DELAY_SLOTS'): e.fill_call_delay_slots()
     data,relocations,layout=e.finish_with_stats(relax=True,literal_islands=True,far_branches=True)
     instruction_bytes=layout['instruction_bytes']
     return data,{'name':function['name'],'bytes':len(data),'stack_bytes':frame+saved,'relocations':relocations,

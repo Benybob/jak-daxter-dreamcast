@@ -206,6 +206,23 @@ Final `target` bytes 177,215 to 171,967. GAME.CGO 6,743,056 to **6,651,248**
 (-91,808, 1.4%), KERNEL.CGO 168,096, TRA-CODE 85,184. All Flycast suites
 pass. Since the morning of 2026-11-04: -2,169,776 bytes (24.6%).
 
+Then delay slots (`Emitter.fill_call_delay_slots`, off with
+`DC_SH4_NO_DELAY_SLOTS=1`):
+- `JSR @Rm; NOP`: the nearest argument setup before it (`MOV #imm`, `MOV`,
+  a slot load into a register, or `FSTS FPUL,FRn`) moves into the slot when
+  nothing between touches its registers, no branch lands between, and a slot
+  load passes no store. It may pass the call guard's `BF call_failure`
+  only for argument registers (R4-R7, FR4-FR11): `missing_call` takes none.
+- `BRA; NOP`: the instruction just before runs in the slot when no branch
+  lands on the BRA and it is not PC-relative or control. Such a BRA is no
+  trampoline; if it must become a far jump, the instruction is emitted just
+  before the far sequence (which keeps R0 and T).
+
+Final `target` bytes 171,967 to 169,735. GAME.CGO 6,651,248 to
+**6,589,152** (-62,096, 0.9%), KERNEL.CGO 166,112, TRA-CODE 84,784. All
+Flycast suites pass. Since the morning of 2026-11-04: -2,231,872 bytes
+(25.3%).
+
 Two PC-only buffers now take Dreamcast values through `dreamcast_memory_budget.gc`
 (the exporter's budget now also substitutes `defglobalconstant`):
 - `PC_SUBTITLE_FILE_SIZE` 256 KiB to 16 KiB: no subtitle files on the disc yet.
