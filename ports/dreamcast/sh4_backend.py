@@ -213,6 +213,24 @@ class Emitter:
             if not (top==0xe or top==0x6 and word&15==3 and m!=n or top==0x5 and 10<=m<=14 or
                     top==0xd and 2*i in literal_at) or n==15 or i and self._delayed(words[i-1]): continue
             if overwritten(i+1,n): dead.add(2*i)
+        # Copy propagation: MOV Rm,Rn whose Rm was last written, on the straight
+        # path just before, by a write that can name its destination (a load,
+        # MOV, extension, STS...) and is dead after the MOV: that write targets
+        # Rn and the MOV goes. Nothing between may touch Rn or Rm.
+        labels_at=set(self.labels.values())
+        for i,word in enumerate(words):
+            n,m=word>>8&15,word>>4&15
+            if word&0xf00f!=0x6003 or m==n or n==15 or m==15 or 2*i in dead or 2*i in labels_at or                i and self._delayed(words[i-1]): continue
+            k=i-1
+            while k>=0 and 2*(k+1) not in labels_at:
+                wk=words[k]; top,low=wk>>12,wk&15
+                if 2*k not in dead and wk>>8&15==m and (top in (0xd,0xe) or top==0x5 or
+                        top==0x6 and low not in (4,5,6) or wk&0xf0ff in (0x001a,0x005a,0x0029)):
+                    if (k==0 or not self._delayed(words[k-1])) and overwritten(i+1,m):
+                        words[k]=wk&0xf0ff|n<<8; struct.pack_into('<H',self.code,2*k,words[k]); dead.add(2*i)
+                    break
+                if self._uses(wk,m) or self._uses(wk,n): break
+                k-=1
         if not dead: return 0
         ordered=sorted(dead)
         def moved(offset): return offset-2*bisect_left(ordered,offset)

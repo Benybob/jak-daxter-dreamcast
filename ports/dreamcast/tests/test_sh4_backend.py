@@ -438,6 +438,15 @@ class DeadWriteTest(unittest.TestCase):
         e=Emitter(); e.immediate(1,0); e.branch('bra','x'); e.add(2,1); e.label('x'); e.immediate(1,4); e.ret()
         self.assertEqual(e.remove_dead_writes(),1)  # BRA's target overwrites; the skipped read is unreachable
 
+    def test_copy_propagation_retargets_the_load(self):
+        e=Emitter(); e.word(0x6022); e.immediate(1,0); e.mov(2,0); e.word(0x5021); e.ret()
+        self.assertEqual(e.remove_dead_writes(),1)  # mov.l @r2,r0; mov r0,r2 -> mov.l @r2,r2
+        self.assertEqual(self.words(e),[0x6222,0xe100,0x5021,0x000b,0x0009])
+        e=Emitter(); e.word(0x6022); e.mov(2,0); e.add(3,0); e.ret()  # r0 read after the move
+        self.assertEqual(e.remove_dead_writes(),0)
+        e=Emitter(); e.word(0x6022); e.label('x'); e.mov(2,0); e.word(0x5021); e.ret()  # another way in
+        self.assertEqual(e.remove_dead_writes(),0)
+
     def test_r0_implicit_reads_keep_writes(self):
         e=Emitter(); e.immediate(0,8); e.word(0xf0e7)  # fmov.s fr0,@(r0,r14)
         e.immediate(0,1); e.ret()

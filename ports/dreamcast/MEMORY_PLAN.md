@@ -145,6 +145,17 @@ emitted at its op at all but straight into the registers of its single read (a
 move hands it on; any other access relowers without it). GAME.CGO 7,567,488 to
 7,415,136 (-152,352); TRA-CODE 91,104.
 
+Last, copy propagation in `remove_dead_writes`: MOV Rm,Rn whose Rm came from a
+load, MOV or STS just before (no label or use of either between) and is dead
+after has that write target Rn instead. GAME.CGO 7,396,144 (-18,992),
+KERNEL.CGO 181,680, TRA-CODE 90,848.
+
+Day total: GAME.CGO 8,821,024 to 7,396,144 bytes, **-1,424,880 (16.2%)**, all
+from code. What is left is template-shaped: a load, compute and store per IR
+op, and a 4-byte literal per symbol reference per function. The next larger
+steps would be a symbol-table base register with 16-bit offsets (new loader
+relocations) and op templates that work on 32-bit values directly.
+
 Two PC-only buffers now take Dreamcast values through `dreamcast_memory_budget.gc`
 (the exporter's budget now also substitutes `defglobalconstant`):
 - `PC_SUBTITLE_FILE_SIZE` 256 KiB to 16 KiB: no subtitle files on the disc yet.
