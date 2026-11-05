@@ -28,7 +28,8 @@ volatile struct {
   uint32_t spawn_actors,vis_actors,birth_dist,birth_max,links,links_allocated;
   uint32_t camera[4];
   uint32_t link0[16];
-  uint32_t level,birth_named,sticky,heap_used,pad2[2];  /* heap_used: Geyser Rock's level heap */
+  uint32_t level,birth_named,sticky,heap_used;  /* heap_used: Geyser Rock's level heap */
+  uint32_t actor_heap_used,actor_heap_total;     /* original memory-used / memory-total of *nk-dead-pool* */
   uint32_t level_words[128];  /* the level object from its tag */
   uint32_t slot[3];           /* bsp-header methods 16..18 */
   char slot_name[3][28];      /* their GOAL function names */
@@ -139,6 +140,12 @@ int dc_level_check(dc_goal_runtime *rt){
   dc_level_logic_evidence.level=level;
   if(rt->error!=DC_GOAL_OK || dc_level_logic_evidence.status!=dc_goal_find(rt,"active"))return stop(rt,5);
   dc_level_spawn_probe.heap_used=heap_used(rt,level);
+  {typedef uint64_t (*one_fn)(uint64_t);
+   uint32_t pool=named(rt,"*nk-dead-pool*");
+   uint32_t used=named(rt,"(method memory-used dead-pool-heap)"),total=named(rt,"(method memory-total dead-pool-heap)");
+   if(pool && used)dc_level_spawn_probe.actor_heap_used=(uint32_t)((one_fn)(uintptr_t)used)(pool);
+   if(pool && total)dc_level_spawn_probe.actor_heap_total=(uint32_t)((one_fn)(uintptr_t)total)(pool);
+   rt->error=DC_GOAL_OK;}
   /* village1, wanted by Jak's continue point, loads beside it. */
   {uint32_t village1=dc_goal_find(rt,"village1"),other;
    if(!village1)return stop(rt,9);

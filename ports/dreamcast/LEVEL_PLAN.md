@@ -268,6 +268,10 @@ under `*entity-pool*` (90 before). The arena ends at 13,076,032 of 13,631,488
 bytes: **555 KB free**. village1's art groups and texture pages are not loaded
 (as for Geyser Rock), so none of its actors would draw, and none is near Jak.
 
+The actor heap (`*nk-dead-pool*`, 984 KiB as on PS2) is not a place to save:
+after those 180 frames original `memory-used` reports 844,120 of 1,007,616
+bytes, from Geyser Rock's actors alone (`dc_level_spawn_probe`).
+
 Not yet: level code served through the same RPC (it loads at boot), the
 level's art groups and texture pages, actor spawning over later frames,
 collision queries, and the level inside the Jak ELF (its arena has no room for
