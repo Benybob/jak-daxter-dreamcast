@@ -473,4 +473,39 @@ class DeadWriteTest(unittest.TestCase):
         data,_=e.finish()
         self.assertNotIn(struct.pack('<I',0x12345678),data)
 
+class TrampolineTest(unittest.TestCase):
+    @staticmethod
+    def program(gap,tail=200):
+        e=Emitter(); e.branch('bt','end')
+        for _ in range(gap): e.add_immediate(1,1)
+        e.branch('bt','end')
+        for _ in range(tail): e.add_immediate(1,1)
+        e.label('end'); e.ret()
+        return e
+
+    def test_far_branches_share_one_far_jump(self):
+        # end lies beyond BRA's 4 KiB: the second branch reaches the first's far jump.
+        _,_,stats=self.program(20,3000).finish_with_stats(relax=True,literal_islands=True,far_branches=True)
+        self.assertEqual(stats['far_branches'],1)
+        os.environ['DC_SH4_NO_TRAMPOLINES']='1'
+        try: _,_,plain=self.program(20,3000).finish_with_stats(relax=True,literal_islands=True,far_branches=True)
+        finally: os.environ.pop('DC_SH4_NO_TRAMPOLINES')
+        self.assertEqual(plain['far_branches'],2)
+
+    def test_out_of_range_branch_reuses_an_earlier_expansion(self):
+        data,_,stats=self.program(20).finish_with_stats(relax=True,literal_islands=True,far_branches=True)
+        self.assertEqual(stats['expanded_conditional_branches'],1)
+        word=lambda at: struct.unpack_from('<H',data,at)[0]
+        second=6+40  # after the first expansion (BF; BRA; NOP) and twenty ADDs
+        self.assertEqual(word(second)&0xff00,0x8900)  # still BT, now to the expansion's BRA
+        site=second+4+2*struct.unpack('b',bytes([word(second)&0xff]))[0]
+        self.assertEqual(word(site)&0xf000,0xa000)
+        disp=word(site)&0xfff; disp-=0x1000 if disp&0x800 else 0
+        self.assertEqual(word(site+4+2*disp),0x000b)  # the BRA reaches end: RTS
+        os.environ['DC_SH4_NO_TRAMPOLINES']='1'
+        try: plain,_,plain_stats=self.program(20).finish_with_stats(relax=True,literal_islands=True,far_branches=True)
+        finally: os.environ.pop('DC_SH4_NO_TRAMPOLINES')
+        self.assertEqual(plain_stats['expanded_conditional_branches'],2)
+        self.assertLess(len(data),len(plain))
+
 if __name__=='__main__': unittest.main()

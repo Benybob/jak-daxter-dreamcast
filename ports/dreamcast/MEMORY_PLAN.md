@@ -189,6 +189,23 @@ Then four smaller steps (same day):
 (-283,744, 4.0%), KERNEL.CGO 169,248, TRA-CODE 86,160. All Flycast suites
 pass. Since the morning of 2026-11-04: -2,077,968 bytes (23.6%).
 
+Then branch layout and float constants:
+- Trampolines. GAME.CGO had 19,708 conditional branches expanded to
+  `BT/BF skip; BRA; NOP` and 2,955 far jumps (about 14 bytes each), mostly to
+  `call_failure`, the epilogue and `process_entry_failure` at the end of long
+  functions. An out-of-range branch now jumps to a `BRA target; NOP` already
+  in reach (an earlier expansion, a return's `BRA epilogue`, or a far jump)
+  instead of expanding; a BRA only moves to one closer to the target or to a
+  far jump, so chains cannot cycle. The layout is kept only when smaller.
+  Off with `DC_SH4_NO_TRAMPOLINES=1`.
+- Float 0.0, 1.0 and -1.0 load with `FLDI0`/`FLDI1` (and `FNEG`) instead of
+  a literal, `LDS` and `FSTS` (372 of 616 float constants in `target`).
+  FPSCR is single precision throughout (the fiber checks reject PR/SZ/FR).
+
+Final `target` bytes 177,215 to 171,967. GAME.CGO 6,743,056 to **6,651,248**
+(-91,808, 1.4%), KERNEL.CGO 168,096, TRA-CODE 85,184. All Flycast suites
+pass. Since the morning of 2026-11-04: -2,169,776 bytes (24.6%).
+
 Two PC-only buffers now take Dreamcast values through `dreamcast_memory_budget.gc`
 (the exporter's budget now also substitutes `defglobalconstant`):
 - `PC_SUBTITLE_FILE_SIZE` 256 KiB to 16 KiB: no subtitle files on the disc yet.

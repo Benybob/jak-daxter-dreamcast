@@ -7,6 +7,7 @@ Unsupported/range-limited constructs fail; there is no interpreter fallback.
 import argparse
 from bisect import bisect_left
 import json
+import os
 from pathlib import Path
 import struct
 
@@ -262,7 +263,7 @@ class Emitter:
         return (word>>12 in (0xa,0xb) or word in (0x000b,0x002b) or
                 word&0xf0ff in (0x400b,0x402b,0x0003,0x0023) or word&0xff00 in (0x8d00,0x8f00))
 
-    def _finish_islands(self,relax,literal_islands=True,far_branches=False):
+    def _finish_islands(self,relax,literal_islands=True,far_branches=False,reuse=False):
         """Lay out pool skips and branch expansions together; preserve all delay slots."""
         literal_at=dict(self.literals)
         if len(literal_at)!=len(self.literals): raise ValueError('duplicate literal instruction')
@@ -337,6 +338,32 @@ class Emitter:
             mapped[len(self.code)]=len(code)
             pool(False)
             added=set(); added_far=set()
+            # Trampolines: every BRA name; NOP already laid out (an expansion's,
+            # or a plain one such as a return's BRA epilogue). An out-of-range
+            # BT/BF to name may jump to one instead of expanding.
+            # (site, distance left to the target; 0 for a far jump, which reaches it).
+            trampolines={}
+            for offset,kind,name in self.branches:
+                target=mapped[self.labels[name]] if name in self.labels else None
+                if offset in far:
+                    site=mapped[offset]+(2 if kind in ('bt','bf') else 0); left=0
+                elif offset in expanded: site=mapped[offset]+2; left=abs(target-site)
+                elif kind=='bra' and words.get(offset+2)==0x0009 and offset not in unsafe:
+                    site=mapped[offset]; left=abs(target-site)
+                else: continue
+                trampolines.setdefault(name,[]).append((site,left))
+            planned={}  # name -> estimated trampoline sites added this pass
+            def reach(name,position,low,high,closer=None):
+                """The delta to the best trampoline in [low,high], or None. A BRA only
+                moves to one closer to the target (or a far jump), so no cycles form."""
+                best=None
+                for site,left in trampolines.get(name,()):
+                    delta=site-(position+4)
+                    if low<=delta<=high and (closer is None or left<closer) and (best is None or left<best[1]):
+                        best=(delta,left)
+                return best and best[0]
+            def soon(name,position,low,high):
+                return any(low+32<=site-(position+4)<=high-32 for site in planned.get(name,()))
             for offset,kind,name in self.branches:
                 if name not in self.labels: raise ValueError('undefined label')
                 if offset in far: continue
@@ -344,14 +371,28 @@ class Emitter:
                 delta=mapped[self.labels[name]]-(position+4)
                 if delta%2: raise ValueError('unaligned branch')
                 if kind in ('bt','bf') and offset not in expanded:
+                    if not -256<=delta<=254 and relax and reuse:
+                        found=reach(name,position,-256,254)
+                        if found is not None: delta=found
+                        elif soon(name,position,-256,254): continue
                     if not -256<=delta<=254:
-                        if relax: added.add(offset); continue
+                        if relax:
+                            added.add(offset); planned.setdefault(name,[]).append(mapped[offset]+2); continue
                         raise ValueError('branch range exceeded')
                     bits=8
                 else: bits=12
                 displacement=delta//2
                 if not -(1<<(bits-1))<=displacement<(1<<(bits-1)):
                     if far_branches and kind in ('bra','bt','bf'):
+                        if reuse:
+                            found=reach(name,position,-4096,4094,abs(mapped[self.labels[name]]-position))
+                            if found is not None:
+                                delta=found; displacement=delta//2
+                                original=struct.unpack_from('<H',code,position)[0]
+                                struct.pack_into('<H',code,position,original|(displacement&0xfff))
+                                continue
+                            if soon(name,position,-4096,4094): continue
+                            planned.setdefault(name,[]).append(mapped[offset]+(2 if kind in ('bt','bf') else 0))
                         added_far.add(offset); continue
                     raise ValueError('branch range exceeded')
                 original=struct.unpack_from('<H',code,position)[0]
@@ -366,11 +407,16 @@ class Emitter:
                 expanded_conditional_branches=len(expanded),literal_islands=islands,far_branches=len(far))
 
     def finish_with_stats(self,relax=False,literal_islands=False,far_branches=False):
-        try: return self._finish_terminal(relax)
+        try: result=self._finish_terminal(relax)
         except ValueError as error:
             if not ((literal_islands and str(error)=='literal pool range exceeded') or
                     (far_branches and str(error)=='branch range exceeded')): raise
-        return self._finish_islands(relax,literal_islands,far_branches)
+            result=self._finish_islands(relax,literal_islands,far_branches)
+        if relax and result[2]['expanded_conditional_branches'] and not os.environ.get('DC_SH4_NO_TRAMPOLINES'):
+            # Out-of-range BT/BF reuse BRAs to the same target where one is near.
+            reused=self._finish_islands(relax,literal_islands,far_branches,reuse=True)
+            if len(reused[0])<len(result[0]): return reused
+        return result
 
     def finish(self,relax=False,literal_islands=False,far_branches=False):
         return self.finish_with_stats(relax,literal_islands,far_branches)[:2]

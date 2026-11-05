@@ -1669,7 +1669,11 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
                 bits=op['value_bits']
                 if not isinstance(bits,int) or not 0<=bits<=0xffffffff or registers[writes[0]]['class']!='float':
                     raise ValueError('invalid scalar float constant')
-                constant(0,bits); e.word(0x405a); e.word(0xf00d); store_float(writes[0])
+                if bits in (0,0x3f800000,0xbf800000):
+                    e.word(0xf08d if bits==0 else 0xf09d)  # FLDI0/FLDI1 FR0
+                    if bits==0xbf800000: e.word(0xf04d)  # FNEG FR0
+                else: constant(0,bits); e.word(0x405a); e.word(0xf00d)
+                store_float(writes[0])
             elif kind=='int_to_float':
                 load_address(reads[0],0); e.word(0x405a); e.word(0xf02d); store_float(writes[0])
             elif kind=='float_to_int':
