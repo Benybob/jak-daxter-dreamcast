@@ -293,6 +293,7 @@ class Emitter:
             op=word&0xff
             if op in (0x00,0x01,0x04,0x05,0x08,0x09,0x10,0x18,0x19,0x20,0x21,0x24,0x25,0x28,0x29): return [(8,'r','rw')],[]
             if op in (0x11,0x15,0x0a,0x1a,0x2a,0x5a,0x6a): return [(8,'r','r')],[]
+            if op in (0x22,0x26,0x52,0x56): return [(8,'r','rw')],[]  # STS.L PR/FPUL,@-Rn; LDS.L @Rn+,PR/FPUL
             if low in (0xc,0xd): return [(4,'r','r'),(8,'r','rw')],[]
             return None
         if top==0x8:
@@ -429,6 +430,38 @@ class Emitter:
                 if w is None: dead.add(j)
                 else: words[j]=w; struct.pack_into('<H',self.code,2*j,w)
             dead.add(i)
+        if not dead: return 0
+        ordered=sorted(2*j for j in dead)
+        def moved(offset): return offset-2*bisect_left(ordered,offset)
+        self.code=bytearray(b''.join(self.code[o:o+2] for o in range(0,len(self.code),2) if o not in set(ordered)))
+        self.labels={name:moved(offset) for name,offset in self.labels.items()}
+        self.branches=[(moved(offset),kind,target) for offset,kind,target in self.branches]
+        self.literals=[(moved(offset),key) for offset,key in self.literals]
+        self.last_label=moved(self.last_label) if self.last_label>=0 else -1
+        return len(dead)
+
+    def drop_unused_saves(self,gprs=(),floats=()):
+        """Remove the prologue push (MOV.L Rn,@-R15 / FMOV.S FRn,@-R15) and every
+        pop (MOV.L @R15+,Rn / FMOV.S @R15+,FRn) of each callee-saved register no
+        other instruction names; a form _operands does not know names them all.
+        The caller offers only registers whose save slots nothing addresses."""
+        if self.pending: raise ValueError('deferred code outstanding')
+        words=[struct.unpack_from('<H',self.code,offset)[0] for offset in range(0,len(self.code),2)]
+        dead=set()
+        for file,regs in (('r',gprs),('f',floats)):
+            for reg in regs:
+                push,pop=(0x2f06|reg<<4,0x60f6|reg<<8) if file=='r' else (0xff0b|reg<<4,0xf0f9|reg<<8)
+                saves=[i for i,w in enumerate(words) if w in (push,pop)]
+                if len(saves)<2 or words[saves[0]]!=push or words.count(push)!=1: continue
+                def names(w):
+                    ops=self._operands(w)
+                    if ops is None: return True
+                    if ops=='stop': return file=='r' and w&0xf0df in (0x400b,0x0003) and w>>8&15==reg  # JSR/JMP/BSRF/BRAF @Rn
+                    fields,implicit=ops
+                    return any(f==file and w>>shift&15==reg for shift,f,_ in fields) or \
+                        any(f==file and r==reg for f,r,_ in implicit)
+                if any(names(w) for i,w in enumerate(words) if i not in saves): continue
+                dead.update(saves)
         if not dead: return 0
         ordered=sorted(2*j for j in dead)
         def moved(offset): return offset-2*bisect_left(ordered,offset)

@@ -272,6 +272,24 @@ span, and anything it does not know stops the rename. Off with
 82,896. All Flycast suites pass; the level ELF ends with 654 KB of arena free
 (555 KB before).
 
+Then four address forms (same day):
+- **Outgoing stack arguments** are stored with MOV.L Rm,@(disp,R15) (two
+  words) instead of MOV R15,R8; ADD; MOV.L; ADD #4; MOV.L (five). Incoming
+  ones within 60 bytes load with MOV.L @(disp,R14).
+- **Zero-filled slots** at entry use MOV.L R0,@(disp,base) when they reach.
+- **Field offsets past the displacement range** up to 127 + its reach (187
+  for words) take ADD #k then the displacement form instead of a literal and
+  ADD Rm,Rn.
+- **Unused saves go** (`Emitter.drop_unused_saves`): R8, R9 and resident
+  registers that no instruction other than their push and pops names, in
+  functions without incoming stack arguments (whose offsets include every
+  save). Off with `DC_SH4_NO_SAVE_TRIM=1`.
+
+`target` final bytes 158,297 to 152,975. GAME.CGO 6,294,592 to **6,119,696**
+(-174,896, 2.8%), KERNEL.CGO 153,776, TRA-CODE 80,912. All Flycast suites
+pass; the level ELF ends with 819 KB of arena free. Since the morning of
+2026-11-04: -2,701,328 bytes (30.6%).
+
 Two PC-only buffers now take Dreamcast values through `dreamcast_memory_budget.gc`
 (the exporter's budget now also substitutes `defglobalconstant`):
 - `PC_SUBTITLE_FILE_SIZE` 256 KiB to 16 KiB: no subtitle files on the disc yet.

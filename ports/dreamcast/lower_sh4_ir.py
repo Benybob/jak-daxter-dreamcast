@@ -1616,22 +1616,36 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
         while step: e.add_immediate(base,min(step,127)); step-=min(step,127)
         previous=(base,start)
     if lexical: set_scope_flag(0)
+    def zero_slot(index,words):
+        """R0 (zero) into each word of a slot: MOV.L R0,@(disp,base) when it reaches."""
+        at=near(index,4*words)
+        if at is not None:
+            b,d=at
+            for n in range(words): e.word(0x1000|b<<8|d+n)
+            return
+        address(index)
+        for n in range(words):
+            if n: e.add_immediate(8,4)
+            e.store(8,0)
     if vectors:
         e.immediate(0,0)
-        for index in sorted(vectors):
-            address(index)
-            for n in range(4):
-                if n: e.add_immediate(8,4)
-                e.store(8,0)
+        for index in sorted(vectors): zero_slot(index,4)
     if zero_entry:
         e.immediate(0,0)
-        for index in sorted(zero_entry):
-            address(index)
-            for n in range(4 if index in quads else 2):
-                if n: e.add_immediate(8,4)
-                e.store(8,0)
+        for index in sorted(zero_entry): zero_slot(index,4 if index in quads else 2)
         for index in sorted(false_entry):  # reviewed stale truth tests start as #f
             e.literal(0,('symbol','pointer:#f')); e.immediate(1,0); store64(index)
+    def outgoing_word(slot):
+        """R0:R1 into outgoing stack argument slot (8 bytes each) at R15."""
+        if slot*8+4<=60: e.word(0x1f00|slot*2); e.word(0x1f10|slot*2+1); return
+        e.mov(2,15); e.add_immediate(2,slot*8); e.store(2,0); e.add_immediate(2,4); e.store(2,1)
+    def stack_argument(offset,a,b):
+        """An incoming stack argument's two words at R14+offset."""
+        if offset+4<=60: e.word(0x5000|a<<8|14<<4|offset//4); e.word(0x5000|b<<8|14<<4|offset//4+1); return
+        e.mov(8,14)
+        if offset<=127: e.add_immediate(8,offset)
+        else: constant(9,offset); e.add(8,9)
+        e.load(a,8); e.add_immediate(8,4); e.load(b,8)
     gpr_args=float_args=0
     for parameter in function['parameters']:
         index=parameter['register']
@@ -1651,23 +1665,13 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
             for half,(a,b) in enumerate(((0,1),(2,3))):
                 position=gpr_args+half
                 if position<2: e.mov(a,4+position*2); e.mov(b,5+position*2)
-                else:
-                    e.mov(8,14)
-                    offset=frame+saved+(position-2)*8
-                    if offset<=127: e.add_immediate(8,offset)
-                    else: constant(9,offset); e.add(8,9)
-                    e.load(a,8); e.add_immediate(8,4); e.load(b,8)
+                else: stack_argument(frame+saved+(position-2)*8,a,b)
             store128(index,(0,1,2,3)); gpr_args+=2
         else:
             if scalar_kind(parameter['type'],runtime) not in value_types:
                 raise ValueError('bootstrap ABI currently accepts numeric parameters only')
             if gpr_args<2: store64(index,4+gpr_args*2,5+gpr_args*2)
-            else:
-                e.mov(8,14)
-                offset=frame+saved+(gpr_args-2)*8
-                if offset<=127: e.add_immediate(8,offset)
-                else: constant(9,offset); e.add(8,9)
-                e.load(0,8); e.add_immediate(8,4); e.load(1,8); store64(index)
+            else: stack_argument(frame+saved+(gpr_args-2)*8,0,1); store64(index)
             gpr_args+=1
     instructions=function['instructions']
     guarded_calls=runtime and any(op['kind']=='call' for op in instructions)
@@ -1696,8 +1700,7 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
                 for position_,value in enumerate(reads):
                     if position_<2: load64(value,4+position_*2,5+position_*2)
                     else:
-                        load64(value); e.mov(2,15); e.add_immediate(2,(position_-2)*8)
-                        e.store(2,0); e.add_immediate(2,4); e.store(2,1)
+                        load64(value); outgoing_word(position_-2)
                 e.literal(0,('symbol','function:dc-c-enter-state-code'))
                 e.word(0x400b); e.nop()
                 adjust_stack(outgoing)
@@ -1845,7 +1848,11 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
                     if register is not None and register<16: b=register
                 if b==2:
                     load_address(base)
-                    if disp is None: offset_base(offset)
+                    reach=15*unit-(size-unit)
+                    if disp is None and not floating and offset>0 and offset%unit==0 and offset-reach<=127:
+                        # ADD #k then the displacement form: offsets to 127+reach, no literal.
+                        k=offset-min(reach,offset); e.add_immediate(2,k); disp=(offset-k)//unit
+                    elif disp is None: offset_base(offset)
                 # Typed native addresses must satisfy SH-4's natural alignment.
                 # Pairs use tag-adjusted offsets (-2/+2), restoring word alignment.
                 if loading:
@@ -1901,9 +1908,8 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
                 if integer_count>8: raise ValueError('more than eight integer argument positions unsupported')
                 def place(position,a,b):
                     if position<2: e.mov(4+position*2,a); e.mov(5+position*2,b)
-                    else:
-                        e.mov(8,15); e.add_immediate(8,(position-2)*8)
-                        e.store(8,a); e.add_immediate(8,4); e.store(8,b)
+                    else:  # MOV.L Rm,@(disp,R15): positions 2..7 lie within 0..44
+                        e.word(0x1f00|a<<4|(position-2)*2); e.word(0x1f00|b<<4|(position-2)*2+1)
                 outgoing=max(0,integer_count-2)*8
                 adjust_stack(-outgoing)
                 integer_index=float_index=0
@@ -1929,8 +1935,7 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
                             raise ValueError('unsupported integer call argument')
                         if integer_index<2: load64(argument,4+integer_index*2,5+integer_index*2)
                         else:
-                            load64(argument); e.mov(2,15); e.add_immediate(2,(integer_index-2)*8)
-                            e.store(2,0); e.add_immediate(2,4); e.store(2,1)
+                            load64(argument); outgoing_word(integer_index-2)
                         integer_index+=1
                 load_address(reads[0],0)
                 if runtime:
@@ -2203,6 +2208,10 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
     e.frame_registers={14}|{b for b,_ in bases}  # R10..R13 may hold resident pointers instead
     if optimize and not os.environ.get('DC_SH4_NO_DEAD_WRITES'): e.remove_dead_writes()
     if optimize and not os.environ.get('DC_SH4_NO_RENAME'): e.rename_copies()
+    # Saves nothing uses go. Incoming stack arguments are read at frame+saved,
+    # which every save is part of, so a function with any keeps them all.
+    if optimize and not os.environ.get('DC_SH4_NO_SAVE_TRIM') and gpr_args<=2:
+        e.drop_unused_saves((8,9)+tuple(saved_gprs),saved_floats)
     if optimize and not os.environ.get('DC_SH4_NO_DELAY_SLOTS'): e.fill_call_delay_slots()
     data,relocations,layout=e.finish_with_stats(relax=True,literal_islands=True,far_branches=True)
     instruction_bytes=layout['instruction_bytes']

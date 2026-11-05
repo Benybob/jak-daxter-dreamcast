@@ -549,6 +549,25 @@ class RenameTest(unittest.TestCase):
         e=Emitter(); e.word(0x62a3); e.label('x'); e.word(0x5221); e.branch('bt','x'); e.ret()
         self.assertEqual(e.rename_copies(),0)
 
+class SaveTrimTest(unittest.TestCase):
+    @staticmethod
+    def function(*body):
+        e=Emitter()
+        for w in (0x4f22,0x2fe6,0x2f86,0x2f96,0xffcb,0x6ef3)+body+(0x6fe3,0xfcf9,0x69f6,0x68f6,0x6ef6,0x4f26): e.word(w)
+        e.ret()
+        return e
+
+    def test_unused_saves_go(self):
+        # body: mov #1,r9 -> R8 and FR12 are never named
+        e=self.function(0xe901)
+        self.assertEqual(e.drop_unused_saves((8,9),(12,)),4)
+        self.assertEqual(DeadWriteTest.words(None,e),[0x4f22,0x2fe6,0x2f96,0x6ef3,0xe901,0x6fe3,0x69f6,0x6ef6,0x4f26,0x000b,0x0009])
+
+    def test_named_saves_stay(self):
+        # jsr @r8 names R8; fadd fr12,fr0 names FR12; an unknown form names everything
+        self.assertEqual(self.function(0x480b,0x0009,0xf0c0).drop_unused_saves((8,),(12,)),0)
+        self.assertEqual(self.function(0x0083).drop_unused_saves((8,9),(12,)),0)  # pref @r0: not decoded
+
 class TrampolineTest(unittest.TestCase):
     @staticmethod
     def program(gap,tail=200):
