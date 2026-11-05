@@ -77,14 +77,9 @@ int dc_level_player(dc_goal_runtime *rt){
    cp=name?(uint32_t)((two_fn)(uintptr_t)named(rt,"(method get-continue-by-name game-info)"))(named(rt,"*game-info*"),name):0;}
   dc_level_player_evidence.continue_point=cp;
   if(rt->error!=DC_GOAL_OK || !cp || cp==rt->s7)return stop(rt,6);
-  /* TEST LIMITATION, not port behaviour: every Geyser Rock continue point also
-   * wants village1 displayed (lev1 'village1, disp1 'special), whose logic BSP
-   * (1.5 MB) does not fit a level heap yet, and target-continue waits for it.
-   * This test clears lev1 (+112, retail layout) so only Geyser Rock is wanted. */
-  {unsigned char *lev1=dc_goal_resolve(rt,cp+112u,4);uint32_t value=0;
-   if(lev1)memcpy(&value,lev1,4);
-   if(!lev1 || value!=dc_goal_find(rt,"village1"))return stop(rt,11);
-   memcpy(lev1,&rt->s7,4);}
+  /* Every Geyser Rock continue point also wants village1 displayed (lev1, +112
+   * retail layout); target-continue loads it beside Geyser Rock. */
+  if(word(rt,cp+112u)!=dc_goal_find(rt,"village1"))return stop(rt,11);
   listener=named(rt,"*listener-process*");bytes=word(rt,listener+80)-(listener-4u);
   start=named(rt,"start");
   if(!start || !dc_goal_note_process_span(rt,listener,bytes,NULL) || !dc_goal_bind_process_context(rt,listener,bytes))

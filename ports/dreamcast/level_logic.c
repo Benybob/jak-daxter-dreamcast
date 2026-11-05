@@ -17,8 +17,8 @@ volatile struct {
   uint32_t level,status,bsp,bsp_type_ok,bsp_level,want_result;
   uint32_t real_types,actors,spawned;
   char spawned_type[4][16];
-  uint32_t pad[2];
-} dc_level_logic_evidence={.version=2};
+  uint32_t village1_status,village1_heap_used;  /* the level every Geyser Rock continue point also displays */
+} dc_level_logic_evidence={.version=3};
 typedef char dc_level_logic_evidence_bytes[sizeof dc_level_logic_evidence==128?1:-1];
 
 /* Why actors are or are not born: the switches actors-update reads, the
@@ -28,7 +28,7 @@ volatile struct {
   uint32_t spawn_actors,vis_actors,birth_dist,birth_max,links,links_allocated;
   uint32_t camera[4];
   uint32_t link0[16];
-  uint32_t level,birth_named,sticky,pad2[3];
+  uint32_t level,birth_named,sticky,heap_used,pad2[2];  /* heap_used: Geyser Rock's level heap */
   uint32_t level_words[128];  /* the level object from its tag */
   uint32_t slot[3];           /* bsp-header methods 16..18 */
   char slot_name[3][28];      /* their GOAL function names */
@@ -71,6 +71,17 @@ volatile struct { uint32_t target,state,pos[4]; char state_name[24]; uint32_t ca
 /* Children of *camera-pool* after the frames: type and state names.
  * --dump dc_level_camera_pool_probe 260 */
 volatile struct { uint32_t count; struct { char type[24]; char state[24]; uint32_t status,pad; } row[5]; } dc_level_camera_pool_probe;
+/* Bytes a level has taken from its level heap: the inline kheap in the level
+ * object (base, top, current, top-base) whose size is the level heap size. */
+static uint32_t heap_used(dc_goal_runtime *rt,uint32_t level){
+  enum {LEVEL_HEAP_BYTES=1664u*1024u};  /* dreamcast_memory_budget.gc */
+  uint32_t i;
+  for(i=0;i<512u;i+=4){
+    uint32_t base=word(rt,level+i),top=word(rt,level+i+4u),current=word(rt,level+i+8u),top_base=word(rt,level+i+12u);
+    if(base && top==top_base && top_base-base==LEVEL_HEAP_BYTES && current>=base && current<=top)return current-base;
+  }
+  return 0;
+}
 static uint64_t actors_wrapper(uint64_t group){
   typedef uint64_t (*one_fn)(uint64_t);
   ++dc_level_actors_probe.calls;
@@ -127,6 +138,15 @@ int dc_level_check(dc_goal_runtime *rt){
   level=(uint32_t)((two_fn)(uintptr_t)get)(group,training);
   dc_level_logic_evidence.level=level;
   if(rt->error!=DC_GOAL_OK || dc_level_logic_evidence.status!=dc_goal_find(rt,"active"))return stop(rt,5);
+  dc_level_spawn_probe.heap_used=heap_used(rt,level);
+  /* village1, wanted by Jak's continue point, loads beside it. */
+  {uint32_t village1=dc_goal_find(rt,"village1"),other;
+   if(!village1)return stop(rt,9);
+   dc_level_logic_evidence.village1_status=(uint32_t)((two_fn)(uintptr_t)status)(group,village1);
+   other=(uint32_t)((two_fn)(uintptr_t)get)(group,village1);
+   if(other && other!=rt->s7)dc_level_logic_evidence.village1_heap_used=heap_used(rt,other);
+   rt->error=DC_GOAL_OK;
+   if(dc_level_logic_evidence.village1_status!=dc_goal_find(rt,"active"))return stop(rt,10);}
   /* Find the level's bsp field by its contents: a bsp-header whose level field
    * (+120 from the object, retail layout) is this level. */
   for(i=0;i<256u && !dc_level_logic_evidence.bsp;i+=4){

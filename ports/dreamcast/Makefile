@@ -815,7 +815,7 @@ jak-dc-kernel-dgo.elf: kernel_boot_main.o kernel_dgo_cases.o kernel_vf_fixture.o
 	kos-c++ -o $@ $^ -Wl,--section-start=.dc_stage=0x8cd80000
 
 # The DGO boot, then a level's logic BSP from /cd through original login
-# (AI-assisted), ISC. Disc: build/level-disc with TRA.DGO (the logic BSP) and TRA-CODE.DGO. A disc boot loads
+# (AI-assisted), ISC. Disc: build/level-disc with TRAINING.DGO and VILLAGE1.DGO (logic BSPs), TRA-CODE.DGO and VI1-CODE.DGO. A disc boot loads
 # the flat binary, so the boot romdisk sits low, as in the Jak ELF.
 level_kernel_cases.o: kernel_boot_cases.c level_logic.h level_dgo_rpc.h level_player.h goal_dgo.h goal_dgo_zst.h goal_bridge.h goal_fiber.h goal_main_start.h runtime_cases.h build/game_cgo_order.h build/vf_cases.h mips2c_dc.h mips2c_cases.h build/mips2c/mips2c_cases_expect.h
 	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -DDC_KERNEL_DGO -DDC_LEVEL_LOGIC -I. -c kernel_boot_cases.c -o $@

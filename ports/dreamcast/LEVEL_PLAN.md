@@ -247,11 +247,26 @@ at (-1325.1, 11.3, 1063.3) m. What it took:
   the disc root) and load reads the requested range on demand.
 - **The continue point.** `get-or-create-continue!` gave the default continue
   at the origin; Geyser Rock's new-game point is `training-start`.
-- **TEST LIMITATION.** Every Geyser Rock continue point also wants village1
-  displayed, whose 1.5 MB logic BSP does not fit; `target-continue` waits for
-  it. `level_player.c` clears that continue point's `lev1` before `start`.
-  Loading village1 alongside is a memory problem still open.
 - `jak-dc-level.elf` runs 180 display frames.
+
+### village1 beside Geyser Rock (Flycast, 543 of 543, 2026-11-05)
+
+Every Geyser Rock continue point also wants village1 displayed (`lev1`), and
+`target-continue` waits for it. Until now the test cleared `lev1`, because
+village1's 1,509,632-byte logic BSP did not fit a 512 KiB level heap. The code
+shrinking freed the room, so the original continue point now runs unchanged:
+- **Level heaps** are 1,664 KiB each (`dreamcast_memory_budget.gc`). Either
+  level can land in either heap, so both take village1's size.
+- **village1's code** (`build_level_code.py VI1`: 12 objects, 576,416 bytes,
+  from villagep-obs to sequence-a-village1) loads at boot after TRA-CODE.
+- **The disc** adds `VILLAGE1.DGO` (VI1-LOGIC.DGO), `VI1-CODE.DGO` and
+  `VI1.VIS`.
+
+Measured after 180 frames: both levels `'active`; Geyser Rock's heap holds
+389,664 bytes and village1's 1,526,064 (178 KB to spare); 115 actors born
+under `*entity-pool*` (90 before). The arena ends at 13,076,032 of 13,631,488
+bytes: **555 KB free**. village1's art groups and texture pages are not loaded
+(as for Geyser Rock), so none of its actors would draw, and none is near Jak.
 
 Not yet: level code served through the same RPC (it loads at boot), the
 level's art groups and texture pages, actor spawning over later frames,

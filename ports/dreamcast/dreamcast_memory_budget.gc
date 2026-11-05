@@ -17,10 +17,12 @@
 ;; only its logic BSP, art and allocations resident (LEVEL_PLAN.md: Geyser
 ;; Rock's logic BSP is 378,128 bytes); render data is drawn from converted
 ;; packages. Geyser Rock uses about 400 KB after birth (logic BSP plus entity
-;; tables). 512 KiB each, both values, so level-get-for-use's debug allocation
-;; and a compact allocation agree, and the player's art fits beside them.
-(defconstant LEVEL_HEAP_SIZE (* 512 1024))
-(defconstant LEVEL_HEAP_SIZE_DEBUG (* 512 1024))
+;; tables); village1, which every Geyser Rock continue point also displays, has
+;; a 1,509,632-byte logic BSP. Either level can land in either heap, so both
+;; take the larger one with room for its entity tables. Both values agree, so
+;; level-get-for-use's debug allocation and a compact allocation are the same.
+(defconstant LEVEL_HEAP_SIZE (* 1664 1024))
+(defconstant LEVEL_HEAP_SIZE_DEBUG (* 1664 1024))
 
 ;; pc/subtitle.gc: the PC port's subtitle text heap. PC 256 KiB. The Dreamcast
 ;; disc carries no subtitle files yet, and load-subtitle-text-info refuses a

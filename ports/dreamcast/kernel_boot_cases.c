@@ -440,19 +440,24 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
        dc_goal_set_symbol(&rt,dc_goal_find(&rt,"*run*"),dc_goal_find(&rt,"#t"));
        dc_goal_set_symbol(&rt,dc_goal_find(&rt,"*dproc*"),dproc);
 #ifdef DC_LEVEL_LOGIC
-  /* Geyser Rock's code (build_level_code.py: training-obs, training-part) links
-   * and runs its startups first, so its deftypes are real before the BSP binds
-   * them; as on PS2 the level's code objects precede its data in TRA.DGO. */
-  {static dc_goal_dgo_result level_code;FILE *file=fopen("/cd/TRA-CODE.DGO","rb");int loaded=0;
-   CHECK(file!=NULL,1,"Geyser Rock level code opens from /cd");
-   if(file){
-     method_set_depth(&rt,1);
-     loaded=dc_goal_load_dgo(&rt,file,sync_code,NULL,&level_code);fclose(file);
-     method_set_depth(&rt,-1);
-   }
-   CHECK(loaded?1:100+rt.error,1,"Geyser Rock level code links and runs each original startup");
-   CHECK(level_code.objects,2,"TRA-CODE holds training-obs and training-part");
-   CHECK(level_code.initializers,2,"both level code files run their top-level startups");}
+  /* Geyser Rock's code (build_level_code.py: training-obs, training-part) and
+   * village1's, which its continue point also displays, link and run their
+   * startups first, so their deftypes are real before the BSPs bind them; as on
+   * PS2 a level's code objects precede its data in its DGO. */
+  {static const struct {const char *path;uint32_t objects;} codes[]={{"/cd/TRA-CODE.DGO",2},{"/cd/VI1-CODE.DGO",12}};
+   unsigned k;
+   for(k=0;k<2;++k){
+     static dc_goal_dgo_result level_code;FILE *file=fopen(codes[k].path,"rb");int loaded=0;
+     CHECK(file!=NULL,1,"level code opens from /cd");
+     if(file){
+       method_set_depth(&rt,1);
+       loaded=dc_goal_load_dgo(&rt,file,sync_code,NULL,&level_code);fclose(file);
+       method_set_depth(&rt,-1);
+     }
+     CHECK(loaded?1:100+rt.error,1,"level code links and runs each original startup");
+     CHECK(level_code.objects,codes[k].objects,"level code holds every object of its level's DGO");
+     CHECK(level_code.initializers,codes[k].objects,"every level code file runs its top-level startup");
+   }}
        /* Then the original load-state wants Geyser Rock displayed; display-loop's
         * level-update loads it through RPC-DGO (level_dgo_rpc.c), logs it in,
         * births it and makes it active. */
