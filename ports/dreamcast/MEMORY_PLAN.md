@@ -234,6 +234,28 @@ routines were measured and dropped: the call costs as much as the pushes it
 replaces. GAME.CGO 6,589,152 to **6,560,864** (-28,288), KERNEL.CGO
 163,744, TRA-CODE 84,640. All Flycast suites pass.
 
+Register allocation, phase 1: resident slots (off with
+`DC_SH4_NO_RESIDENTS=1`). Floats are colored apart from integers, and the
+most-accessed slots then live in callee-saved registers instead of the
+frame: float slots in FR12..FR15, 32-bit integer slots (every value
+low-word or narrow) in R10..R13 before the frame windows take what is left.
+A slot is resident only when its accesses save more than its push and pop;
+its values leave the frame, which closes up. Templates read residents in
+place: memory ops use a resident pointer as their base, 32-bit arithmetic
+and compares and float arithmetic and compares take resident operands, and
+`x = x op y` on a resident float runs in place. Fiber and catch images keep
+R8..R14 and FR12..FR15; a catch restores them to their values at the catch,
+so a function that makes a catch frame (it names `catch-frame`) keeps every
+slot in memory. The dead-write pass now drops loads only from frame
+registers, not through resident pointers.
+
+Templates still move every operand through R0..R7; deeper allocation
+(results computed straight into resident registers, 64-bit values in
+register pairs, more registers) is the next phase. `target` final bytes
+169,407 to 161,687. GAME.CGO 6,560,864 to **6,392,464** (-168,400, 2.6%),
+KERNEL.CGO 160,432, TRA-CODE 83,632. All Flycast suites pass. Since the
+morning of 2026-11-04: -2,428,560 bytes (27.5%).
+
 Two PC-only buffers now take Dreamcast values through `dreamcast_memory_budget.gc`
 (the exporter's budget now also substitutes `defglobalconstant`):
 - `PC_SUBTITLE_FILE_SIZE` 256 KiB to 16 KiB: no subtitle files on the disc yet.

@@ -173,11 +173,12 @@ def validate_definitions(function,registers,entry_defined=()):
         missing=set(ops[node]['reads'])-inputs[node]
         if missing: raise UninitializedRead(node,missing)
 
-def allocate_slots(function,quads=None):
+def allocate_slots(function,quads=None,separate=None):
     """Reuse eight-byte slots using CFG liveness, including loop/call edges.
 
     With quads (a set of 128-bit values), those are colored apart from the
-    eight-byte values and a second {value: index*16} map is returned too."""
+    eight-byte values and a second {value: index*16} map is returned too.
+    Values in separate (floats, say) never share an eight-byte slot with others."""
     ops=function['instructions']; count=len(ops)
     successors=[]
     for i,op in enumerate(ops):
@@ -244,9 +245,13 @@ def allocate_slots(function,quads=None):
         for value,c in colors.items(): weight[c]=weight.get(c,0)+uses.get(value,0)
         rank={c:k for k,c in enumerate(sorted(weight,key=lambda c:(-weight[c],c)))}
         return {value:rank[c] for value,c in colors.items()}
+    def eight_byte(values):
+        if not separate: return color(values)
+        apart=color(values-separate); top=max(apart.values(),default=-1)+1
+        return {**apart,**{value:c+top for value,c in color(values&separate).items()}}
     if quads is None:
-        return {value:c*8 for value,c in hot_first(color(graph)).items()}
-    return ({value:c*8 for value,c in hot_first(color(set(graph)-quads)).items()},
+        return {value:c*8 for value,c in hot_first(eight_byte(set(graph))).items()}
+    return ({value:c*8 for value,c in hot_first(eight_byte(set(graph)-quads)).items()},
             {value:c*16 for value,c in color(set(graph)&quads).items()})
 
 def stack_object_reservation(function,registers,fixed,runtime):
@@ -1147,68 +1152,11 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
     # read). vf values read before any write stay live from entry, where every
     # vf slot is zero-filled. Addressed or zero-filled ones stay pinned.
     pinned_quads=quads&(addressed|zero_entry)
-    if optimize:
-        slots,quad_slots=allocate_slots(function,quads)
-        for index in pinned_quads: quad_slots.pop(index,None)
-    else:
-        slots={index:i*8 for i,index in enumerate(sorted(set(registers)-quads))}; quad_slots={}
-    frame=max(slots.values(),default=-8)+8
-    for index,offset in quad_slots.items(): slots[index]=frame+offset
-    frame+=max(quad_slots.values(),default=-16)+16
-    for index in sorted(quads-set(quad_slots)):
-        slots[index]=frame; frame+=16
-    # (& var): the variable's home is its slot, which a pointer may reach at any
-    # later op, so it is pinned outside liveness reuse like desktop force_on_stack.
-    for index in sorted((addressed|zero_entry)-quads):
-        slots[index]=frame; frame+=8
-    # A dedicated slot, outside liveness reuse, records an entered lexical
-    # scope so the call-fault exit can restore the saved process first.
-    scope_flag=None
-    if lexical:
-        scope_flag=frame; frame+=8
-    # Independent function-lifetime objects above spills and the cleanup flag.
-    # A fixed 16-byte slack allows slot0 alignment for either SP alias/alignment.
-    stack_region=None
-    if stack_objects:
-        stack_region=frame
-        frame+=16+stack_objects*8
-    if frame>4096: raise ValueError('bootstrap stack frame too large')
-    # Far frame windows. R10..R13 are callee-saved and no template touches them,
-    # so up to four hold R14+64k for the most-accessed 64-byte windows past
-    # MOV.L @(disp,R14) range; a slot there is one displacement access too.
-    bases=[]
-    if optimize and frame>64 and not os.environ.get('DC_SH4_NO_FRAME_BASES'):
-        weight={}
-        for op in function['instructions']:
-            for value in op['reads']+(op['writes'] if op['kind']!='nop' else []):
-                offset=slots.get(value)
-                if offset is not None and offset>=64:
-                    weight[offset//64]=weight.get(offset//64,0)+(6 if offset<=127 else 10)
-        chosen=sorted(k for k in sorted(weight,key=lambda k:-weight[k])[:4] if weight[k]>12)
-        bases=[(10+n,k*64) for n,k in enumerate(chosen)]
-    saved=16+4*len(bases)  # PR, R14, R8, R9 and the bases, above the frame
-    # Single-use temporaries stay in registers: a gpr64 or float value one op writes and
-    # only the next op reads (no label between) has its store deferred, and
-    # dropped when that read is the next code emitted. Anything emitted first
-    # stores it as usual; a second access lowers the function again without it.
-    forward=set(); reader={}
-    if optimize and not os.environ.get('DC_SH4_NO_FORWARD'):
-        ops=function['instructions']
-        jumps={op['target'] for op in ops if op['kind'] in ('goto','branch')}
-        defs={}; uses={}
-        for position,op in enumerate(ops):
-            if op['kind']=='nop': continue
-            for value in op['reads']: uses.setdefault(value,[]).append(position)
-            for value in op['writes']: defs.setdefault(value,[]).append(position)
-        pinned=addressed|zero_entry|false_entry|set(excluded)|{p['register'] for p in function['parameters']}
-        pinned.add(function.get('lexical_saved'))
-        for value,written in defs.items():
-            read=uses.get(value,())
-            if len(written)!=1 or len(read)!=1 or value in pinned or \
-               registers.get(value,{}).get('class') not in ('gpr64','float') or read[0]<=written[0]: continue
-            if all(ops[i]['kind']=='nop' for i in range(written[0]+1,read[0])) and \
-               not any(i in jumps for i in range(written[0]+1,read[0]+1)):
-                forward.add(value); reader[value]=read[0]
+    # Shared SH-4 helpers (sh4_helpers.py) instead of long inline templates;
+    # the runtime installs them with its core and integer bridges.
+    helpers=optimize and runtime and not os.environ.get('DC_SH4_NO_HELPERS')
+    def helper(name,reg):
+        e.literal(reg,('symbol','function:'+name)); e.word(0x400b|reg<<8); e.nop()  # JSR @Rreg
     # 32-bit values: a gpr64 value whose every store has a high word known to be
     # zero (MOV #0 since the last label, call or other write of that register)
     # keeps only its low word in the slot and loads its high word as MOV #0.
@@ -1218,11 +1166,6 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
         narrow={value for value,r in registers.items() if r['class']=='gpr64'}
         narrow-=addressed|zero_entry|false_entry|set(wide_values)|{p['register'] for p in function['parameters']}
         narrow-={function.get('lexical_saved')}|{op['source'] for op in function['instructions'] if op['kind']=='register_address'}
-    # Shared SH-4 helpers (sh4_helpers.py) instead of long inline templates;
-    # the runtime installs them with its core and integer bridges.
-    helpers=optimize and runtime and not os.environ.get('DC_SH4_NO_HELPERS')
-    def helper(name,reg):
-        e.literal(reg,('symbol','function:'+name)); e.word(0x400b|reg<<8); e.nop()  # JSR @Rreg
     # Low-word values: every read uses only the low 32 bits (addresses, narrow
     # stores, 32-bit conversions, call targets, and the low result of add, sub,
     # logic and left shifts). The slot keeps one word, the high register is
@@ -1251,6 +1194,138 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
             if not low_word&full: break
             low_word-=full
         narrow-=low_word
+    # Resident slots: the most-accessed slots live in callee-saved registers
+    # instead of the frame. Float slots (floats are colored apart from
+    # integers) take FR12..FR15; 32-bit integer slots (every value low-word or
+    # narrow) take R10..R13 before the frame windows do. Fiber and catch images
+    # keep these registers, but a catch restores them to their values at the
+    # catch, so a function that makes a catch frame keeps every slot in memory.
+    # A slot is resident only when its accesses save more than its push and
+    # pop (4 bytes). Its values leave the frame, which closes up behind them.
+    home_of={}  # value -> GPR number, or 16+n for FRn
+    residents=optimize and not os.environ.get('DC_SH4_NO_RESIDENTS') and \
+        not any(op.get('symbol')=='catch-frame' for op in function['instructions'])
+    if optimize:
+        floats={value for value,r in registers.items() if r['class']=='float'} if residents else None
+        slots,quad_slots=allocate_slots(function,quads,separate=floats)
+        for index in pinned_quads: quad_slots.pop(index,None)
+    else:
+        slots={index:i*8 for i,index in enumerate(sorted(set(registers)-quads))}; quad_slots={}
+    if residents:
+        members={}
+        for value,offset in slots.items(): members.setdefault(offset,[]).append(value)
+        pinned=addressed|zero_entry|false_entry|{function.get('lexical_saved')}|\
+               {op['source'] for op in function['instructions'] if op['kind']=='register_address'}
+        def kind_of(offset):
+            values=members[offset]
+            if any(v in pinned for v in values): return None
+            if all(registers[v]['class']=='float' for v in values): return 'float'
+            if all(registers[v]['class']=='gpr64' and (v in low_word or v in narrow) for v in values): return 'gpr'
+            return None
+        gain={}
+        for op in function['instructions']:
+            if op['kind']=='nop': continue
+            for n,value in enumerate(op['reads']):
+                offset=slots.get(value)
+                if offset is None: continue
+                # A float access is MOV #d,R0; FMOV.S (4 bytes) against FMOV (2) or
+                # none; an integer one saves where an op reads the register in place.
+                in_place=op['kind']=='load_memory' and n==0 or op['kind']=='store_memory' and n==1 or \
+                    op['kind'] in ('add64','sub64','and64','or64','xor64','imul32') and n==1 or op['kind']=='branch'
+                gain[offset]=gain.get(offset,0)+(2 if registers[value]['class']=='float' or in_place else 0)
+            for value in op['writes'] if op['kind']!='nop' else ():
+                offset=slots.get(value)
+                if offset is not None: gain[offset]=gain.get(offset,0)+(2 if registers[value]['class']=='float' else 1)
+        free={'float':[16+n for n in (12,13,14,15)],'gpr':[10,11,12,13]}
+        for offset in sorted(gain,key=lambda o:(-gain[o],o)):
+            kind=kind_of(offset)
+            if kind and gain[offset]>4 and free[kind]:
+                register=free[kind].pop(0)
+                for value in members[offset]: home_of[value]=register
+        # Resident values keep a per-register mark (equal marks: one home); the
+        # frame's remaining slots close up in their hot-first order.
+        for value,register in home_of.items(): slots[value]=-1-register
+        order={offset:8*n for n,offset in enumerate(sorted({o for o in slots.values() if o>=0}))}
+        slots={value:order.get(offset,offset) for value,offset in slots.items()}
+    frame=max((o for o in slots.values() if o>=0),default=-8)+8
+    for index,offset in quad_slots.items(): slots[index]=frame+offset
+    frame+=max(quad_slots.values(),default=-16)+16
+    for index in sorted(quads-set(quad_slots)):
+        slots[index]=frame; frame+=16
+    # (& var): the variable's home is its slot, which a pointer may reach at any
+    # later op, so it is pinned outside liveness reuse like desktop force_on_stack.
+    for index in sorted((addressed|zero_entry)-quads):
+        slots[index]=frame; frame+=8
+    # A dedicated slot, outside liveness reuse, records an entered lexical
+    # scope so the call-fault exit can restore the saved process first.
+    scope_flag=None
+    if lexical:
+        scope_flag=frame; frame+=8
+    # Independent function-lifetime objects above spills and the cleanup flag.
+    # A fixed 16-byte slack allows slot0 alignment for either SP alias/alignment.
+    stack_region=None
+    if stack_objects:
+        stack_region=frame
+        frame+=16+stack_objects*8
+    if frame>4096: raise ValueError('bootstrap stack frame too large')
+    # Far frame windows. R10..R13 are callee-saved and no template touches them,
+    # so those no resident slot holds point at R14+64k for the most-accessed
+    # 64-byte windows past MOV.L @(disp,R14) range; a slot there is one
+    # displacement access too.
+    saved_gprs=sorted({r for r in home_of.values() if r<16})
+    saved_floats=sorted({r-16 for r in home_of.values() if r>=16})
+    spare=[r for r in (10,11,12,13) if r not in saved_gprs]
+    bases=[]
+    if optimize and frame>64 and spare and not os.environ.get('DC_SH4_NO_FRAME_BASES'):
+        weight={}
+        for op in function['instructions']:
+            for value in op['reads']+(op['writes'] if op['kind']!='nop' else []):
+                offset=slots.get(value)
+                if offset is not None and offset>=64:
+                    weight[offset//64]=weight.get(offset//64,0)+(6 if offset<=127 else 10)
+        chosen=sorted(k for k in sorted(weight,key=lambda k:-weight[k])[:len(spare)] if weight[k]>12)
+        bases=[(spare[n],k*64) for n,k in enumerate(chosen)]
+    # PR, R14, R8, R9, the bases and the resident registers, above the frame
+    saved=16+4*(len(bases)+len(saved_gprs)+len(saved_floats))
+    # Single-use temporaries stay in registers: a gpr64 or float value one op writes and
+    # only the next op reads (no label between) has its store deferred, and
+    # dropped when that read is the next code emitted. Anything emitted first
+    # stores it as usual; a second access lowers the function again without it.
+    forward=set(); reader={}
+    if optimize and not os.environ.get('DC_SH4_NO_FORWARD'):
+        ops=function['instructions']
+        jumps={op['target'] for op in ops if op['kind'] in ('goto','branch')}
+        defs={}; uses={}
+        for position,op in enumerate(ops):
+            if op['kind']=='nop': continue
+            for value in op['reads']: uses.setdefault(value,[]).append(position)
+            for value in op['writes']: defs.setdefault(value,[]).append(position)
+        pinned=addressed|zero_entry|false_entry|set(excluded)|{p['register'] for p in function['parameters']}
+        pinned.add(function.get('lexical_saved'))
+        for value,written in defs.items():
+            read=uses.get(value,())
+            if len(written)!=1 or len(read)!=1 or value in pinned or \
+               registers.get(value,{}).get('class') not in ('gpr64','float') or read[0]<=written[0]: continue
+            if all(ops[i]['kind']=='nop' for i in range(written[0]+1,read[0])) and \
+               not any(i in jumps for i in range(written[0]+1,read[0]+1)):
+                forward.add(value); reader[value]=read[0]
+    def home(index):
+        """The register a resident value lives in, or None."""
+        register=home_of.get(index)
+        if register is not None and (index in consumed or index in remat): raise ForwardMiss(index)
+        return register
+    def direct(index):
+        """A resident value's register for an op to read in place, or None."""
+        if index in remat or (deferred and deferred[0]==index): return None
+        return home(index)
+    def gpr_operand(index,reg):
+        register=direct(index)
+        if register is not None and register<16: return register
+        load_address(index,reg); return reg
+    def float_operand(index,reg):
+        register=direct(index)
+        if register is not None and register>=16: return register-16
+        load_float(index,reg); return reg
     wide_misses=set()
     consumed=set()  # forwarded values whose slot was never written
     remat={}  # forwarded constants: value -> emit(low, high) at the read
@@ -1306,6 +1381,10 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
         # Reloading what was just stored, into the same registers, with no label
         # between (no other path in), is a no-op.
         if stored==(len(e.code),index,low,high) and e.last_label!=len(e.code): return
+        register=home(index)
+        if register is not None:  # a resident slot holds a narrow value
+            if low!=register: e.mov(low,register)
+            e.immediate(high,0); return
         at=near(index,8)
         if index in narrow:
             if at is not None: b,d=at; e.word(0x5000|low<<8|b<<4|d)
@@ -1323,6 +1402,10 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
             if reg!=source_low: e.mov(reg,source_low)
             return
         if stored and stored[:3]==(len(e.code),index,reg) and e.last_label!=len(e.code): return
+        register=home(index)
+        if register is not None:
+            if reg!=register: e.mov(reg,register)
+            return
         at=near(index,8)
         if at is not None: b,d=at; e.word(0x5000|reg<<8|b<<4|d)
         else: address(index); e.load(reg,8)
@@ -1367,6 +1450,10 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
             remat[index]=(emit,wide_high); return
         emit(0,None if index in low_word else 1); store64(index)
     def emit_store64(index,low,high):
+        register=home(index)
+        if register is not None:
+            if low!=register: e.mov(register,low)
+            return
         at=near(index,8)
         if index in narrow or index in low_word:
             if at is not None: b,d=at; e.word(0x1000|b<<8|low<<4|d)
@@ -1436,6 +1523,9 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
             source,_=held(index)
             if reg!=source: e.word(0xf00c|reg<<8|source<<4)  # FMOV FRm,FRn
             return
+        register=home(index)
+        if register is not None:
+            e.word(0xf00c|reg<<8|(register-16)<<4); return  # FMOV FRres,FRreg
         base,offset=float_base(index)
         if not offset: e.word(0xf008|(reg<<8)|(base<<4)); return
         if offset<=127: e.immediate(0,offset); e.word(0xf006|(reg<<8)|(base<<4)); return
@@ -1450,6 +1540,9 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
             e.pending=emit; deferred=(index,reg,None)
         else: emit_store_float(index,reg)
     def emit_store_float(index,reg):
+        register=home(index)
+        if register is not None:
+            e.word(0xf00c|(register-16)<<8|reg<<4); return  # FMOV FRreg,FRres
         base,offset=float_base(index)
         if not offset: e.word(0xf00a|(base<<8)|(reg<<4)); return
         if offset<=127: e.immediate(0,offset); e.word(0xf007|(base<<8)|(reg<<4)); return
@@ -1459,31 +1552,33 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
         e.constant(reg,value if value<0x80000000 else value-0x100000000)
     def sign_extend():
         e.mov(1,0); e.immediate(9,-31); e.rr(0x400c,1,9)  # shad r9,r1
-    def float_condition(kind,target):
+    def float_condition(kind,target,a=0,b=1):
         # Match the pinned frontend's UCOMISS + unsigned condition contract,
         # including unordered EQ/LT/LE. Do not substitute C/IEEE predicates.
+        # The operands are FRa and FRb.
         if kind in ('gt','le'):
-            e.rr(0xf005,0,1); e.branch('bt' if kind=='gt' else 'bf',target)
+            e.rr(0xf005,a,b); e.branch('bt' if kind=='gt' else 'bf',target)
         elif kind=='ge':
-            e.rr(0xf005,0,1); e.branch('bt',target)
-            e.rr(0xf004,0,1); e.branch('bt',target)
+            e.rr(0xf005,a,b); e.branch('bt',target)
+            e.rr(0xf004,a,b); e.branch('bt',target)
         elif kind in ('eq','lt'):
-            e.rr(0xf004 if kind=='eq' else 0xf005,0 if kind=='eq' else 1,1 if kind=='eq' else 0)
+            e.rr(0xf004 if kind=='eq' else 0xf005,a if kind=='eq' else b,b if kind=='eq' else a)
             e.branch('bt',target)
-            for reg in (0,1): e.rr(0xf004,reg,reg); e.branch('bf',target)
+            for reg in (a,b): e.rr(0xf004,reg,reg); e.branch('bf',target)
         elif kind=='ne':
             done=label_name()
-            e.rr(0xf004,0,1); e.branch('bt',done)
-            e.rr(0xf004,0,0); e.branch('bf',done)
-            e.rr(0xf004,1,1); e.branch('bt',target); e.label(done)
+            e.rr(0xf004,a,b); e.branch('bt',done)
+            e.rr(0xf004,a,a); e.branch('bf',done)
+            e.rr(0xf004,b,b); e.branch('bt',target); e.label(done)
         else: raise ValueError('unsupported float comparison')
-    def condition(kind,signed,target,low_only=False):
+    def condition(kind,signed,target,low_only=False,a=0,b=2):
         # low_only: both high halves are zero, so every comparison (signed too, as
-        # both values are in 0..2^32-1) is the unsigned one of the low halves.
+        # both values are in 0..2^32-1) is the unsigned one of the low halves,
+        # here of registers a and b.
         if low_only:
             if kind not in ('eq','ne','lt','le','gt','ge'): raise ValueError('unsupported comparison')
-            if kind in ('eq','ne'): e.rr(0x3000,0,2)
-            else: e.rr(0x3006 if kind in ('gt','lt') else 0x3002,*((0,2) if kind in ('gt','ge') else (2,0)))
+            if kind in ('eq','ne'): e.rr(0x3000,a,b)
+            else: e.rr(0x3006 if kind in ('gt','lt') else 0x3002,*((a,b) if kind in ('gt','ge') else (b,a)))
             e.branch('bf' if kind=='ne' else 'bt',target); return
         other=label_name(); done=label_name()
         e.rr(0x3000,1,3)  # high halves equal?
@@ -1512,7 +1607,8 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
         scope_flag_address(); e.immediate(0,value); e.store(8,0)
     # Preserve GCC callee-saved address scratch registers and PR.
     e.word(0x4f22)
-    for reg in (14,8,9)+tuple(b for b,_ in bases): e.rr(0x2006,15,reg)
+    for reg in (14,8,9)+tuple(b for b,_ in bases)+tuple(saved_gprs): e.rr(0x2006,15,reg)
+    for reg in saved_floats: e.word(0xff0b|reg<<4)  # FMOV.S FRreg,@-R15
     adjust_stack(-frame); e.mov(14,15)
     previous=(14,0)
     for base,start in bases:
@@ -1737,23 +1833,29 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
                     raise ValueError('unsupported floating memory width/sign')
                 if loading and op['memory_class']!=registers[value]['class']:
                     raise ValueError('memory/register class mismatch')
-                load_address(base)
                 # MOV @(disp,Rm) reaches 0..15 units of the access size (MOV.B/W
                 # only through R0, the value register here); 8 bytes need disp+4.
                 unit=4 if size==8 else size
                 disp=offset//unit if (not floating and 0<=offset and offset%unit==0 and
                                       offset+size-unit<=15*unit) else None
-                if disp is None: offset_base(offset)
+                # A resident base is used where it lives (b); otherwise it loads into R2.
+                b=2
+                if (disp is not None or offset==0) and base not in remat and not (deferred and deferred[0]==base):
+                    register=home(base)
+                    if register is not None and register<16: b=register
+                if b==2:
+                    load_address(base)
+                    if disp is None: offset_base(offset)
                 # Typed native addresses must satisfy SH-4's natural alignment.
                 # Pairs use tag-adjusted offsets (-2/+2), restoring word alignment.
                 if loading:
                     if floating:
-                        e.rr(0xf008,0,2); store_float(value)
+                        e.rr(0xf008,0,b); store_float(value)
                     else:
                         whole=value not in low_word  # else the low word alone
                         if disp is not None:
-                            e.word({1:0x8420,2:0x8520,4:0x5020,8:0x5020}[size]|disp)
-                            if size==8 and whole: e.word(0x5120|(disp+1))
+                            e.word({1:0x8400,2:0x8500,4:0x5000,8:0x5000}[size]|b<<4|disp)
+                            if size==8 and whole: e.word(0x5100|b<<4|(disp+1))
                         else:
                             e.rr({1:0x6000,2:0x6001,4:0x6002,8:0x6002}[size],0,2)
                             if size==8 and whole: e.add_immediate(2,4); e.load(1,2)
@@ -1765,13 +1867,13 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
                             if whole: e.immediate(1,0)
                         store64(value)
                 elif floating:
-                    load_float(value); e.rr(0xf00a,2,0)
+                    load_float(value); e.rr(0xf00a,b,0)
                 else:
                     if size<8: load_address(value,0)
                     else: load64(value)
                     if disp is not None:
-                        e.word({1:0x8020,2:0x8120,4:0x1200,8:0x1200}[size]|disp)
-                        if size==8: e.word(0x1210|(disp+1))
+                        e.word({1:0x8000|b<<4,2:0x8100|b<<4,4:0x1000|b<<8,8:0x1000|b<<8}[size]|disp)
+                        if size==8: e.word(0x1010|b<<8|(disp+1))
                     else:
                         e.rr({1:0x2000,2:0x2001,4:0x2002,8:0x2002}[size],2,0)
                         if size==8: e.add_immediate(2,4); e.store(2,1)
@@ -1999,12 +2101,12 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
             elif kind=='imul32' or kind in ('add64','sub64','and64','or64','xor64','not64') and writes[0] in low_word:
                 # The low word alone: one SH-4 op on the low words.
                 load_address(reads[0],0)
-                if kind!='not64': load_address(reads[1],2)
+                m=gpr_operand(reads[1],2) if kind!='not64' else 0  # a resident operand is read in place
                 if kind=='imul32':
-                    e.mul(0,2); e.macl(0)
+                    e.mul(0,m); e.macl(0)
                     if writes[0] not in low_word: sign_extend()
                 elif kind=='not64': e.rr(0x6007,0,0)
-                else: e.rr({'add64':0x300c,'sub64':0x3008,'and64':0x2009,'or64':0x200b,'xor64':0x200a}[kind],0,2)
+                else: e.rr({'add64':0x300c,'sub64':0x3008,'and64':0x2009,'or64':0x200b,'xor64':0x200a}[kind],0,m)
                 store64(writes[0])
             elif kind in ('add64','sub64','and64','or64','xor64','imul64','not64'):
                 load64(reads[0])
@@ -2024,22 +2126,29 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
             elif kind in ('add_float','sub_float','mul_float','div_float','min_float','max_float','sqrt_float'):
                 if kind=='sqrt_float':
                     load_float(reads[0],0); e.word(0xf06d); store_float(writes[0]); continue
-                load_float(reads[0],0); load_float(reads[1],1)
                 if kind in ('min_float','max_float'):
+                    load_float(reads[0],0); load_float(reads[1],1)
                     done=label_name()
                     e.rr(0xf005,1 if kind=='min_float' else 0,0 if kind=='min_float' else 1)
                     e.branch('bt',done); e.fmov(0,1); e.label(done)
-                else: e.rr({'add_float':0xf000,'sub_float':0xf001,'mul_float':0xf002,'div_float':0xf003}[kind],0,1)
+                    store_float(writes[0],0); continue
+                opcode={'add_float':0xf000,'sub_float':0xf001,'mul_float':0xf002,'div_float':0xf003}[kind]
+                target=direct(writes[0])
+                if target is not None and target>=16 and target==direct(reads[0]) and \
+                   slots.get(reads[1])!=slots[writes[0]] and writes[0] not in forward:
+                    # x = x op y with x resident: in place, nothing stored.
+                    e.rr(opcode,target-16,float_operand(reads[1],1)); continue
+                load_float(reads[0],0); e.rr(opcode,0,float_operand(reads[1],1))
                 store_float(writes[0],0)
             elif kind=='goto': e.branch('bra','ir_'+str(op['target']))
             elif kind=='branch':
                 if op.get('float'):
                     if op.get('signed'): raise ValueError('signed flag unsupported for float branch')
-                    load_float(reads[0],0); load_float(reads[1],1)
-                    float_condition(op['condition'],'ir_'+str(op['target']))
+                    a=float_operand(reads[0],0); b=float_operand(reads[1],1)
+                    float_condition(op['condition'],'ir_'+str(op['target']),a,b)
                 elif reads[0] in narrow and reads[1] in narrow:
-                    load_address(reads[0],0); load_address(reads[1],2)
-                    condition(op['condition'],op['signed'],'ir_'+str(op['target']),low_only=True)
+                    a=gpr_operand(reads[0],0); b=gpr_operand(reads[1],2)
+                    condition(op['condition'],op['signed'],'ir_'+str(op['target']),low_only=True,a=a,b=b)
                 else:
                     load64(reads[0]); load64(reads[1],2,3)
                     condition(op['condition'],op['signed'],'ir_'+str(op['target']))
@@ -2087,9 +2196,11 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
         e.label('process_entry_failure'); e.immediate(0,0); e.immediate(1,0)
         if function['return_type']=='float': e.word(0xf08d)  # defined zero on refusal
     e.label('epilogue'); e.mov(15,14); adjust_stack(frame)
-    for reg in tuple(b for b,_ in reversed(bases))+(9,8,14): e.rr(0x6006,reg,15)
+    for reg in reversed(saved_floats): e.word(0xf0f9|reg<<8)  # FMOV.S @R15+,FRreg
+    for reg in tuple(reversed(saved_gprs))+tuple(b for b,_ in reversed(bases))+(9,8,14): e.rr(0x6006,reg,15)
     e.word(0x4f26); e.ret()
     if wide_misses: raise NarrowMiss(wide_misses)
+    e.frame_registers={14}|{b for b,_ in bases}  # R10..R13 may hold resident pointers instead
     if optimize and not os.environ.get('DC_SH4_NO_DEAD_WRITES'): e.remove_dead_writes()
     if optimize and not os.environ.get('DC_SH4_NO_DELAY_SLOTS'): e.fill_call_delay_slots()
     data,relocations,layout=e.finish_with_stats(relax=True,literal_islands=True,far_branches=True)
@@ -2097,6 +2208,7 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
     return data,{'name':function['name'],'bytes':len(data),'stack_bytes':frame+saved,'relocations':relocations,
                 'optimization':'stack_slot_reuse' if optimize else 'stack_baseline','instruction_stream_bytes':instruction_bytes,
                 'stack_slot_count':frame//8,'virtual_register_count':len(registers),
+                **({'resident_registers':len(set(home_of.values()))} if home_of else {}),
                 **({'zero_locals':list(function['zero_locals'])} if function.get('zero_locals') else {}),
                 **({'zero_locals':['(return)']} if function.get('partial_return') else {}),
                 'baseline_stack_bytes':len(registers)*8+16+(8 if lexical and stack_objects else 0)+(16+stack_objects*8 if stack_objects else 0),

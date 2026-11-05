@@ -226,9 +226,10 @@ class Emitter:
             if c0>>8==0xe0 and c1==c0 and s&0xf00f==0xf007 and l&0xf00f==0xf006 and \
                l>>8&15==s>>4&15 and l>>4&15==s>>8&15 and all(plain(j) for j in range(i-3,i+1)):
                 dead.update((2*(i-1),2*i))
+        frame=getattr(self,'frame_registers',range(10,15))  # bases of frame slot loads
         for i,word in enumerate(words):
             top,n,m=word>>12,word>>8&15,word>>4&15
-            if not (top==0xe or top==0x6 and word&15==3 and m!=n or top==0x5 and 10<=m<=14 or
+            if not (top==0xe or top==0x6 and word&15==3 and m!=n or top==0x5 and m in frame or
                     top==0xd and 2*i in literal_at) or n==15 or i and self._delayed(words[i-1]): continue
             if overwritten(i+1,n): dead.add(2*i)
         # Copy propagation: MOV Rm,Rn whose Rm was last written, on the straight

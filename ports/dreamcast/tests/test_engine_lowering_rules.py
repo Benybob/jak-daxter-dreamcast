@@ -130,6 +130,25 @@ class RuleTest(unittest.TestCase):
         self.assertIn(0x302e, full)
         self.assertLess(len(low), len(full))
 
+    def test_hot_float_slots_live_in_fr12_to_fr15(self):
+        # acc += x six times: acc and x stay in callee-saved FR12/FR13, saved and restored.
+        ops = [{'kind': 'add_float', 'reads': [0, 1], 'writes': [0], 'text': 'add'} for _ in range(6)]
+        ops.append({'kind': 'return', 'reads': [0], 'writes': [2], 'text': 'ret'})
+        parameters = [{'register': 0, 'type': 'float'}, {'register': 1, 'type': 'float'}]
+        regs = [reg(0, 'float', 'float'), reg(1, 'float', 'float'), reg(2, 'float', 'float')]
+
+        def words(env):
+            if env: os.environ['DC_SH4_NO_RESIDENTS'] = '1'
+            try: blob, _ = compile_function(fn(ops, regs, 'float', parameters=parameters), runtime=True)
+            finally: os.environ.pop('DC_SH4_NO_RESIDENTS', None)
+            return [blob[i] | blob[i + 1] << 8 for i in range(0, len(blob), 2)]
+        resident, framed = words(False), words(True)
+        self.assertIn(0xffcb, resident)  # fmov.s fr12,@-r15
+        self.assertIn(0xfcf9, resident)  # fmov.s @r15+,fr12
+        self.assertEqual(resident.count(0xfcd0), 6)  # fadd fr13,fr12, in place
+        self.assertNotIn(0xffcb, framed)
+        self.assertLess(len(resident), len(framed))
+
 
 if __name__ == '__main__':
     unittest.main()
