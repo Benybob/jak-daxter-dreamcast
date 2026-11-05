@@ -444,8 +444,23 @@ class DeadWriteTest(unittest.TestCase):
         self.assertEqual(self.words(e),[0x6222,0xe100,0x5021,0x000b,0x0009])
         e=Emitter(); e.word(0x6022); e.mov(2,0); e.add(3,0); e.ret()  # r0 read after the move
         self.assertEqual(e.remove_dead_writes(),0)
-        e=Emitter(); e.word(0x6022); e.label('x'); e.mov(2,0); e.word(0x5021); e.ret()  # another way in
+        e=Emitter(); e.word(0x6022); e.label('x'); e.mov(2,0); e.word(0x5021); e.branch('bt','x'); e.ret()  # another way in
         self.assertEqual(e.remove_dead_writes(),0)
+        e=Emitter(); e.word(0x6022); e.label('ir_1'); e.mov(2,0); e.word(0x5021); e.ret()  # no branch reaches it
+        self.assertEqual(e.remove_dead_writes(),1)
+
+    def test_reload_of_the_value_just_stored_goes(self):
+        e=Emitter(); e.word(0x1e03); e.word(0x50e3); e.add(0,0); e.ret()  # mov.l r0,@(12,r14); mov.l @(12,r14),r0
+        self.assertEqual(e.remove_dead_writes(),1)
+        self.assertEqual(self.words(e),[0x1e03,0x300c,0x000b,0x0009])
+        e=Emitter(); e.word(0x1e03); e.label('x'); e.word(0x50e3); e.branch('bt','x'); e.ret()  # another way in
+        self.assertEqual(e.remove_dead_writes(),0)
+        e=Emitter(); e.word(0x1e03); e.word(0x50e4); e.add(0,0); e.ret()  # another slot
+        self.assertEqual(e.remove_dead_writes(),0)
+        # mov #8,r0; fmov.s fr2,@(r0,r14); mov #8,r0; fmov.s @(r0,r14),fr2: the last two go.
+        e=Emitter(); e.immediate(0,8); e.word(0xfe27); e.immediate(0,8); e.word(0xf2e6); e.word(0xf22c); e.ret()
+        self.assertEqual(e.remove_dead_writes(),2)
+        self.assertEqual(self.words(e)[:3],[0xe008,0xfe27,0xf22c])
 
     def test_r0_implicit_reads_keep_writes(self):
         e=Emitter(); e.immediate(0,8); e.word(0xf0e7)  # fmov.s fr0,@(r0,r14)

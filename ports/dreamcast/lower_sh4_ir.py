@@ -1541,7 +1541,8 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
                 # The original frontend keeps float argument bits in GPR
                 # virtual values. Adapt the native GCC float ABI at entry.
                 e.word(0xf01d|(native<<8)); e.word(0x005a)
-                sign_extend(); store64(index)
+                if index not in low_word: sign_extend()
+                store64(index)
             float_args+=1
         elif index in wide:
             # A 128-bit argument occupies two integer positions, low then high.
@@ -1818,8 +1819,10 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
                         integer_index+=1
                 load_address(reads[0],0)
                 if runtime:
-                    e.rr(0x2008,0,0); e.branch('bt','call_failure')
-                    e.literal(2,('symbol','pointer:#f')); e.rr(0x3000,0,2); e.branch('bt','call_failure')
+                    # Every function object lies above the symbol table (the arena's
+                    # first allocation), so one unsigned compare refuses 0, #f and
+                    # any other address at or below #f.
+                    e.literal(2,('symbol','pointer:#f')); e.rr(0x3006,0,2); e.branch('bf','call_failure')  # CMP/HI R2,R0
                 e.word(0x400b); e.nop()  # jsr @r0, PR saved in prologue
                 adjust_stack(outgoing)
                 if void_call: pass  # no value exists in R0:R1 or FR0 to save
@@ -1828,7 +1831,9 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
                     if registers[writes[0]]['type']!='float': raise ValueError('float call result type mismatch')
                     if registers[writes[0]]['class']=='float': store_float(writes[0])
                     else:
-                        e.word(0xf01d); e.word(0x005a); sign_extend(); store64(writes[0])
+                        e.word(0xf01d); e.word(0x005a)
+                        if writes[0] not in low_word: sign_extend()
+                        store64(writes[0])
                 elif scalar_kind(target['return_type'],runtime) in value_types: store64(writes[0])
                 else: raise ValueError('unsupported linked function return type')
             elif kind=='constant':
@@ -1937,7 +1942,9 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
                 elif registers[src]['class']=='gpr64':
                     load_address(src,0); e.word(0x405a); e.word(0xf00d); store_float(dst)
                 else:
-                    load_float(src); e.word(0xf01d); e.word(0x005a); sign_extend(); store64(dst)
+                    load_float(src); e.word(0xf01d); e.word(0x005a)
+                    if dst not in low_word: sign_extend()
+                    store64(dst)
             elif kind in ('shl64','shr64','sar64','shlv64','shrv64','sarv64'):
                 variable=kind in ('shlv64','shrv64','sarv64')
                 if len(reads)!=(2 if variable else 1) or len(writes)!=1:

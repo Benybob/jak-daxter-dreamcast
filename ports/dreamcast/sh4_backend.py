@@ -208,6 +208,23 @@ class Emitter:
                     j+=1
             return True
         dead=set()
+        # Only labels a branch reaches join paths; the rest mark op boundaries.
+        labels_at={self.labels[name] for _,_,name in self.branches if name in self.labels}
+        # A reload of what the instruction just before stored, into the same
+        # register, with no path joining between: MOV.L Rm,@(d,Rn) then
+        # MOV.L @(d,Rn),Rm, and the float slot form MOV #d,R0; FMOV.S FRm,@(R0,Rn)
+        # then MOV #d,R0; FMOV.S @(R0,Rn),FRm.
+        def plain(i): return 2*i not in labels_at and not (i and self._delayed(words[i-1]))
+        for i in range(1,len(words)):
+            a,b=words[i-1],words[i]
+            if a>>12==0x1 and b>>12==0x5 and b>>8&15==a>>4&15 and b>>4&15==a>>8&15 and \
+               a&15==b&15 and a>>4&15!=a>>8&15 and plain(i) and plain(i-1):
+                dead.add(2*i)
+        for i in range(3,len(words)):
+            c0,s,c1,l=words[i-3:i+1]
+            if c0>>8==0xe0 and c1==c0 and s&0xf00f==0xf007 and l&0xf00f==0xf006 and \
+               l>>8&15==s>>4&15 and l>>4&15==s>>8&15 and all(plain(j) for j in range(i-3,i+1)):
+                dead.update((2*(i-1),2*i))
         for i,word in enumerate(words):
             top,n,m=word>>12,word>>8&15,word>>4&15
             if not (top==0xe or top==0x6 and word&15==3 and m!=n or top==0x5 and 10<=m<=14 or
@@ -217,7 +234,6 @@ class Emitter:
         # path just before, by a write that can name its destination (a load,
         # MOV, extension, STS...) and is dead after the MOV: that write targets
         # Rn and the MOV goes. Nothing between may touch Rn or Rm.
-        labels_at=set(self.labels.values())
         for i,word in enumerate(words):
             n,m=word>>8&15,word>>4&15
             if word&0xf00f!=0x6003 or m==n or n==15 or m==15 or 2*i in dead or 2*i in labels_at or                i and self._delayed(words[i-1]): continue

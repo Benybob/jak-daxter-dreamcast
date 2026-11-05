@@ -172,6 +172,23 @@ shl64 26.0 to 7.8). GAME.CGO 7,396,144 to **7,026,800** (-369,344, 5.0%),
 KERNEL.CGO 174,944, TRA-CODE 89,520. All Flycast suites pass. Since the
 morning of 2026-11-04 GAME.CGO is down 1,794,224 bytes (20.3%).
 
+Then four smaller steps (same day):
+- Copy propagation and dead-write removal cross labels that no branch
+  reaches (every IR op starts with one), so `MOV.L @R2,R0; MOV R0,R2` in
+  pointer chains becomes `MOV.L @R2,R2`.
+- Moving float bits into a low-word value no longer sign-extends a high word.
+- The call guard is one `CMP/HI` against `#f` instead of a test for 0 and a
+  compare with `#f`: every function object lies above the symbol table, the
+  arena's first allocation, so this refuses 0, `#f` and every other address
+  at or below `#f`.
+- A slot reload right after the store of the same register (integer
+  `MOV.L @(d,Rn)` or the `MOV #d,R0; FMOV.S @(R0,Rn)` float pair), with no
+  branch target between, is dropped.
+
+`target` 163,580 to 151,874 code bytes. GAME.CGO 7,026,800 to **6,743,056**
+(-283,744, 4.0%), KERNEL.CGO 169,248, TRA-CODE 86,160. All Flycast suites
+pass. Since the morning of 2026-11-04: -2,077,968 bytes (23.6%).
+
 Two PC-only buffers now take Dreamcast values through `dreamcast_memory_budget.gc`
 (the exporter's budget now also substitutes `defglobalconstant`):
 - `PC_SUBTITLE_FILE_SIZE` 256 KiB to 16 KiB: no subtitle files on the disc yet.
