@@ -515,6 +515,40 @@ class DelaySlotTest(unittest.TestCase):
         def load_then_store(e): e.word(0x55e3); e.word(0x1e04)  # mov.l @(12,r14),r5; mov.l r0,@(16,r14)
         self.assertEqual(self.guarded(load_then_store).fill_call_delay_slots(),0)
 
+class RenameTest(unittest.TestCase):
+    @staticmethod
+    def renamed(*program):
+        e=Emitter()
+        for w in program: e.word(w)
+        e.ret()
+        count=e.rename_copies()
+        return count,DeadWriteTest.words(None,e)[:-2]
+
+    def test_reads_of_a_copy_read_the_original(self):
+        # mov r10,r2; mov.l @(4,r2),r2 -> mov.l @(4,r10),r2
+        self.assertEqual(self.renamed(0x62a3,0x5221),(1,[0x52a1]))
+        # fmov fr12,fr1; fadd fr1,fr0; fldi0 fr1 -> fadd fr12,fr0; fldi0 fr1
+        self.assertEqual(self.renamed(0xf1cc,0xf010,0xf18d),(1,[0xf0c0,0xf18d]))
+
+    def test_a_chain_computes_straight_into_the_copy(self):
+        # mov.l @(8,r14),r0; add #4,r0; mov r0,r10; mov #0,r0
+        self.assertEqual(self.renamed(0x50e2,0x7004,0x6a03,0xe000),(1,[0x5ae2,0x7a04,0xe000]))
+        # fmov fr12,fr0; fmul fr1,fr0; fmov fr0,fr13; fldi0 fr0
+        self.assertEqual(self.renamed(0xf0cc,0xf012,0xfd0c,0xf08d),(1,[0xfdcc,0xfd12,0xf08d]))
+        # mov r10,r0; add #4,r0; mov r0,r10; mov #0,r0: the first copy goes too
+        self.assertEqual(self.renamed(0x60a3,0x7004,0x6a03,0xe000),(2,[0x7a04,0xe000]))
+
+    def test_unsafe_copies_stay(self):
+        # r0 read implicitly by mov.l @(r0,r2),r3; r10 live at the return
+        self.assertEqual(self.renamed(0x60a3,0x032e,0xe000)[0],0)
+        # the copy is still read at the return
+        self.assertEqual(self.renamed(0x62a3,0x5321)[0],0)
+        # the source changes while the copy is live: mov r10,r2; add #1,r10; mov.l @r2,r3; mov #0,r2
+        self.assertEqual(self.renamed(0x62a3,0x7a01,0x6322,0xe200)[0],0)
+        # a path joins between the copy and its read
+        e=Emitter(); e.word(0x62a3); e.label('x'); e.word(0x5221); e.branch('bt','x'); e.ret()
+        self.assertEqual(e.rename_copies(),0)
+
 class TrampolineTest(unittest.TestCase):
     @staticmethod
     def program(gap,tail=200):

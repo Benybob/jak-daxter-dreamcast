@@ -259,6 +259,186 @@ class Emitter:
         self.last_label=moved(self.last_label) if self.last_label>=0 else -1
         return len(dead)
 
+    @staticmethod
+    def _operands(word):
+        """Exact register operands of an instruction: ([(shift, file, mode)],
+        [(file, reg, mode)]) for its register fields and implicit registers, file
+        'r' (GPR) or 'f' (FPR), mode 'r', 'w' or 'rw'. 'stop' for a control
+        transfer, None for any form not listed (callers treat it as unknown)."""
+        top,low=word>>12,word&15
+        if top in (0xa,0xb) or word in (0x000b,0x002b) or word&0xf0df in (0x400b,0x0003): return 'stop'
+        n,m=(8,'r'),(4,'r')
+        if top==0x6: return [(4,'r','rw' if low in (4,5,6) else 'r'),(8,'r','w')],[]
+        if top==0x5: return [(4,'r','r'),(8,'r','w')],[]
+        if top==0x1: return [(4,'r','r'),(8,'r','r')],[]
+        if top==0x2:
+            if low in (4,5,6): return [(4,'r','r'),(8,'r','rw')],[]
+            if low in (9,0xa,0xb,0xd): return [(4,'r','r'),(8,'r','rw')],[]
+            if low in (0,1,2,7,8,0xc,0xe,0xf): return [(4,'r','r'),(8,'r','r')],[]
+            return None
+        if top==0x3:
+            if low in (0,2,3,5,6,7,0xd): return [(4,'r','r'),(8,'r','r')],[]
+            if low in (4,8,0xa,0xb,0xc,0xe,0xf): return [(4,'r','r'),(8,'r','rw')],[]
+            return None
+        if top==0x7: return [(8,'r','rw')],[]
+        if top in (0x9,0xd,0xe): return [(8,'r','w')],[]
+        if top==0x0:
+            if word in (0x0008,0x0009,0x0018,0x0019,0x0028): return [],[]
+            if low==7: return [(4,'r','r'),(8,'r','r')],[]
+            if low in (0xc,0xd,0xe): return [(4,'r','r'),(8,'r','w')],[('r',0,'r')]
+            if low in (4,5,6): return [(4,'r','r'),(8,'r','r')],[('r',0,'r')]
+            if word&0xf0ff in (0x0029,0x000a,0x001a,0x002a,0x005a,0x006a): return [(8,'r','w')],[]
+            return None
+        if top==0x4:
+            op=word&0xff
+            if op in (0x00,0x01,0x04,0x05,0x08,0x09,0x10,0x18,0x19,0x20,0x21,0x24,0x25,0x28,0x29): return [(8,'r','rw')],[]
+            if op in (0x11,0x15,0x0a,0x1a,0x2a,0x5a,0x6a): return [(8,'r','r')],[]
+            if low in (0xc,0xd): return [(4,'r','r'),(8,'r','rw')],[]
+            return None
+        if top==0x8:
+            sub=word>>8&15
+            if sub in (0,1): return [(4,'r','r')],[('r',0,'r')]
+            if sub in (4,5): return [(4,'r','r')],[('r',0,'w')]
+            if sub==8: return [],[('r',0,'r')]
+            return 'stop' if sub in (9,0xb,0xd,0xf) else None
+        if top==0xc:
+            sub=word>>8&15
+            if sub==8: return [],[('r',0,'r')]
+            if sub in (9,0xa,0xb): return [],[('r',0,'rw')]
+            if sub==7: return [],[('r',0,'w')]
+            return None
+        if top==0xf:
+            if low in (0,1,2,3): return [(4,'f','r'),(8,'f','rw')],[]
+            if low in (4,5): return [(4,'f','r'),(8,'f','r')],[]
+            if low==6: return [(4,'r','r'),(8,'f','w')],[('r',0,'r')]
+            if low==7: return [(4,'f','r'),(8,'r','r')],[('r',0,'r')]
+            if low==8: return [(4,'r','r'),(8,'f','w')],[]
+            if low==9: return [(4,'r','rw'),(8,'f','w')],[]
+            if low==0xa: return [(4,'f','r'),(8,'r','r')],[]
+            if low==0xb: return [(4,'f','r'),(8,'r','rw')],[]
+            if low==0xc: return [(4,'f','r'),(8,'f','w')],[]
+            if low==0xe: return [(4,'f','r'),(8,'f','rw')],[('f',0,'r')]
+            if low==0xd:
+                op=word>>4&15
+                if op in (0,2,8,9): return [(8,'f','w')],[]
+                if op in (1,3): return [(8,'f','r')],[]
+                if op in (4,5,6,7): return [(8,'f','rw')],[]
+            return None
+        return None
+
+    def _dead_after(self,words,start,file,reg,budget=96):
+        """True when every path from instruction start overwrites (file, reg)
+        before reading it, by _operands; control transfers and unknown forms read."""
+        target={offset//2:(kind,self.labels[name]//2) if name in self.labels else ('stop',None)
+                for offset,kind,name in self.branches}
+        def use(w):
+            ops=self._operands(w)
+            if ops is None or ops=='stop': return 'read'
+            fields,implicit=ops
+            modes=[mode for shift,f,mode in fields if f==file and w>>shift&15==reg]+\
+                  [mode for f,r,mode in implicit if f==file and r==reg]
+            if any('r' in mode for mode in modes): return 'read'
+            return 'write' if modes else None
+        seen=set(); paths=[start]; steps=0
+        while paths:
+            j=paths.pop()
+            while True:
+                if j in seen: break
+                if j>=len(words) or steps>budget: return False
+                seen.add(j); steps+=1
+                kind,to=target.get(j,(None,None))
+                if kind in ('bt','bf'): paths.append(to); j+=1; continue
+                if kind=='bra':
+                    u=use(words[j+1]) if j+1<len(words) else 'read'
+                    if u=='write': break
+                    if u: return False
+                    j=to; continue
+                if kind or words[j]>>12==0x8 and words[j]>>8&15 in (9,0xb,0xd,0xf): return False
+                u=use(words[j])
+                if u=='write': break
+                if u: return False
+                j+=1
+        return True
+
+    def rename_copies(self,window=16):
+        """Drop MOV Rm,Rn and FMOV FRm,FRn by renaming, on the straight path:
+        forward, the reads of Rn that follow read Rm instead until Rn is written
+        or dead; else backward, the chain that computed Rm, from the write that
+        started it, computes into Rn instead when Rm is dead after the copy.
+        Only register fields are renamed (never an implicit R0 or FR0), no path
+        may join inside the span, and Rm/Rn stay untouched where they must."""
+        if self.pending: raise ValueError('deferred code outstanding')
+        words=[struct.unpack_from('<H',self.code,offset)[0] for offset in range(0,len(self.code),2)]
+        joins={self.labels[name]//2 for _,_,name in self.branches if name in self.labels}
+        branch_at={offset//2 for offset,_,_ in self.branches}
+        dead=set()
+        def plain(j): return j not in branch_at and not (j and self._delayed(words[j-1])) and not self._delayed(words[j])
+        def fields_of(w,file,reg):
+            ops=self._operands(w)
+            if ops is None or ops=='stop': return None
+            fields,implicit=ops
+            if any(f==file and r==reg for f,r,_ in implicit): return None
+            return [(shift,mode) for shift,f,mode in fields if f==file and w>>shift&15==reg]
+        def rename(w,changes,to):
+            for shift,_ in changes: w=w&~(15<<shift)|to<<shift
+            return w
+        def forward(i,file,m,n):
+            edits={}
+            for j in range(i+1,min(len(words),i+1+window)):
+                if j in joins or not plain(j):
+                    return edits if self._dead_after(words,j,file,n) else None
+                w=words[j]
+                at_m,at_n=fields_of(w,file,m),fields_of(w,file,n)
+                if at_m is None or at_n is None:
+                    return edits if self._dead_after(words,j,file,n) else None
+                if any('w' in mode for _,mode in at_m): return None  # Rm changes under the copy
+                reads=[(s,mode) for s,mode in at_n if 'r' in mode]
+                if any(mode=='rw' for _,mode in reads): return None
+                if reads: edits[j]=rename(w,reads,m)
+                if any(mode=='w' for _,mode in at_n): return edits
+            return edits if self._dead_after(words,min(len(words),i+1+window),file,n) else None
+        def backward(i,file,m,n):
+            if not self._dead_after(words,i+1,file,m): return None
+            edits={}
+            for k in range(i-1,max(-1,i-1-window),-1):
+                if k+1 in joins or not plain(k) or k in dead: return None
+                w=words[k]
+                at_m,at_n=fields_of(w,file,m),fields_of(w,file,n)
+                if at_m is None or at_n is None: return None
+                if at_n:
+                    # the chain starts by copying Rn into Rm: it becomes a no-op
+                    if w==(0x6003 if file=='r' else 0xf00c)|m<<8|n<<4: edits[k]=None; return edits
+                    return None
+                if not at_m: continue
+                writes=[(s,mode) for s,mode in at_m if mode=='w']
+                if writes:  # the chain's start: only its write moves (a read of Rm there is the older value)
+                    edits[k]=rename(w,writes,n)
+                    return edits
+                edits[k]=rename(w,at_m,n)
+            return None
+        for i,word in enumerate(words):
+            if word&0xf00f==0x6003: file='r'
+            elif word&0xf00f==0xf00c: file='f'
+            else: continue
+            n,m=word>>8&15,word>>4&15
+            if m==n or 15 in (m,n) and file=='r' or not plain(i) or i in dead: continue
+            edits=forward(i,file,m,n)
+            if edits is None and i not in joins: edits=backward(i,file,m,n)
+            if edits is None: continue
+            for j,w in edits.items():
+                if w is None: dead.add(j)
+                else: words[j]=w; struct.pack_into('<H',self.code,2*j,w)
+            dead.add(i)
+        if not dead: return 0
+        ordered=sorted(2*j for j in dead)
+        def moved(offset): return offset-2*bisect_left(ordered,offset)
+        self.code=bytearray(b''.join(self.code[o:o+2] for o in range(0,len(self.code),2) if o not in set(ordered)))
+        self.labels={name:moved(offset) for name,offset in self.labels.items()}
+        self.branches=[(moved(offset),kind,target) for offset,kind,target in self.branches]
+        self.literals=[(moved(offset),key) for offset,key in self.literals]
+        self.last_label=moved(self.last_label) if self.last_label>=0 else -1
+        return len(dead)
+
     def fill_call_delay_slots(self,window=8,dead_on=('call_failure',)):
         """Move an argument setup instruction before JSR @Rm; NOP into the NOP.
 

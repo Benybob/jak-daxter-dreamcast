@@ -2202,6 +2202,7 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
     if wide_misses: raise NarrowMiss(wide_misses)
     e.frame_registers={14}|{b for b,_ in bases}  # R10..R13 may hold resident pointers instead
     if optimize and not os.environ.get('DC_SH4_NO_DEAD_WRITES'): e.remove_dead_writes()
+    if optimize and not os.environ.get('DC_SH4_NO_RENAME'): e.rename_copies()
     if optimize and not os.environ.get('DC_SH4_NO_DELAY_SLOTS'): e.fill_call_delay_slots()
     data,relocations,layout=e.finish_with_stats(relax=True,literal_islands=True,far_branches=True)
     instruction_bytes=layout['instruction_bytes']

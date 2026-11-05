@@ -256,6 +256,22 @@ register pairs, more registers) is the next phase. `target` final bytes
 KERNEL.CGO 160,432, TRA-CODE 83,632. All Flycast suites pass. Since the
 morning of 2026-11-04: -2,428,560 bytes (27.5%).
 
+Register allocation phase 2 (2026-11-05, AI-assisted): copies renamed away
+(`Emitter.rename_copies`). Templates still pass values through R0..R7 and
+FR0..FR11, so a resident value is copied out before an op reads it and a
+result is copied in after it is computed (in `target`: 876 and 180 integer,
+707 and 966 float copies). For each MOV Rm,Rn or FMOV FRm,FRn, on the straight
+path: forward, the reads of Rn that follow read Rm instead until Rn is written
+or dead; else backward, the chain that computed Rm, from the write that started
+it, computes into Rn, when Rm is dead after. `Emitter._operands` decodes every
+register field and implicit register of the forms the emitter writes; only
+fields are renamed (never an implicit R0 or FR0), no path may join inside the
+span, and anything it does not know stops the rename. Off with
+`DC_SH4_NO_RENAME=1`. `target` final bytes 161,687 to 158,297. GAME.CGO
+6,392,464 to **6,294,592** (-97,872, 1.5%), KERNEL.CGO 159,344, TRA-CODE
+82,896. All Flycast suites pass; the level ELF ends with 654 KB of arena free
+(555 KB before).
+
 Two PC-only buffers now take Dreamcast values through `dreamcast_memory_budget.gc`
 (the exporter's budget now also substitutes `defglobalconstant`):
 - `PC_SUBTITLE_FILE_SIZE` 256 KiB to 16 KiB: no subtitle files on the disc yet.

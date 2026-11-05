@@ -131,7 +131,8 @@ class RuleTest(unittest.TestCase):
         self.assertLess(len(low), len(full))
 
     def test_hot_float_slots_live_in_fr12_to_fr15(self):
-        # acc += x six times: acc and x stay in callee-saved FR12/FR13, saved and restored.
+        # acc += x six times: acc stays in callee-saved FR12, saved and restored, and
+        # each add is in place (x is read where it lives: FR13, or its argument register).
         ops = [{'kind': 'add_float', 'reads': [0, 1], 'writes': [0], 'text': 'add'} for _ in range(6)]
         ops.append({'kind': 'return', 'reads': [0], 'writes': [2], 'text': 'ret'})
         parameters = [{'register': 0, 'type': 'float'}, {'register': 1, 'type': 'float'}]
@@ -145,7 +146,7 @@ class RuleTest(unittest.TestCase):
         resident, framed = words(False), words(True)
         self.assertIn(0xffcb, resident)  # fmov.s fr12,@-r15
         self.assertIn(0xfcf9, resident)  # fmov.s @r15+,fr12
-        self.assertEqual(resident.count(0xfcd0), 6)  # fadd fr13,fr12, in place
+        self.assertEqual(sum(1 for w in resident if w & 0xff0f == 0xfc00), 6)  # fadd frm,fr12, in place
         self.assertNotIn(0xffcb, framed)
         self.assertLess(len(resident), len(framed))
 
