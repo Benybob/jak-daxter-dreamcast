@@ -1218,6 +1218,33 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
         narrow={value for value,r in registers.items() if r['class']=='gpr64'}
         narrow-=addressed|zero_entry|false_entry|set(wide_values)|{p['register'] for p in function['parameters']}
         narrow-={function.get('lexical_saved')}|{op['source'] for op in function['instructions'] if op['kind']=='register_address'}
+    # Low-word values: every read uses only the low 32 bits (addresses, narrow
+    # stores, 32-bit conversions, call targets, and the low result of add, sub,
+    # logic and left shifts). The slot keeps one word, the high register is
+    # never set, and the ops producing them compute the low word alone.
+    low_word=set()
+    if optimize and not os.environ.get('DC_SH4_NO_LOW_WORD'):
+        gpr={value for value,r in registers.items() if r['class']=='gpr64'}
+        low_word=gpr-addressed-zero_entry-false_entry-{function.get('lexical_saved')}
+        low_word-={op['source'] for op in function['instructions'] if op['kind']=='register_address'}
+        def low_positions(op):
+            kind,reads,writes=op['kind'],op['reads'],op['writes']
+            if kind=='load_memory': return {0}
+            if kind=='store_memory':
+                return {0,1} if op['size'] in (1,2,4) and registers[reads[0]]['class']=='gpr64' else {1}
+            if kind in ('int_to_float','set_symbol','imul32','idiv32','udiv32','imod32','umod32'): return set(range(len(reads)))
+            if kind=='call': return {0}
+            if kind=='move' and registers[reads[0]]['class']=='gpr64' and \
+               (registers[writes[0]]['class']=='float' or writes[0] in low_word): return {0}
+            if kind in ('add64','sub64','and64','or64','xor64','not64','shl64') and writes[0] in low_word:
+                return set(range(len(reads)))
+            return set()
+        while True:
+            full={value for op in function['instructions'] for n,value in enumerate(op['reads'])
+                  if n not in low_positions(op)}
+            if not low_word&full: break
+            low_word-=full
+        narrow-=low_word
     wide_misses=set()
     consumed=set()  # forwarded values whose slot was never written
     remat={}  # forwarded constants: value -> emit(low, high) at the read
@@ -1260,6 +1287,7 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
         return regs
     def load64(index,low=0,high=1):
         if registers[index]['class']!='gpr64': raise ValueError('expected integer virtual value')
+        if index in low_word: raise ValueError('low-word value read as 64 bits')
         if index in remat: remat.pop(index)[0](low,high); consumed.add(index); return
         if deferred and deferred[0]==index and (low,high)!=deferred[:0:-1]:  # a swap stores instead
             source_low,source_high=held(index)
@@ -1288,6 +1316,7 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
             source_low,_=held(index)
             if reg!=source_low: e.mov(reg,source_low)
             return
+        if stored and stored[:3]==(len(e.code),index,reg) and e.last_label!=len(e.code): return
         at=near(index,8)
         if at is not None: b,d=at; e.word(0x5000|reg<<8|b<<4|d)
         else: address(index); e.load(reg,8)
@@ -1307,7 +1336,7 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
     def store64(index,low=0,high=1):
         nonlocal stored,deferred
         if registers[index]['class']!='gpr64': raise ValueError('expected integer virtual value')
-        if index in narrow and not high_zero(high): wide_misses.add(index)
+        if index in narrow and index not in low_word and not high_zero(high): wide_misses.add(index)
         if index in forward:
             e.flush()
             def emit():
@@ -1330,10 +1359,10 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
         if index in forward:
             if index in narrow and wide_high: wide_misses.add(index)
             remat[index]=(emit,wide_high); return
-        emit(0,1); store64(index)
+        emit(0,None if index in low_word else 1); store64(index)
     def emit_store64(index,low,high):
         at=near(index,8)
-        if index in narrow:
+        if index in narrow or index in low_word:
             if at is not None: b,d=at; e.word(0x1000|b<<8|low<<4|d)
             else: address(index); e.store(8,low)
         elif at is not None:
@@ -1641,7 +1670,7 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
                     raise ValueError('invalid scalar float constant')
                 constant(0,bits); e.word(0x405a); e.word(0xf00d); store_float(writes[0])
             elif kind=='int_to_float':
-                load64(reads[0]); e.word(0x405a); e.word(0xf02d); store_float(writes[0])
+                load_address(reads[0],0); e.word(0x405a); e.word(0xf02d); store_float(writes[0])
             elif kind=='float_to_int':
                 invalid,done=label_name(),label_name()
                 load_float(reads[0])
@@ -1649,11 +1678,14 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
                 e.rr(0xf005,1,0); e.branch('bf',invalid)  # threshold > input; excludes NaN/+overflow
                 e.word(0xf03d); e.word(0x005a)  # FTRC -> FPUL -> R0
                 e.branch('bra',done); e.label(invalid); constant(0,0x80000000)
-                e.label(done); sign_extend(); store64(writes[0])
+                e.label(done)
+                if writes[0] not in low_word: sign_extend()
+                store64(writes[0])
             elif kind=='symbol_value':
                 if runtime:
                     e.literal(0,('symbol','cell:'+op['symbol'])); e.load(0,0)
-                    if op.get('signed'): sign_extend()
+                    if writes[0] in low_word: pass
+                    elif op.get('signed'): sign_extend()
                     else: e.immediate(1,0)
                 else:
                     if op['symbol'] not in module: raise ValueError('unresolved symbol outside the immutable numeric module')
@@ -1661,7 +1693,7 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
                 store64(writes[0])
             elif kind=='set_symbol':
                 if not runtime: raise ValueError('mutable GOAL symbol requires native symbol runtime')
-                load64(reads[0]); e.literal(2,('symbol','cell:'+op['symbol'])); e.store(2,0)
+                load_address(reads[0],0); e.literal(2,('symbol','cell:'+op['symbol'])); e.store(2,0)
             elif kind in ('load_memory','store_memory'):
                 if not runtime: raise ValueError('object memory access requires native runtime profile')
                 size,offset=op['size'],op['offset']
@@ -1704,22 +1736,25 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
                     if floating:
                         e.rr(0xf008,0,2); store_float(value)
                     else:
+                        whole=value not in low_word  # else the low word alone
                         if disp is not None:
                             e.word({1:0x8420,2:0x8520,4:0x5020,8:0x5020}[size]|disp)
-                            if size==8: e.word(0x5120|(disp+1))
+                            if size==8 and whole: e.word(0x5120|(disp+1))
                         else:
                             e.rr({1:0x6000,2:0x6001,4:0x6002,8:0x6002}[size],0,2)
-                            if size==8: e.add_immediate(2,4); e.load(1,2)
+                            if size==8 and whole: e.add_immediate(2,4); e.load(1,2)
                         if size==8: pass  # both words loaded
-                        elif op['signed']: sign_extend()
+                        elif op['signed']:
+                            if whole: sign_extend()
                         else:
                             if size in (1,2): e.rr(0x600c if size==1 else 0x600d,0,0)
-                            e.immediate(1,0)
+                            if whole: e.immediate(1,0)
                         store64(value)
                 elif floating:
                     load_float(value); e.rr(0xf00a,2,0)
                 else:
-                    load64(value)
+                    if size<8: load_address(value,0)
+                    else: load64(value)
                     if disp is not None:
                         e.word({1:0x8020,2:0x8120,4:0x1200,8:0x1200}[size]|disp)
                         if size==8: e.word(0x1210|(disp+1))
@@ -1781,7 +1816,7 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
                             load64(argument); e.mov(2,15); e.add_immediate(2,(integer_index-2)*8)
                             e.store(2,0); e.add_immediate(2,4); e.store(2,1)
                         integer_index+=1
-                load64(reads[0])
+                load_address(reads[0],0)
                 if runtime:
                     e.rr(0x2008,0,0); e.branch('bt','call_failure')
                     e.literal(2,('symbol','pointer:#f')); e.rr(0x3000,0,2); e.branch('bt','call_failure')
@@ -1891,18 +1926,34 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
                     # The destination takes the constant: emitted at its read, or stored.
                     place_constant(dst,*remat.pop(src)); consumed.add(src); continue
                 if dst in narrow and src not in narrow and registers[src]['class']=='gpr64': wide_misses.add(dst)
-                if optimize and slots[src]==slots[dst] and registers[src]['class']==registers[dst]['class'] and                    (src in narrow)==(dst in narrow):
+                if optimize and slots[src]==slots[dst] and registers[src]['class']==registers[dst]['class'] and \
+                   ((src in narrow)==(dst in narrow) and (src in low_word)==(dst in low_word) or dst in low_word):
                     coalesced_moves+=1; continue
-                if registers[src]['class']==registers[dst]['class']=='gpr64': load64(src); store64(dst)
+                if registers[src]['class']==registers[dst]['class']=='gpr64':
+                    if dst in low_word: load_address(src,0)
+                    else: load64(src)
+                    store64(dst)
                 elif registers[src]['class']==registers[dst]['class']=='float': load_float(src); store_float(dst)
                 elif registers[src]['class']=='gpr64':
-                    load64(src); e.word(0x405a); e.word(0xf00d); store_float(dst)
+                    load_address(src,0); e.word(0x405a); e.word(0xf00d); store_float(dst)
                 else:
                     load_float(src); e.word(0xf01d); e.word(0x005a); sign_extend(); store64(dst)
             elif kind in ('shl64','shr64','sar64','shlv64','shrv64','sarv64'):
                 variable=kind in ('shlv64','shrv64','sarv64')
                 if len(reads)!=(2 if variable else 1) or len(writes)!=1:
                     raise ValueError('invalid shift operand layout')
+                if kind=='shl64' and writes[0] in low_word:
+                    # The low word of a left shift needs only the low word.
+                    load_address(reads[0],0); count=op['shift']&63
+                    if count>=32: e.immediate(0,0)
+                    elif count:
+                        steps,rest=[],count
+                        for s in (16,8,2,1):
+                            while rest>=s: steps.append(s); rest-=s
+                        if len(steps)<=2:
+                            for s in steps: e.word({16:0x4028,8:0x4018,2:0x4008,1:0x4000}[s])  # SHLLn R0
+                        else: e.immediate(1,count); e.rr(0x400d,0,1)  # SHLD R1,R0
+                    store64(writes[0]); continue
                 load64(reads[0])
                 if variable: load64(reads[1],2,3)
                 emit_shift64(e,{'shl':'left','shr':'logical','sar':'arithmetic'}[kind[:3]],
@@ -1911,10 +1962,20 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
             elif kind in ('idiv32','udiv32','imod32','umod32'):
                 if not runtime: raise ValueError('integer division requires native runtime fault bridge')
                 if len(reads)!=2 or len(writes)!=1: raise ValueError('invalid division operand layout')
-                load64(reads[0]); load64(reads[1],2,3)
+                load_address(reads[0],0); load_address(reads[1],2)
                 emit_div32(e,kind in ('idiv32','imod32'),kind in ('imod32','umod32'),label_name())
                 store64(writes[0])
-            elif kind in ('add64','sub64','and64','or64','xor64','imul32','imul64','not64'):
+            elif kind=='imul32' or kind in ('add64','sub64','and64','or64','xor64','not64') and writes[0] in low_word:
+                # The low word alone: one SH-4 op on the low words.
+                load_address(reads[0],0)
+                if kind!='not64': load_address(reads[1],2)
+                if kind=='imul32':
+                    e.mul(0,2); e.macl(0)
+                    if writes[0] not in low_word: sign_extend()
+                elif kind=='not64': e.rr(0x6007,0,0)
+                else: e.rr({'add64':0x300c,'sub64':0x3008,'and64':0x2009,'or64':0x200b,'xor64':0x200a}[kind],0,2)
+                store64(writes[0])
+            elif kind in ('add64','sub64','and64','or64','xor64','imul64','not64'):
                 load64(reads[0])
                 if kind!='not64': load64(reads[1],2,3)
                 if kind=='add64': e.clrt(); e.addc(0,2); e.addc(1,3)
@@ -1923,7 +1984,6 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
                     opcode={'and64':0x2009,'or64':0x200b,'xor64':0x200a}[kind]
                     e.rr(opcode,0,2); e.rr(opcode,1,3)
                 elif kind=='not64': e.rr(0x6007,0,0); e.rr(0x6007,1,1)
-                elif kind=='imul32': e.mul(0,2); e.macl(0); sign_extend()
                 else:
                     e.mov(4,0); e.mov(5,1); e.rr(0x3005,4,2)
                     e.macl(0); e.word(0x010a)

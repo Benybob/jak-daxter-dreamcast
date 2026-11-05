@@ -156,6 +156,22 @@ op, and a 4-byte literal per symbol reference per function. The next larger
 steps would be a symbol-table base register with 16-bit offsets (new loader
 relocations) and op templates that work on 32-bit values directly.
 
+Low-word values (2026-11-05, AI-assisted). A symbol-table base register was
+measured first and dropped: symbol loads and `#f`/`#t` are 7% of `target`'s
+code, so it would save about 1% of GAME.CGO while every C-to-GOAL entry would
+have to set the register. Instead, a gpr64 value whose every read uses only
+its low 32 bits (memory addresses, stores of 4 bytes or fewer, int-to-float,
+`set!` of a symbol, call targets, 32-bit multiply and divide, and the low
+result of add, sub, logic and left shifts) keeps one slot word and never sets
+its high register. Exact, not optimistic: found by a fixpoint before
+lowering, so it adds no relowering. Add and sub become ADD/SUB instead of
+CLRT, ADDC, ADDC; a constant left shift becomes one or two SHLL steps
+instead of the 64-bit cross-half sequence. Off with `DC_SH4_NO_LOW_WORD=1`.
+`target` 182,692 to 163,580 code bytes (add64 15.0 to 8.2 bytes per op,
+shl64 26.0 to 7.8). GAME.CGO 7,396,144 to **7,026,800** (-369,344, 5.0%),
+KERNEL.CGO 174,944, TRA-CODE 89,520. All Flycast suites pass. Since the
+morning of 2026-11-04 GAME.CGO is down 1,794,224 bytes (20.3%).
+
 Two PC-only buffers now take Dreamcast values through `dreamcast_memory_budget.gc`
 (the exporter's budget now also substitutes `defglobalconstant`):
 - `PC_SUBTITLE_FILE_SIZE` 256 KiB to 16 KiB: no subtitle files on the disc yet.

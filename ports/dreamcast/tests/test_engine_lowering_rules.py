@@ -1,4 +1,5 @@
 """Lowering rules added for original GAME.CGO engine files (AI-assisted), ISC."""
+import os
 import sys
 import unittest
 from pathlib import Path
@@ -107,6 +108,27 @@ class RuleTest(unittest.TestCase):
                {'kind': 'return', 'reads': [0], 'writes': [2], 'text': 'ret'}]
         regs = [reg(0, typ='none'), reg(1, typ='none'), reg(2, typ='none')]
         self.assertGreater(len(compile_function(fn(ops, regs, 'none', top_level=True), runtime=True)[0]), 0)
+
+    def test_address_arithmetic_computes_only_the_low_word(self):
+        # base + (index << 2) is read only as an address: SHLL2 and ADD, no ADDC.
+        ops = [{'kind': 'shl64', 'reads': [1], 'writes': [2], 'shift': 2, 'text': 'shl'},
+               {'kind': 'add64', 'reads': [0, 2], 'writes': [3], 'text': 'add'},
+               {'kind': 'load_memory', 'reads': [3], 'writes': [4], 'size': 4, 'offset': 0, 'signed': False,
+                'memory_class': 'gpr64', 'text': 'load'},
+               {'kind': 'return', 'reads': [4], 'writes': [5], 'text': 'ret'}]
+        parameters = [{'register': 0, 'type': 'int'}, {'register': 1, 'type': 'int'}]
+
+        def words(env):
+            if env: os.environ['DC_SH4_NO_LOW_WORD'] = '1'
+            try: blob, _ = compile_function(fn(ops, [reg(i) for i in range(6)], parameters=parameters), runtime=True)
+            finally: os.environ.pop('DC_SH4_NO_LOW_WORD', None)
+            return [blob[i] | blob[i + 1] << 8 for i in range(0, len(blob), 2)]
+        low, full = words(False), words(True)
+        self.assertIn(0x4008, low)  # SHLL2 R0
+        self.assertIn(0x302c, low)  # ADD R2,R0
+        self.assertNotIn(0x302e, low)  # no ADDC R2,R0
+        self.assertIn(0x302e, full)
+        self.assertLess(len(low), len(full))
 
 
 if __name__ == '__main__':
