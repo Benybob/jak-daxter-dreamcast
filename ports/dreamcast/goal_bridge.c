@@ -1531,7 +1531,9 @@ static void release_moved_fibers(dc_goal_runtime *rt,uint32_t process){
     dc_goal_fiber *fiber=thread_fibers[i];
     if(fiber && fiber->process==process && fiber!=current && fiber->phase!=DC_FIBER_RUNNING &&
        fiber>=spawned_fibers && fiber<spawned_fibers+DC_SPAWNED_FIBERS){
-      dc_goal_unregister_thread_fiber(rt,fiber);memset(fiber,0,sizeof *fiber);
+      /* Births run inside a fiber, where dc_goal_unregister_thread_fiber refuses;
+       * this one is not running, so its registry slot is cleared directly. */
+      thread_fibers[i]=NULL;memset(fiber,0,sizeof *fiber);
     }
   }
 }
@@ -2112,8 +2114,19 @@ static uint64_t pc_kopen_native(uint64_t fs,uint64_t name,uint64_t mode){
 static uint64_t pc_kclose_native(uint64_t fs){return fs;}
 dc_goal_rpc_hook dc_goal_rpc_handler;
 dc_goal_link_hook dc_goal_link_begin_handler;
+/* The IOP's STR server (RPC-LOAD-STR, port 4) streams spooled animation chunks
+ * from .STR files. There is none yet: every load-chunk-msg is answered with
+ * load-msg-result error (uint16 at +2), so original str-load-status reports
+ * 'error and external-art-buffer drops the request instead of linking a buffer
+ * nothing was read into. --dump dc_goal_str_rpc_refused 4 */
+volatile uint32_t dc_goal_str_rpc_refused;
 static uint64_t rpc_call_native(uint64_t port,uint64_t fno,uint64_t async,uint64_t send,
                                 uint64_t send_bytes,uint64_t recv,uint64_t recv_bytes) {
+  if(port==4 && active_runtime){
+    unsigned char *reply=recv<=UINT32_MAX && recv_bytes>=4?dc_goal_resolve(active_runtime,(uint32_t)recv,4):NULL;
+    if(reply){reply[2]=1;reply[3]=0;++dc_goal_str_rpc_refused;}
+    return 0;
+  }
   return dc_goal_rpc_handler?dc_goal_rpc_handler(port,fno,async,send,send_bytes,recv,recv_bytes):0;
 }
 static uint64_t link_begin_native(uint64_t data,uint64_t name,uint64_t length,uint64_t heap,uint64_t flags) {

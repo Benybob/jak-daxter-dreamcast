@@ -330,8 +330,36 @@ draw-control from a Geyser Rock art group; one is in
 heaps shrank. `dc_level_check` now requires no `'ready` actor and at least one
 draw-control. With live actors the 180 frames take about 5.5 minutes in
 Flycast, so the level suite runs with a 900 s deadline (verify_backend.py's cap
-is now 900). `(method update external-…)` still calls a non-function every
-frame.
+is now 900).
+
+### Actors run each frame; no call reaches a non-function (Flycast, 543 of 543)
+
+- **Born actors never ran.** After their init every actor stayed
+  `'waiting-to-run`: the dispatcher reached them (prevent-from-run is the normal
+  execute|sleep, run-logic? is true), but `thread_resume` found no fiber,
+  because registering the imported one refused it as a duplicate. The fiber
+  release above ran inside the display fiber, where
+  `dc_goal_unregister_thread_fiber` refuses, yet still zeroed the fiber: the
+  registry kept a slot that looked free and was handed out again. The release
+  now clears that registry slot itself (the released fiber is never the running
+  one). Now the cameras are `idle`, eco pills `wait`, the scarecrows `idle`,
+  sharkey `nav-enemy-idle`, the pontoon `rigid-body-platform-idle`, the warp
+  gate switch `basebutton-up-idle`, the particle spawners active.
+  `dc_level_check` requires actors that ran and suspended.
+- **The streamed-art loader called a non-function every frame.**
+  `external-art-buffer update` asked the IOP's STR server (RPC port 4) for
+  spooled animation chunks; nothing answered, the reply kept its `invalid`
+  result, `str-load-status` read that as complete and the buffer called the
+  C kernel's `link` (unbound) on PS2 kernel address #x84000. The bridge now
+  answers every STR request with load-msg-result error, as an IOP with no
+  .STR files would, and the buffer drops it. Missing calls after 180 frames: 0
+  (163 before).
+- **Why only some actors draw.** Of the first 24 actors, the five with a
+  Geyser Rock art group (scarecrow-b ×2, sharkey, tra-pontoon,
+  warp-gate-switch) have a draw-control. Cameras, eco pills and particle
+  spawners have none by design; `money` stays `'waiting-to-run` because its
+  original run-logic? waits for `was-drawn`, which only a renderer sets.
+  `dc_level_actor_table` lists type, state, draw-control and mask.
 
 The actor heap (`*nk-dead-pool*`, 984 KiB as on PS2) is not a place to save:
 after those 180 frames original `memory-used` reports 844,120 of 1,007,616

@@ -23,7 +23,7 @@ typedef char dc_level_logic_evidence_bytes[sizeof dc_level_logic_evidence==128?1
 
 /* Why actors are or are not born: the switches actors-update reads, the
  * camera, the level's first entity link and the level itself.
- * --dump dc_level_spawn_probe 756 */
+ * --dump dc_level_spawn_probe 760 */
 volatile struct {
   uint32_t spawn_actors,vis_actors,birth_dist,birth_max,links,links_allocated;
   uint32_t camera[4];
@@ -33,11 +33,12 @@ volatile struct {
   uint32_t art_groups,art_typed;                 /* Geyser Rock's level art-group load-dir: entries, art-groups */
   uint32_t drawn_actors,art_error_actors;        /* *entity-pool* actors with a draw-control / in process-drawable-art-error */
   uint32_t ready_actors;                         /* *entity-pool* processes still 'ready (status +32) */
+  uint32_t ran_actors;                           /* ... that ran their state code and suspended */
   uint32_t level_words[128];  /* the level object from its tag */
   uint32_t slot[3];           /* bsp-header methods 16..18 */
   char slot_name[3][28];      /* their GOAL function names */
 } dc_level_spawn_probe;
-typedef char dc_level_spawn_probe_bytes[sizeof dc_level_spawn_probe==756?1:-1];
+typedef char dc_level_spawn_probe_bytes[sizeof dc_level_spawn_probe==760?1:-1];
 static uint32_t named(dc_goal_runtime *rt,const char *name){
   uint32_t s=dc_goal_find(rt,name);return s?dc_goal_symbol_value(rt,s):0;
 }
@@ -86,6 +87,9 @@ static uint32_t heap_used(dc_goal_runtime *rt,uint32_t level){
   }
   return 0;
 }
+/* The first actors under *entity-pool*: type, state name (or status when it has
+ * no state) and draw (bit 0: a draw-control; bits 8..31: process mask). --dump dc_level_actor_table 1060 */
+volatile struct { uint32_t count; struct { char type[20],state[20]; uint32_t draw; } row[24]; } dc_level_actor_table;
 static uint64_t actors_wrapper(uint64_t group){
   typedef uint64_t (*one_fn)(uint64_t);
   ++dc_level_actors_probe.calls;
@@ -194,7 +198,7 @@ int dc_level_check(dc_goal_runtime *rt){
   /* Actors the original actors-update births join *entity-pool*: count its
    * children (process-tree: brother +12, child +16, both ppointers). */
   {uint32_t pool=named(rt,"*entity-pool*"),pp=pool?word(rt,pool+16u):0,n=0;
-   uint32_t draw_type=named(rt,"draw-control"),art_error=dc_goal_find(rt,"process-drawable-art-error"),ready=dc_goal_find(rt,"ready");
+   uint32_t draw_type=named(rt,"draw-control"),art_error=dc_goal_find(rt,"process-drawable-art-error"),ready=dc_goal_find(rt,"ready"),suspended=dc_goal_find(rt,"suspended");
    while(pp && pp!=rt->s7 && n<512u){
      uint32_t proc=word(rt,pp),draw,state;const char *name;unsigned k;
      if(!proc || proc==rt->s7)break;
@@ -206,12 +210,21 @@ int dc_level_check(dc_goal_runtime *rt){
      if(draw>4u && draw!=rt->s7 && word(rt,draw-4u)==draw_type)++dc_level_spawn_probe.drawn_actors;
      if(state>4u && state!=rt->s7 && word(rt,state)==art_error)++dc_level_spawn_probe.art_error_actors;
      if(word(rt,proc+32u)==ready)++dc_level_spawn_probe.ready_actors;  /* activated, init never run */
+     if(word(rt,proc+32u)==suspended)++dc_level_spawn_probe.ran_actors;
+     if(dc_level_actor_table.count<24u){
+       uint32_t r=dc_level_actor_table.count++;const char *t=dc_goal_symbol_name(rt,word(rt,word(rt,proc-4u)));
+       const char *st=state>4u && state!=rt->s7?dc_goal_symbol_name(rt,word(rt,state)):dc_goal_symbol_name(rt,word(rt,proc+32u));
+       for(k=0;t && t[k] && k<19u;++k)dc_level_actor_table.row[r].type[k]=t[k];
+       for(k=0;st && st[k] && k<19u;++k)dc_level_actor_table.row[r].state[k]=st[k];
+       dc_level_actor_table.row[r].draw=(draw>4u && draw!=rt->s7 && word(rt,draw-4u)==draw_type)|(word(rt,proc+4u)&0xffffffu)<<8;}  /* draw | mask<<8 */
      ++n;pp=word(rt,proc+12u);
    }
    dc_level_logic_evidence.spawned=n;rt->error=DC_GOAL_OK;
    /* Every born actor ran its original init (none left 'ready), and actors with
     * a Geyser Rock art group made their draw-control from it. */
-   if(dc_level_spawn_probe.ready_actors || !dc_level_spawn_probe.drawn_actors)return stop(rt,12);}
+   if(dc_level_spawn_probe.ready_actors || !dc_level_spawn_probe.drawn_actors)return stop(rt,12);
+   /* and the dispatcher runs them: they reach their states and suspend. */
+   if(!dc_level_spawn_probe.ran_actors)return stop(rt,13);}
   {typedef uint64_t (*zero_fn)(void);
    uint32_t bank=named(rt,"*ACTOR-bank*"),camera_pos=named(rt,"camera-pos"),cam=0;
    uint32_t links_type=named(rt,"entity-links-array"),links=0;
