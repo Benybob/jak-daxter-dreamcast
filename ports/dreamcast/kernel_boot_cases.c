@@ -349,14 +349,14 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
     typedef uint64_t (*eight_fn)(uint64_t,uint64_t,uint64_t,uint64_t,uint64_t,uint64_t,uint64_t,uint64_t);
     enum {STATUS=32,PID=36,MAIN=40,TOP=44,HEAP_TOP=80,RESUME_HOOK=16,NEXT_PID=12,SELF=24,CHILD=16,GET_PROCESS=14,ACTIVATE=9,DEACTIVATE=10,
           STACK_BYTES=16384,FRAMES=3};
-    static dc_goal_process_spans table;static dc_goal_process_span rows[32];static dc_goal_pp_scope_stack scopes;
+    static dc_goal_process_spans table;static dc_goal_process_span rows[256];static dc_goal_pp_scope_stack scopes;  /* a level's actors */
     static dc_goal_fiber fiber;
     uint32_t pool=entry(&rt,"*8k-dead-pool*"),parent=entry(&rt,"*default-pool*"),process_type=entry(&rt,"process");
     uint32_t name=dc_goal_intern(&rt,"dc-boot-spawn"),suspended=dc_goal_intern(&rt,"suspended");
     uint32_t proc,thread,stack,bytes,pid,i;
     zero_fn dispatch=(zero_fn)(uintptr_t)entry(&rt,"kernel-dispatcher");
     CHECK(dispatch!=NULL && entry(&rt,"looping-code")!=0,1,"original kernel-dispatcher and looping-code booted");
-    CHECK(dc_goal_register_process_spans(&rt,&table,rows,32),1,"ownership ledger registered after boot");
+    CHECK(dc_goal_register_process_spans(&rt,&table,rows,256),1,"ownership ledger registered after boot");
     CHECK(dc_goal_register_pp_scope(&rt,&scopes),1,"lexical scope metadata registered after boot");
     /* Original post hooks run on *kernel-dram-stack*: the 32 KiB *dram-stack*
      * array's data, which starts 12 bytes after its tagged pointer. */

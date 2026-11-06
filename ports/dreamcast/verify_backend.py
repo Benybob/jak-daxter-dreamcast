@@ -18,7 +18,7 @@ parser.add_argument('--nm',type=Path,required=True)
 parser.add_argument('--output',type=Path,required=True)
 parser.add_argument('--tests',type=int,default=None)
 parser.add_argument('--suite',choices=('codegen','runtime','runtime-goal','objects','projection','movement','collision','world-manifest','view-clip','camera','sectors','compression','render-io','gpu-catalog','render-cache','world-view','frustum','render-base','training-render','instances','village','flythrough','arena-game','arena-camera','arena-live'),default='codegen')
-parser.add_argument('--timeout',type=float,default=30,help='Native completion deadline in seconds, 1..300')
+parser.add_argument('--timeout',type=float,default=30,help='Native completion deadline in seconds, 1..900')
 parser.add_argument('--capture',action='store_true',help='Capture completed RGB565 framebuffer before recording terminal success')
 parser.add_argument('--dump',nargs=2,metavar=('SYMBOL','BYTES'),help='Also write BYTES of a guest symbol (or a raw 0x8c... address) to dump.bin at the end and on each progress sample')
 args=parser.parse_args()
@@ -28,7 +28,7 @@ try:
 except ValueError as error:
     parser.error(str(error))
 if args.tests<1: parser.error('--tests must be positive')
-if not 1<=args.timeout<=300: parser.error('--timeout must be 1..300 seconds')
+if not 1<=args.timeout<=900: parser.error('--timeout must be 1..900 seconds')
 disc=None
 if args.disc:
     from make_boot_gdi import disc_identity

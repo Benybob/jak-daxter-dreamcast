@@ -292,16 +292,46 @@ validation pass read each pointer word from the disc with its own seek.
 nothing owns until the link succeeds), and validates from there; symbols are
 still interned only by the apply pass.
 
-**Actors do not run their init yet.** The models are there, but of 115
-processes under `*entity-pool*` 103 are still `'ready` (`ready_actors`): entity
-`birth!` activates them, but `init-from-entity!` never runs (none has a
-draw-control or is in `process-drawable-art-error`). Their methods are valid
-code typed `function`, and each actor's entity reaches its level and that
-level's art directory, so the stop is in `run-function-in-process` or the
-spawn admission around it. The earlier "actors are born" count measured
-processes, not initialized actors. village1's medium-resolution scenery actors
-call a non-function inside `initialize-skeleton` (their art is in village1's
-DGO, not loaded), and `(method update external-…)` does so every frame.
+### Actors run their init (Flycast, 543 of 543)
+
+The art loaded, but of 115 processes under `*entity-pool*` 103 stayed `'ready`:
+entity `birth!` activated them and `init-from-entity!` never ran. The earlier
+"actors are born" count had measured processes, not initialized actors. Four
+port faults, found by wrapping original `init-entity`:
+
+1. **`format` ~S and ~A were swapped.** kprint.cpp prints a string's characters
+   for ~S and the object (quoted) for ~A. med-res actors build their skeleton
+   group's name with `"med-res-~S~S"` and `"*~S-sg*"`, which came out as
+   `*"med-res-jungle"""-sg*`.
+2. **`string->symbol` was unbound** (kscheme.cpp's `intern`), so
+   `initialize-skeleton-by-name` called a non-function. The first actor born is
+   such a village1 scenery actor; its fault stayed set and refused every later
+   birth. Now a bridge interns the string.
+3. **Stale process-span rows refused new actors.** The ledger never retired a
+   row when its process died or moved, so when the original dead-pool heap
+   reused that memory the new process's note refused (line 100 overlap).
+   Original compaction (`actors-update` → `compact`) copies a live process
+   lower and repoints its pool record, leaving a whole stale copy, with a
+   registered spawned fiber, at the old address. The ledger now takes an
+   optional `unheld` hook: a row the fresh extent overlaps is dropped when
+   nothing holds its process (catch frame, fiber, scope frame or allocation
+   binding). Before answering, the bridge releases spawned fibers of a process
+   whose `ppointer` (+20) record no longer names it, or that is `'dead`.
+4. **Too few slots.** The ledger had 32 rows, the bridge 28 spawned fibers and
+   36 registered thread fibers, sized for the Jak ELF's 18 live processes. Now
+   256 rows, 192 spawned and 200 registered fibers (about 60 KB of bss). With
+   the old sizes the first 15 actors initialized and the rest silently stayed
+   `'ready`.
+
+After 180 frames all 103 `init-entity` calls leave their process
+`'waiting-to-run`; no `*entity-pool*` actor is `'ready`; 6 actors made a
+draw-control from a Geyser Rock art group; one is in
+`process-drawable-art-error`; the actor heap holds 230,776 bytes after their
+heaps shrank. `dc_level_check` now requires no `'ready` actor and at least one
+draw-control. With live actors the 180 frames take about 5.5 minutes in
+Flycast, so the level suite runs with a 900 s deadline (verify_backend.py's cap
+is now 900). `(method update external-…)` still calls a non-function every
+frame.
 
 The actor heap (`*nk-dead-pool*`, 984 KiB as on PS2) is not a place to save:
 after those 180 frames original `memory-used` reports 844,120 of 1,007,616

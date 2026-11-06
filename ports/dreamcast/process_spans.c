@@ -46,6 +46,7 @@ static int state(dc_goal_runtime *r){
     active->magic!=SPANS_MAGIC||active->runtime!=r||active->rows!=registered_rows||
     active->capacity!=registered_capacity||active->count>registered_capacity||active->owner!=registered_owner||
     active->hooks.owner!=registered_hooks.owner||active->hooks.quiescent!=registered_hooks.quiescent||
+    active->hooks.unheld!=registered_hooks.unheld||
     (registered_hooks.owner&&registered_hooks.owner()!=registered_owner)){
   (DC_GOAL_NOTE_SITE(5),fail(r,DC_GOAL_BAD_ARGUMENT));return -1;
  }
@@ -55,6 +56,10 @@ static uint32_t lower_bound(uint32_t process){
  uint32_t lo=0,hi=active->count;
  while(lo<hi){uint32_t mid=lo+(hi-lo)/2;if(registered_rows[mid].process<process)lo=mid+1;else hi=mid;}
  return lo;
+}
+static void drop(uint32_t at){
+ memmove(registered_rows+at,registered_rows+at+1,(size_t)(active->count-at-1)*sizeof *registered_rows);
+ --active->count;memset(registered_rows+active->count,0,sizeof *registered_rows);
 }
 static int exact(const dc_goal_process_span *a,const dc_goal_process_span *b){
  return a->process==b->process&&a->bytes==b->bytes&&a->generation==b->generation&&a->generation!=0;
@@ -95,6 +100,9 @@ int dc_goal_process_span_note(dc_goal_runtime *r,uint32_t process,uint32_t bytes
  offset=process-4-r->base;
  if(offset>r->used||bytes>r->used-offset||!dc_goal_resolve(r,process-4,bytes))return (DC_GOAL_NOTE_SITE(5),fail(r,DC_GOAL_BAD_ARGUMENT));
  at=lower_bound(process);
+ /* A reused slot: the row of a process that died there, which nothing holds. */
+ if(at<active->count&&registered_rows[at].process==process&&registered_rows[at].bytes!=bytes&&
+    registered_hooks.unheld&&registered_hooks.unheld(r,process))drop(at);
  if(at<active->count&&registered_rows[at].process==process){
   if(registered_rows[at].bytes!=bytes||!registered_rows[at].generation)return (DC_GOAL_NOTE_SITE(5),fail(r,DC_GOAL_BAD_ARGUMENT));
   if(out)*out=registered_rows[at];
@@ -113,12 +121,22 @@ int dc_goal_process_span_note(dc_goal_runtime *r,uint32_t process,uint32_t bytes
    ++dc_goal_span_overlap_probe.followed;
   }
  }
+ /* So does an unheld row ending past its start. */
+ if(registered_hooks.unheld&&at>0&&process-registered_rows[at-1].process<registered_rows[at-1].bytes&&
+    registered_hooks.unheld(r,registered_rows[at-1].process))drop(--at);
 #line 99
  if(at>0&&process-registered_rows[at-1].process<registered_rows[at-1].bytes)return (DC_GOAL_NOTE_SITE(5),fail(r,DC_GOAL_BAD_ARGUMENT));
 #else
+ /* So does an unheld row ending past its start. */
+ if(registered_hooks.unheld&&at>0&&process-registered_rows[at-1].process<registered_rows[at-1].bytes&&
+    registered_hooks.unheld(r,registered_rows[at-1].process))drop(--at);
 #line 99
  if(at>0&&process-registered_rows[at-1].process<registered_rows[at-1].bytes)return (DC_GOAL_NOTE_SITE(5),fail(r,DC_GOAL_BAD_ARGUMENT));
 #endif
+ /* Rows of processes the pool reused (nothing holds them) that start inside
+  * the fresh extent give way to it. */
+ while(registered_hooks.unheld&&at<active->count&&registered_rows[at].process-process<bytes&&
+       registered_hooks.unheld(r,registered_rows[at].process))drop(at);
 #line 100
  if(at<active->count&&registered_rows[at].process-process<bytes)return (DC_GOAL_NOTE_SITE(5),fail(r,DC_GOAL_BAD_ARGUMENT));
  if(dc_goal_process_span_room(r)!=1)return 0;

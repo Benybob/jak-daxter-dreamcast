@@ -128,8 +128,30 @@ static void shrinking(fixture *f){
  CHECK(dc_goal_process_span_shrink(&f->r,&b,160,&c)&&c.bytes==160&&c.generation!=b.generation);
  CHECK(dc_goal_process_spans_detach(&f->r));
 }
+/* The original pool reused memory: rows of processes nothing holds give way to
+ * a fresh extent over them; a held one still refuses. */
+static uint32_t unheld_process[2];
+static int unheld(const dc_goal_runtime *r,uint32_t process){(void)r;return process==unheld_process[0]||process==unheld_process[1];}
+static void reused(fixture *f){
+ dc_goal_process_span a;
+ f->hooks.unheld=unheld;CHECK(init(f));
+ CHECK(dc_goal_process_span_note(&f->r,f->p[0],240,NULL));CHECK(dc_goal_process_span_note(&f->r,f->p[1],240,NULL));
+ /* p0 is held: a fresh extent starting inside it refuses, nothing changes. */
+ CHECK(!dc_goal_process_span_note(&f->r,f->p[0]+128,240,NULL));CHECK(f->table.count==2);f->r.error=DC_GOAL_OK;
+ /* Both unheld: the extent at p0+128 ends past p1's start, so both rows go. */
+ unheld_process[0]=f->p[0];unheld_process[1]=f->p[1];
+ CHECK(dc_goal_process_span_note(&f->r,f->p[0]+128,240,&a));
+ CHECK(f->table.count==1&&f->rows[0].process==f->p[0]+128&&a.bytes==240);
+ /* A reused slot: same address, another size, nothing holds it. */
+ unheld_process[0]=f->p[0]+128;
+ CHECK(dc_goal_process_span_note(&f->r,f->p[0]+128,112,&a)&&a.bytes==112&&f->table.count==1);
+ /* Rows not overlapping the fresh extent stay. */
+ CHECK(dc_goal_process_span_note(&f->r,f->p[3],112,NULL)&&f->table.count==2);
+ unheld_process[0]=unheld_process[1]=0;f->hooks.unheld=NULL;
+ CHECK(dc_goal_process_spans_detach(&f->r));
+}
 int main(int argc,char **argv){
  fixture f;int group=argc>1?atoi(argv[1]):0;if(!setup(&f))return 2;
- if(group==0)sorted(&f);else if(group==1)lifetime(&f);else if(group==2)metadata(&f);else if(group==3)outputs(&f);else if(group==4)shrinking(&f);else return 3;
+ if(group==0)sorted(&f);else if(group==1)lifetime(&f);else if(group==2)metadata(&f);else if(group==3)outputs(&f);else if(group==4)shrinking(&f);else if(group==5)reused(&f);else return 3;
  printf("process spans %u/%u checks group=%d\n",passed,total,group);free(f.memory);return passed==total?0:1;
 }

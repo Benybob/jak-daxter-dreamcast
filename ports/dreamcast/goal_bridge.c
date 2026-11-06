@@ -914,8 +914,22 @@ void dc_goal_lexical_native_return(dc_goal_runtime *rt) {
   if(result==DC_GOAL_PP_SCOPE_DENIED)dc_goal_clear_process_context(rt);
   rt->error=prior==DC_GOAL_OK?DC_GOAL_BAD_ARGUMENT:prior;
 }
+static int process_held(uint32_t process);
+static void release_moved_fibers(dc_goal_runtime *rt,uint32_t process);
+/* A noted process nothing holds: no catch frame or live fiber, no lexical scope
+ * frame (its process, scheduler or saved allocation), and neither allocation
+ * binding. The original dead pool reused its memory, so its ledger row may go. */
+static int span_unheld(const dc_goal_runtime *rt,uint32_t process){
+  dc_goal_pp_scope_stack *stack=dc_goal_pp_scope_active((dc_goal_runtime *)rt);unsigned i;
+  release_moved_fibers((dc_goal_runtime *)rt,process);
+  if(process_held(process) || active_process_heap.process==process || execution_heap.process==process)return 0;
+  for(i=0;stack && i<stack->depth;++i)
+    if(stack->frames[i].lexical_process==process || stack->frames[i].scheduler_process==process ||
+       stack->frames[i].saved_allocation.process==process)return 0;
+  return 1;
+}
 int dc_goal_register_process_spans(dc_goal_runtime *rt,dc_goal_process_spans *table,dc_goal_process_span *rows,uint32_t capacity) {
-  const dc_goal_process_span_hooks hooks={dc_goal_kos_stack_owner,spans_quiescent};
+  const dc_goal_process_span_hooks hooks={dc_goal_kos_stack_owner,spans_quiescent,span_unheld};
   if(!rt || active_runtime!=rt){if(rt&&rt->error==DC_GOAL_OK)(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);return 0;}
   if(process_family(rt,dc_goal_symbol_value(rt,rt->s7+DC_FIX_SYM_PROCESS_TYPE))!=1)return 0;
   return dc_goal_process_spans_init(table,rt,rows,capacity,&hooks);
@@ -1436,7 +1450,7 @@ static uint64_t suspend_current(void) {
   return rt->error==DC_GOAL_OK;
 }
 /* Original cpu-thread resume-hook targets: registered native fibers by thread. */
-#define DC_THREAD_FIBERS 36
+#define DC_THREAD_FIBERS 200  /* a level's live actors, plus the player, cameras and the display */
 static dc_goal_fiber *thread_fibers[DC_THREAD_FIBERS];
 int dc_goal_register_thread_fiber(dc_goal_runtime *rt,dc_goal_fiber *fiber) {
   unsigned i,free_slot=DC_THREAD_FIBERS;
@@ -1466,7 +1480,7 @@ int dc_goal_unregister_thread_fiber(dc_goal_runtime *rt,dc_goal_fiber *fiber) {
  * shared fake-scratchpad stack is imported (activate's PC-port stack for
  * process-spawn's default *scratch-memory-top*). The extent is the process's own
  * record (allocated-length + 112), noted in the ledger when one is registered. */
-#define DC_SPAWNED_FIBERS 28  /* Jak arena: 18 live processes; each slot is 336 bytes of bss */
+#define DC_SPAWNED_FIBERS 192  /* Geyser Rock with village1: 115 actors born; each slot is 336 bytes of bss */
 static dc_goal_fiber spawned_fibers[DC_SPAWNED_FIBERS];
 /* The process status word (+32) is the named symbol; no intern. */
 static int process_status_is(dc_goal_runtime *rt,uint32_t process,const char *name) {
@@ -1496,6 +1510,30 @@ static dc_goal_fiber *import_spawned(dc_goal_runtime *rt,uint32_t thread) {
   if(!dc_goal_fiber_init_main(f,rt,process,length+112u,thread,base,32u*1024u)){memset(f,0,sizeof *f);return NULL;}
   if(!dc_goal_register_thread_fiber(rt,f)){memset(f,0,sizeof *f);return NULL;}
   return f;
+}
+/* The original dead pool is allocating over a noted process, so the process
+ * that was there died or moved: original compaction (actors-update's compact
+ * of the dead-pool-heap) copies a live process lower and repoints its pool
+ * record, leaving a whole stale copy behind. A live process's ppointer (+20)
+ * names a record that names the process back; the old copy's no longer does.
+ * An imported spawned fiber still registered there (its stack is that memory)
+ * is released, as thread_resume releases one whose thread address comes back;
+ * the moved process imports a fresh fiber when its new thread first resumes.
+ * The running fiber stays. */
+static void release_moved_fibers(dc_goal_runtime *rt,uint32_t process){
+  dc_goal_fiber *current=dc_goal_fiber_current();enum dc_goal_error prior=rt->error;
+  uint32_t ppointer=0,named=0;const unsigned char *p;unsigned i;
+  if(process>=4u && (p=dc_goal_resolve(rt,process+20u,4))){memcpy(&ppointer,p,4);
+    if(ppointer && (p=dc_goal_resolve(rt,ppointer,4)))memcpy(&named,p,4);}
+  rt->error=prior;
+  if(named==process && !process_status_is(rt,process,"dead"))return;  /* still that live process */
+  for(i=0;i<DC_THREAD_FIBERS;++i){
+    dc_goal_fiber *fiber=thread_fibers[i];
+    if(fiber && fiber->process==process && fiber!=current && fiber->phase!=DC_FIBER_RUNNING &&
+       fiber>=spawned_fibers && fiber<spawned_fibers+DC_SPAWNED_FIBERS){
+      dc_goal_unregister_thread_fiber(rt,fiber);memset(fiber,0,sizeof *fiber);
+    }
+  }
 }
 /* Original thread-resume: called by the original kernel-dispatcher with the
  * scheduler's current-process already set to the thread's process. Natively the
@@ -1754,7 +1792,8 @@ static uint64_t format_native(uint64_t dest,uint64_t fmt,uint64_t a0,uint64_t a1
     if(arg>=6)goto bad;
     switch(c){
     case 'A':case 'a':case 'S':case 's':
-      if(!format_object(rt,out,&n,sizeof out,args[arg++],c=='S'||c=='s')){goto bad;}
+      /* kprint.cpp: ~A prints the object (a string with quotes); ~S prints a string's characters. */
+      if(!format_object(rt,out,&n,sizeof out,args[arg++],c=='A'||c=='a')){goto bad;}
       continue;
     case 'D':case 'd':snprintf(tmp,sizeof tmp,"%*lld",(int)width,(long long)args[arg++]);break;
     case 'X':case 'x':snprintf(tmp,sizeof tmp,width?"%0*llx":"%*llx",(int)width,(unsigned long long)args[arg++]);break;
@@ -2038,6 +2077,20 @@ static uint64_t read_ee_timer_native(void){
   return 0;
 #endif
 }
+/* Kernel string->symbol (kscheme.cpp intern): the symbol a GOAL string names,
+ * interned if new. Original initialize-skeleton-by-name finds *<name>-sg* so. */
+static uint64_t string_to_symbol_native(uint64_t string){
+  dc_goal_runtime *rt=active_runtime;char name[256];uint32_t length=0,used=0,s=(uint32_t)string;
+  const unsigned char *p,*text;
+  if(!rt)return 0;
+  if(string>UINT32_MAX || (s&15u)!=4u || !dc_goal_resolve(rt,s-4u,4) || dc_goal_type_of(rt,s)!=rt->string_type ||
+     !(p=dc_goal_resolve(rt,s,4))){if(rt->error==DC_GOAL_OK)(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);return 0;}
+  memcpy(&length,p,4);
+  if(!(text=dc_goal_resolve(rt,s+4u,length?length:1))){if(rt->error==DC_GOAL_OK)(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);return 0;}
+  while(used<length && used<sizeof name-1u && text[used]){name[used]=(char)text[used];++used;}
+  name[used]=0;
+  return dc_goal_intern(rt,name);
+}
 static uint32_t pc_rand_state=2463534242u;
 static uint64_t pc_rand_native(void){
   uint32_t x=pc_rand_state;x^=x<<13;x^=x>>17;x^=x<<5;pc_rand_state=x;return x;
@@ -2090,7 +2143,7 @@ static uint64_t pc_mem_move_native(uint64_t dst,uint64_t src,uint64_t size) {
   else {dc_goal_mem_move_probe[1]++;dc_goal_mem_move_probe[5]=(uint32_t)rt->error;}
   return 0;
 }
-#define DC_PC_SERVICES 54
+#define DC_PC_SERVICES 56
 /* Coexistence only stashes requests on the GOAL stack (AI-assisted), ISC. */
 #ifdef DC_ARENA_COEXIST
 uint64_t dc_arena_syncv(void);
@@ -2140,6 +2193,7 @@ int dc_goal_install_pc_services(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_g
   functions[k]=(dc_goal_code_export){"file-stream-close",code[k],12,NULL,0};targets[k++]=(uint32_t)(uintptr_t)pc_kclose_native;
   functions[k]=(dc_goal_code_export){"kset-language",code[k],12,NULL,0};targets[k++]=(uint32_t)(uintptr_t)kset_language_native;
   functions[k]=(dc_goal_code_export){"pc-rand",code[k],12,NULL,0};targets[k++]=(uint32_t)(uintptr_t)pc_rand_native;
+  functions[k]=(dc_goal_code_export){"string->symbol",code[k],12,NULL,0};targets[k++]=(uint32_t)(uintptr_t)string_to_symbol_native;
   functions[k]=(dc_goal_code_export){"__read-ee-timer",code[k],12,NULL,0};targets[k++]=(uint32_t)(uintptr_t)read_ee_timer_native;
   functions[k]=(dc_goal_code_export){"__mem-move",code[k],12,NULL,0};targets[k++]=(uint32_t)(uintptr_t)pc_mem_move_native;
   functions[k]=(dc_goal_code_export){"link-begin",code[k],12,NULL,0};targets[k++]=(uint32_t)(uintptr_t)link_begin_native;

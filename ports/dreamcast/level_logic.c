@@ -208,7 +208,10 @@ int dc_level_check(dc_goal_runtime *rt){
      if(word(rt,proc+32u)==ready)++dc_level_spawn_probe.ready_actors;  /* activated, init never run */
      ++n;pp=word(rt,proc+12u);
    }
-   dc_level_logic_evidence.spawned=n;rt->error=DC_GOAL_OK;}
+   dc_level_logic_evidence.spawned=n;rt->error=DC_GOAL_OK;
+   /* Every born actor ran its original init (none left 'ready), and actors with
+    * a Geyser Rock art group made their draw-control from it. */
+   if(dc_level_spawn_probe.ready_actors || !dc_level_spawn_probe.drawn_actors)return stop(rt,12);}
   {typedef uint64_t (*zero_fn)(void);
    uint32_t bank=named(rt,"*ACTOR-bank*"),camera_pos=named(rt,"camera-pos"),cam=0;
    uint32_t links_type=named(rt,"entity-links-array"),links=0;

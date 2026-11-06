@@ -6,6 +6,9 @@ typedef struct dc_goal_process_span {uint32_t process,bytes;uint64_t generation;
 typedef struct {
  uint32_t (*owner)(void);
  int (*quiescent)(const dc_goal_runtime *);
+ /* Optional: nothing holds this noted process (no catch frame, fiber, scope
+  * or allocation binding), so a fresh allocation over it may retire its row. */
+ int (*unheld)(const dc_goal_runtime *,uint32_t process);
 } dc_goal_process_span_hooks;
 typedef struct dc_goal_process_spans {
  uint32_t magic;dc_goal_runtime *runtime;dc_goal_process_span *rows;
@@ -24,7 +27,9 @@ int dc_goal_process_span_room(dc_goal_runtime *);
  * or externally pinned buffer. Not a guest-callable ownership assertion. No
  * process-body read or heap-validity/execution inference. Existing exact note is
  * idempotent; overlap/conflicting extent refuses. Fresh notes may occur while
- * another process runs; existing rows/generations are never evicted/replaced. */
+ * another process runs. A row the fresh extent overlaps is dropped only when the
+ * unheld hook says nothing holds its process: the original pool reused memory
+ * of a process that died or moved; any other overlap refuses as before. */
 int dc_goal_process_span_note(dc_goal_runtime *,uint32_t process,uint32_t bytes,dc_goal_process_span *optional_out);
 /* Output is valid disjoint C storage (current working-stack scratch is valid).
  * Lookup alone changes no GOAL word or execution/allocation binding. */
