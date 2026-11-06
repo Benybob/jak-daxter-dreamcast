@@ -416,3 +416,34 @@ terrain sectors and cell split come from `make_flythrough_fixture.py`), read
 from the disc, and a level renderer that takes its camera from the game's
 `*math-camera*` each frame, with the same render libraries as
 `arena_live_render.c`.
+
+### Geyser Rock drawn from the game camera (Flycast, 3157 of 3157, 2026-11-06)
+
+![first frame](build/geyser-first-frame.png) (git-ignored capture)
+
+`level_draw.c` draws Geyser Rock in `jak-dc-level.elf` with the render
+libraries `arena_live_render.c` draws beach with: the catalog and textures,
+base bank, block cache, draw window, DCI3 instance package and instance cells.
+Its camera is the original `*math-camera*` each frame (`dc_live_read`,
+`dc_live_convert` from `arena_live_math.c`), the target 12 m ahead of the eye;
+terrain comes from a ±14 m window around that target and instances out to
+60 m. At the first draw the boot romdisk's VRAM loan is freed for textures and
+the slab is handed to the renderer; all its allocations and file handles stay
+in the slab (`DC_ARENA_SLAB_REDIRECT`). Level render data is read from the
+disc, `/cd/GEYSER`:
+
+```text
+python tie_lods.py --textured --compact training-background.glb TRA.DGO debug_out --out build/geyser-render/package.dci3
+python make_level_render_assets.py training-background.glb build/geyser-render/package.dci3 build/geyser-render/assets --at=-1316.8,6.9,1057.8 --radius 100
+copy build/geyser-render/assets (without *.json) to build/level-disc/GEYSER
+```
+
+Measured over 184 frames: every frame drawn from the game camera; about 730
+terrain faces, 485 instances and 38,915 instance triangles a frame; textures
+383,872 bytes of VRAM with 2,268,136 left; renderer slab high water 1,454,048
+of 1,507,392 bytes; no PVR errors. The GOAL arena still ends at 12,048,464 of
+12,124,096. The capture shows the grass slope, palms, rocks and the warp gate.
+
+Not yet: Jak and the actors (their art is loaded but nothing draws merc
+models), distant terrain (only the ±14 m window around the target), sky and
+water, and the frame rate (180 frames take about 7 minutes in Flycast).

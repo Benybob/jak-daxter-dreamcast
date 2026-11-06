@@ -100,6 +100,23 @@ int dc_arena_live_check(uint64_t actual,uint64_t expected,const char *name){retu
 #ifdef DC_ARENA_CAMERA
 int dc_arena_camera_check(uint64_t actual,uint64_t expected,const char *name){return check(actual,expected,name);}
 #endif
+#ifdef DC_LEVEL_DRAW
+#include "arena_slab.h"
+void dc_arena_slab_init(void *,uint32_t);
+int dc_level_draw_frame(dc_goal_runtime *);
+int dc_level_draw_finish(void);
+int dc_level_draw_check(uint64_t actual,uint64_t expected,const char *name){return check(actual,expected,name);}
+/* After GAME.CGO, when the renderer starts: the boot romdisk is no longer read,
+ * so its VRAM loan goes back to the PVR for textures and the slab is handed to
+ * the renderer's allocator. */
+int dc_level_draw_release_boot(uint32_t *available){
+ if(!check(fs_romdisk_unmount("/rd"),0,"level draw boot romdisk unmounted"))return 0;
+ pvr_mem_free(boot_romdisk);boot_romdisk=NULL;
+ dc_arena_slab_init(slab,SLAB_BYTES);
+ if(available)*available=pvr_mem_available();
+ return 1;
+}
+#endif
 #ifdef DC_ARENA_FLY
 int dc_arena_fly_check(uint64_t actual,uint64_t expected,const char *name){return check(actual,expected,name);}
 /* Only after GAME.CGO and its checks have closed every boot file. The boot
@@ -261,6 +278,8 @@ int dc_arena_dispatch(dc_goal_runtime *rt){
 #ifdef DC_ARENA_FLY
   if(!dc_arena_fly_frame())return 0;
   CHECK(rt->used,used,"arena fly rendering leaves GOAL bump unchanged");
+#elif defined(DC_LEVEL_DRAW)
+  if(!dc_level_draw_frame(rt))return 0;
 #else
   CHECK(pvr_wait_ready(),0,"arena PVR ready between GOAL frames");
   pvr_scene_begin();pvr_set_bg_color(.05f,.1f,.2f);
@@ -270,7 +289,7 @@ int dc_arena_dispatch(dc_goal_runtime *rt){
   ++scenes;return 1;
 }
 int dc_arena_finish(dc_goal_runtime *rt){
-#ifndef DC_ARENA_FLY
+#if !defined(DC_ARENA_FLY) && !defined(DC_LEVEL_DRAW)
   uint32_t used=rt->used,i;volatile uint32_t *words=slab;
 #endif
 #if defined(DC_LEVEL_DRAW)
@@ -295,6 +314,8 @@ int dc_arena_finish(dc_goal_runtime *rt){
 #endif
 #ifdef DC_ARENA_FLY
   if(!dc_arena_fly_finish())return 0;
+#elif defined(DC_LEVEL_DRAW)
+  if(!dc_level_draw_finish())return 0;
 #else
   for(i=0;i<SLAB_BYTES/4u;++i)words[i]=0xa5a5a5a5u;
   CHECK(rt->used,used,"arena slab fill leaves GOAL bump unchanged");

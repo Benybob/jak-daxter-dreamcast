@@ -839,12 +839,18 @@ level_goal_bridge.o: goal_bridge.c $(wildcard *.h)
 # before the GOAL arena, and submits a scene after every dispatcher call.
 level_coexist.o: arena_coexist.c goal_runtime.h goal_fiber.h goal_kos_stack.h
 	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -DDC_ARENA_COEXIST -DDC_LEVEL_DRAW -DDC_LEVEL_DISPATCHES=184 -I. -c $< -o $@
+# Geyser Rock drawn from the game camera (level_draw.c): render data staged by
+# make_level_render_assets.py in build/level-disc/GEYSER, read from /cd.
+level_draw.o: level_draw.c $(wildcard *.h) build/level_render_fixture.h
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -DDC_LEVEL_DRAW $(ARENA_FLY_ALLOC) -I. -c $< -o $@
+build/level_render_fixture.h:
+	@echo 'run make_level_render_assets.py on training-background.glb (see LEVEL_PLAN.md) first' && false
 level_romdisk_stage.o: romdisk_stage.c
 	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -DDC_ARENA_COEXIST -c $< -o $@
 level_process_spans.o: process_spans.c $(wildcard *.h)
 	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -DDC_ARENA_JAK_PLAYER -I. -c $< -o $@
-jak-dc-level.elf: kernel_boot_main.o level_kernel_cases.o kernel_vf_fixture.o goal_dgo.o goal_dgo_zst.o level_romdisk_stage.o level_coexist.o level_logic.o level_dgo_rpc.o level_player.o level_goal_art.o level_goal_bridge.o level_process_spans.o $(ZSTD_OBJS) build/kernel-dgo-romdisk.o $(filter-out goal_bridge.o process_spans.o,$(KERNEL_BOOT_LIBS)) build/mips2c/libdcmips2c.a
-	kos-c++ -o $@ $^ -Wl,--section-start=.dc_stage=0x8cb00000
+jak-dc-level.elf: kernel_boot_main.o level_kernel_cases.o kernel_vf_fixture.o goal_dgo.o goal_dgo_zst.o level_romdisk_stage.o level_coexist.o level_draw.o arena_slab.o arena_live_math.o arena_fly_instance_cells.o arena_fly_render_base.o arena_fly_render_block_cache.o arena_fly_render_indexed.o arena_fly_render_draw_window.o arena_fly_render_gpu.o arena_fly_render_cache.o arena_fly_render_package.o arena_fly_sector_inflate_stored.o render_world_view_scalar.o render_world_view_gate.o render_frustum.o instance_pass.o level_logic.o level_dgo_rpc.o level_player.o level_goal_art.o level_goal_bridge.o level_process_spans.o $(ZSTD_OBJS) build/kernel-dgo-romdisk.o $(filter-out goal_bridge.o process_spans.o,$(KERNEL_BOOT_LIBS)) build/mips2c/libdcmips2c.a
+	kos-c++ -o $@ $^ -Wl,--section-start=.dc_stage=0x8cb00000 -lm
 
 # GOAL's 60-frame boot with PVR clears and a separate slab (AI-assisted), ISC.
 # Separate objects keep the headless DGO boot's services and VRAM map unchanged.
