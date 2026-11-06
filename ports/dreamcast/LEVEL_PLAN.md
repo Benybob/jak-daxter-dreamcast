@@ -332,6 +332,21 @@ draw-control. With live actors the 180 frames take about 5.5 minutes in
 Flycast, so the level suite runs with a 900 s deadline (verify_backend.py's cap
 is now 900).
 
+### Level heaps sized per slot (Flycast, 543 of 543, 2026-11-06)
+
+Original `alloc-levels!` takes two equal level heaps, so either level fits
+either slot; at 1,664 KiB each, Geyser Rock left about 700 KB of its heap
+unused. The level ELF now allocates them itself before the first frame
+(`alloc_level_heaps` in `level_logic.c`): level0 1 MiB for Geyser Rock (wanted
+first; 955,584 bytes used) and level1 1,664 KiB for village1 (1,526,064).
+`alloc-levels!` allocates only while level0's heap base is 0, so it keeps
+these; the art and common packages it would also note are recorded by the DGO
+boot. `dc_level_check` requires Geyser Rock in level0. The arena ends at
+12,157,216 of 13,631,488 bytes: **1.47 MB free** (819 KB before), room for
+the renderer's measured 1.37 MB slab. This is a choice for this pair of
+levels, not the original's symmetric layout: a level larger than 1 MiB in
+level0 would not fit.
+
 ### Actors run each frame; no call reaches a non-function (Flycast, 543 of 543)
 
 - **Born actors never ran.** After their init every actor stayed

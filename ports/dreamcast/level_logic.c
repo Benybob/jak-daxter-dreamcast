@@ -76,16 +76,31 @@ volatile struct { uint32_t target,state,pos[4]; char state_name[24]; uint32_t ca
 /* Children of *camera-pool* after the frames: type and state names.
  * --dump dc_level_camera_pool_probe 260 */
 volatile struct { uint32_t count; struct { char type[24]; char state[24]; uint32_t status,pad; } row[5]; } dc_level_camera_pool_probe;
-/* Bytes a level has taken from its level heap: the inline kheap in the level
- * object (base, top, current, top-base) whose size is the level heap size. */
-static uint32_t heap_used(dc_goal_runtime *rt,uint32_t level){
-  enum {LEVEL_HEAP_BYTES=1664u*1024u};  /* dreamcast_memory_budget.gc */
-  uint32_t i;
-  for(i=0;i<512u;i+=4){
-    uint32_t base=word(rt,level+i),top=word(rt,level+i+4u),current=word(rt,level+i+8u),top_base=word(rt,level+i+12u);
-    if(base && top==top_base && top_base-base==LEVEL_HEAP_BYTES && current>=base && current<=top)return current-base;
+/* Level heaps sized per slot (2026-11-06). Original alloc-levels! takes two
+ * equal heaps from the global heap (LEVEL_HEAP_SIZE, 1,664 KiB in
+ * dreamcast_memory_budget.gc, so either level fits either). Here Geyser Rock,
+ * wanted first, lands in level0 and needs 955,584 bytes; village1, which its
+ * continue point adds, lands in level1 and needs 1,526,064. Sizing level0 for
+ * Geyser Rock returns 640 KiB to the arena for the renderer. They are taken
+ * before the first frame, so alloc-levels! (which allocates only while level0's
+ * heap base is 0) keeps them; the art and common packages it would also note
+ * are recorded by the DGO boot. dc_level_check confirms which level is where. */
+enum {LEVEL0_HEAP_BYTES=1024u*1024u,LEVEL1_HEAP_BYTES=1664u*1024u};
+static int alloc_level_heaps(dc_goal_runtime *rt){
+  static const uint32_t slot[2]={96u,2704u},bytes[2]={LEVEL0_HEAP_BYTES,LEVEL1_HEAP_BYTES};  /* level-group level0/1 */
+  uint32_t group=named(rt,"*level*"),i;
+  for(i=0;i<2u;++i){
+    uint32_t base=dc_goal_alloc(rt,bytes[i]),heap[4];unsigned char *fields;
+    if(!base || !group || !(fields=dc_goal_resolve(rt,group+slot[i]+28u,16)))return 0;  /* level heap, kheap at +28 */
+    heap[0]=base;heap[1]=base+bytes[i];heap[2]=base;heap[3]=base+bytes[i];  /* base top current top-base */
+    memcpy(fields,heap,16);
   }
-  return 0;
+  return 1;
+}
+/* Bytes a level has taken from its level heap (the inline kheap at +28). */
+static uint32_t heap_used(dc_goal_runtime *rt,uint32_t level){
+  uint32_t base=word(rt,level+28u),current=word(rt,level+36u);
+  return base && current>=base?current-base:0;
 }
 /* The first actors under *entity-pool*: type, state name (or status when it has
  * no state) and draw (bit 0: a draw-control; bits 8..31: process mask). --dump dc_level_actor_table 1060 */
@@ -129,6 +144,7 @@ int dc_level_want(dc_goal_runtime *rt){
   uint32_t state=named(rt,"*load-state*"),want=named(rt,"(method want-levels load-state)");
   uint32_t display=named(rt,"(method want-display-level load-state)"),training=dc_goal_intern(rt,"training");
   if(!rt || rt->error!=DC_GOAL_OK || !state || !want || !display || !training)return stop(rt,1);
+  if(!alloc_level_heaps(rt))return stop(rt,14);
   wrap_birth(rt);wrap_actors_update(rt);
   dc_level_logic_evidence.want_result=(uint32_t)((three_fn)(uintptr_t)want)(state,training,rt->s7);
   ((three_fn)(uintptr_t)display)(state,training,dc_goal_intern(rt,"display"));
@@ -147,6 +163,8 @@ int dc_level_check(dc_goal_runtime *rt){
   dc_level_logic_evidence.level=level;
   if(rt->error!=DC_GOAL_OK || dc_level_logic_evidence.status!=dc_goal_find(rt,"active"))return stop(rt,5);
   dc_level_spawn_probe.heap_used=heap_used(rt,level);
+  {uint32_t group_=named(rt,"*level*");  /* the slot each level is in (see alloc_level_heaps) */
+   if(level!=group_+96u)return stop(rt,15);}
   {typedef uint64_t (*one_fn)(uint64_t);
    uint32_t pool=named(rt,"*nk-dead-pool*");
    uint32_t used=named(rt,"(method memory-used dead-pool-heap)"),total=named(rt,"(method memory-total dead-pool-heap)");
