@@ -396,3 +396,23 @@ two level heaps).
 4. `start 'play` at Geyser Rock's continue point; collision under Jak.
 
 None of this is implemented yet. The measurements above are the only result.
+
+### The level ELF beside the PVR (Flycast, 1480 of 1480, 2026-11-06)
+
+First step toward drawing Geyser Rock. `jak-dc-level.elf` is now built with
+`DC_ARENA_COEXIST` and `arena_coexist.c`'s new `DC_LEVEL_DRAW` variant, the
+same path `jak-dc-arena.elf` uses: `pvr_init`, VRAM loans from
+`pvr_mem_malloc` for the PS2 DMA buffers and the boot romdisk (checked to read
+back), a renderer slab of 1,507,392 bytes (the Jak ELF's measured high water
+plus its margin) allocated before the GOAL arena, and a PVR scene after every
+one of the 184 dispatcher calls. The GOAL arena is the rest of the 13 MiB the
+level ELF had: 12,124,096 bytes, of which the run ends using 12,048,464 (75 KB
+spare). The arena ELF's syncv and DMA-chain checks are skipped here: the level
+ELF's frames reach neither. Nothing is drawn yet; the scenes are clears.
+
+Next: Geyser Rock's render data (`tie_lods.py --textured --compact` on
+`training-background.glb` gives an 817,744-byte DCI3 instance package; the
+terrain sectors and cell split come from `make_flythrough_fixture.py`), read
+from the disc, and a level renderer that takes its camera from the game's
+`*math-camera*` each frame, with the same render libraries as
+`arena_live_render.c`.

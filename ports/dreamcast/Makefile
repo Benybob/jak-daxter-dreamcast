@@ -818,7 +818,7 @@ jak-dc-kernel-dgo.elf: kernel_boot_main.o kernel_dgo_cases.o kernel_vf_fixture.o
 # (AI-assisted), ISC. Disc: build/level-disc with TRAINING.DGO and VILLAGE1.DGO (logic BSPs), TRA-CODE.DGO and VI1-CODE.DGO. A disc boot loads
 # the flat binary, so the boot romdisk sits low, as in the Jak ELF.
 level_kernel_cases.o: kernel_boot_cases.c level_logic.h level_dgo_rpc.h level_player.h goal_dgo.h goal_dgo_zst.h goal_bridge.h goal_fiber.h goal_main_start.h runtime_cases.h build/game_cgo_order.h build/vf_cases.h mips2c_dc.h mips2c_cases.h build/mips2c/mips2c_cases_expect.h
-	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -DDC_KERNEL_DGO -DDC_LEVEL_LOGIC -I. -c kernel_boot_cases.c -o $@
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -DDC_KERNEL_DGO -DDC_LEVEL_LOGIC -DDC_ARENA_COEXIST -I. -c kernel_boot_cases.c -o $@
 level_logic.o: level_logic.c level_logic.h goal_module.h goal_runtime.h
 	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -I. -c $< -o $@
 level_dgo_rpc.o: level_dgo_rpc.c level_dgo_rpc.h goal_art.h goal_bridge.h goal_runtime.h
@@ -833,10 +833,17 @@ level_goal_art.o: goal_art.c goal_art.h goal_runtime.h
 # shrink-follow ledger: the Jak player's bridge and span ledger, without the
 # arena renderer's coexistence flags.
 level_goal_bridge.o: goal_bridge.c $(wildcard *.h)
-	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -DDC_ARENA_JAK_PLAYER -I. -c $< -o $@
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -DDC_ARENA_JAK_PLAYER -DDC_ARENA_COEXIST -I. -c $< -o $@
+# The level ELF beside the PVR (AI-assisted), ISC: arena_coexist.c's level variant
+# takes VRAM loans for the DMA buffers and the boot romdisk and a renderer slab
+# before the GOAL arena, and submits a scene after every dispatcher call.
+level_coexist.o: arena_coexist.c goal_runtime.h goal_fiber.h goal_kos_stack.h
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -DDC_ARENA_COEXIST -DDC_LEVEL_DRAW -DDC_LEVEL_DISPATCHES=184 -I. -c $< -o $@
+level_romdisk_stage.o: romdisk_stage.c
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -DDC_ARENA_COEXIST -c $< -o $@
 level_process_spans.o: process_spans.c $(wildcard *.h)
 	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -DDC_ARENA_JAK_PLAYER -I. -c $< -o $@
-jak-dc-level.elf: kernel_boot_main.o level_kernel_cases.o kernel_vf_fixture.o goal_dgo.o goal_dgo_zst.o romdisk_stage.o level_logic.o level_dgo_rpc.o level_player.o level_goal_art.o level_goal_bridge.o level_process_spans.o $(ZSTD_OBJS) build/kernel-dgo-romdisk.o $(filter-out goal_bridge.o process_spans.o,$(KERNEL_BOOT_LIBS)) build/mips2c/libdcmips2c.a
+jak-dc-level.elf: kernel_boot_main.o level_kernel_cases.o kernel_vf_fixture.o goal_dgo.o goal_dgo_zst.o level_romdisk_stage.o level_coexist.o level_logic.o level_dgo_rpc.o level_player.o level_goal_art.o level_goal_bridge.o level_process_spans.o $(ZSTD_OBJS) build/kernel-dgo-romdisk.o $(filter-out goal_bridge.o process_spans.o,$(KERNEL_BOOT_LIBS)) build/mips2c/libdcmips2c.a
 	kos-c++ -o $@ $^ -Wl,--section-start=.dc_stage=0x8cb00000
 
 # GOAL's 60-frame boot with PVR clears and a separate slab (AI-assisted), ISC.

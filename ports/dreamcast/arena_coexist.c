@@ -4,6 +4,7 @@
 #include <malloc.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 #include "goal_runtime.h"
 #include "goal_fiber.h"
 #include "goal_kos_stack.h"
@@ -21,12 +22,18 @@ extern volatile struct {
 } dc_backend;
 typedef char arena_telemetry_layout[sizeof dc_backend==128?1:-1];
 extern const int romdisk_size;
+extern const unsigned char romdisk_data[];
 int dc_stage_romdisk_at(void *);
 
 #ifdef DC_ARENA_JAK_PLAYER
 #include "arena_jak_memory.h"
 #include <string.h>
 enum {SLAB_BYTES=DC_JAK_RENDER_SLAB_BYTES,ARENA_BYTES=DC_JAK_ARENA_BYTES,DMA_BYTES=3506176,
+#elif defined(DC_LEVEL_DRAW)
+/* The level ELF: the renderer slab is the Jak ELF's measured one (high water
+ * 1,441,856 plus a 65,536 margin, build/arena-jak-budget/budget.json), and the
+ * GOAL arena keeps the rest of the 13 MiB both shared before. */
+enum {SLAB_BYTES=1507392,ARENA_BYTES=13u*1024u*1024u-1507392,DMA_BYTES=3506176,
 #else
 enum {SLAB_BYTES=2621440,ARENA_BYTES=11010048,DMA_BYTES=3506176,
 #endif
@@ -126,7 +133,7 @@ static int on_root(void){
   return !dc_goal_fiber_current() && dc_goal_kos_stack_owner()==root_owner &&
     owner && owner->stack==root_stack && owner->stack_size==root_stack_bytes;
 }
-uint32_t dc_renderer_reserve(void){return SLAB_BYTES;}
+uint32_t dc_renderer_reserve(void){return 13u*1024u*1024u-ARENA_BYTES;}  /* the GOAL arena is the rest of 13 MiB */
 uint64_t dc_arena_syncv(void){dc_arena_sync_requested=1;return 0;}
 uint64_t dc_arena_chain(uint64_t bank,uint64_t chain){
   dc_arena_dma_bank=(uint32_t)bank;dc_arena_dma_chain=(uint32_t)chain;dc_arena_chain_seen=1;return 0;
@@ -216,6 +223,7 @@ int dc_arena_stage(void){
   CHECK(disjoint(extension,EXTENSION_BYTES,boot_romdisk,((uint32_t)romdisk_size+3u)&~3u),1,
         "arena VRAM loans are disjoint");
   CHECK(dc_stage_romdisk_at(boot_romdisk),1,"arena romdisk copied and mounted before large allocations");
+  CHECK(memcmp(boot_romdisk,romdisk_data,(uint32_t)romdisk_size),0,"arena romdisk reads back from its VRAM loan");
   slab=memalign(32,SLAB_BYTES);
   CHECK(slab!=NULL,1,"arena renderer slab allocated before GOAL arena");
 #endif
@@ -265,18 +273,26 @@ int dc_arena_finish(dc_goal_runtime *rt){
 #ifndef DC_ARENA_FLY
   uint32_t used=rt->used,i;volatile uint32_t *words=slab;
 #endif
-#if defined(DC_ARENA_LIVE)
+#if defined(DC_LEVEL_DRAW)
+  CHECK(scenes,DC_LEVEL_DISPATCHES,"level scene after every dispatcher call");
+#elif defined(DC_ARENA_LIVE)
   CHECK(scenes,DC_LIVE_DISPATCHES,"arena clear after every live camera dispatcher call");
 #elif defined(DC_ARENA_CAMERA)
   CHECK(scenes,65,"arena clear after all 65 camera dispatcher calls including display initialization");
 #else
   CHECK(scenes,64,"arena clear after all 64 dispatcher calls");
 #endif
+#ifndef DC_LEVEL_DRAW  /* the level ELF's frames never reach syncv or the DMA chain */
   CHECK(dc_arena_sync_requested,1,"arena syncv request stashed");
   CHECK(dc_arena_chain_seen,1,"arena DMA chain stashed without walking it");
+#endif
   CHECK(pvr_wait_ready(),0,"arena final scene ready");
   CHECK(pvr_wait_render_done(),0,"arena final clear rendered");
+#ifdef DC_LEVEL_DRAW
+  CHECK(rt->used<=rt->capacity,1,"level GOAL arena within its reduced capacity");
+#else
   CHECK(rt->used<=10700000u+310048u && rt->used<=rt->capacity,1,"arena used bytes within milestone bound");
+#endif
 #ifdef DC_ARENA_FLY
   if(!dc_arena_fly_finish())return 0;
 #else
