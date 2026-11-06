@@ -303,3 +303,21 @@ Result: the DGO boot's arena use fell from 10,673,456 to 10,137,296 bytes
 Building the exporter: run ninja from the 8.3 short path of `og-current`
 (`C:\Users\SULLIN~1\DOCUME~1\...`) with TMP/TEMP set; from the long path, ar
 fails on draco object paths longer than 260 characters.
+
+Calls to known functions skip the guard (2026-11-06, AI-assisted). Every call
+checked its target with MOV.L #f,R2; CMP/HI R2,R0; BF call_failure (6 bytes
+plus a #f literal and a per-function failure exit). 79% of GAME.CGO's 31,426
+calls take their target from a symbol's value. `build_game_cgo.py
+known_functions` lists the symbols that only ever hold a function: set at top
+level from a function address (a defun), or from such a symbol's value
+(`format` from `_format`), and set from nothing else in any kernel or game IR;
+plus the boot's own bridges `_format` and `method-set!`. Calls through those
+skip the guard (`--known-functions`, `KNOWN_FUNCTIONS` in `lower_sh4_ir.py`).
+The PS2 checks no call, and the original never calls a defun before its file
+has run, so this keeps every check that can catch a port gap: unbound C
+kernel functions, methods, and symbols set from anything else stay guarded.
+Level code uses GAME.CGO's list less anything it sets otherwise, plus its own
+defuns. `target` final bytes 152,975 to 146,699 (call ops 10.5 to 7.7 bytes
+each). GAME.CGO 6,119,696 to **5,980,944** (-138,752, 2.3%), TRA-CODE 79,808.
+All Flycast suites pass; the level ELF ends with 1.58 MB of arena free (1.47
+before). Since the morning of 2026-11-04: -2,840,080 bytes (32.2%).

@@ -62,6 +62,48 @@ def compile_order(graph, targets):
     return order, sources
 
 
+# Native bridges the boot installs before KERNEL.CGO in every runtime that loads
+# GAME.CGO (dc_goal_install_type_bridges, dc_goal_install_kernel_services).
+BOOT_BRIDGE_FUNCTIONS = ('_format', 'method-set!')
+
+
+def known_functions(docs, defined=()):
+    """Symbols that only ever hold a function: set at top level from a function
+    address (a defun), or from such a symbol's value (format from _format), and
+    never set from anything else in any of docs; plus the boot's own bridges.
+    Their calls need no guard. The original never calls one before its definition
+    has run: the PS2 has no guard, and such a call would crash there too.
+    defined: symbols already known from code loaded earlier (GAME.CGO for a level)."""
+    defines, aliases, other = set(BOOT_BRIDGE_FUNCTIONS) | set(defined), {}, set()
+    for doc in docs:
+        for function in doc['functions']:
+            writers = {}
+            for op in function['instructions']:
+                for value in op['writes']:
+                    writers.setdefault(value, []).append(op)
+            for op in function['instructions']:
+                if op['kind'] != 'set_symbol':
+                    continue
+                source = writers.get(op['reads'][0], [])
+                kind = source[0]['kind'] if len(source) == 1 else None
+                if kind == 'function_address':
+                    if function.get('top_level'):
+                        defines.add(op['symbol'])
+                elif kind == 'symbol_value':
+                    aliases.setdefault(op['symbol'], set()).add(source[0]['symbol'])
+                else:
+                    other.add(op['symbol'])
+    known = defines - other - set(aliases)
+    changed = True
+    while changed:
+        changed = False
+        for name, sources in aliases.items():
+            if name not in known and name not in other and sources <= known:
+                known.add(name)
+                changed = True
+    return sorted(known)
+
+
 def export_batch(frontend, root, batch_path, status_path, budget):
     """Only consume status written by this invocation, including partial batches."""
     status_path.unlink(missing_ok=True)
@@ -118,6 +160,12 @@ def main():
     used_locals = set()
     exported = {Path(s).resolve() for s in status['exported']}
     export_errors = {Path(e['source']).resolve(): e['error'] for e in status.get('export_errors', [])}
+    # Every exported game IR and the kernel's: which symbols only ever hold a function.
+    known_path = build / 'known-functions.json'
+    known_docs = [json.loads(ir[n].read_text()) for n in sources
+                  if (root / 'goal_src/jak1' / graph[n][0]).resolve() in exported and ir[n].is_file()]
+    known_docs += [json.loads(p.read_text()) for p in sorted(build.glob('boot_*.ir.json'))]
+    known_path.write_text(json.dumps(known_functions(known_docs)) + '\n')
     for name in sources:
         source = (root / 'goal_src/jak1' / graph[name][0]).resolve()
         if source not in exported:
@@ -137,6 +185,7 @@ def main():
                                  '--native-module', str(dcsh / f'{name}.dcsh'),
                                  '--unassigned-locals', str(reviewed_locals),
                                  '--qualify-anonymous', name,
+                                 '--known-functions', str(known_path),
                                  # No debug segment on Dreamcast, as a retail kernel (klink DebugSegment 0).
                                  '--no-debug-segment'], capture_output=True, text=True)
         if result.returncode:

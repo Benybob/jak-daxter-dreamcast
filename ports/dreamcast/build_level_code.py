@@ -57,6 +57,13 @@ def main():
     status = game.export_batch(args.frontend, root, batch_path, out / 'batch-status.json',
                                port / 'dreamcast_memory_budget.gc')
     exported = {Path(s).resolve() for s in status['exported']}
+    # GAME.CGO's known functions (build_game_cgo.py), less any this level's code sets
+    # to something else; the level's own defuns join them.
+    game_known = build / 'known-functions.json'
+    level_docs = [json.loads(ir[n].read_text()) for n in code if ir[n].is_file()]
+    known = game.known_functions(level_docs, json.loads(game_known.read_text()) if game_known.is_file() else ())
+    known_path = out / f'{args.level.upper()}-known-functions.json'
+    known_path.write_text(json.dumps(known) + '\n')
     for name in code:
         source = (root / 'goal_src/jak1' / graph[name][0]).resolve()
         if source not in exported:
@@ -70,7 +77,8 @@ def main():
                                  '--runtime', '--all-functions', '--initializer', f'dc-level-{name}',
                                  '--native-module', str(dcsh / f'{name}.dcsh'),
                                  '--unassigned-locals', str(port / 'dreamcast_unassigned_locals.json'),
-                                 '--qualify-anonymous', name, '--no-debug-segment'],
+                                 '--qualify-anonymous', name, '--no-debug-segment',
+                                 '--known-functions', str(known_path)],
                                 capture_output=True, text=True)
         if result.returncode:
             lines = (result.stdout + result.stderr).splitlines()

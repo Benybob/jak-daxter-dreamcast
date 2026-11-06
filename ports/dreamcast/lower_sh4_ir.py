@@ -17,6 +17,9 @@ from division_sh4 import emit_div32
 
 # GCC -m4-single -ml places singles in swapped pairs (verified with GCC).
 FLOAT_ARGUMENT_REGISTERS=(5,4,7,6,9,8,11,10)
+# Symbols that only ever hold a function (build_game_cgo.py known_functions): calls
+# through them skip the call guard. Empty unless --known-functions names a list.
+KNOWN_FUNCTIONS=set()
 # number (parent of integer and float) is a 64-bit value in a GPR, as on desktop:
 # pov-camera's event handler returns one.
 INTEGER_VALUE_TYPES=frozenset(('int','uint','integer','number'))
@@ -1088,6 +1091,15 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
     for op in function['instructions']:
         if op['kind']!='nop':
             for index in op['writes']: writers[index].append(op)
+    def known_function_call(op):
+        """A call whose target is the value of a symbol that only ever holds a function."""
+        index,seen=op['reads'][0],set()
+        while index not in seen and len(writers.get(index,()))==1:
+            seen.add(index);source=writers[index][0]
+            if source['kind']=='symbol_value': return source['symbol'] in KNOWN_FUNCTIONS
+            if source['kind']!='move': return False
+            index=source['reads'][0]
+        return False
     def function_origin(index,seen=None):
         seen=set() if seen is None else seen
         if index in seen or len(writers[index])!=1:
@@ -1674,7 +1686,7 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
             else: stack_argument(frame+saved+(gpr_args-2)*8,0,1); store64(index)
             gpr_args+=1
     instructions=function['instructions']
-    guarded_calls=runtime and any(op['kind']=='call' for op in instructions)
+    guarded_calls=runtime and any(op['kind']=='call' and not known_function_call(op) for op in instructions)
     used={value for op in instructions for value in op['reads']}
     targets={op['target'] for op in instructions if op['kind'] in ('goto','branch')}
     for position,op in enumerate(instructions):
@@ -1938,10 +1950,12 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
                             load64(argument); outgoing_word(integer_index-2)
                         integer_index+=1
                 load_address(reads[0],0)
-                if runtime:
+                if runtime and not known_function_call(op):
                     # Every function object lies above the symbol table (the arena's
                     # first allocation), so one unsigned compare refuses 0, #f and
-                    # any other address at or below #f.
+                    # any other address at or below #f. A symbol that only ever holds
+                    # a function (KNOWN_FUNCTIONS) needs no check: as on PS2, which
+                    # checks no call, the original never calls one before it is set.
                     e.literal(2,('symbol','pointer:#f')); e.rr(0x3006,0,2); e.branch('bf','call_failure')  # CMP/HI R2,R0
                 e.word(0x400b); e.nop()  # jsr @r0, PR saved in prologue
                 adjust_stack(outgoing)
@@ -2479,9 +2493,12 @@ if __name__=='__main__':
                         help='Reviewed never-assigned local-vars to zero-fill (dreamcast_unassigned_locals.json)')
     parser.add_argument('--qualify-anonymous',metavar='MODULE',
                         help='Rename anon-function-N to MODULE:anon-function-N (module-local lambdas)')
+    parser.add_argument('--known-functions',type=Path,
+                        help='JSON list of symbols that only ever hold a function: their calls skip the guard')
     parser.add_argument('--all-functions',action='store_true',
                         help='Compile every non-top-level function of the IR except natively bound ones')
     args=parser.parse_args()
+    if args.known_functions: KNOWN_FUNCTIONS.update(json.loads(args.known_functions.read_text()))
     if not args.function and args.initializer is None and not args.all_functions:
         parser.error('select at least one function or an initializer')
     bindings={}

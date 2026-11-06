@@ -151,5 +151,50 @@ class RuleTest(unittest.TestCase):
         self.assertLess(len(resident), len(framed))
 
 
+class KnownFunctionTest(unittest.TestCase):
+    CALL = [{'kind': 'symbol_value', 'reads': [], 'writes': [0], 'symbol': 'my-fn', 'text': 'sv'},
+            {'kind': 'call', 'reads': [0, 1], 'writes': [2], 'text': 'call',
+             'abi': {'parameters': ['int'], 'return_type': 'int'}},
+            {'kind': 'return', 'reads': [2], 'writes': [3], 'text': 'ret'}]
+
+    def lower(self, known):
+        import lower_sh4_ir
+        saved = set(lower_sh4_ir.KNOWN_FUNCTIONS)
+        lower_sh4_ir.KNOWN_FUNCTIONS.clear(); lower_sh4_ir.KNOWN_FUNCTIONS.update(known)
+        try:
+            regs = [reg(0, typ='(function int int)'), reg(1), reg(2), reg(3)]
+            return compile_function(fn(self.CALL, regs, parameters=[{'register': 1, 'type': 'int'}]), runtime=True)
+        finally:
+            lower_sh4_ir.KNOWN_FUNCTIONS.clear(); lower_sh4_ir.KNOWN_FUNCTIONS.update(saved)
+
+    def test_a_known_function_call_skips_the_guard(self):
+        guarded, guarded_report = self.lower(())
+        plain, plain_report = self.lower(('my-fn',))
+        symbols = lambda report: [r['symbol'] for r in report['relocations']]
+        self.assertEqual(symbols(guarded_report), ['cell:my-fn', 'pointer:#f', 'function:dc-c-call-error'])
+        self.assertEqual(symbols(plain_report), ['cell:my-fn'])
+        self.assertLess(len(plain), len(guarded))
+
+    def test_known_functions_are_only_ever_functions(self):
+        from build_game_cgo import known_functions
+        def top(*ops):
+            return {'functions': [{'top_level': True, 'instructions': list(ops)}]}
+        def define(name, register, kind='function_address', **extra):
+            return [dict({'kind': kind, 'reads': [], 'writes': [register]}, **extra),
+                    {'kind': 'set_symbol', 'reads': [register], 'writes': [], 'symbol': name}]
+        doc = top(*define('f', 0), *define('g', 1),
+                  *define('g', 2, 'constant', value=0),                     # g is also set to 0
+                  *define('h', 3, 'symbol_value', symbol='f'),              # h aliases f
+                  *define('k', 4, 'symbol_value', symbol='g'))              # k aliases g, not known
+        known = known_functions([doc])
+        self.assertIn('f', known); self.assertIn('h', known)
+        self.assertNotIn('g', known); self.assertNotIn('k', known)
+        self.assertIn('_format', known)                                     # boot bridge
+        # A defun inside a function (not top level) does not make a symbol known.
+        inner = {'functions': [{'top_level': False, 'instructions': define('m', 0)}]}
+        self.assertNotIn('m', known_functions([inner]))
+        self.assertIn('m', known_functions([inner], defined=['m']))
+
+
 if __name__ == '__main__':
     unittest.main()
