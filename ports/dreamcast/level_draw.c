@@ -4,7 +4,7 @@
  * original *math-camera* (dc_live_read/dc_live_convert) instead of a recorded
  * path. Level files are read from the disc (/cd/GEYSER, make_level_render_assets.py);
  * every renderer allocation is in the slab (compiled with the slab redirect).
- * --dump dc_level_draw_metrics 64 */
+ * Skinned Jak and actors: level_models.c. --dump dc_level_draw_metrics 64 */
 #ifdef DC_LEVEL_DRAW
 #include <kos.h>
 #include <malloc.h>
@@ -17,6 +17,7 @@
 #include "render_block_cache.h"
 #include "instance_cells.h"
 #include "arena_live_math.h"
+#include "level_models.h"
 #include "build/level_render_fixture.h"
 
 #define LEVEL_DRAW_ROOT "/cd/GEYSER"
@@ -89,6 +90,7 @@ static int initialize(void){
   materials[slot]=(dc_instance_material){&bank.headers[c],bank.materials[c].list,!(bank.materials[c].flags&64u)};
  }
  CHECK(mapped,1,"level draw material map inside catalog");
+ CHECK(dc_level_models_open(LEVEL_DRAW_ROOT "/MODELS.DSK"),1,"level draw model bundle opens from the disc");
  ready=1;return 1;
 }
 /* A clear scene while the game camera is not yet valid (boot, early frames). */
@@ -117,15 +119,18 @@ int dc_level_draw_frame(dc_goal_runtime *rt){
  error=dc_render_block_cache_window(&cache,&catalog,&query,&window);CHECK(error==NULL,1,error);
  error=dc_render_base_frame_make_draw(&window,&bank,&frame);CHECK(error==NULL,1,error);
  CHECK(window.count==0 || dc_render_draw_window_prepare(&window,&rc),1,"level draw terrain prepare");
+ dc_level_models_frame(rt,&ic);
  CHECK(pvr_wait_ready(),0,"level draw PVR ready between GOAL frames");
  pvr_scene_begin();pvr_set_bg_color(.45f,.62f,.80f);
  for(i=0;i<sizeof lists/sizeof lists[0];++i){
   ok&=pvr_list_begin(lists[i])==0;
   if(window.count)ok&=dc_render_base_draw(&bank,&frame,lists[i],&base);
   if(lists[i]!=PVR_LIST_TR_POLY)ok&=dc_instance_draw_list(&pkg,&ic,view,&inst,lists[i],materials,FLY_MATERIAL_SLOTS);
+  ok&=dc_level_models_draw(rt,&ic,lists[i]);
   ok&=pvr_list_finish()==0;
  }
  ok&=pvr_scene_finish()==0;
+ dc_level_models_end_frame();
  CHECK(ok&&base.invalid==0&&inst.invalid==0,1,"level draw frame submitted without invalid geometry");
  CHECK(pvr_wait_ready(),0,"level draw frame TA complete");
  CHECK(pvr_wait_render_done(),0,"level draw frame rendered");
@@ -148,6 +153,12 @@ int dc_level_draw_finish(void){
  CHECK(dc_level_draw_metrics.max_faces+dc_level_draw_metrics.max_triangles>0,1,"level draw frames contain geometry");
  CHECK(dc_arena_slab_failures,0,"level draw all renderer allocations stayed in the slab");
  CHECK(dc_level_draw_metrics.pvr_errors,0,"level draw no PVR overflow");
+ CHECK(dc_level_model_metrics.load_failures,0,"level models load and validate from the bundle");
+ CHECK(dc_level_model_metrics.bind_checked>0,1,"level models compared bundle and game bind-poses");
+ CHECK(dc_level_model_metrics.bind_error_ppm<1000u,1,"level models bundle joints are the game's joints");
+ CHECK(dc_level_model_metrics.jak_frames>0,1,"level models drew Jak from the game's joints");
+ CHECK(dc_level_model_metrics.actor_frames>0,1,"level models drew actors from the game's joints");
+ CHECK(dc_level_model_metrics.invalid,0,"level models no invalid clip");
  return 1;
 }
 #undef CHECK

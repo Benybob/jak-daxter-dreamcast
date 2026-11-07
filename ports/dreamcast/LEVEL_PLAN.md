@@ -447,3 +447,42 @@ of 1,507,392 bytes; no PVR errors. The GOAL arena still ends at 12,048,464 of
 Not yet: Jak and the actors (their art is loaded but nothing draws merc
 models), distant terrain (only the ±14 m window around the target), sky and
 water, and the frame rate (180 frames take about 7 minutes in Flycast).
+
+### Jak and actors skinned from the game's joints (Flycast, 3164 of 3164, 2026-11-07)
+
+![Jak at Geyser Rock](build/geyser-jak-frame.png) (git-ignored capture)
+
+`level_models.c` draws the merc models of the level ELF's processes. Each frame
+it walks the original process tree from `*active-pool*` and keeps every
+`process-drawable` that is not hidden, lies within the 60 m draw distance and
+the viewport, and whose draw-control merc model (`mgeo` name, e.g.
+`eichar-lod0`) is in the disc bundle `GEYSER/MODELS.DSK`. Skinning reads only
+the game's own data: for each cspace of the node-list, the joint's bind-pose
+times the cspace bone's transform (what `bones-mtx-calc` uploads to VU1),
+divided to meters, folded with the instance camera; each vertex blends up to
+three joints. The original `ja-post` / `do-joint-math!` fill the bones every
+frame, so no animation data is converted. A model loads the first time a
+process shows it: geometry to the KOS heap, textures to VRAM.
+
+The bundle comes from the decompiler's skinned GLB exports:
+
+```text
+python make_skin_models.py common/eichar-lod0.glb training/{jng-iris-door,plat-eco-lit,plat-eco,pontoonfive,scarecrow-a,scarecrow-b,sharkey,warp-gate-switch,water-anim-training-lake}-lod0.glb --out build/geyser-render/MODELS.DSK
+copy MODELS.DSK to build/level-disc/GEYSER
+```
+
+1,179,616 bytes for 10 models (Jak: 2,998 vertices, 3,593 triangles). At a
+model's first use its GLB inverse bind matrices are compared with the game's
+joint bind-poses: the largest difference is 0, so the bundle's joint numbers
+are the game's.
+
+Measured over 184 frames: Jak drawn in 180 frames, an actor in 171; up to 2
+models and 3,655 triangles a frame; 2 models loaded (88,068 bytes of geometry,
+77,824 bytes of textures); no load failure, missing joint or invalid clip;
+skinning Jak takes up to 2.6 ms in Flycast. The KOS heap had 1,312,184 bytes
+free before the first model and 1,184,784 after. The 5 other drawables in the
+tree were outside the draw distance or the viewport.
+
+Not yet: lighting (vertex colours only, no merc lights or environment map),
+lower LODs, eyes and blend shapes, shadows, back-face culling (all models are
+double-sided), village1's models, and collision under Jak.
