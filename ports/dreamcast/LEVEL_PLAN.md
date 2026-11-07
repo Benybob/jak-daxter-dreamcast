@@ -531,11 +531,39 @@ What it took:
   'ready from one frame to the next (`dc_level_ready_probe`), since actors born
   in the last frame have not run yet.
 
-Not right yet: the contact normal. On most walking frames the control's surface
-angle is 0.20 to 0.27 (a contact normal 75 to 80 degrees from up) on a slope
-whose render normal is about 0.98; coverage is below 0.9999, so `onground` is
-never set and `onsurf` drops out for runs of frames (the original then switches
-him to `target-falling` and back). After the walk he ends in `target-falling`
-without moving, and the last frame's camera is below the terrain. The pats are
-valid (0x1c0, ground, grass). Next: dump the collide-cache tris around Jak and
-compare them with the exported collision mesh.
+### Contact normals: float arguments through jalr (Flycast, 3160 of 3160, 2026-11-07)
+
+The cached collision tris under Jak were right (a `dc_level_cache_snapshot`
+at frame 60: 18 grass tris on a 2 m grid, 6.7 to 7.1 m, pat 0x1c0, poly-normal
+(0.048, 0.999, -0.013)), but the contact point was not: coverage and surface
+angle were 0.20 to 0.27. When the projected point falls outside a tri,
+`moving-sphere-triangle-intersect` hands over to `collide-do-primitives`, which
+calls the GOAL functions `ray-sphere-intersect` (a float radius) and
+`ray-cylinder-intersect` (float radius and length) through `jalr`. The SH-4
+`jalr` passed eight u64, the desktop convention; native SH-4 GOAL takes float
+arguments in FPU registers and counts only the integers on the stack, so the
+radii were garbage and the edge result was written through a float's bits; the
+contact point fell back to a tri corner, 2 to 3 m away.
+
+`build_mips2c.py` now finds every GOAL function translated code calls through
+`jalr` and, for those with a float argument or result in `all-types.gc`
+(moving-sphere-sphere-intersect, atan, cos, sin, ray-sphere-intersect,
+ray-cylinder-intersect, quaternion-axis-angle!), generates a thunk with the
+native prototype. `dc_mips2c_jalr` calls it when the address is that function's
+own export entry (named by its symbol), so the differential cases' stand-ins
+keep the integer convention. sin, cos and atan were broken the same way for
+ripples and particles.
+
+Now: coverage 1.0, surface angle 0.99, `onground` in 171 of 181 frames (the 10
+are target-continue). Jak walks at full speed: 8.27 m in 25 frames along the
+hilltop, 0.56 m up, then stance and stance-ambient. With the longer 100-frame
+walk he crosses the hill and goes down the far side to the shore. A new check
+asks for onground in most frames; the walk is 25 frames so he stays on the
+hilltop.
+
+The camera that leaves Jak is the game's: a `training-cam` grabs Jak when he
+comes in range and spawns a `pov-camera` (orbcam and the others) whose
+animation is spooled. STR requests are refused, so it rests at its base pose
+near sea level, under the hill, and the last frame shows the hill from below.
+Streaming (spooled animations) is the next gap: it also holds
+`target-stance-ambient`.

@@ -21,6 +21,7 @@
 extern "C" {
 #include "goal_runtime.h"
 #include "mips2c_dc.h"
+#include "goal_module.h"
 uint32_t dc_goal_mips2c_current_process(void);  /* goal_bridge.c */
 }
 
@@ -147,9 +148,41 @@ extern "C" uint32_t dc_mips2c_find(const char* name) {
 }
 /* goal_bridge.c's dc-mips2c:NAME stub: mov.l (the entry at +8),r0; jmp @r0; nop; nop; then the
  * C entry. */
+/* A native GOAL function with a float argument or result (dc_callees), called
+ * with its own prototype. Each is an engine function GAME.CGO binds once; its
+ * address is cached once the symbol's value is an export entry named by that
+ * symbol (the compiled function itself, not a stand-in bound in its place). */
+static uint64_t g_typed_calls;
+static uint32_t g_callee_addr[sizeof dc_callees / sizeof dc_callees[0]];
+static bool typed_callee(u32 addr, const u64* args, u64* result) {
+  if (!g_rt) return false;
+  for (unsigned i = 0; dc_callees[i].name; ++i) {
+    const DcCallee* c = &dc_callees[i];
+    if (!g_callee_addr[i]) {
+      enum dc_goal_error prior = g_rt->error;
+      dc_goal_code_entry_info info;
+      uint32_t symbol = dc_goal_find(g_rt, c->name);
+      uint32_t value = symbol ? dc_goal_symbol_value(g_rt, symbol) : 0;
+      if (value && value == addr && dc_goal_code_entry(g_rt, value, &info) && info.symbol == symbol)
+        g_callee_addr[i] = value;
+      g_rt->error = prior;
+    }
+    if (g_callee_addr[i] && g_callee_addr[i] == addr) {
+      ++g_typed_calls;
+      *result = c->call(addr, args);
+      return true;
+    }
+  }
+  return false;
+}
+extern "C" uint32_t dc_mips2c_typed_calls(void) {
+  return (uint32_t)g_typed_calls;
+}
 extern "C" bool dc_mips2c_jalr(u32 addr, const u64* args, u64* result) {
   static const unsigned char stub[8] = {1, 0xd0, 0x2b, 0x40, 9, 0, 9, 0};
   uint32_t target;
+  if (addr && !(addr & 1) && memcmp((const void*)(uintptr_t)addr, stub, 8) && typed_callee(addr, args, result))
+    return true;
   if (!addr || (addr & 1) || memcmp((const void*)(uintptr_t)addr, stub, 8)) return false;
   memcpy(&target, (const void*)(uintptr_t)(addr + 8), 4);
   for (unsigned i = 0; i < kEntries; ++i) {

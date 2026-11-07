@@ -121,6 +121,7 @@ volatile struct {
   uint32_t poly_pat[DC_LEVEL_TRACE_FRAMES];  /* the control's poly-pat (+252): the last touched tri's pat-surface */
   float coverage[DC_LEVEL_TRACE_FRAMES],surface_angle[DC_LEVEL_TRACE_FRAMES];  /* control +428, +416 */
 } dc_level_target_trace={.version=1};
+void dc_level_cache_sample(dc_goal_runtime *rt,uint32_t frame);
 void dc_level_player_sample(dc_goal_runtime *rt){
   enum dc_goal_error prior=rt->error;
   uint32_t target=named(rt,"*target*"),root,state,status,i,f;const float *t;const char *name;
@@ -152,6 +153,7 @@ void dc_level_player_sample(dc_goal_runtime *rt){
    dc_level_target_trace.pad=(dc_goal_main_rearms&0xffffu)|dc_goal_trans_fibers<<16;
    dc_level_target_trace.trans_hook=word(rt,target+56u);dc_level_target_trace.next_state=word(rt,target+72u);}
   dc_level_target_trace.frames=f+1u;
+  dc_level_cache_sample(rt,f);
 done:
   rt->error=prior;
 }
@@ -174,7 +176,7 @@ void dc_level_player_walk(dc_level_walk *out){
   for(i=0;i<dc_level_target_trace.state_count && i<8u;++i)
     if(!strncmp((const char *)dc_level_target_trace.states[i],"target-walk",23))walk=i;
   x0=dc_level_target_trace.x[0];y0=dc_level_target_trace.y[0];z0=dc_level_target_trace.z[0];
-  out->frames=n;out->onsurf_frames=dc_level_target_trace.onsurf_frames;
+  out->frames=n;out->onsurf_frames=dc_level_target_trace.onsurf_frames;out->onground_frames=dc_level_target_trace.onground_frames;
   for(i=0;i<n;++i){
     float dx=(dc_level_target_trace.x[i]-x0)/4096.f,dz=(dc_level_target_trace.z[i]-z0)/4096.f,dy=(dc_level_target_trace.y[i]-y0)/4096.f;
     float d=sqrtf(dx*dx+dz*dz);
@@ -183,4 +185,22 @@ void dc_level_player_walk(dc_level_walk *out){
     if(dy>out->above)out->above=dy;
     if(dc_level_target_trace.state_slot[i]==walk){++out->walk_frames;if(dc_level_target_trace.status[i]&1u)++out->walk_onsurf;}
   }
+}
+/* The original *collide-cache* at one walking frame: its tri count, its first
+ * 32 tris (three vertices in game units, then pat), Jak's trans and the
+ * control's poly-normal (+348). --dump dc_level_cache_snapshot 2096 */
+volatile struct { uint32_t frame,num_tris,num_prims,pad;float trans[4],poly_normal[4];float tris[32][16]; } dc_level_cache_snapshot;
+void dc_level_cache_sample(dc_goal_runtime *rt,uint32_t frame){
+  enum dc_goal_error prior=rt->error;
+  uint32_t cache=named(rt,"*collide-cache*"),target=named(rt,"*target*"),root,n;const unsigned char *p;
+  if(dc_level_cache_snapshot.frame || frame<60u || !cache || cache==rt->s7 || !target || target==rt->s7)goto done;
+  n=word(rt,cache);if(!n || n>461u)goto done;
+  root=word(rt,target+108u);
+  dc_level_cache_snapshot.frame=frame;dc_level_cache_snapshot.num_tris=n;dc_level_cache_snapshot.num_prims=word(rt,cache+4u);
+  if((p=dc_goal_resolve(rt,root+12u,16)))memcpy((void *)dc_level_cache_snapshot.trans,p,16);
+  if((p=dc_goal_resolve(rt,root+348u,16)))memcpy((void *)dc_level_cache_snapshot.poly_normal,p,16);
+  if(n>32u)n=32u;
+  if((p=dc_goal_resolve(rt,cache+4908u,n*64u)))memcpy((void *)dc_level_cache_snapshot.tris,p,n*64u);
+done:
+  rt->error=prior;
 }

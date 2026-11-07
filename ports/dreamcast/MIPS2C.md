@@ -69,6 +69,15 @@ The 25th file, test_func, registers nothing.
   64-bit arguments. A float-returning native GOAL function now also leaves its bits
   in r0:r1, as desktop leaves them in rax, because the translated code reads them
   from v0 (`mtc1 f3, v0` after `moving-sphere-sphere-intersect`).
+- **Float arguments to GOAL through jalr.** Native SH-4 GOAL takes float
+  arguments in FPU registers (and counts only integers on the stack), so the
+  eight-u64 call is wrong for a GOAL callee with a float argument. The build
+  lists the GOAL functions each file calls through `jalr` and generates a thunk
+  with the native prototype for those whose `all-types.gc` type has a float
+  argument or result (moving-sphere-sphere-intersect, atan, cos, sin,
+  ray-sphere-intersect, ray-cylinder-intersect, quaternion-axis-angle!);
+  `dc_mips2c_jalr` uses it when the address is that function's own export
+  entry. Before, collide-do-primitives' ray tests ran with garbage radii.
 - **mips2c calling mips2c.** Translated code calls another mips2c function with
   `jalr`, passing and reading GPR bits (`mtc1 f30, v0` after the call). On SH-4
   the symbol holds the `dc-mips2c:NAME` stub, which jumps to the C entry with the
