@@ -20,6 +20,7 @@
  * clipped and projected as instance_pass.c does. --dump dc_level_model_metrics 128 */
 #ifndef DC_LEVEL_MODELS_H
 #define DC_LEVEL_MODELS_H
+#include <stddef.h>
 #include <stdint.h>
 #include "goal_runtime.h"
 #include "instance_pass.h"
@@ -40,4 +41,6 @@ int dc_level_models_frame(dc_goal_runtime *rt,const dc_instance_camera *cam);
 int dc_level_models_draw(dc_goal_runtime *rt,const dc_instance_camera *cam,int list);
 /* After the scene: counts the frame toward jak_frames and actor_frames. */
 void dc_level_models_end_frame(void);
+/* A 32-byte aligned block of the KOS heap (not the slab), never freed. */
+void *dc_level_heap_alloc(size_t bytes);
 #endif

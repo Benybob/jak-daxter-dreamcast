@@ -41,6 +41,10 @@ int dc_goal_pad_read_state(int port,dc_goal_pad_state *out){
    * machine and byte mapping. No controller/camera fields bypass the service. */
   extern int dc_arena_live_pad_state(int,dc_goal_pad_state *);
   return dc_arena_live_pad_state(port,out);
+#elif defined(DC_LEVEL_PAD)
+  /* The level ELF's scripted stick (level_player.c), on the same cpad path. */
+  extern int dc_level_pad_state(int,dc_goal_pad_state *);
+  return dc_level_pad_state(port,out);
 #else
   memset(out,0,sizeof *out);
 #ifdef __DREAMCAST__

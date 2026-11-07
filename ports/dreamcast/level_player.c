@@ -14,6 +14,7 @@
 #include "build/jak-art-disc/jak_art_sizes.h"
 #include <stdio.h>
 #include <string.h>
+#include <math.h>
 
 volatile struct {
   uint32_t version,stage,error,site,dir,art_linked,art_relocated,continue_point;
@@ -100,4 +101,86 @@ int dc_level_player(dc_goal_runtime *rt){
   dc_level_player_evidence.free_after=rt->capacity-rt->temporary-rt->used;
   dc_level_player_evidence.stage=10;
   return 1;
+}
+
+/* Jak's ground contact each frame, from the original control (the target's
+ * root, a collide-shape-moving, +108): trans +12, transv +60, ground-pat +260,
+ * status +268 (cshape-moving-flags low word: bit 0 onsurf, bit 1 onground),
+ * and the state name (process state +52, state name +0).
+ * --dump dc_level_target_trace 6216 */
+volatile struct {
+  uint32_t version,frames,onsurf_frames,onground_frames,state_count,last_status,last_ground_pat,pad;  /* pad: main re-arms | trans fibers<<16 */
+  float first[3],last[3],min_y,max_y;
+  char states[8][24];
+  float x[DC_LEVEL_TRACE_FRAMES],y[DC_LEVEL_TRACE_FRAMES],z[DC_LEVEL_TRACE_FRAMES];
+  uint8_t status[DC_LEVEL_TRACE_FRAMES];
+  float speed[DC_LEVEL_TRACE_FRAMES];  /* *cpad-list* pad 0 stick0-speed (+72) */
+  uint8_t lefty[DC_LEVEL_TRACE_FRAMES]; /* its hw-cpad lefty byte (+7) */
+  uint32_t trans_hook,next_state; /* the target's trans-hook (+56) and next-state (+72) */
+  uint8_t state_slot[DC_LEVEL_TRACE_FRAMES]; /* index into states, per frame (0xff none) */
+  uint32_t poly_pat[DC_LEVEL_TRACE_FRAMES];  /* the control's poly-pat (+252): the last touched tri's pat-surface */
+  float coverage[DC_LEVEL_TRACE_FRAMES],surface_angle[DC_LEVEL_TRACE_FRAMES];  /* control +428, +416 */
+} dc_level_target_trace={.version=1};
+void dc_level_player_sample(dc_goal_runtime *rt){
+  enum dc_goal_error prior=rt->error;
+  uint32_t target=named(rt,"*target*"),root,state,status,i,f;const float *t;const char *name;
+  if(!target || target==rt->s7 || (target&3u))goto done;
+  root=word(rt,target+108u);
+  if(!root || root==rt->s7 || (root&3u) || !(t=dc_goal_resolve(rt,root+12u,12)))goto done;
+  status=word(rt,root+268u);f=dc_level_target_trace.frames;
+  if(!f){dc_level_target_trace.first[0]=t[0];dc_level_target_trace.first[1]=t[1];dc_level_target_trace.first[2]=t[2];
+         dc_level_target_trace.min_y=dc_level_target_trace.max_y=t[1];}
+  dc_level_target_trace.last[0]=t[0];dc_level_target_trace.last[1]=t[1];dc_level_target_trace.last[2]=t[2];
+  if(t[1]<dc_level_target_trace.min_y)dc_level_target_trace.min_y=t[1];
+  if(t[1]>dc_level_target_trace.max_y)dc_level_target_trace.max_y=t[1];
+  if(status&1u)++dc_level_target_trace.onsurf_frames;
+  if(status&2u)++dc_level_target_trace.onground_frames;
+  dc_level_target_trace.last_status=status;dc_level_target_trace.last_ground_pat=word(rt,root+260u);
+  if(f<DC_LEVEL_TRACE_FRAMES){uint32_t c=word(rt,root+428u),a=word(rt,root+416u);memcpy((void *)&dc_level_target_trace.coverage[f],&c,4);memcpy((void *)&dc_level_target_trace.surface_angle[f],&a,4);}
+  if(f<DC_LEVEL_TRACE_FRAMES){dc_level_target_trace.poly_pat[f]=word(rt,root+252u);dc_level_target_trace.x[f]=t[0];dc_level_target_trace.y[f]=t[1];dc_level_target_trace.z[f]=t[2];dc_level_target_trace.status[f]=(uint8_t)status;}
+  if(f<DC_LEVEL_TRACE_FRAMES){uint32_t list=named(rt,"*cpad-list*"),pad=list?word(rt,list+4u):0;const float *sp;const uint8_t *b;
+    if(pad && pad!=rt->s7 && (sp=dc_goal_resolve(rt,pad+72u,4)) && (b=dc_goal_resolve(rt,pad,8))){
+      dc_level_target_trace.speed[f]=*sp;dc_level_target_trace.lefty[f]=b[7];}}
+  state=word(rt,target+52u);
+  name=state>4u && state!=rt->s7?dc_goal_symbol_name(rt,word(rt,state)):NULL;
+  if(name){int seen=0;uint32_t n=dc_level_target_trace.state_count;
+    for(i=0;i<n && i<8u;++i)if(!strncmp((const char *)dc_level_target_trace.states[i],name,23))seen=1;
+    if(!seen && n<8u){unsigned k;for(k=0;name[k]&&k<23u;++k)dc_level_target_trace.states[n][k]=name[k];dc_level_target_trace.state_count=n+1u;}
+    if(f<DC_LEVEL_TRACE_FRAMES){dc_level_target_trace.state_slot[f]=0xffu;
+      for(i=0;i<dc_level_target_trace.state_count && i<8u;++i)if(!strncmp((const char *)dc_level_target_trace.states[i],name,23))dc_level_target_trace.state_slot[f]=(uint8_t)i;}}
+  {extern volatile uint32_t dc_goal_trans_fibers,dc_goal_main_rearms;  /* goal_bridge.c */
+   dc_level_target_trace.pad=(dc_goal_main_rearms&0xffffu)|dc_goal_trans_fibers<<16;
+   dc_level_target_trace.trans_hook=word(rt,target+56u);dc_level_target_trace.next_state=word(rt,target+72u);}
+  dc_level_target_trace.frames=f+1u;
+done:
+  rt->error=prior;
+}
+
+/* Port 0 of the level ELF: neutral, then the stick held forward (up, as on a
+ * Dreamcast controller) for DC_LEVEL_WALK_FRAMES, then neutral; frames count
+ * the samples of dc_level_target_trace. */
+int dc_level_pad_state(int port,dc_goal_pad_state *out){
+  uint32_t f=dc_level_target_trace.frames;
+  memset(out,0,sizeof *out);
+  if(port!=0)return 0;
+  if(f>=DC_LEVEL_WALK_FIRST && f<DC_LEVEL_WALK_FIRST+DC_LEVEL_WALK_FRAMES)out->joyy=-127;
+  return 1;
+}
+void dc_level_player_walk(dc_level_walk *out){
+  uint32_t n=dc_level_target_trace.frames,i,walk=0xffu;float x0,z0,y0;
+  memset(out,0,sizeof *out);
+  if(n>DC_LEVEL_TRACE_FRAMES)n=DC_LEVEL_TRACE_FRAMES;
+  if(!n)return;
+  for(i=0;i<dc_level_target_trace.state_count && i<8u;++i)
+    if(!strncmp((const char *)dc_level_target_trace.states[i],"target-walk",23))walk=i;
+  x0=dc_level_target_trace.x[0];y0=dc_level_target_trace.y[0];z0=dc_level_target_trace.z[0];
+  out->frames=n;out->onsurf_frames=dc_level_target_trace.onsurf_frames;
+  for(i=0;i<n;++i){
+    float dx=(dc_level_target_trace.x[i]-x0)/4096.f,dz=(dc_level_target_trace.z[i]-z0)/4096.f,dy=(dc_level_target_trace.y[i]-y0)/4096.f;
+    float d=sqrtf(dx*dx+dz*dz);
+    if(d>out->travel)out->travel=d;
+    if(-dy>out->below)out->below=-dy;
+    if(dy>out->above)out->above=dy;
+    if(dc_level_target_trace.state_slot[i]==walk){++out->walk_frames;if(dc_level_target_trace.status[i]&1u)++out->walk_onsurf;}
+  }
 }

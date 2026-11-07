@@ -486,3 +486,56 @@ tree were outside the draw distance or the viewport.
 Not yet: lighting (vertex colours only, no merc lights or environment map),
 lower LODs, eyes and blend shapes, shadows, back-face culling (all models are
 double-sided), village1's models, and collision under Jak.
+
+### Jak walks on Geyser Rock's original collision (Flycast, 3168 of 3168, 2026-11-07)
+
+The level ELF's controller is now a scripted stick (`dc_level_pad_state`,
+`goal_pad.c` with `-DDC_LEVEL_PAD`): neutral, then held forward from frame 12
+for 100 frames, then neutral, through the original cpad service. The original
+target code does the rest: `target-stance` -> `target-walk` -> `target-stance`,
+moved by the original `target-post` and `integrate-and-collide!` against the
+level's original `collide-fragment` tree (kept by the logic BSP) through the
+ported collide-cache functions. `dc_level_target_trace` records Jak's position,
+state, control status, poly-pat, coverage and surface angle every frame
+(`--dump dc_level_target_trace 6216`).
+
+Measured: 88 frames in `target-walk`, 3.95 m travelled up the grass slope, his
+height following the ground (6.85 m to 7.05 m). Offline, against the
+`training-background.glb` terrain under each sampled position, Jak stands 0 to
+12 cm above the render mesh the whole way (the collision mesh is coarser); he
+never sinks below it. New checks: target-walk for 40+ frames, 2+ m travelled,
+within 1 m of his start height, on a surface for two thirds of the walk.
+
+What it took:
+- **A go from a trans hook.** `target-stance`'s trans does `(go target-walk)`.
+  Trans hooks now run as a temporary fiber (`reset_and_call`, entered through a
+  `dc-c-run-trans-hook` trampoline because the original trans thread lives inside
+  the main stack, which a thread view refuses). enter-state re-arms the main
+  thread with set-to-run; when a state change is pending after the trans
+  (`next-state` != `state`, main thread armed at set-to-run-bootstrap) the
+  bridge imports the armed main thread again in place (`rearm_main`), so the
+  next resume runs enter-state on the main thread. 13 re-arms in the run.
+- **Idle ambient.** Before this, Jak went idle into `target-stance-ambient`
+  (30 game seconds standing), whose code waits for a spooled animation that
+  never streams (STR requests are refused), so he never left it. The walk now
+  starts before that; streaming is still missing.
+- **Renderer memory.** The 652,592-byte instance package moved from the slab to
+  the KOS heap, so the block cache can load terrain as the camera follows Jak
+  (slab high water 1,033,728).
+- **Stale ledger rows.** Walking births more actors. `dc_goal_enter_known_scope`
+  now drops a row a newer, larger process outgrew at the same address, shrinks a
+  row whose process was shrunk (shrink-heap) when nothing holds it, and a
+  spawned fiber imported for an earlier PID at that address no longer counts as
+  holding it. Before, 12 actors stayed 'ready (their birth hit BAD_ARGUMENT in
+  process-heap validation). `dc_level_check` now asks that no actor stays
+  'ready from one frame to the next (`dc_level_ready_probe`), since actors born
+  in the last frame have not run yet.
+
+Not right yet: the contact normal. On most walking frames the control's surface
+angle is 0.20 to 0.27 (a contact normal 75 to 80 degrees from up) on a slope
+whose render normal is about 0.98; coverage is below 0.9999, so `onground` is
+never set and `onsurf` drops out for runs of frames (the original then switches
+him to `target-falling` and back). After the walk he ends in `target-falling`
+without moving, and the last frame's camera is below the terrain. The pats are
+valid (0x1c0, ground, grass). Next: dump the collide-cache tris around Jak and
+compare them with the exported collision mesh.

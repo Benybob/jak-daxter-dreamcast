@@ -6,6 +6,7 @@
 #include <stdio.h>
 #ifdef __DREAMCAST__
 #include <kos/dbgio.h>
+#include <arch/cache.h>
 #ifdef __DREAMCAST__
 #include <arch/timer.h>
 #endif
@@ -28,6 +29,7 @@
 #include "goal_scalar_call.h"
 #include "goal_thread_resize.h"
 #include "goal_main_start.h"
+#include "goal_main_thread.h"
 #include "goal_process_heap.h"
 #include "pp_scope.h"
 #include "process_spans.h"
@@ -983,6 +985,8 @@ static int note_root_member(dc_goal_runtime *rt,uint32_t process,dc_goal_process
   (void)ROOT_PROBE(span_note,1);
   rt->error=prior;return 1;
 }
+static int process_held(uint32_t process);
+static void release_moved_fibers(dc_goal_runtime *rt,uint32_t process);
 int dc_goal_enter_known_scope(dc_goal_runtime *rt,uint32_t process) {
   dc_goal_process_span span;enum dc_goal_error prior;uint32_t site;
   if(!rt || active_runtime!=rt){if(rt&&rt->error==DC_GOAL_OK)(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);return 0;}
@@ -990,6 +994,26 @@ int dc_goal_enter_known_scope(dc_goal_runtime *rt,uint32_t process) {
   if(!dc_goal_process_span_lookup(rt,process,&span)){
     rt->error=prior;dc_goal_error_site=site;  /* a miss is not yet a refusal */
     if(!note_root_member(rt,process,&span)){if(rt->error==DC_GOAL_OK)(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);return 0;}
+  } else {
+    /* A record larger than its row is a newer process the dead pool carved at
+     * the same address as a shrunk one (a record only ever shrinks below its
+     * row). Noting it drops the stale row when nothing holds that process. */
+    const unsigned char *fields=dc_goal_resolve(rt,process,108);uint32_t length=0;
+    if(fields)memcpy(&length,fields+68,4);
+    rt->error=prior;dc_goal_error_site=site;
+    if(fields && length<=UINT32_MAX-112u && span.bytes<length+112u &&
+       !note_root_member(rt,process,&span)){if(rt->error==DC_GOAL_OK)(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);return 0;}
+    /* A record smaller than its row was shrunk (shrink-heap) after the row was
+     * noted, and no scope was left since to shrink the row. A spawned fiber
+     * imported for an earlier process at this address is released first; with
+     * nothing holding the process, the row shrinks to the record now. */
+    if(fields && length<=UINT32_MAX-112u && span.bytes>length+112u){
+      release_moved_fibers(rt,process);
+      if(!process_held(process)){
+        if(!dc_goal_process_span_shrink(rt,&span,length+112u,NULL))return 0;
+        span.bytes=length+112u;
+      }
+    }
   }
   return dc_goal_enter_lexical_scope(rt,process,span.bytes);
 }
@@ -1526,21 +1550,28 @@ static void release_moved_fibers(dc_goal_runtime *rt,uint32_t process){
   if(process>=4u && (p=dc_goal_resolve(rt,process+20u,4))){memcpy(&ppointer,p,4);
     if(ppointer && (p=dc_goal_resolve(rt,ppointer,4)))memcpy(&named,p,4);}
   rt->error=prior;
-  if(named==process && !process_status_is(rt,process,"dead"))return;  /* still that live process */
+  {uint32_t pid=0;const unsigned char *q=process>=4u?dc_goal_resolve(rt,process+36u,4):NULL;if(q)memcpy(&pid,q,4);rt->error=prior;
   for(i=0;i<DC_THREAD_FIBERS;++i){
     dc_goal_fiber *fiber=thread_fibers[i];
+    /* still that live process: its ppointer names it and the fiber was imported
+     * for its PID (a newer process carved at the same address has another) */
+    if(named==process && !process_status_is(rt,process,"dead") && (!fiber || !fiber->main_import_pid || fiber->main_import_pid==pid))continue;
     if(fiber && fiber->process==process && fiber!=current && fiber->phase!=DC_FIBER_RUNNING &&
        fiber>=spawned_fibers && fiber<spawned_fibers+DC_SPAWNED_FIBERS){
       /* Births run inside a fiber, where dc_goal_unregister_thread_fiber refuses;
        * this one is not running, so its registry slot is cleared directly. */
       thread_fibers[i]=NULL;memset(fiber,0,sizeof *fiber);
     }
-  }
+  }}
 }
 /* Original thread-resume: called by the original kernel-dispatcher with the
  * scheduler's current-process already set to the thread's process. Natively the
  * registered fiber steps under an explicit execution binding; the dispatcher's
  * current-process value is restored afterwards for its own cleanup. */
+/* Counters: trans hooks run (and finished) as temporary fibers; suspended main
+ * fibers re-imported after an original set-to-run. */
+volatile uint32_t dc_goal_trans_fibers,dc_goal_main_rearms;
+static dc_goal_fiber hook_fiber;
 static uint64_t thread_resume(uint64_t thread) {
   dc_goal_runtime *rt=active_runtime;
   dc_goal_fiber *fiber=NULL;
@@ -1645,7 +1676,81 @@ int dc_goal_register_kernel_stack(dc_goal_runtime *rt,uint32_t base,uint32_t byt
   kernel_stack_base=base;kernel_stack_bytes=bytes;return 1;
 }
 void dc_goal_clear_kernel_stack(void){kernel_stack_base=kernel_stack_bytes=0;}
+/* The temporary trans fiber's view is the process's main thread (the original
+ * trans thread lives inside the main stack, which a thread view refuses), so
+ * its entry is this trampoline: it makes the trans thread the top thread again,
+ * as original reset-and-call does, and calls the hook. Installed on first use
+ * as its own one-function module. */
+static uint32_t trans_process,trans_thread,trans_func,trans_entry;
+static uint64_t run_trans_hook(void) {
+  dc_goal_runtime *rt=active_runtime;unsigned char *q;
+  if(!rt || !(q=dc_goal_resolve(rt,trans_process+44,4)))return 0;
+  memcpy(q,&trans_thread,4);
+  return ((uint64_t (*)(void))(uintptr_t)trans_func)();
+}
+static void sync_trampoline(uint32_t allocation,uint32_t bytes,void *unused){
+  (void)unused;
+#ifdef __DREAMCAST__
+  dcache_flush_range(allocation,bytes);icache_flush_range(allocation,bytes);
+#else
+  (void)allocation;(void)bytes;
+#endif
+}
+static uint32_t trans_trampoline(dc_goal_runtime *rt) {
+  static const unsigned char stub[12]={1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0};
+  unsigned char code[12];uint32_t target=(uint32_t)(uintptr_t)run_trans_hook,symbol;
+  dc_goal_code_export function={"dc-c-run-trans-hook",code,12,NULL,0};dc_goal_module_result result;
+  enum dc_goal_error prior=rt->error;
+  if(trans_entry)return trans_entry;
+  memcpy(code,stub,12);memcpy(code+8,&target,4);
+  if(dc_goal_load_module(rt,&function,1,sync_trampoline,NULL,&result) && (symbol=dc_goal_find(rt,"dc-c-run-trans-hook")))
+    trans_entry=dc_goal_symbol_value(rt,symbol);
+  rt->error=prior;
+  return trans_entry;
+}
+/* Original set-to-run from a trans hook's go re-arms the suspended main thread:
+ * rreg0 enter-state, pc set-to-run-bootstrap, sp its stack top. The native
+ * fiber still holds the old continuation, so the armed image is imported
+ * again in place, as at the first import, and the next resume runs
+ * enter-state on the main thread. enter-state reaches set-to-run here through
+ * its branch for a process other than the current one, which restores the
+ * status it found: 'running, which this bridge set for the hook, where the
+ * original kernel leaves the status it dispatched on. set-to-run's own
+ * 'waiting-to-run is put back for the import. The trans thread is the top
+ * thread until the kernel deletes it; the import sees the main thread there,
+ * which that delete leaves. */
+static void rearm_main(dc_goal_runtime *rt,dc_goal_fiber *fiber,uint32_t trans) {
+  enum dc_goal_error prior=rt->error;
+  uint32_t boot,pc=0,sp=0,process=fiber->process,reservation=fiber->reservation,main=fiber->thread,base=fiber->stack_base,bytes=fiber->stack_bytes;
+  unsigned char *top=dc_goal_resolve(rt,process+44,4);const unsigned char *q=dc_goal_resolve(rt,main+20,8);
+  boot=dc_goal_find(rt,"set-to-run-bootstrap");boot=boot?dc_goal_symbol_value(rt,boot):0;
+  if(q){memcpy(&pc,q,4);memcpy(&sp,q+4,4);}
+  /* A go is pending: go stores next-state (+72) and enter-state makes it the
+   * state (+52) only when it runs on the main thread. The GOAL thread header
+   * stays armed after every native import, so pc alone shows no new arming. */
+  {const unsigned char *st=dc_goal_resolve(rt,process+52,4),*nx=dc_goal_resolve(rt,process+72,4);uint32_t state=0,next=0;
+   if(st)memcpy(&state,st,4);
+   if(nx)memcpy(&next,nx,4);
+   if(!st || !nx || next==state || next==rt->s7 || !next){rt->error=prior;return;}}
+  rt->error=prior;
+  if(!top || !boot || fiber->main_import_self!=(uintptr_t)fiber || fiber->phase!=DC_FIBER_SUSPENDED ||
+     pc!=boot || sp!=base+bytes)return;
+  set_process_status(rt,process,"waiting-to-run");
+  memcpy(top,&main,4);
+  if(!dc_goal_main_thread_check(rt,process,reservation,main,base,bytes,1,boot)){
+    memcpy(top,&trans,4);rt->error=prior;return;}
+  rt->error=prior;
+  dc_goal_unregister_thread_fiber(rt,fiber);memset(fiber,0,sizeof *fiber);
+  if(!dc_goal_fiber_init_main(fiber,rt,process,reservation,main,base,bytes) || !dc_goal_register_thread_fiber(rt,fiber)){
+    memset(fiber,0,sizeof *fiber);memcpy(top,&trans,4);
+    if(rt->error==DC_GOAL_OK)rt->error=DC_GOAL_UNSUPPORTED_TRANSFER;
+    return;
+  }
+  memcpy(top,&trans,4);
+  ++dc_goal_main_rearms;
+}
 static uint64_t reset_and_call(uint64_t thread,uint64_t func) {
+  int trans_went=0;
   dc_goal_runtime *rt=active_runtime;
   dc_goal_fiber *fiber=NULL;
   uint32_t symbol,context,current,process=0,top,base,bytes;unsigned char *fields,*p;uint64_t out=0;unsigned i;
@@ -1683,12 +1788,36 @@ static uint64_t reset_and_call(uint64_t thread,uint64_t func) {
 #ifdef DC_ARENA_JAK_PLAYER
   jak_beat(DC_JAK_BEAT_RESET_BEFORE,process,(uint32_t)thread,(uint32_t)fiber->phase,(uint32_t)func);
 #endif
-  if(!dc_goal_call_on_stack(rt,(uint32_t)func,base,bytes,&out))out=0;
+  /* A trans hook (on the main stack) runs as a temporary fiber. An original go
+   * from it re-arms the main thread with set-to-run: enter-state's branch for a
+   * process other than the current one then returns into the hook, and its
+   * branch for a thread other than the main one jumps to return-from-thread,
+   * which finishes this fiber. Either way rearm_main then imports the armed main
+   * thread. Post hooks (kernel stack) return normally from their go and stay a
+   * call. */
+  if(top==fiber->stack_base+fiber->stack_bytes) {
+    enum dc_goal_error prior=rt->error;
+    uint32_t entry=trans_trampoline(rt),main_thread=fiber->thread;unsigned char *q=dc_goal_resolve(rt,process+44,4);
+    trans_process=process;trans_thread=(uint32_t)thread;trans_func=(uint32_t)func;
+    if(q)memcpy(q,&main_thread,4);  /* the view's thread while the fiber starts */
+    if(entry && q && dc_goal_fiber_init(&hook_fiber,rt,process,fiber->reservation,main_thread,fiber->stack_base,fiber->stack_bytes,entry)) {
+      int event=dc_goal_fiber_step(&hook_fiber,0,&out);
+      if(event==DC_FIBER_YIELDED && rt->error==DC_GOAL_OK)rt->error=DC_GOAL_UNSUPPORTED_TRANSFER; /* trans may not suspend */
+      if(event==DC_FIBER_COMPLETED && hook_fiber.phase==DC_FIBER_DONE)++dc_goal_trans_fibers;
+      trans_went=event==DC_FIBER_COMPLETED && rt->error==DC_GOAL_OK;
+      {enum dc_goal_error e=rt->error;dc_goal_fiber_clear(&hook_fiber);rt->error=e;}
+    } else {
+      dc_goal_fiber_clear(&hook_fiber);rt->error=prior;
+      if(q)memcpy(q,&trans_thread,4);
+      if(!dc_goal_call_on_stack(rt,(uint32_t)func,base,bytes,&out))out=0;
+    }
+  } else if(!dc_goal_call_on_stack(rt,(uint32_t)func,base,bytes,&out))out=0;
 #ifdef DC_ARENA_JAK_PLAYER
   jak_beat(DC_JAK_BEAT_RESET_AFTER,process,(uint32_t)thread,(uint32_t)fiber->phase,(uint32_t)func);
 #endif
   {enum dc_goal_error error=rt->error;dc_goal_clear_process_context(rt);rt->error=error;}
   memcpy(fields+20,&current,4);
+  if(trans_went)rearm_main(rt,fiber,(uint32_t)thread);
   return out;
 unsupported:
   if(rt->error==DC_GOAL_OK)rt->error=DC_GOAL_UNSUPPORTED_TRANSFER;

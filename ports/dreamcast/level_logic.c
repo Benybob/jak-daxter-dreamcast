@@ -21,6 +21,9 @@ volatile struct {
 } dc_level_logic_evidence={.version=3};
 typedef char dc_level_logic_evidence_bytes[sizeof dc_level_logic_evidence==128?1:-1];
 
+/* --dump dc_level_ready_probe 376: frames sampled, the most 'ready actors in a
+ * frame, the most still 'ready since the previous frame, last frame's list. */
+volatile struct { uint32_t frames,ready_max,stuck_max,count;uint32_t ready[64];int pad[2];char type[4][20];uint32_t first_stuck_frame,pad2[3]; } dc_level_ready_probe;
 /* Why actors are or are not born: the switches actors-update reads, the
  * camera, the level's first entity link and the level itself.
  * --dump dc_level_spawn_probe 760 */
@@ -66,6 +69,9 @@ static uint64_t birth_wrapper(uint64_t bsp){
   dc_level_birth_probe.error_after=rt->error;
   return out;
 }
+/* actors-update calls that leave a runtime error (births run inside it), the
+ * first error, its site and call. --dump dc_level_actor_errors 32 */
+volatile struct { uint32_t count,first_error,first_site,first_call,last_error,pad[3]; } dc_level_actor_errors;
 /* Diagnostic: calls of the original (method actors-update level-group), and
  * the level fields its vis branch reads. --dump dc_level_actors_probe 32 */
 volatile struct { uint32_t calls,slot,original,display,all_visible,vis_info0,pc_settings,pad; } dc_level_actors_probe;
@@ -107,8 +113,15 @@ static uint32_t heap_used(dc_goal_runtime *rt,uint32_t level){
 volatile struct { uint32_t count; struct { char type[20],state[20]; uint32_t draw; } row[24]; } dc_level_actor_table;
 static uint64_t actors_wrapper(uint64_t group){
   typedef uint64_t (*one_fn)(uint64_t);
+  uint64_t out;
   ++dc_level_actors_probe.calls;
-  return ((one_fn)(uintptr_t)dc_level_actors_probe.original)(group);
+  if(birth_runtime && birth_runtime->error==DC_GOAL_OK && !dc_level_actor_errors.first_error)dc_goal_error_site=0;
+  out=((one_fn)(uintptr_t)dc_level_actors_probe.original)(group);
+  if(birth_runtime && birth_runtime->error!=DC_GOAL_OK){
+    ++dc_level_actor_errors.count;dc_level_actor_errors.last_error=birth_runtime->error;
+    if(!dc_level_actor_errors.first_error){dc_level_actor_errors.first_error=birth_runtime->error;
+      dc_level_actor_errors.first_site=dc_goal_error_site;dc_level_actor_errors.first_call=dc_level_actors_probe.calls;}}
+  return out;
 }
 static void sync_code(uint32_t allocation,uint32_t bytes,void *context){
   (void)context;dcache_flush_range(allocation,bytes);icache_flush_range(allocation,bytes);
@@ -240,7 +253,9 @@ int dc_level_check(dc_goal_runtime *rt){
    dc_level_logic_evidence.spawned=n;rt->error=DC_GOAL_OK;
    /* Every born actor ran its original init (none left 'ready), and actors with
     * a Geyser Rock art group made their draw-control from it. */
-   if(dc_level_spawn_probe.ready_actors || !dc_level_spawn_probe.drawn_actors)return stop(rt,12);
+   /* (as Jak moves, actors-update keeps birthing: one born in the last frame is
+    * still 'ready, so the per-frame sample asks that none stays 'ready a frame) */
+   if(dc_level_ready_probe.stuck_max || !dc_level_ready_probe.frames || !dc_level_spawn_probe.drawn_actors)return stop(rt,12);
    /* and the dispatcher runs them: they reach their states and suspend. */
    if(!dc_level_spawn_probe.ran_actors)return stop(rt,13);}
   {typedef uint64_t (*zero_fn)(void);
@@ -308,4 +323,26 @@ int dc_level_check(dc_goal_runtime *rt){
    rt->error=DC_GOAL_OK;}
   dc_level_logic_evidence.stage=8;
   return 1;
+}
+void dc_level_actors_sample(dc_goal_runtime *rt){
+  enum dc_goal_error prior=rt->error;
+  uint32_t pool=named(rt,"*entity-pool*"),pp=pool?word(rt,pool+16u):0,ready=dc_goal_find(rt,"ready");
+  uint32_t now[64],count=0,stuck=0,n=0,i;
+  while(pp && pp!=rt->s7 && n<512u){
+    uint32_t proc=word(rt,pp);
+    if(!proc || proc==rt->s7)break;
+    if(word(rt,proc+32u)==ready && count<64u){
+      for(i=0;i<dc_level_ready_probe.count;++i)if(dc_level_ready_probe.ready[i]==proc){
+        ++stuck;if(!dc_level_ready_probe.first_stuck_frame)dc_level_ready_probe.first_stuck_frame=dc_level_ready_probe.frames;}
+      if(count<4u){const char *t=dc_goal_symbol_name(rt,word(rt,word(rt,proc-4u)));unsigned k;
+        for(k=0;k<20u;++k)dc_level_ready_probe.type[count][k]=0;
+        for(k=0;t && t[k] && k<19u;++k)dc_level_ready_probe.type[count][k]=t[k];}
+      now[count++]=proc;}
+    ++n;pp=word(rt,proc+12u);
+  }
+  for(i=0;i<count;++i)dc_level_ready_probe.ready[i]=now[i];
+  dc_level_ready_probe.count=count;++dc_level_ready_probe.frames;
+  if(count>dc_level_ready_probe.ready_max)dc_level_ready_probe.ready_max=count;
+  if(stuck>dc_level_ready_probe.stuck_max)dc_level_ready_probe.stuck_max=stuck;
+  rt->error=prior;
 }

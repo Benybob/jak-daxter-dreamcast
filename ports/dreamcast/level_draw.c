@@ -4,7 +4,7 @@
  * original *math-camera* (dc_live_read/dc_live_convert) instead of a recorded
  * path. Level files are read from the disc (/cd/GEYSER, make_level_render_assets.py);
  * every renderer allocation is in the slab (compiled with the slab redirect).
- * Skinned Jak and actors: level_models.c. --dump dc_level_draw_metrics 64 */
+ * Skinned Jak and actors: level_models.c. --dump dc_level_draw_metrics 72 */
 #ifdef DC_LEVEL_DRAW
 #include <kos.h>
 #include <malloc.h>
@@ -18,6 +18,8 @@
 #include "instance_cells.h"
 #include "arena_live_math.h"
 #include "level_models.h"
+#include "level_player.h"
+#include "level_logic.h"
 #include "build/level_render_fixture.h"
 
 #define LEVEL_DRAW_ROOT "/cd/GEYSER"
@@ -28,6 +30,7 @@ extern volatile uint32_t dc_arena_slab_live,dc_arena_slab_high_water,dc_arena_sl
 volatile struct {
  uint32_t frames,cleared,drawn,slab_high_water,slab_failures,texture_bytes,vram_after_textures,pvr_errors;
  uint32_t max_faces,max_instances,max_triangles,max_vertex_bytes,last_window_faces,last_instances,last_triangles,camera_reads;
+ uint32_t walk_frames,walk_travel_cm;
 } dc_level_draw_metrics;
 static dc_render_catalog catalog;
 static dc_render_gpu gpu;
@@ -74,7 +77,9 @@ static int initialize(void){
  CHECK(error==NULL,1,error);
  error=dc_render_draw_window_make(&window,FLY_WINDOW_FACES+2048u,FLY_WINDOW_VERTICES+2048u,FLY_WINDOW_REMAP+4096u);
  CHECK(error==NULL,1,error);
- data=memalign(32,FLY_PACKAGE_BYTES);CHECK(data!=NULL,1,"level draw package slab allocation");
+ /* The package is read once and kept: the KOS heap holds it, leaving the slab
+  * to the block cache, which reads terrain as the camera moves. */
+ data=dc_level_heap_alloc(FLY_PACKAGE_BYTES);CHECK(data!=NULL,1,"level draw package KOS heap allocation");
  file=fopen(LEVEL_DRAW_ROOT "/PACKAGE.DCI","rb");CHECK(file!=NULL,1,"level draw package opens from the disc");
  read=fread(data,1,FLY_PACKAGE_BYTES,file)==FLY_PACKAGE_BYTES&&fgetc(file)==EOF&&!ferror(file);
  read=fclose(file)==0&&read;CHECK(read,1,"level draw package size");
@@ -107,6 +112,8 @@ int dc_level_draw_frame(dc_goal_runtime *rt){
  dc_render_base_frame frame={0};dc_render_base_stats base={0};dc_instance_stats inst={0};pvr_stats_t stats;
  dc_render_camera rc;dc_instance_camera ic;
  ++dc_level_draw_metrics.frames;
+ dc_level_player_sample(rt);
+ dc_level_actors_sample(rt);
  if(!camera || !type || !dc_live_read(rt,camera,type,&pose) || !dc_live_convert(&pose,TARGET_DISTANCE_M,&c))
   {rt->error=DC_GOAL_OK;return clear();}
  ++dc_level_draw_metrics.camera_reads;
@@ -159,6 +166,16 @@ int dc_level_draw_finish(void){
  CHECK(dc_level_model_metrics.jak_frames>0,1,"level models drew Jak from the game's joints");
  CHECK(dc_level_model_metrics.actor_frames>0,1,"level models drew actors from the game's joints");
  CHECK(dc_level_model_metrics.invalid,0,"level models no invalid clip");
+ /* Jak walks on Geyser Rock's original collision: the scripted stick takes him
+  * from target-stance to target-walk (a go from a trans hook), he covers ground,
+  * stays within a meter of his start height (the slope there rises 0.2 m) and is
+  * on a surface for most of the walk. */
+ {dc_level_walk w;dc_level_player_walk(&w);
+  dc_level_draw_metrics.walk_frames=w.walk_frames;dc_level_draw_metrics.walk_travel_cm=(uint32_t)(w.travel*100.f);
+  CHECK(w.walk_frames>=40u,1,"level Jak walked from the stick (target-walk)");
+  CHECK(w.travel>=2.f,1,"level Jak travelled at least 2 m");
+  CHECK(w.below<=1.f && w.above<=1.f,1,"level Jak stayed on the ground (within 1 m of his start height)");
+  CHECK(w.walk_onsurf*3u>=w.walk_frames*2u,1,"level Jak on a surface for two thirds of his walk");}
  return 1;
 }
 #undef CHECK
