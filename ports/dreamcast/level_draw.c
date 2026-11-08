@@ -21,6 +21,7 @@
 #include "level_player.h"
 #include "level_logic.h"
 #include "level_str.h"
+#include "level_sound.h"
 #include "build/level_render_fixture.h"
 
 #define LEVEL_DRAW_ROOT "/cd/GEYSER"
@@ -45,6 +46,19 @@ static dc_instance_cells cells;
 static dc_instance_material materials[FLY_MATERIAL_SLOTS];
 static float (*view)[3],(*bounds)[4];
 static int ready;
+/* The package's KOS block, taken at boot while the heap is still one piece
+ * (dc_level_draw_reserve); later, freed temporaries can leave no 652 KB run. */
+static unsigned char *package_memory;
+volatile uint32_t dc_level_reserve_probe[4];  /* free KOS heap, largest block found, sbrk top, reserved */
+void dc_level_draw_reserve(void){
+ if(package_memory)return;
+ package_memory=dc_level_heap_alloc(FLY_PACKAGE_BYTES);
+ dc_level_reserve_probe[0]=dc_level_heap_free();dc_level_reserve_probe[3]=package_memory!=NULL;
+ {extern void *sbrk(int);dc_level_reserve_probe[2]=(uint32_t)(uintptr_t)sbrk(0);}
+ if(!package_memory){uint32_t size=FLY_PACKAGE_BYTES;void *p;
+  while(size>4096u && !(p=malloc(size)))size-=size/16u;
+  if(size>4096u){dc_level_reserve_probe[1]=size;free(p);}}
+}
 #define CHECK(a,b,name) do{if(!dc_level_draw_check((uint64_t)(a),(uint64_t)(b),name))return 0;}while(0)
 static void pvr_fault(uint32_t code,void *context){(void)code;(void)context;++dc_level_draw_metrics.pvr_errors;}
 static uint32_t named(dc_goal_runtime *rt,const char *name){
@@ -82,7 +96,8 @@ static int initialize(void){
  CHECK(error==NULL,1,error);
  /* The package is read once and kept: the KOS heap holds it, leaving the slab
   * to the block cache, which reads terrain as the camera moves. */
- data=dc_level_heap_alloc(FLY_PACKAGE_BYTES);CHECK(data!=NULL,1,"level draw package KOS heap allocation");
+ data=package_memory?package_memory:dc_level_heap_alloc(FLY_PACKAGE_BYTES);package_memory=NULL;
+ CHECK(data!=NULL,1,"level draw package KOS heap allocation");
  file=fopen(LEVEL_DRAW_ROOT "/PACKAGE.DCI","rb");CHECK(file!=NULL,1,"level draw package opens from the disc");
  read=fread(data,1,FLY_PACKAGE_BYTES,file)==FLY_PACKAGE_BYTES&&fgetc(file)==EOF&&!ferror(file);
  read=fclose(file)==0&&read;CHECK(read,1,"level draw package size");
@@ -108,6 +123,23 @@ static int clear(void){
  CHECK(pvr_scene_finish(),0,"level draw clear submitted");
  ++dc_level_draw_metrics.cleared;return 1;
 }
+/* The camera master's slave cameras (+116, +120: ppointers): the distinct states
+ * the first one passes through and the frame each first appears.
+ * --dump dc_level_slave_probe 224 */
+volatile struct { uint32_t count,pad;struct {char state[24];uint32_t frame,pad;} row[7]; } dc_level_slave_probe;
+static void slave_sample(dc_goal_runtime *rt){
+ enum dc_goal_error prior=rt->error;uint32_t master=named(rt,"*camera*"),pp=0,slave=0,state=0;const unsigned char *q;const char *name;unsigned i,k;
+ if(master && master!=rt->s7 && (q=dc_goal_resolve(rt,master+116u,4)))memcpy(&pp,q,4);
+ if(pp && pp!=rt->s7 && (q=dc_goal_resolve(rt,pp,4)))memcpy(&slave,q,4);
+ if(slave && slave!=rt->s7 && (q=dc_goal_resolve(rt,slave+52u,4)))memcpy(&state,q,4);
+ name=state>4u && state!=rt->s7?dc_goal_symbol_name(rt,*(const uint32_t *)dc_goal_resolve(rt,state,4)):NULL;
+ rt->error=prior;
+ if(!name)return;
+ for(i=0;i<dc_level_slave_probe.count;++i)if(!strncmp((const char *)dc_level_slave_probe.row[i].state,name,23))return;
+ if(i>=7)return;
+ for(k=0;k<23 && name[k];++k)dc_level_slave_probe.row[i].state[k]=name[k];
+ dc_level_slave_probe.row[i].frame=dc_level_draw_metrics.frames;dc_level_slave_probe.count=i+1;
+}
 int dc_level_draw_frame(dc_goal_runtime *rt){
  static const int lists[]={PVR_LIST_OP_POLY,PVR_LIST_PT_POLY,PVR_LIST_TR_POLY};
  uint32_t camera=named(rt,"*math-camera*"),type=named(rt,"math-camera"),i;int ok=1;
@@ -118,6 +150,8 @@ int dc_level_draw_frame(dc_goal_runtime *rt){
  dc_level_player_sample(rt);
  dc_level_actors_sample(rt);
  dc_level_str_sample(rt);
+ dc_level_sound_frame(rt);
+ slave_sample(rt);
  if(!camera || !type || !dc_live_read(rt,camera,type,&pose) || !dc_live_convert(&pose,TARGET_DISTANCE_M,&c))
   {rt->error=DC_GOAL_OK;return clear();}
  ++dc_level_draw_metrics.camera_reads;
@@ -186,13 +220,23 @@ int dc_level_draw_finish(void){
   CHECK(w.below<=1.5f && w.above<=1.5f,1,"level Jak stayed on the hilltop (within 1.5 m of his start height)");
   CHECK(w.walk_onsurf*3u>=w.walk_frames*2u,1,"level Jak on a surface for two thirds of his walk");
   CHECK(w.onground_frames*2u>=w.frames,1,"level Jak on the ground (onground) for most frames");}
- /* Streaming: the STR server reads Jak's spooled idle animation chunk (and the
-  * game text) from the disc, the C kernel's link makes it an art-group, and the
-  * original external-art-buffer uses it (status 'active). */
+ /* Streaming: the STR server reads the game text from the disc and the C
+  * kernel's link makes it an object; any spooled animation chunk the game asks
+  * for (Jak's idle, after 30 game seconds with no hint talking) is read and
+  * linked, and a buffer it fills becomes 'active. */
  {dc_level_str_counts s;dc_level_str_summary(&s);
-  CHECK(s.served>=2u && s.linked>=s.served,1,"level STR server read and linked text and a spooled chunk");
+  CHECK(s.files>=1u && s.linked>=1u,1,"level STR server read and linked the game text");
   CHECK(s.link_errors,0,"level every streamed object linked");
-  CHECK(s.active_frames>0u,1,"level a spooled animation became active (Jak's idle)");}
+  CHECK(s.chunk_served,s.chunk_requests>0u?s.chunk_requests-1u:0u,"level every spooled chunk asked for after the spool heaps moved was served");
+  CHECK(s.chunk_requests==0u || s.active_frames>0u,1,"level a served spooled animation became active");}
+ /* Dialogue: the sound loader answers version 2.0, a hint's spool- line is
+  * found in VAGDIR and played from VAGWAD on the AICA, *sound-iop-info* follows
+  * it, and it ends after its length. */
+ {dc_level_sound_counts d;dc_level_sound_summary(&d);
+  CHECK(d.irx_calls,1,"level sound loader answered the IRX version (2.0)");
+  CHECK(d.streams>=1u && d.ended>=1u,1,"level a dialogue line streamed and ended");
+  CHECK(d.missing,0,"level every dialogue line asked for is on the disc");
+  CHECK(d.errors==0u && d.pcm_bytes>0u,1,"level the dialogue played on the AICA stream");}
  return 1;
 }
 #undef CHECK

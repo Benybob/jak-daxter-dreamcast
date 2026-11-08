@@ -323,7 +323,8 @@ int dc_level_models_draw(dc_goal_runtime *rt,const dc_instance_camera *cam,int l
  rt->error=prior;return 1;
 }
 
-void *dc_level_heap_alloc(size_t bytes){return memalign(32,bytes);}
+void *dc_level_heap_alloc(size_t bytes){void *p=memalign(32,bytes);if(!p)dc_level_model_metrics.heap_free_before=heap_free();return p;}
+uint32_t dc_level_heap_free(void){return heap_free();}
 /* Called once per frame after the last list: per-frame counters. */
 void dc_level_models_end_frame(void){
  if(frame_jak)++dc_level_model_metrics.jak_frames;

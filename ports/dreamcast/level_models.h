@@ -43,4 +43,5 @@ int dc_level_models_draw(dc_goal_runtime *rt,const dc_instance_camera *cam,int l
 void dc_level_models_end_frame(void);
 /* A 32-byte aligned block of the KOS heap (not the slab), never freed. */
 void *dc_level_heap_alloc(size_t bytes);
+uint32_t dc_level_heap_free(void);
 #endif

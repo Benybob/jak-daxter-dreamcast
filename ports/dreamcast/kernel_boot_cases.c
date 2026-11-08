@@ -24,6 +24,7 @@
 #include "level_logic.h"
 #include "level_dgo_rpc.h"
 #include "level_str.h"
+#include "level_sound.h"
 #include "level_player.h"
 #endif
 #ifdef DC_ARENA_JAK
@@ -218,6 +219,11 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
   CHECK(strstr(text,"x: 0.0000")!=NULL,1,"vec4s float field formatted from its variadic bit pattern");
 #ifdef DC_KERNEL_DGO
   /* The compiled prefix of the original GAME.CGO loads on top of the kernel. */
+#ifdef DC_LEVEL_LOGIC
+  /* The IOP sound player and loader (level_sound.c) answer before gsound's
+   * check-irx-version runs, so it gets version 2.0 and *sound-iop-info*'s address. */
+  dc_level_sound_install(&rt);
+#endif
   {
     static dc_goal_dgo_result game;
     static dc_goal_process_spans game_spans;static dc_goal_process_span game_rows[64];
@@ -309,6 +315,11 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
      CHECK(word(&rt,tod,32),waiting,"spawned time-of-day process waits to run after its init");rt.error=DC_GOAL_OK;}
     CHECK(dc_goal_pp_scope_detach(&game_scopes,&rt),1,"quiescent GAME.CGO scope metadata detaches");
     CHECK(dc_goal_process_spans_detach(&rt),1,"GAME.CGO ownership ledger detaches");
+#ifdef DC_LEVEL_LOGIC
+    /* The level's large KOS blocks, once GAME.CGO's load buffers are freed and
+     * before the level stage's temporaries can split the heap. */
+    {extern void dc_level_draw_reserve(void);dc_level_draw_reserve();dc_level_str_reserve();}
+#endif
   }
   /* VU0 vf lowering: the fixture forms and original vector-h functions, every
    * lane compared bit for bit with independently computed expectations. */
@@ -466,6 +477,7 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
        dc_level_dgo_install(&rt);
        /* Spooled animation chunks: the STR server and the C kernel's link (level_str.c). */
        dc_level_str_install(&rt);
+       dc_level_sound_install(&rt);  /* again, in front of the DGO server's handler */
        CHECK(dc_level_want(&rt),1,"original load-state wants Geyser Rock loaded and displayed");
        /* Jak: eichar, then original start 'play at the original continue point;
         * his armed main thread runs in the display frames (level_player.c). */

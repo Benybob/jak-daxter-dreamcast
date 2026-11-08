@@ -31,7 +31,7 @@ enum {STR_RESULT_DONE=0,STR_RESULT_ERROR=1,STR_CHUNKS=64,STR_SECTOR=2048};
 enum {PS2_SPOOL_BASE=0x84000,PS2_SPOOL_HEAP=247*1024,SPOOL_BYTES=128*1024};
 volatile struct {
   uint32_t requests,served,errors,missing,links,linked,link_errors,last_chunk;
-  uint32_t last_bytes,last_dest,last_root,symbols,types,pointers,files,last_error,moved,pad[3];
+  uint32_t last_bytes,last_dest,last_root,symbols,types,pointers,files,last_error,moved,chunk_requests,chunk_served,pad;
   char last_name[32];
   char names[8][24];  /* the distinct names asked for, chunk ones marked with a leading '#' */
 } dc_level_str_evidence;
@@ -43,6 +43,9 @@ static uint32_t str_sectors[STR_CHUNKS],str_sizes[STR_CHUNKS];
 
 static uint32_t rd32(const unsigned char *p){uint32_t v;memcpy(&v,p,4);return v;}
 static uint32_t spool_base;
+/* The spool heaps' KOS block, taken at boot (dc_level_str_reserve). */
+static void *spool_memory;
+void dc_level_str_reserve(void){if(!spool_memory)spool_memory=memalign(64,2u*SPOOL_BYTES);}
 static uint32_t named(const char *name){
   enum dc_goal_error prior=runtime->error;uint32_t s=dc_goal_find(runtime,name),v=s?dc_goal_symbol_value(runtime,s):0;
   runtime->error=prior;return v;
@@ -51,7 +54,8 @@ static uint32_t named(const char *name){
 static int move_spool_heaps(void){
   uint32_t control=named("*art-control*"),i;unsigned char *buffer,*heap;
   if(!spool_base){
-    void *memory=memalign(64,2u*SPOOL_BYTES);uint32_t base,at;
+    void *memory=spool_memory?spool_memory:memalign(64,2u*SPOOL_BYTES);uint32_t base,at;
+    spool_memory=NULL;
     if(!memory)return 0;
     base=(uint32_t)(uintptr_t)memory&0x1fffffffu;  /* the cached P0 alias, as GOAL addresses are */
     if(!dc_goal_register_resident(runtime,memory,base,2u*SPOOL_BYTES) ||
@@ -155,6 +159,7 @@ static uint64_t str_rpc(uint64_t port,uint64_t fno,uint64_t async,uint64_t send,
     if(address>=PS2_SPOOL_BASE && address<PS2_SPOOL_BASE+2u*PS2_SPOOL_HEAP){
       dc_level_str_evidence.last_error=7;if(!move_spool_heaps())runtime->error=DC_GOAL_OK;
       ++dc_level_str_evidence.errors;goto reply;}
+    ++dc_level_str_evidence.chunk_requests;
     if(chunk>=STR_CHUNKS || !open_str(name)){++dc_level_str_evidence.missing;goto reply;}
     size=str_sizes[chunk];
     dc_level_str_evidence.last_error=!size?2:size>maxlen?3:(address&15u)?4:0;
@@ -164,6 +169,7 @@ static uint64_t str_rpc(uint64_t port,uint64_t fno,uint64_t async,uint64_t send,
     if(dc_level_str_evidence.last_error){++dc_level_str_evidence.errors;runtime->error=DC_GOAL_OK;goto reply;}
   }
   memcpy(msg+12,&size,4);
+  if(chunk>=0)++dc_level_str_evidence.chunk_served;
   ++dc_level_str_evidence.served;dc_level_str_evidence.last_bytes=size;dc_level_str_evidence.last_dest=address;
   result=STR_RESULT_DONE;
 reply:
@@ -281,4 +287,6 @@ void dc_level_str_sample(dc_goal_runtime *rt){
 void dc_level_str_summary(dc_level_str_counts *out){
   out->served=dc_level_str_evidence.served;out->linked=dc_level_str_evidence.linked;
   out->link_errors=dc_level_str_evidence.link_errors;out->active_frames=dc_level_spool_probe.active_frames;
+  out->files=dc_level_str_evidence.files;out->chunk_requests=dc_level_str_evidence.chunk_requests;
+  out->chunk_served=dc_level_str_evidence.chunk_served;
 }

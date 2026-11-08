@@ -1572,12 +1572,22 @@ static void release_moved_fibers(dc_goal_runtime *rt,uint32_t process){
  * fibers re-imported after an original set-to-run. */
 volatile uint32_t dc_goal_trans_fibers,dc_goal_main_rearms;
 static dc_goal_fiber hook_fiber;
+static void rearm_main(dc_goal_runtime *rt,dc_goal_fiber *fiber,uint32_t trans);
 static uint64_t thread_resume(uint64_t thread) {
   dc_goal_runtime *rt=active_runtime;
   dc_goal_fiber *fiber=NULL;
   uint32_t symbol,context,current;unsigned char *fields;uint64_t out=0;unsigned i;
   if(!rt)return 0;
   for(i=0;i<DC_THREAD_FIBERS;++i)if(thread_fibers[i] && thread_fibers[i]->thread==thread)fiber=thread_fibers[i];
+  /* A go another process delivered (an event: enter-state's branch for a
+   * process other than the current one) re-armed this main thread with
+   * set-to-run while its fiber was suspended; import the armed image again so
+   * this resume runs enter-state (rearm_main). */
+#ifndef DC_ARENA_LIVE  /* not yet in the scripted Jak ELF, which stalls at 7615 of 7652 with it */
+  if(fiber && fiber->phase==DC_FIBER_SUSPENDED && fiber->main_import_self==(uintptr_t)fiber &&
+     !dc_goal_fiber_current() && !execution_context)
+    rearm_main(rt,fiber,0);
+#endif
   /* A dead process's imported fiber stays registered by thread address. When
    * dead-pool-heap carves a new process in the same memory, its armed main
    * thread has that address too: a spawned fiber that can no longer resume,
@@ -1718,7 +1728,8 @@ static uint32_t trans_trampoline(dc_goal_runtime *rt) {
  * original kernel leaves the status it dispatched on. set-to-run's own
  * 'waiting-to-run is put back for the import. The trans thread is the top
  * thread until the kernel deletes it; the import sees the main thread there,
- * which that delete leaves. */
+ * which that delete leaves (trans 0: called from thread-resume, where the main
+ * thread already is the top thread). */
 static void rearm_main(dc_goal_runtime *rt,dc_goal_fiber *fiber,uint32_t trans) {
   enum dc_goal_error prior=rt->error;
   uint32_t boot,pc=0,sp=0,process=fiber->process,reservation=fiber->reservation,main=fiber->thread,base=fiber->stack_base,bytes=fiber->stack_bytes;
@@ -1738,15 +1749,16 @@ static void rearm_main(dc_goal_runtime *rt,dc_goal_fiber *fiber,uint32_t trans) 
   set_process_status(rt,process,"waiting-to-run");
   memcpy(top,&main,4);
   if(!dc_goal_main_thread_check(rt,process,reservation,main,base,bytes,1,boot)){
-    memcpy(top,&trans,4);rt->error=prior;return;}
+    if(trans)memcpy(top,&trans,4);
+    rt->error=prior;return;}
   rt->error=prior;
   dc_goal_unregister_thread_fiber(rt,fiber);memset(fiber,0,sizeof *fiber);
   if(!dc_goal_fiber_init_main(fiber,rt,process,reservation,main,base,bytes) || !dc_goal_register_thread_fiber(rt,fiber)){
-    memset(fiber,0,sizeof *fiber);memcpy(top,&trans,4);
+    memset(fiber,0,sizeof *fiber);if(trans)memcpy(top,&trans,4);
     if(rt->error==DC_GOAL_OK)rt->error=DC_GOAL_UNSUPPORTED_TRANSFER;
     return;
   }
-  memcpy(top,&trans,4);
+  if(trans)memcpy(top,&trans,4);
   ++dc_goal_main_rearms;
 }
 static uint64_t reset_and_call(uint64_t thread,uint64_t func) {

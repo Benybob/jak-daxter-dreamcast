@@ -604,3 +604,35 @@ Not yet: every other .STR (197 on the retail disc, 107 MB), larger chunks
 (Dreamcast spool heaps are half the PS2's), and the hint dialogue the training
 cameras wait for, which is sound streaming (a different RPC), not STR.
 
+### Dialogue streaming and the follow camera (Flycast, 3177 of 3177, 2026-11-08)
+
+`level_sound.c` is the IOP sound player and loader for the level ELF
+(SOUND_PLAN.md milestones 3 and 8), in front of the DGO server's rpc hook and
+installed before GAME.CGO so gsound's check-irx-version gets 2.0 and
+`*sound-iop-info*`'s address. A play of `spool-NAME` finds NAME in
+`/cd/VAG/VAGDIR.AYB`, opens its big-endian VAGp in `/cd/VAG/VAGWAD.ENG`
+(`make_vag_subset.py` stages Geyser Rock's eight lines, 1.9 MB), decodes the SPU
+ADPCM as vag_adpcm.py does and streams it on the AICA (KOS snd_stream, polled
+each frame). Each frame `*sound-iop-info*` gets frame, strpos (1024 a second,
+following the game's base-frame-counter, -1 when nothing plays) and the stream
+id. Measured: the level hint `asstvb40` (5.95 s) streams and ends.
+
+- **The follow camera.** The camera slave stayed `cam-free-floating` (the debug
+  free camera, which the scripted stick was flying): target-continue's
+  `change-state cam-string` reaches the slave as an event from another process,
+  whose go re-arms the slave's main thread with set-to-run without the slave
+  running. `thread_resume` now re-imports any suspended main fiber whose state
+  change is pending (`rearm_main`, as after a trans hook). The slave is
+  `cam-string` from frame 12. Not in the scripted Jak ELF (`DC_ARENA_LIVE`) yet: with it that
+  suite stalls at 7615 of 7652, unexplained.
+- **KOS heap.** KOS's break stops short of the end of RAM, so the heap was near
+  full; the level's renderer slab is now 1 MiB (high water 921,824), the GOAL
+  arena unchanged, returning 458,816 bytes to the KOS heap. The instance package
+  and the spool heaps are reserved right after GAME.CGO.
+- **Checks.** The game text streams and links; every spooled chunk asked for is
+  served (Jak's idle no longer comes in this run: hints keep him busy); the
+  version is answered; a dialogue line streams, ends and feeds the AICA.
+
+Not yet: bank sound effects and music (milestones 2, 4 to 7); real-time audio
+in Flycast is choppy because a frame takes about 2 s there.
+
