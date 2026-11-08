@@ -137,4 +137,8 @@ typedef uint64_t (*dc_goal_rpc_hook)(uint64_t port,uint64_t fno,uint64_t async,u
 typedef uint64_t (*dc_goal_link_hook)(uint64_t data,uint64_t name,uint64_t length,uint64_t heap,uint64_t flags);
 extern dc_goal_rpc_hook dc_goal_rpc_handler;
 extern dc_goal_link_hook dc_goal_link_begin_handler;
+/* The STR server (rpc-call port 4) and the C kernel's link (streamed art
+ * chunks), both optional: without them port 4 answers error and link refuses. */
+extern dc_goal_rpc_hook dc_goal_str_handler;
+extern dc_goal_link_hook dc_goal_link_handler;
 #endif

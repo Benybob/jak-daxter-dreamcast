@@ -2243,14 +2243,19 @@ static uint64_t pc_kopen_native(uint64_t fs,uint64_t name,uint64_t mode){
 static uint64_t pc_kclose_native(uint64_t fs){return fs;}
 dc_goal_rpc_hook dc_goal_rpc_handler;
 dc_goal_link_hook dc_goal_link_begin_handler;
+dc_goal_rpc_hook dc_goal_str_handler;
+dc_goal_link_hook dc_goal_link_handler;
 /* The IOP's STR server (RPC-LOAD-STR, port 4) streams spooled animation chunks
- * from .STR files. There is none yet: every load-chunk-msg is answered with
+ * from .STR files. An ELF that serves them sets dc_goal_str_handler (the level
+ * ELF, level_str.c). Without one every load-chunk-msg is answered with
  * load-msg-result error (uint16 at +2), so original str-load-status reports
  * 'error and external-art-buffer drops the request instead of linking a buffer
  * nothing was read into. --dump dc_goal_str_rpc_refused 4 */
 volatile uint32_t dc_goal_str_rpc_refused;
 static uint64_t rpc_call_native(uint64_t port,uint64_t fno,uint64_t async,uint64_t send,
                                 uint64_t send_bytes,uint64_t recv,uint64_t recv_bytes) {
+  if(port==4 && active_runtime && dc_goal_str_handler)
+    return dc_goal_str_handler(port,fno,async,send,send_bytes,recv,recv_bytes);
   if(port==4 && active_runtime){
     unsigned char *reply=recv<=UINT32_MAX && recv_bytes>=4?dc_goal_resolve(active_runtime,(uint32_t)recv,4):NULL;
     if(reply){reply[2]=1;reply[3]=0;++dc_goal_str_rpc_refused;}
@@ -2260,6 +2265,14 @@ static uint64_t rpc_call_native(uint64_t port,uint64_t fno,uint64_t async,uint64
 }
 static uint64_t link_begin_native(uint64_t data,uint64_t name,uint64_t length,uint64_t heap,uint64_t flags) {
   if(dc_goal_link_begin_handler)return dc_goal_link_begin_handler(data,name,length,heap,flags);
+  if(active_runtime && active_runtime->error==DC_GOAL_OK)active_runtime->error=DC_GOAL_UNSUPPORTED_TRANSFER;
+  return 0;
+}
+/* The C kernel's link (klink.cpp link_and_exec through its GOAL wrapper): data,
+ * name, size, heap, flags; external-art-buffer links each streamed chunk with
+ * it. Forwarded to dc_goal_link_handler; without one it refuses. */
+static uint64_t link_native(uint64_t data,uint64_t name,uint64_t length,uint64_t heap,uint64_t flags) {
+  if(dc_goal_link_handler)return dc_goal_link_handler(data,name,length,heap,flags);
   if(active_runtime && active_runtime->error==DC_GOAL_OK)active_runtime->error=DC_GOAL_UNSUPPORTED_TRANSFER;
   return 0;
 }
@@ -2285,7 +2298,7 @@ static uint64_t pc_mem_move_native(uint64_t dst,uint64_t src,uint64_t size) {
   else {dc_goal_mem_move_probe[1]++;dc_goal_mem_move_probe[5]=(uint32_t)rt->error;}
   return 0;
 }
-#define DC_PC_SERVICES 56
+#define DC_PC_SERVICES 57
 /* Coexistence only stashes requests on the GOAL stack (AI-assisted), ISC. */
 #ifdef DC_ARENA_COEXIST
 uint64_t dc_arena_syncv(void);
@@ -2340,6 +2353,7 @@ int dc_goal_install_pc_services(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_g
   functions[k]=(dc_goal_code_export){"__mem-move",code[k],12,NULL,0};targets[k++]=(uint32_t)(uintptr_t)pc_mem_move_native;
   functions[k]=(dc_goal_code_export){"link-begin",code[k],12,NULL,0};targets[k++]=(uint32_t)(uintptr_t)link_begin_native;
   functions[k]=(dc_goal_code_export){"link-resume",code[k],12,NULL,0};targets[k++]=(uint32_t)(uintptr_t)link_resume_native;
+  functions[k]=(dc_goal_code_export){"link",code[k],12,NULL,0};targets[k++]=(uint32_t)(uintptr_t)link_native;
   /* Kernel loado (kscheme.cpp) loads an object file by name from the host. A
    * retail disc kernel has nothing to load it from: #f, which original
    * texture-page-login treats as "not loaded" (0 would be relocated). */

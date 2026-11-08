@@ -567,3 +567,40 @@ animation is spooled. STR requests are refused, so it rests at its base pose
 near sea level, under the hill, and the last frame shows the hill from below.
 Streaming (spooled animations) is the next gap: it also holds
 `target-stance-ambient`.
+
+### Streaming: spooled animations and game text (Flycast, 3163 of 3163, 2026-11-07)
+
+`level_str.c` is the IOP's STR server and the C kernel's `link` for the level
+ELF, through two optional bridge hooks (`dc_goal_str_handler` for rpc-call port
+4, `dc_goal_link_handler` for `link`, a new PC-port service; without them port 4
+answers error and `link` refuses, as before).
+
+- **STR server.** A chunk request (load-chunk-msg: address, chunk, length,
+  name) maps the animation name to its ISO name as the overlord does
+  (`eichar-ambient-4` -> `EIA4`), reads `/cd/STR/EIA4.STR`'s 64-entry chunk
+  table (start sectors, then sizes) and the chunk into the buffer, and answers
+  done with the length. A chunk id of -1 loads a whole file by name from `/cd`
+  or `/cd/TEXT` (the game text `0COMMON.TXT`; the PC-only `0subtit.TXT` is not
+  on the disc and is answered error, as the overlord would).
+- **link.** Streamed chunks and text files are retail v2 objects (klink.cpp
+  `jak1_work_v2`): `{0xffffffff, link block length, 2}`, a byte-coded pointer
+  table, then symbol and type names each followed by the offsets of the words
+  (0xffffffff) that take them, then the data. The data moves to the heap's
+  current, pointers get its address, names are interned, and link returns data+4.
+- **Spool heaps.** Original external-art-buffer puts its two heaps at #x84000 +
+  index * 247 KiB, PS2 kernel memory the game reuses. That is not RAM here. The
+  first request into it moves both heaps to 128 KiB each of KOS memory (the
+  runtime's resident region) and is answered error; the buffer drops it and asks
+  again into its new heap. A chunk larger than 128 KiB is refused the same way.
+
+Measured: three objects link (the game text twice, then the chunk: 1,638
+pointers, 12 types, 3 symbols in all); when Jak goes idle,
+`eichar-ambient-4` chunk 0 (49,152 bytes) is read and linked, and the buffer is
+'active for the last 16 frames: the original target-stance-ambient plays its
+spooled animation. On the disc: `STR/EIA1..4.STR` (Jak's four idle animations)
+and `TEXT/0COMMON.TXT`, copied from the extracted ISO (git-ignored).
+
+Not yet: every other .STR (197 on the retail disc, 107 MB), larger chunks
+(Dreamcast spool heaps are half the PS2's), and the hint dialogue the training
+cameras wait for, which is sound streaming (a different RPC), not STR.
+

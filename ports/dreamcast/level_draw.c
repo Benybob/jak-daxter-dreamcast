@@ -20,6 +20,7 @@
 #include "level_models.h"
 #include "level_player.h"
 #include "level_logic.h"
+#include "level_str.h"
 #include "build/level_render_fixture.h"
 
 #define LEVEL_DRAW_ROOT "/cd/GEYSER"
@@ -116,6 +117,7 @@ int dc_level_draw_frame(dc_goal_runtime *rt){
  ++dc_level_draw_metrics.frames;
  dc_level_player_sample(rt);
  dc_level_actors_sample(rt);
+ dc_level_str_sample(rt);
  if(!camera || !type || !dc_live_read(rt,camera,type,&pose) || !dc_live_convert(&pose,TARGET_DISTANCE_M,&c))
   {rt->error=DC_GOAL_OK;return clear();}
  ++dc_level_draw_metrics.camera_reads;
@@ -184,6 +186,13 @@ int dc_level_draw_finish(void){
   CHECK(w.below<=1.5f && w.above<=1.5f,1,"level Jak stayed on the hilltop (within 1.5 m of his start height)");
   CHECK(w.walk_onsurf*3u>=w.walk_frames*2u,1,"level Jak on a surface for two thirds of his walk");
   CHECK(w.onground_frames*2u>=w.frames,1,"level Jak on the ground (onground) for most frames");}
+ /* Streaming: the STR server reads Jak's spooled idle animation chunk (and the
+  * game text) from the disc, the C kernel's link makes it an art-group, and the
+  * original external-art-buffer uses it (status 'active). */
+ {dc_level_str_counts s;dc_level_str_summary(&s);
+  CHECK(s.served>=2u && s.linked>=s.served,1,"level STR server read and linked text and a spooled chunk");
+  CHECK(s.link_errors,0,"level every streamed object linked");
+  CHECK(s.active_frames>0u,1,"level a spooled animation became active (Jak's idle)");}
  return 1;
 }
 #undef CHECK
