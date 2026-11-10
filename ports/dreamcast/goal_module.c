@@ -24,7 +24,8 @@ static int code_error(dc_goal_runtime *rt,enum dc_goal_error error) {
 /* dc_goal_code_cache_enabled is defined in goal_runtime.c (its find cache) */
 enum {CODE_CACHE=256};
 static struct {const dc_goal_runtime *rt;uint32_t head,count,at;code_record record;} code_cache[CODE_CACHE];
-static unsigned code_cache_slot(uint32_t entry){return (entry>>2)&(CODE_CACHE-1u);}
+/* function entries are 16-byte aligned: index from bit 4 up, folded */
+static unsigned code_cache_slot(uint32_t entry){return ((entry>>4)^(entry>>12))&(CODE_CACHE-1u);}
 static int code_cache_hit(dc_goal_runtime *rt,uint32_t entry,dc_goal_code_entry_info *out) {
   const code_record *c;const void *p;unsigned slot=code_cache_slot(entry);
   if(code_cache[slot].rt!=rt || code_cache[slot].head!=rt->code_registry_head ||

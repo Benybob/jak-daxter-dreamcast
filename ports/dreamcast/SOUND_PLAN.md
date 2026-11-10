@@ -258,7 +258,7 @@ Fixes since the first level ELF stream (`level_sound.c`, from a Grok review, eac
 - A stop sets the stream id back to 1 (`StopVAG`), so `current-str-id` no longer returns a finished line.
 - Reading the game clock keeps a fault already on the runtime.
 
-Still open: `strpos` follows game time (`base-frame-counter`), not vblanks, so a slow frame moves it ahead of the samples queued.
+- `strpos` and the line's end follow real time (the TMU), as the IOP's vblank count does, not the game's `base-frame-counter`, which runs ahead of the audio when frames are slow.
 
 ## Unconfirmed
 

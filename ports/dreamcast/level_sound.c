@@ -11,10 +11,9 @@
  *   pause (4) and continue (6) of its id stop, freeze and resume it.
  * - Each frame, *sound-iop-info* (the overlord's 0x110-byte DMA, srpc.cpp
  *   464-508): frame, strpos (the stream's position, 1024 a second, -1 when no
- *   stream plays) and the stream's id. The position follows the game's own
- *   clock (*display* base-frame-counter, 300 a second), as the PS2 stream
- *   follows real time while the game runs at full speed; the dialogue ends when
- *   the line's length has passed.
+ *   stream plays) and the stream's id. The position follows real time, as the
+ *   IOP's does (1024/fps added each vblank); the dialogue ends when the line's
+ *   length has passed.
  * - The audio: blocks decoded as vag_adpcm.py (voice.cpp) does to 16-bit PCM,
  *   fed to a KOS AICA stream polled once a frame. Bank sound effects and music
  *   (SOUND_PLAN.md milestones 2, 4 to 7) are not here.
@@ -60,18 +59,11 @@ static unsigned char run[RUN];static uint32_t run_at,run_len;
 
 static uint32_t rd32(const unsigned char *p){uint32_t v;memcpy(&v,p,4);return v;}
 static uint32_t be32(const unsigned char *p){return (uint32_t)p[0]<<24|(uint32_t)p[1]<<16|(uint32_t)p[2]<<8|p[3];}
-static uint32_t named(const char *name){
-  enum dc_goal_error prior=runtime->error;uint32_t s=dc_goal_find(runtime,name),v=s?dc_goal_symbol_value(runtime,s):0;
-  runtime->error=prior;return v;
-}
-/* *display* base-frame-counter (+780): game time, 300 ticks a second. */
-static int64_t game_ticks(void){
-  uint32_t display=named("*display*");const unsigned char *p;int64_t t=0;
-  enum dc_goal_error prior=runtime->error;
-  if(display && display!=runtime->s7 && (p=dc_goal_resolve(runtime,display+780u,8)))memcpy(&t,p,8);
-  runtime->error=prior;
-  return t;
-}
+/* The stream clock: real time, microseconds. The IOP adds 1024/fps to the
+ * stream position once per real vblank (srpc.cpp), so the position follows
+ * the audio actually played, not the game's own clock, which runs ahead of it
+ * when frames are slow (set-time-ratios lets one frame count for up to 4). */
+static int64_t real_us(void){return (int64_t)timer_us_gettime64();}
 static int load_dir(void){
   FILE *f;size_t n;
   if(dir_loaded)return dir_loaded>0;
@@ -152,7 +144,7 @@ static void play_line(const char *name,uint32_t id){
   line.bytes=be32(header+12);line.rate=be32(header+16);
   if(!line.bytes || (line.bytes&15u) || line.rate<8000 || line.rate>48000){++dc_level_sound_evidence.missing;return;}
   line.active=1;line.paused=0;line.id=id;line.offset=sector*2048u+VAG_HEADER;
-  line.start=game_ticks();line.paused_total=0;
+  line.start=real_us();line.paused_total=0;
   ++dc_level_sound_evidence.streams;dc_level_sound_evidence.last_id=id;
   dc_level_sound_evidence.bytes=line.bytes;dc_level_sound_evidence.rate=line.rate;
   dc_level_sound_evidence.length_ms=(uint32_t)((uint64_t)line.bytes/BLOCK*BLOCK_SAMPLES*1000u/line.rate);
@@ -184,11 +176,11 @@ static uint64_t sound_rpc(uint64_t port,uint64_t fno,uint64_t async,uint64_t sen
         if(!memcmp(cmd+16,"spool-",6)){char name[11];memcpy(name,cmd+22,10);name[10]=0;play_line(name,id);}
       } else if(command==SRPC_STOP && line.active && id==line.id){++dc_level_sound_evidence.stops;stop_line();}
       else if(command==SRPC_PAUSE && line.active && id==line.id && !line.paused){
-        ++dc_level_sound_evidence.pauses;line.paused=1;line.paused_at=game_ticks();
+        ++dc_level_sound_evidence.pauses;line.paused=1;line.paused_at=real_us();
         /* PauseVAG silences the voice; the decoder keeps its place */
         if(stream!=SND_STREAM_INVALID)snd_stream_stop(stream);}
       else if(command==SRPC_CONTINUE && line.active && id==line.id && line.paused){
-        line.paused=0;line.paused_total+=game_ticks()-line.paused_at;
+        line.paused=0;line.paused_total+=real_us()-line.paused_at;
         if(stream!=SND_STREAM_INVALID)snd_stream_start(stream,line.rate,0);}
     }
   }
@@ -200,8 +192,8 @@ void dc_level_sound_frame(dc_goal_runtime *rt){
   if(!rt || rt!=runtime || !info_address)return;
   prior=rt->error;
   if(line.active){
-    int64_t now=line.paused?line.paused_at:game_ticks();
-    int64_t played=(now-line.start-line.paused_total)*1024/300;
+    int64_t now=line.paused?line.paused_at:real_us();
+    int64_t played=(now-line.start-line.paused_total)*1024/1000000;
     int64_t length=(int64_t)line.bytes/BLOCK*BLOCK_SAMPLES*1024/line.rate;
     if(played<0)played=0;
     if(played>=length){stop_line();++dc_level_sound_evidence.ended;}
