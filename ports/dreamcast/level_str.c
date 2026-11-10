@@ -27,7 +27,7 @@ enum {STR_RESULT_DONE=0,STR_RESULT_ERROR=1,STR_CHUNKS=64,STR_SECTOR=2048};
  * game reuses. That is not RAM on the Dreamcast; the first request into it moves
  * both heaps to SPOOL_BYTES of KOS memory (the runtime's resident region) and is
  * answered error, which the buffer drops and asks again into its new heap. A
- * chunk larger than SPOOL_BYTES is refused the same way. */
+ * chunk that would run past the end of its heap is refused (last_error 8). */
 enum {PS2_SPOOL_BASE=0x84000,PS2_SPOOL_HEAP=247*1024,SPOOL_BYTES=128*1024};
 volatile struct {
   uint32_t requests,served,errors,missing,links,linked,link_errors,last_chunk;
@@ -120,20 +120,20 @@ static int open_str(const char *animation){
 
 /* RPC_STR for a chunk (chunk-id >= 0): load-chunk-msg is u16 rsvd, u16 result,
  * u32 address, s32 chunk, u32 length (the most to load in, the loaded length
- * out), char name[64]. Loading is synchronous, so the next rpc-busy? is 0. */
+ * out), char name[48]: 64 bytes (load-dgo.gc load-chunk-msg). Loading is synchronous, so the next rpc-busy? is 0. */
 static uint64_t str_rpc(uint64_t port,uint64_t fno,uint64_t async,uint64_t send,
                         uint64_t send_bytes,uint64_t recv,uint64_t recv_bytes){
-  unsigned char *msg,*reply,*dest=NULL;uint32_t address,maxlen,size;int32_t chunk;char name[65];unsigned i;
+  unsigned char *msg,*reply,*dest=NULL;uint32_t address,maxlen,size;int32_t chunk;char name[49];unsigned i;
   uint16_t result=STR_RESULT_ERROR;
   (void)port;(void)fno;(void)async;(void)send_bytes;
   if(!runtime || send>UINT32_MAX || recv>UINT32_MAX || recv_bytes<16 ||
-     !(msg=dc_goal_resolve(runtime,(uint32_t)send,80)) || !(reply=dc_goal_resolve(runtime,(uint32_t)recv,16))){
+     !(msg=dc_goal_resolve(runtime,(uint32_t)send,64)) || !(reply=dc_goal_resolve(runtime,(uint32_t)recv,16))){
     if(runtime)runtime->error=DC_GOAL_OK;
     return 0;
   }
   ++dc_level_str_evidence.requests;
   address=rd32(msg+4);memcpy(&chunk,msg+8,4);maxlen=rd32(msg+12);
-  for(i=0;i<64 && msg[16+i];++i)name[i]=(char)msg[16+i];
+  for(i=0;i<48 && msg[16+i];++i)name[i]=(char)msg[16+i];
   name[i]=0;
   for(i=0;i<31 && name[i];++i)dc_level_str_evidence.last_name[i]=name[i];
   dc_level_str_evidence.last_name[i]=0;
@@ -146,8 +146,9 @@ static uint64_t str_rpc(uint64_t port,uint64_t fno,uint64_t async,uint64_t send,
     /* a whole file by name, at most length bytes */
     static const char *const dirs[2]={"/cd/","/cd/TEXT/"};char path[96];FILE *f=NULL;long bytes;unsigned d,j;
     for(d=0;d<2 && !f;++d){
+      size_t at=strlen(dirs[d]);
       snprintf(path,sizeof path,"%s%s",dirs[d],name);
-      for(j=0;path[j];++j)if(path[j]>='a' && path[j]<='z')path[j]=(char)(path[j]-32);
+      for(j=(unsigned)at;path[j];++j)  /* the name only: the mount is /cd */if(path[j]>='a' && path[j]<='z')path[j]=(char)(path[j]-32);
       f=fopen(path,"rb");
     }
     if(!f){++dc_level_str_evidence.missing;goto reply;}
@@ -163,6 +164,11 @@ static uint64_t str_rpc(uint64_t port,uint64_t fno,uint64_t async,uint64_t send,
     if(chunk>=STR_CHUNKS || !open_str(name)){++dc_level_str_evidence.missing;goto reply;}
     size=str_sizes[chunk];
     dc_level_str_evidence.last_error=!size?2:size>maxlen?3:(address&15u)?4:0;
+    /* maxlen is the caller's #x3fc00, not the moved heap: a chunk must end
+     * inside the spool heap it starts in, not run on into the other one. */
+    if(!dc_level_str_evidence.last_error && spool_base && address>=spool_base && address<spool_base+2u*SPOOL_BYTES){
+      uint32_t heap_end=spool_base+((address-spool_base)/SPOOL_BYTES+1u)*SPOOL_BYTES;
+      if(size>heap_end-address)dc_level_str_evidence.last_error=8;}
     if(!dc_level_str_evidence.last_error && !(dest=dc_goal_resolve(runtime,address,size)))dc_level_str_evidence.last_error=5;
     if(!dc_level_str_evidence.last_error && (fseek(str_file,(long)str_sectors[chunk]*STR_SECTOR,SEEK_SET) ||
        fread(dest,1,size,str_file)!=size))dc_level_str_evidence.last_error=6;
@@ -196,7 +202,7 @@ static uint64_t link_v2(uint64_t data,uint64_t name,uint64_t length,uint64_t hea
   if(rd32(object)!=UINT32_MAX || rd32(object+8)!=2 || link_bytes<13 || link_bytes>=length)return bad_link();
   code_bytes=(uint32_t)length-link_bytes;
   current=(rd32(kheap+8)+15u)&~15u;top=rd32(kheap+4);
-  if(current>(uint32_t)data || code_bytes>top-current)return bad_link();
+  if(current>(uint32_t)data || current>top || code_bytes>top-current)return bad_link();
   if(!(block=malloc(link_bytes)))return bad_link();
   memcpy(block,object,link_bytes);
   if(!(dest=dc_goal_resolve(runtime,current,code_bytes))){free(block);return bad_link();}
@@ -244,6 +250,8 @@ static uint64_t link_v2(uint64_t data,uint64_t name,uint64_t length,uint64_t hea
     r+=n+1;
     do{
       uint32_t v=r[0],w;
+      size_t need=(v&3u)==0?1u:(v&2u)==0?2u:(v&1u)==0?3u:4u;
+      if((size_t)(block+link_bytes-r)<need){free(block);return bad_link();}
       if(v&3u){v|=(uint32_t)r[1]<<8;
         if(v&2u){v|=(uint32_t)r[2]<<16;
           if(v&1u){v|=(uint32_t)r[3]<<24;r+=4;} else r+=3;} else r+=2;} else r+=1;

@@ -52,6 +52,11 @@ static FILE *wad;
 static snd_stream_hnd_t stream=SND_STREAM_INVALID;
 static uint32_t audio_left,audio_at;int hist1,hist2;
 static int16_t pcm[PCM_SAMPLES] __attribute__((aligned(32)));
+/* A block's samples carry over a buffer boundary (4096 is not a multiple of
+ * 28), and the wad is read RUN bytes at a time, not a seek per block. */
+enum {RUN=2048};
+static int16_t carry[BLOCK_SAMPLES];static int carry_at=BLOCK_SAMPLES;
+static unsigned char run[RUN];static uint32_t run_at,run_len;
 
 static uint32_t rd32(const unsigned char *p){uint32_t v;memcpy(&v,p,4);return v;}
 static uint32_t be32(const unsigned char *p){return (uint32_t)p[0]<<24|(uint32_t)p[1]<<16|(uint32_t)p[2]<<8|p[3];}
@@ -62,8 +67,9 @@ static uint32_t named(const char *name){
 /* *display* base-frame-counter (+780): game time, 300 ticks a second. */
 static int64_t game_ticks(void){
   uint32_t display=named("*display*");const unsigned char *p;int64_t t=0;
+  enum dc_goal_error prior=runtime->error;
   if(display && display!=runtime->s7 && (p=dc_goal_resolve(runtime,display+780u,8)))memcpy(&t,p,8);
-  runtime->error=DC_GOAL_OK;
+  runtime->error=prior;
   return t;
 }
 static int load_dir(void){
@@ -93,21 +99,33 @@ static int decode_block(const unsigned char *b,int16_t *out){
   }
   return 1;
 }
+/* the next 16 bytes of the line, from the run buffer */
+static const unsigned char *next_block(void){
+  if(audio_left<BLOCK || !wad)return NULL;
+  if(run_at>=run_len){
+    uint32_t want=audio_left<RUN?audio_left&~(BLOCK-1u):RUN;
+    if(fseek(wad,(long)audio_at,SEEK_SET) || fread(run,1,want,wad)!=want)return NULL;
+    run_at=0;run_len=want;
+  }
+  audio_at+=BLOCK;audio_left-=BLOCK;run_at+=BLOCK;
+  return run+run_at-BLOCK;
+}
 static void *audio_data(snd_stream_hnd_t hnd,int bytes,int *got){
   int samples=0,want=bytes/2;
   (void)hnd;
   if(want>PCM_SAMPLES)want=PCM_SAMPLES;
-  while(samples+BLOCK_SAMPLES<=want){
-    unsigned char block[BLOCK];
-    if(!line.active || line.paused || audio_left<BLOCK || !wad || fseek(wad,(long)audio_at,SEEK_SET) ||
-       fread(block,1,BLOCK,wad)!=BLOCK || !decode_block(block,pcm+samples)){
-      memset(pcm+samples,0,(size_t)(want-samples)*2u);samples=want;break;  /* silence */
+  while(samples<want && line.active){
+    if(carry_at<BLOCK_SAMPLES){
+      int n=BLOCK_SAMPLES-carry_at;if(n>want-samples)n=want-samples;
+      memcpy(pcm+samples,carry+carry_at,(size_t)n*2u);carry_at+=n;samples+=n;continue;
     }
-    audio_at+=BLOCK;audio_left-=BLOCK;samples+=BLOCK_SAMPLES;
+    {const unsigned char *b=next_block();
+     if(!b || !decode_block(b,carry))break;
+     carry_at=0;}
   }
-  if(samples<want){memset(pcm+samples,0,(size_t)(want-samples)*2u);samples=want;}
+  if(samples<want)memset(pcm+samples,0,(size_t)(want-samples)*2u);  /* the line's end: silence */
   dc_level_sound_evidence.pcm_bytes+=(uint32_t)samples*2u;
-  *got=samples*2;
+  *got=want*2;
   return pcm;
 }
 static void start_audio(void){
@@ -116,7 +134,7 @@ static void start_audio(void){
     stream=snd_stream_alloc(audio_data,SND_STREAM_BUFFER_MAX);
     if(stream==SND_STREAM_INVALID){++dc_level_sound_evidence.errors;return;}
   } else snd_stream_stop(stream);
-  hist1=hist2=0;audio_at=line.offset;audio_left=line.bytes;
+  hist1=hist2=0;audio_at=line.offset;audio_left=line.bytes;carry_at=BLOCK_SAMPLES;run_at=run_len=0;
   snd_stream_start(stream,line.rate,0);
   ++dc_level_sound_evidence.audio;
 }
@@ -141,7 +159,7 @@ static void play_line(const char *name,uint32_t id){
   start_audio();
 }
 static void stop_line(void){
-  line.active=0;
+  line.active=0;line.id=1;  /* StopVAG: gVAG_Id = 1 (iso.cpp) */
   if(stream!=SND_STREAM_INVALID)snd_stream_stop(stream);
 }
 static uint64_t sound_rpc(uint64_t port,uint64_t fno,uint64_t async,uint64_t send,
@@ -166,9 +184,12 @@ static uint64_t sound_rpc(uint64_t port,uint64_t fno,uint64_t async,uint64_t sen
         if(!memcmp(cmd+16,"spool-",6)){char name[11];memcpy(name,cmd+22,10);name[10]=0;play_line(name,id);}
       } else if(command==SRPC_STOP && line.active && id==line.id){++dc_level_sound_evidence.stops;stop_line();}
       else if(command==SRPC_PAUSE && line.active && id==line.id && !line.paused){
-        ++dc_level_sound_evidence.pauses;line.paused=1;line.paused_at=game_ticks();}
+        ++dc_level_sound_evidence.pauses;line.paused=1;line.paused_at=game_ticks();
+        /* PauseVAG silences the voice; the decoder keeps its place */
+        if(stream!=SND_STREAM_INVALID)snd_stream_stop(stream);}
       else if(command==SRPC_CONTINUE && line.active && id==line.id && line.paused){
-        line.paused=0;line.paused_total+=game_ticks()-line.paused_at;}
+        line.paused=0;line.paused_total+=game_ticks()-line.paused_at;
+        if(stream!=SND_STREAM_INVALID)snd_stream_start(stream,line.rate,0);}
     }
   }
   return 0;
@@ -191,7 +212,7 @@ void dc_level_sound_frame(dc_goal_runtime *rt){
     memcpy(info,&frame,4);memcpy(info+4,&strpos,4);memcpy(info+8,&line.id,4);
   }
   dc_level_sound_evidence.last_strpos=(uint32_t)strpos;
-  if(stream!=SND_STREAM_INVALID){snd_stream_poll(stream);++dc_level_sound_evidence.polls;}
+  if(stream!=SND_STREAM_INVALID && line.active && !line.paused){snd_stream_poll(stream);++dc_level_sound_evidence.polls;}
   rt->error=prior;
 }
 void dc_level_sound_install(dc_goal_runtime *rt){
