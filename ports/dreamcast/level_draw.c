@@ -36,6 +36,31 @@ volatile struct {
  float last_eye[3],last_yaw,last_pitch,pad;  /* the last converted game camera (meters, radians) */
  float eye[192][3];  /* the converted game camera eye, per draw frame */
 } dc_level_draw_metrics;
+/* Where a draw frame's time goes, microseconds: 0 samples, 1 cells, 2 terrain
+ * window, 3 base frame, 4 terrain prepare, 5 models, 6 PVR ready before the
+ * scene, 7 opaque list, 8 punch-through list, 9 translucent list, 10 TA
+ * complete, 11 render done, 12 the GOAL frame between two draws, 13 the
+ * skinned models' share of 7-9 (counted in both), 14 the kernel-dispatcher
+ * call alone (dc_level_time_dispatch, part of 12). frame_us is
+ * stages 0-11 of each of the first 96 draw frames, goal_us stage 12.
+ * --dump dc_level_frame_timing 920 */
+enum {TIME_STAGES=15,TIME_FRAMES=96};
+volatile struct {
+ uint32_t frames,pad;uint32_t sum_us[TIME_STAGES],max_us[TIME_STAGES];
+ uint32_t frame_us[TIME_FRAMES],goal_us[TIME_FRAMES];
+ uint32_t submitted[3],triangles[3];  /* instance triangles per list, summed */
+} dc_level_frame_timing;
+static uint64_t time_at,time_frame_start,time_last_end;
+static void time_stage(unsigned stage){
+ uint64_t now=timer_us_gettime64();uint32_t us=(uint32_t)(now-time_at);
+ dc_level_frame_timing.sum_us[stage]+=us;
+ if(us>dc_level_frame_timing.max_us[stage])dc_level_frame_timing.max_us[stage]=us;
+ time_at=now;
+}
+void dc_level_time_dispatch(uint32_t us){
+ dc_level_frame_timing.sum_us[14]+=us;
+ if(us>dc_level_frame_timing.max_us[14])dc_level_frame_timing.max_us[14]=us;
+}
 static dc_render_catalog catalog;
 static dc_render_gpu gpu;
 static dc_render_base_bank bank;
@@ -147,11 +172,13 @@ int dc_level_draw_frame(dc_goal_runtime *rt){
  dc_render_base_frame frame={0};dc_render_base_stats base={0};dc_instance_stats inst={0};pvr_stats_t stats;
  dc_render_camera rc;dc_instance_camera ic;
  ++dc_level_draw_metrics.frames;
+ time_frame_start=time_at=timer_us_gettime64();
  dc_level_player_sample(rt);
  dc_level_actors_sample(rt);
  dc_level_str_sample(rt);
  dc_level_sound_frame(rt);
  slave_sample(rt);
+ time_stage(0);
  if(!camera || !type || !dc_live_read(rt,camera,type,&pose) || !dc_live_convert(&pose,TARGET_DISTANCE_M,&c))
   {rt->error=DC_GOAL_OK;return clear();}
  ++dc_level_draw_metrics.camera_reads;
@@ -163,25 +190,44 @@ int dc_level_draw_frame(dc_goal_runtime *rt){
  ic=(dc_instance_camera){c.target[0],c.target[1],c.target[2],c.yaw,c.pitch,c.distance,DRAW_DISTANCE_M};
  query=(dc_render_query){(double)c.target[0]-WINDOW_HALF_M,(double)c.target[2]-WINDOW_HALF_M,
                          (double)c.target[0]+WINDOW_HALF_M,(double)c.target[2]+WINDOW_HALF_M};
+ time_at=timer_us_gettime64();
  error=dc_instance_cells_update(&cells,&pkg,ic.tx,ic.tz,ic.draw_distance);CHECK(error==NULL,1,error);
+ time_stage(1);
  error=dc_render_block_cache_window(&cache,&catalog,&query,&window);CHECK(error==NULL,1,error);
+ time_stage(2);
  error=dc_render_base_frame_make_draw(&window,&bank,&frame);CHECK(error==NULL,1,error);
+ time_stage(3);
  CHECK(window.count==0 || dc_render_draw_window_prepare(&window,&rc),1,"level draw terrain prepare");
+ time_stage(4);
  dc_level_models_frame(rt,&ic);
+ time_stage(5);
  CHECK(pvr_wait_ready(),0,"level draw PVR ready between GOAL frames");
+ time_stage(6);
  pvr_scene_begin();pvr_set_bg_color(.45f,.62f,.80f);
  for(i=0;i<sizeof lists/sizeof lists[0];++i){
   ok&=pvr_list_begin(lists[i])==0;
   if(window.count)ok&=dc_render_base_draw(&bank,&frame,lists[i],&base);
-  if(lists[i]!=PVR_LIST_TR_POLY)ok&=dc_instance_draw_list(&pkg,&ic,view,&inst,lists[i],materials,FLY_MATERIAL_SLOTS);
-  ok&=dc_level_models_draw(rt,&ic,lists[i]);
+  {uint32_t s0=inst.submitted,t0=inst.triangles;
+   if(lists[i]!=PVR_LIST_TR_POLY)ok&=dc_instance_draw_list(&pkg,&ic,view,&inst,lists[i],materials,FLY_MATERIAL_SLOTS);
+   dc_level_frame_timing.submitted[i]+=inst.submitted-s0;dc_level_frame_timing.triangles[i]+=inst.triangles-t0;}
+  {uint64_t m0=timer_us_gettime64();uint32_t us;
+   ok&=dc_level_models_draw(rt,&ic,lists[i]);
+   us=(uint32_t)(timer_us_gettime64()-m0);dc_level_frame_timing.sum_us[13]+=us;
+   if(us>dc_level_frame_timing.max_us[13])dc_level_frame_timing.max_us[13]=us;}
   ok&=pvr_list_finish()==0;
+  time_stage(7u+i);
  }
  ok&=pvr_scene_finish()==0;
  dc_level_models_end_frame();
  CHECK(ok&&base.invalid==0&&inst.invalid==0,1,"level draw frame submitted without invalid geometry");
  CHECK(pvr_wait_ready(),0,"level draw frame TA complete");
+ time_stage(10);
  CHECK(pvr_wait_render_done(),0,"level draw frame rendered");
+ time_stage(11);
+ {uint32_t n=dc_level_frame_timing.frames++,goal=time_last_end?(uint32_t)(time_frame_start-time_last_end):0;
+  if(time_last_end){dc_level_frame_timing.sum_us[12]+=goal;if(goal>dc_level_frame_timing.max_us[12])dc_level_frame_timing.max_us[12]=goal;}
+  if(n<TIME_FRAMES){dc_level_frame_timing.frame_us[n]=(uint32_t)(time_at-time_frame_start);dc_level_frame_timing.goal_us[n]=goal;}
+  time_last_end=time_at;}
  CHECK(pvr_get_stats(&stats),0,"level draw PVR stats");
  if((uint32_t)stats.vtx_buffer_used_max>dc_level_draw_metrics.max_vertex_bytes)
   dc_level_draw_metrics.max_vertex_bytes=(uint32_t)stats.vtx_buffer_used_max;

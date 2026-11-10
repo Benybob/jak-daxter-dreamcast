@@ -484,9 +484,18 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
        CHECK(dc_level_player(&rt),1,"original start spawns Jak at the original continue point");
 #endif
        before=word(&rt,entry(&rt,"*display*"),REAL_INTEGRAL_FRAMES);
+#ifdef DC_LEVEL_LOGIC  /* the level ELF */
+       dc_goal_code_cache_enabled=1;  /* the display frames look entries up hundreds of times each */
+#endif
        for(frame=0;frame<DISPLAY_FRAMES && rt.error==DC_GOAL_OK;++frame){
          dc_goal_error_site=0;dc_boot_display_frame=frame+1u;
+#ifdef DC_LEVEL_LOGIC  /* the level ELF */
+         {void dc_level_time_dispatch(uint32_t);uint64_t t0=timer_us_gettime64();
+          dispatch();
+          dc_level_time_dispatch((uint32_t)(timer_us_gettime64()-t0));}
+#else
          dispatch();
+#endif
 #ifdef DC_ARENA_COEXIST
          if(!dc_arena_dispatch(&rt))goto done;
 #endif
@@ -494,6 +503,7 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
          else {dc_boot_display_error=rt.error|((uint32_t)dc_goal_sticky_error<<8);dc_boot_display_site=dc_goal_error_site;}
        }
        dc_boot_display_frames=completed;
+       dc_goal_code_cache_enabled=0;
        CHECK(completed,DISPLAY_FRAMES,"original display-loop runs and suspends each frame, headless");
        CHECK(rt.error,DC_GOAL_OK,"display-loop frames leave no runtime fault");
 #ifdef DC_LEVEL_LOGIC

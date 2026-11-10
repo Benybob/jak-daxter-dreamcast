@@ -14,9 +14,32 @@ static int code_error(dc_goal_runtime *rt,enum dc_goal_error error) {
   if(rt) rt->error=error;
   return 0;
 }
+/* Lookups without a diagnostic remember where a chain walk found an entry,
+ * keyed by the registry's head and count (a registration or a rollback changes
+ * one of them). A hit re-reads and re-checks that one record, the function's
+ * type and its symbol's value instead of walking every record: the level ELF
+ * looks up hundreds of entries a frame in a chain of thousands. Off unless a
+ * runner turns it on (dc_goal_code_cache_enabled): the registry tests expect
+ * any corrupt record anywhere in the chain to fail every lookup closed. */
+int dc_goal_code_cache_enabled;
+enum {CODE_CACHE=256};
+static struct {const dc_goal_runtime *rt;uint32_t head,count,at;code_record record;} code_cache[CODE_CACHE];
+static unsigned code_cache_slot(uint32_t entry){return (entry>>2)&(CODE_CACHE-1u);}
+static int code_cache_hit(dc_goal_runtime *rt,uint32_t entry,dc_goal_code_entry_info *out) {
+  const code_record *c;const void *p;unsigned slot=code_cache_slot(entry);
+  if(code_cache[slot].rt!=rt || code_cache[slot].head!=rt->code_registry_head ||
+     code_cache[slot].count!=rt->code_registry_count || code_cache[slot].record.entry!=entry)return 0;
+  c=&code_cache[slot].record;
+  if(!(p=dc_goal_resolve(rt,code_cache[slot].at,sizeof *c)) || memcmp(p,c,sizeof *c) ||
+     !dc_goal_resolve(rt,c->entry-4u,c->bytes+4u) || dc_goal_type_of(rt,c->symbol)!=rt->symbol_type ||
+     dc_goal_type_of(rt,entry)!=rt->function_type || dc_goal_symbol_value(rt,c->symbol)!=entry){
+    code_cache[slot].rt=NULL;rt->error=DC_GOAL_OK;return 0;}
+  out->entry=c->entry;out->bytes=c->bytes;out->symbol=c->symbol;
+  rt->error=DC_GOAL_OK;return 1;
+}
 int dc_goal_code_entry_diagnose(dc_goal_runtime *rt,uint32_t entry,dc_goal_code_entry_info *out,
                                 dc_goal_code_diagnostic *diagnostic) {
-  uint32_t at,i,previous_entry=UINT32_MAX;
+  uint32_t at,i,previous_entry=UINT32_MAX,found_at=0;
   code_record found={0,0,0,0};
   /* The walk overwrites this; a match must be restored after the chain tail. */
   dc_goal_code_diagnostic matched={0};
@@ -50,7 +73,7 @@ int dc_goal_code_entry_diagnose(dc_goal_runtime *rt,uint32_t entry,dc_goal_code_
     if(dc_goal_type_of(rt,record.symbol)!=rt->symbol_type)
       REFUSE(DC_GOAL_BAD_MODULE,DC_CODE_RECORD_SYMBOL);
     if(record.entry==entry) {
-      found=record;
+      found=record;found_at=at;
       if(diagnostic) { matched=*diagnostic; matched_saved=1; }
     }
     previous_entry=record.entry;
@@ -74,10 +97,14 @@ int dc_goal_code_entry_diagnose(dc_goal_runtime *rt,uint32_t entry,dc_goal_code_
      dc_goal_symbol_value(rt,found.symbol)!=entry)
     REFUSE(DC_GOAL_BAD_FUNCTION,DC_CODE_FUNCTION);
   out->entry=found.entry;out->bytes=found.bytes;out->symbol=found.symbol;
+  if(found_at && dc_goal_code_cache_enabled){unsigned slot=code_cache_slot(entry);
+    code_cache[slot].rt=rt;code_cache[slot].head=rt->code_registry_head;code_cache[slot].count=rt->code_registry_count;
+    code_cache[slot].at=found_at;code_cache[slot].record=found;}
   rt->error=DC_GOAL_OK;return 1;
 #undef REFUSE
 }
 int dc_goal_code_entry(dc_goal_runtime *rt,uint32_t entry,dc_goal_code_entry_info *out) {
+  if(dc_goal_code_cache_enabled && rt && rt->memory && out && entry && !(entry&3u) && code_cache_hit(rt,entry,out))return 1;
   return dc_goal_code_entry_diagnose(rt,entry,out,NULL);
 }
 static const char *import_name(const char *symbol,enum import_kind *kind) {

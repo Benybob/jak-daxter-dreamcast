@@ -638,3 +638,32 @@ id. Measured: the level hint `asstvb40` (5.95 s) streams and ends.
 Not yet: bank sound effects and music (milestones 2, 4 to 7); real-time audio
 in Flycast is choppy because a frame takes about 2 s there.
 
+
+### Where a frame goes (Flycast, 3177 of 3177, 2026-11-10)
+
+`dc_level_frame_timing` (level_draw.c) times each draw stage and the GOAL
+frame between draws with the TMU. Over 184 frames, before any change:
+
+| Stage | Average |
+| --- | --- |
+| GOAL frame between two draws (median) | 1,692 ms |
+| Instances, punch-through list | 83 ms (skinned models 20 ms of all lists) |
+| Render done | 13 ms |
+| Skinning, cells, terrain window | 9, 6, 6 ms |
+| Instances, opaque list | 8 ms |
+
+The draw is about 115 ms. Most of the 2 s frame was GOAL. A Grok review
+traced it, and the code confirms it: `dc_goal_code_entry` walked and checked
+every record of the code registry, several thousand, for each lookup. Fiber
+steps, stack calls and main-thread starts make hundreds of lookups a frame.
+The level ELF now turns on a lookup cache for its display frames
+(`dc_goal_code_cache_enabled`). The cache is keyed by the registry head and
+count; a hit re-checks its one record, the function type and the symbol
+binding. With the cache on, the GOAL frame median is 404 ms and the
+framebuffer is unchanged. The cache stays off elsewhere: the registry tests
+expect a corrupt record anywhere in the chain to fail every lookup closed.
+
+The instance pass is almost all punch-through: 43,444 triangles visited and
+10,134 submitted a frame, against 729 opaque. Each proto is transformed only in
+its own list, so the first gain there is fewer triangles (LOD and draw
+distance), not a merged pass.

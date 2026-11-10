@@ -32,6 +32,8 @@ typedef struct { uint32_t entry,bytes,symbol; } dc_goal_code_entry_info;
  * must be pinned and quiescent; out is separate caller-owned C storage.
  * Clears out on failure. Successful lookup never executes the function. */
 int dc_goal_code_entry(dc_goal_runtime *rt,uint32_t entry,dc_goal_code_entry_info *out);
+/* Nonzero: dc_goal_code_entry remembers where entries were found (goal_module.c). */
+extern int dc_goal_code_cache_enabled;
 /* Optional read-only refusal receipt (AI-assisted), ISC. Same authentication
  * and error contract as code_entry; never accepts a damaged record. */
 enum dc_goal_code_refusal {
