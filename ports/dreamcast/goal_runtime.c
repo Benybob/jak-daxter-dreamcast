@@ -290,15 +290,43 @@ int dc_goal_bind_fixed(dc_goal_runtime *rt,uint32_t offset,const char *name,uint
   }
   return set_slot(rt,symbol,name,value);
 }
+/* While dc_goal_code_cache_enabled (goal_module.c) is set, a found symbol is
+ * remembered by the name's address. A hit is the slot whose own name is still
+ * that string, so a stack buffer reused for another name, or a rolled-back
+ * table, misses and takes the full lookup. The level ELF's frames look names
+ * up thousands of times each (process status, *kernel-context*, ...). */
+int dc_goal_code_cache_enabled;  /* declared in goal_module.h */
+enum {FIND_CACHE=256};
+static struct {const dc_goal_runtime *rt;const char *name;uint32_t slot;} find_cache[FIND_CACHE];
+static unsigned find_cache_index(const char *name){uintptr_t p=(uintptr_t)name;return (unsigned)((p>>2)^(p>>10))&(FIND_CACHE-1u);}
+static uint32_t find_cached(dc_goal_runtime *rt,const char *name) {
+  unsigned i;const char *old;
+  if (!dc_goal_code_cache_enabled || !rt || !name) return 0;
+  i=find_cache_index(name);
+  if (find_cache[i].rt!=rt || find_cache[i].name!=name) return 0;
+  old=dc_goal_symbol_name(rt,find_cache[i].slot);
+  if (!old || strcmp(old,name)) { find_cache[i].rt=NULL; rt->error=DC_GOAL_OK; return 0; }
+  return find_cache[i].slot;
+}
+static void find_remember(dc_goal_runtime *rt,const char *name,uint32_t slot) {
+  unsigned i;
+  if (!dc_goal_code_cache_enabled || !slot) return;
+  i=find_cache_index(name);find_cache[i].rt=rt;find_cache[i].name=name;find_cache[i].slot=slot;
+}
 uint32_t dc_goal_find(dc_goal_runtime *rt,const char *name) {
-  uint32_t slot;
+  uint32_t slot,result;
   if (rt) rt->error=DC_GOAL_OK;
-  return find_slot(rt,name,&slot);
+  if ((result=find_cached(rt,name))) return result;
+  result=find_slot(rt,name,&slot);
+  find_remember(rt,name,result);
+  return result;
 }
 uint32_t dc_goal_intern(dc_goal_runtime *rt,const char *name) {
   uint32_t slot,result;
   if (rt) rt->error=DC_GOAL_OK;
+  if ((result=find_cached(rt,name))) return result;
   result=find_slot(rt,name,&slot);
+  find_remember(rt,name,result);
   if (result) return result;
   if (rt && rt->error!=DC_GOAL_OK) return 0;
   if (!slot) return fail(rt,DC_GOAL_SYMBOL_TABLE_FULL);

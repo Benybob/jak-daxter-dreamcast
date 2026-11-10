@@ -21,7 +21,7 @@ static int code_error(dc_goal_runtime *rt,enum dc_goal_error error) {
  * looks up hundreds of entries a frame in a chain of thousands. Off unless a
  * runner turns it on (dc_goal_code_cache_enabled): the registry tests expect
  * any corrupt record anywhere in the chain to fail every lookup closed. */
-int dc_goal_code_cache_enabled;
+/* dc_goal_code_cache_enabled is defined in goal_runtime.c (its find cache) */
 enum {CODE_CACHE=256};
 static struct {const dc_goal_runtime *rt;uint32_t head,count,at;code_record record;} code_cache[CODE_CACHE];
 static unsigned code_cache_slot(uint32_t entry){return (entry>>2)&(CODE_CACHE-1u);}
