@@ -687,3 +687,12 @@ caches, so cam-string's extra work ran at one full code-registry walk per
 call. With the caches on for the player frames (`arena_jak_player.c`), the
 suite passes 7652 of 7652 with the re-arm. The `#ifndef DC_ARENA_LIVE` guard
 is gone.
+
+Inside `current_process` (37 us a call, about 890 calls a frame, 2026-11-10
+profile): `dc_goal_process_heap_open` is 14 us a call (about 1,100 calls a
+frame), `context_fields` is 12 us (about 980), `dc_goal_pp_scope_resolve` is
+2 us, and `root_context` is under 1 us. Together these validations cost about
+30 ms of the 301 ms GOAL frame. The rest is GOAL code: `thread_resume` and fiber
+steps, which include it, are about 330 to 390 ms inclusive. The next frame-rate
+gains are in the game code paths (collision, the camera, actors), not in the
+bridge.
