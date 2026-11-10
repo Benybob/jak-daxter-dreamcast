@@ -91,7 +91,8 @@ static int decode_block(const unsigned char *b,int16_t *out){
   }
   return 1;
 }
-/* the next 16 bytes of the line, from the run buffer */
+/* the next 16 bytes of the line, from the run buffer; consumed only once
+ * decoded (consume_block), so a bad block is not skipped */
 static const unsigned char *next_block(void){
   if(audio_left<BLOCK || !wad)return NULL;
   if(run_at>=run_len){
@@ -99,9 +100,9 @@ static const unsigned char *next_block(void){
     if(fseek(wad,(long)audio_at,SEEK_SET) || fread(run,1,want,wad)!=want)return NULL;
     run_at=0;run_len=want;
   }
-  audio_at+=BLOCK;audio_left-=BLOCK;run_at+=BLOCK;
-  return run+run_at-BLOCK;
+  return run+run_at;
 }
+static void consume_block(void){audio_at+=BLOCK;audio_left-=BLOCK;run_at+=BLOCK;}
 static void *audio_data(snd_stream_hnd_t hnd,int bytes,int *got){
   int samples=0,want=bytes/2;
   (void)hnd;
@@ -113,7 +114,7 @@ static void *audio_data(snd_stream_hnd_t hnd,int bytes,int *got){
     }
     {const unsigned char *b=next_block();
      if(!b || !decode_block(b,carry))break;
-     carry_at=0;}
+     consume_block();carry_at=0;}
   }
   if(samples<want)memset(pcm+samples,0,(size_t)(want-samples)*2u);  /* the line's end: silence */
   dc_level_sound_evidence.pcm_bytes+=(uint32_t)samples*2u;

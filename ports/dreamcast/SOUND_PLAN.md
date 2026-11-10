@@ -259,6 +259,9 @@ Fixes since the first level ELF stream (`level_sound.c`, from a Grok review, eac
 - Reading the game clock keeps a fault already on the runtime.
 
 - `strpos` and the line's end follow real time (the TMU), as the IOP's vblank count does, not the game's `base-frame-counter`, which runs ahead of the audio when frames are slow.
+- A block that fails to decode is no longer consumed and skipped.
+
+Still open: pause stops the KOS stream, which drops the PCM already queued, so a fraction of a second is skipped on continue. `PauseVAG` instead zeros the voice's pitch and volume and keeps its buffer. Doing that needs direct control of the AICA channel.
 
 ## Unconfirmed
 

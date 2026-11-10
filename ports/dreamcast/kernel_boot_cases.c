@@ -587,6 +587,7 @@ spawn_done:
   dc_arena_fly_report(description,description_bytes,rt.used,capacity);
 #endif
 done:
+  dc_goal_code_cache_enabled=0;  /* also on an early exit from the display frames */
 #undef CHECK
 #undef STEP
   return code_bytes;
