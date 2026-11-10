@@ -9,6 +9,7 @@
 #include "goal_art.h"
 #include "goal_main_start.h"
 #include "goal_bridge.h"
+#include "goal_module.h"
 #include "process_spans.h"
 #include "build/jak-art-disc/jak_art_sizes.h"
 #include <math.h>
@@ -215,6 +216,10 @@ int dc_arena_jak_player_run(dc_goal_runtime *rt,uint32_t cp){
   * *compact-actors* is true. */
  {uint32_t s=dc_goal_find(rt,"*compact-actors*");if(s)dc_goal_set_symbol(rt,s,rt->s7);}
 #endif
+ /* Lookups in the player frames hit the code and symbol caches (goal_module.c,
+  * goal_runtime.c): with the camera slave re-armed into cam-string, a frame
+  * makes thousands of them. */
+ dc_goal_code_cache_enabled=1;
  for(slot=0;slot<DC_JAK_PLAYER_FRAMES;++slot){
   dc_jak_player_frame row={0};dc_goal_pad_state sample;
   prev_resumes=dc_arena_jak_player_evidence.resumes;prev_pads=dc_arena_jak_player_evidence.pad_valid;
@@ -253,6 +258,7 @@ int dc_arena_jak_player_run(dc_goal_runtime *rt,uint32_t cp){
  dc_arena_jak_evidence.pad_position_updates=dc_arena_jak_player_evidence.moving_changes;
  dc_arena_jak_player_evidence.phase=3;ok=1;
 done:
+ dc_goal_code_cache_enabled=0;
  dc_arena_jak_player_evidence.active=0;
  if(rt && rt->temporary<=rt->capacity && rt->used<=rt->capacity-rt->temporary){
   uint32_t available=rt->capacity-rt->temporary-rt->used;

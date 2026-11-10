@@ -667,3 +667,23 @@ The instance pass is almost all punch-through: 43,444 triangles visited and
 10,134 submitted a frame, against 729 opaque. Each proto is transformed only in
 its own list, so the first gain there is fewer triangles (LOD and draw
 distance), not a merged pass.
+
+After the find cache (2026-11-10), a timer profile of the bridge shows 22
+symbol lookups a frame (down from about 3,200). The GOAL frame median is
+301 ms. The rest is mostly the GOAL code that `thread_resume` and fiber steps
+run. `current_process` still costs about 31 ms a frame (35 us a call), and
+about one registry miss a frame costs 17 ms (a full walk).
+
+### The Jak ELF "stall" was slowness, and the event go re-arm is on everywhere (Flycast, 7652 of 7652, 2026-11-10)
+
+With the resume-time re-arm, the scripted Jak ELF stopped short of 7652 at
+the 300 s timeout. A re-arm log showed what is re-armed: the camera slave,
+into `cam-fixed` and then `cam-string` (a genuine `'change-state` go from the
+master), and Jak's trans go into `target-falling` (the arena has no floor). A
+KOS thread sampled the main thread's saved pc every few ms. The samples were
+spread over `dc_goal_code_entry_diagnose`, `dc_goal_type_of` and
+`dc_goal_resolve`, not one loop. The Jak ELF never turned on the lookup
+caches, so cam-string's extra work ran at one full code-registry walk per
+call. With the caches on for the player frames (`arena_jak_player.c`), the
+suite passes 7652 of 7652 with the re-arm. The `#ifndef DC_ARENA_LIVE` guard
+is gone.

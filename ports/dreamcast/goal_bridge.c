@@ -1583,15 +1583,9 @@ static uint64_t thread_resume(uint64_t thread) {
    * process other than the current one) re-armed this main thread with
    * set-to-run while its fiber was suspended; import the armed image again so
    * this resume runs enter-state (rearm_main). */
-#ifndef DC_ARENA_LIVE
-  /* Not in the scripted Jak ELF yet: there a genuine event go (going set) is
-   * re-imported and the run stalls inside the dispatcher at 7623 of 7652,
-   * likely a camera slave entering cam-string with no level geometry (the
-   * arena has none). Unresolved. */
   if(fiber && fiber->phase==DC_FIBER_SUSPENDED && fiber->main_import_self==(uintptr_t)fiber &&
      !dc_goal_fiber_current() && !execution_context)
     rearm_main(rt,fiber,0);
-#endif
   /* A dead process's imported fiber stays registered by thread address. When
    * dead-pool-heap carves a new process in the same memory, its armed main
    * thread has that address too: a spawned fiber that can no longer resume,
