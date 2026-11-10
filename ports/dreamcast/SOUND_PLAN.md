@@ -180,6 +180,23 @@ Fail: any assertion, any import outside the standard library, or a decoder that 
 
 ### 2. Bank directory, still silent
 
+Done (2026-11-10): `sbk_bank.py` and `tests/test_sbk_bank.py` (synthetic
+fixtures, standard library). Drafted by Grok from this plan, reviewed against
+`game/sound/989snd/loader.cpp`: `FileAttributes::Read` (type, count, offset and
+size pairs relative to the image) and `SFXBlock::ReadBlock` (magic, then
+version +4, flags +8, bank id +12, sound/grain/VAG counts +22/+24/+26,
+`VagDataSize` +40, `SRAMAllocSize` +44; 60-byte header, 64 from version 2).
+An `SBlk` directory may have more than two chunks, as `BankLoad` accepts.
+
+Measured on the 25 retail `.sbk` files (`iso_data/jak1/SBK`, read only): all
+parse; every one is `SBlk` version 1; the sample chunk equals `VagDataSize`; the
+name count equals the sound count. Sample bytes (SPU ADPCM; AICA is 14/16 of
+that): common 762,224, commonj 763,280, training 114,976, village1 286,256,
+beach 347,152, jungle 333,584, misty 321,888, ogre 353,536 (the largest level
+bank), village3 165,616, citadel 109,136. Worst resident set, common and the two
+largest level banks: 1,462,912 SPU bytes (common, ogre, beach), about 1,280,048 AICA bytes, plus the
+49,200-byte stream window: under the 2,047,952 milestone 6 allows.
+
 A host parser for one synthetic `.sbk`: a 2048-byte or 20480-byte name prefix, a chunk directory, an `SBlk`, and a sample chunk of the milestone 1 blocks. No `rpc-call` change.
 
 Pass: the parser returns the 16-byte names, the falloff word, and a sample span that `decode_vag` accepts. The 1022-count slot reads past 20480 and the 101-count slot reads past 2048.
@@ -233,6 +250,15 @@ Fail: flava does not change the segment, or a 17th music channel keys.
 Pass: the voice starts after the 48-byte header, the second page uses the other half, playback stops at the size field, and `*sound-iop-info*` would still see `nocd == 0` (`srpc.cpp` 488, `gsound.gc` 60–62).
 
 Fail: `nocd` or `dirtycd` becomes nonzero, or a page is written outside the 49200-byte window.
+
+Fixes since the first level ELF stream (`level_sound.c`, from a Grok review, each checked against the code):
+- A 16-byte block's 28 samples carry over the 4096-sample buffer edge; before, every full buffer ended with 8 samples of silence.
+- The wad is read 2 KiB at a time, not one seek and read per block.
+- Pause stops the KOS stream and continue restarts it where the decoder stopped, as `PauseVAG` silences the voice; before, the paused stream queued silence that played on resume.
+- A stop sets the stream id back to 1 (`StopVAG`), so `current-str-id` no longer returns a finished line.
+- Reading the game clock keeps a fault already on the runtime.
+
+Still open: `strpos` follows game time (`base-frame-counter`), not vblanks, so a slow frame moves it ahead of the samples queued.
 
 ## Unconfirmed
 

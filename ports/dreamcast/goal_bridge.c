@@ -1583,7 +1583,11 @@ static uint64_t thread_resume(uint64_t thread) {
    * process other than the current one) re-armed this main thread with
    * set-to-run while its fiber was suspended; import the armed image again so
    * this resume runs enter-state (rearm_main). */
-#ifndef DC_ARENA_LIVE  /* not yet in the scripted Jak ELF, which stalls at 7615 of 7652 with it */
+#ifndef DC_ARENA_LIVE
+  /* Not in the scripted Jak ELF yet: there a genuine event go (going set) is
+   * re-imported and the run stalls inside the dispatcher at 7623 of 7652,
+   * likely a camera slave entering cam-string with no level geometry (the
+   * arena has none). Unresolved. */
   if(fiber && fiber->phase==DC_FIBER_SUSPENDED && fiber->main_import_self==(uintptr_t)fiber &&
      !dc_goal_fiber_current() && !execution_context)
     rearm_main(rt,fiber,0);
@@ -1743,9 +1747,18 @@ static void rearm_main(dc_goal_runtime *rt,dc_goal_fiber *fiber,uint32_t trans) 
    if(st)memcpy(&state,st,4);
    if(nx)memcpy(&next,nx,4);
    if(!st || !nx || next==state || next==rt->s7 || !next){rt->error=prior;return;}}
+  /* and still pending: original enter-state sets process-mask going (bit 10,
+   * mask at +4) on entry and clears it only when it enters the new state on the
+   * main thread. next-state != state alone also holds for initialize-go
+   * leftovers and change-state-no-go field writes (camera slaves), and the
+   * GOAL header stays armed after every import, so pc cannot tell a new arming. */
+  {const unsigned char *m=dc_goal_resolve(rt,process+4,4);uint32_t mask=0;
+   if(m)memcpy(&mask,m,4);
+   if(!m || !(mask&0x400u)){rt->error=prior;return;}}
   rt->error=prior;
   if(!top || !boot || fiber->main_import_self!=(uintptr_t)fiber || fiber->phase!=DC_FIBER_SUSPENDED ||
      pc!=boot || sp!=base+bytes)return;
+  if(!dc_goal_fiber_ownership_check(fiber,rt)){rt->error=prior;return;}  /* before the old fiber is discarded */
   set_process_status(rt,process,"waiting-to-run");
   memcpy(top,&main,4);
   if(!dc_goal_main_thread_check(rt,process,reservation,main,base,bytes,1,boot)){

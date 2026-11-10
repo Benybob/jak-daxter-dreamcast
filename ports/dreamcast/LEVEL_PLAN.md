@@ -623,8 +623,10 @@ id. Measured: the level hint `asstvb40` (5.95 s) streams and ends.
   whose go re-arms the slave's main thread with set-to-run without the slave
   running. `thread_resume` now re-imports any suspended main fiber whose state
   change is pending (`rearm_main`, as after a trans hook). The slave is
-  `cam-string` from frame 12. Not in the scripted Jak ELF (`DC_ARENA_LIVE`) yet: with it that
-  suite stalls at 7615 of 7652, unexplained.
+  `cam-string` from frame 12. The test also requires process-mask `going`
+  (bit 10), which enter-state sets for a deferred go and clears on entering:
+  `next-state != state` alone matched change-state-no-go writes and stalled the
+  scripted Jak ELF at 7615 of 7652 (diagnosis by Grok, verified in gstate.gc).
 - **KOS heap.** KOS's break stops short of the end of RAM, so the heap was near
   full; the level's renderer slab is now 1 MiB (high water 921,824), the GOAL
   arena unchanged, returning 458,816 bytes to the KOS heap. The instance package
