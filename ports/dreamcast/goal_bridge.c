@@ -128,6 +128,36 @@ static int scope_resolve(dc_goal_runtime *rt,uint32_t *lexical) {
   scheduler_identity(rt,&context,&process,&bytes);
   return dc_goal_pp_scope_resolve(rt,context,process,bytes,&active_process_heap,lexical);
 }
+/* The level frames ask for the current process about 900 times each. While the
+ * lookup caches are on (dc_goal_code_cache_enabled), an answer that passed
+ * the whole check below is remembered with the three words that show it is
+ * still the answer: the value of *kernel-context*, the process's type tag
+ * and the context's current-process field. A hit compares those and the
+ * bridge's own bound context and heap; it does not repeat the process type's
+ * parent walk, the kernel-context schema or the process heap's field checks,
+ * which the next full check (any miss, and every bind) still makes. */
+static struct {
+  const dc_goal_runtime *rt;uint32_t context,process,bytes,type;
+  const unsigned char *cell,*tag,*current;
+} process_memo;
+static uint32_t memo_word(const unsigned char *p){uint32_t v;memcpy(&v,p,4);return v;}
+static int process_memo_hit(const dc_goal_runtime *rt) {
+  return process_memo.rt==rt && execution_context==process_memo.context &&
+    execution_heap.runtime==rt && execution_heap.process==process_memo.process &&
+    execution_heap.allocation_bytes==process_memo.bytes &&
+    active_process_heap.runtime==rt && active_process_heap.process==process_memo.process &&
+    active_process_heap.allocation_bytes==process_memo.bytes &&
+    memo_word(process_memo.cell)==process_memo.context && memo_word(process_memo.tag)==process_memo.type &&
+    memo_word(process_memo.current)==process_memo.process;
+}
+static void process_memo_store(dc_goal_runtime *rt,uint32_t symbol,const unsigned char *fields) {
+  const unsigned char *cell=dc_goal_resolve(rt,symbol,4),*tag=dc_goal_resolve(rt,execution_heap.process-4u,4);
+  process_memo.rt=NULL;
+  if(!cell || !tag)return;
+  process_memo.context=execution_context;process_memo.process=execution_heap.process;
+  process_memo.bytes=execution_heap.allocation_bytes;process_memo.type=memo_word(tag);
+  process_memo.cell=cell;process_memo.tag=tag;process_memo.current=fields+20;process_memo.rt=rt;
+}
 static uint64_t current_process(void) {
   dc_goal_runtime *rt=active_runtime;
   dc_goal_process_heap candidate;
@@ -137,6 +167,7 @@ static uint64_t current_process(void) {
   scoped=scope_resolve(rt,&lexical);
   if(scoped==DC_GOAL_PP_SCOPE_DENIED)return 0;
   if(scoped==DC_GOAL_PP_SCOPE_READY)return lexical; /* retain faults through cleanup */
+  if(dc_goal_code_cache_enabled && process_memo_hit(rt)){rt->error=DC_GOAL_OK;return process_memo.process;}
   if(!active_process_heap.runtime && root_context(rt,&root))return rt->s7; /* a retained fault stays */
   symbol=dc_goal_find(rt,"*kernel-context*");
   if(!execution_context || execution_heap.runtime!=rt ||
@@ -147,6 +178,7 @@ static uint64_t current_process(void) {
      !(fields=context_fields(rt,execution_context))) goto invalid;
   memcpy(&current,fields+20,4);
   if(current!=execution_heap.process) goto invalid;
+  if(dc_goal_code_cache_enabled)process_memo_store(rt,symbol,fields);
   rt->error=DC_GOAL_OK; return current;
 invalid:
   dc_goal_clear_process_context(rt); (DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT); return 0;
@@ -2220,13 +2252,18 @@ static uint64_t kset_language_native(uint64_t language){kernel_language=(uint32_
  * GOAL only mixes it into rand-vu, so a xorshift generator stands in). */
 /* kmachine.cpp __read-ee-timer: the 300 MHz EE cycle count since start,
  * ns * 3 / 10, from KOS's nanosecond clock. */
-static uint64_t read_ee_timer_native(void){
+static int clock_fixed;static uint64_t clock_fixed_ns;
+void dc_goal_clock_fix(uint64_t ns){clock_fixed=1;clock_fixed_ns=ns;}
+void dc_goal_clock_free(void){clock_fixed=0;}
+uint64_t dc_goal_clock_ns(void){
+  if(clock_fixed)return clock_fixed_ns;
 #ifdef __DREAMCAST__
-  return timer_ns_gettime64()*3u/10u;
+  return timer_ns_gettime64();
 #else
   return 0;
 #endif
 }
+static uint64_t read_ee_timer_native(void){return dc_goal_clock_ns()*3u/10u;}
 /* Kernel string->symbol (kscheme.cpp intern): the symbol a GOAL string names,
  * interned if new. Original initialize-skeleton-by-name finds *<name>-sg* so. */
 static uint64_t string_to_symbol_native(uint64_t string){

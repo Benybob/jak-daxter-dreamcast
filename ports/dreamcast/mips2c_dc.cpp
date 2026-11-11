@@ -132,10 +132,20 @@ Mips2C::LinkedFunctionTable Mips2C::gLinkedFunctionTable;
   assert_failed(expr, file, line);
 }
 
+static uint32_t g_callee_addr[sizeof dc_callees / sizeof dc_callees[0]];
+/* Each callee's symbol, found once: translated code makes hundreds of jalr
+ * calls a frame, and a name lookup for every callee not yet bound on each one
+ * was most of the level frame's symbol lookups. A name not yet interned is
+ * looked up again only after the symbol table grows. */
+static uint32_t g_callee_symbol[sizeof dc_callees / sizeof dc_callees[0]];
+static uint32_t g_callee_symbols_seen[sizeof dc_callees / sizeof dc_callees[0]];
 extern "C" unsigned dc_mips2c_install(dc_goal_runtime* rt) {
   unsigned i, linked = 0;
   if (!rt) return 0;
   g_rt = rt;
+  memset(g_callee_addr, 0, sizeof g_callee_addr);
+  memset(g_callee_symbol, 0, sizeof g_callee_symbol);
+  memset(g_callee_symbols_seen, 0, sizeof g_callee_symbols_seen);
   g_spad_symbol = dc_goal_intern(rt, "*fake-scratchpad-data*");
   for (i = 0; i < sizeof dc_links / sizeof dc_links[0]; ++i) dc_links[i]();
   for (i = 0; i < kEntries; ++i) linked += g_slots[i].exec != nullptr;
@@ -153,7 +163,6 @@ extern "C" uint32_t dc_mips2c_find(const char* name) {
  * address is cached once the symbol's value is an export entry named by that
  * symbol (the compiled function itself, not a stand-in bound in its place). */
 static uint64_t g_typed_calls;
-static uint32_t g_callee_addr[sizeof dc_callees / sizeof dc_callees[0]];
 static bool typed_callee(u32 addr, const u64* args, u64* result) {
   if (!g_rt) return false;
   for (unsigned i = 0; dc_callees[i].name; ++i) {
@@ -161,8 +170,13 @@ static bool typed_callee(u32 addr, const u64* args, u64* result) {
     if (!g_callee_addr[i]) {
       enum dc_goal_error prior = g_rt->error;
       dc_goal_code_entry_info info;
-      uint32_t symbol = dc_goal_find(g_rt, c->name);
+      if (!g_callee_symbol[i] && g_callee_symbols_seen[i] != g_rt->symbol_count + 1u) {
+        g_callee_symbol[i] = dc_goal_find(g_rt, c->name);
+        g_callee_symbols_seen[i] = g_rt->symbol_count + 1u;
+      }
+      uint32_t symbol = g_callee_symbol[i];
       uint32_t value = symbol ? dc_goal_symbol_value(g_rt, symbol) : 0;
+      if (symbol && g_rt->error != DC_GOAL_OK) g_callee_symbol[i] = 0;  /* no longer a symbol */
       if (value && value == addr && dc_goal_code_entry(g_rt, value, &info) && info.symbol == symbol)
         g_callee_addr[i] = value;
       g_rt->error = prior;

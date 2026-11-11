@@ -187,8 +187,17 @@ void dc_instance_to_view(const float b[10],const dc_instance_camera *c,const flo
 }
 
 #ifdef _arch_dreamcast
-static pvr_vertex_t commands[96] __attribute__((aligned(32)));
-static void flush(unsigned *n) {if(*n){pvr_prim(commands,*n*sizeof(*commands));*n=0;}}
+/* Vertices and headers go straight to the TA through the store queues (KOS
+ * direct rendering): each is written once, at its queue address, and flushed.
+ * A buffer of 96 vertices handed to pvr_prim wrote every vertex twice; the
+ * copy and pvr_prim's locking were a tenth of the level's draw. The caller
+ * has a list open (pvr_list_begin), which holds the queues. */
+static pvr_dr_state_t dr;
+static void header_out(const void *header) {
+ uint32_t *out=(uint32_t *)(void *)pvr_dr_target(dr);const uint32_t *in=header;unsigned i;
+ for(i=0;i<8;++i)out[i]=in[i];
+ pvr_dr_commit(out);
+}
 static pvr_poly_hdr_t colour_hdr __attribute__((aligned(32)));
 /* The instance matrix and the camera as one 4x4 for XMTRX (column-major,
  * matrix_t[column][row]): view = B (M p + t - target) + (0, 0, distance), with
@@ -232,9 +241,10 @@ static uint32_t clearly_outside(float x,float y,float z) {
 }
 static int draw(const dc_instance_package *pkg,const dc_instance_camera *cam,float (*view)[3],dc_instance_stats *st,
                 int list,const dc_instance_material *materials,uint32_t material_count) {
- float b[10];uint32_t i;unsigned queued=0;const void *current=NULL;pvr_poly_cxt_t cxt;int counting=list==PVR_LIST_OP_POLY;
+ float b[10];uint32_t i;const void *current=NULL;pvr_poly_cxt_t cxt;int counting=list==PVR_LIST_OP_POLY;
  if(!pkg||!cam||!view||!st||!(cam->distance>=0)||!(cam->draw_distance>0))return 0;
  dc_instance_view(cam,b);
+ pvr_dr_init(&dr);
  pvr_poly_cxt_col(&cxt,PVR_LIST_OP_POLY);cxt.gen.culling=PVR_CULLING_NONE;pvr_poly_compile(&colour_hdr,&cxt);
  for(i=0;i<pkg->instance_count;++i){
   const dc_instance *in=&pkg->instances[i];
@@ -264,7 +274,7 @@ static int draw(const dc_instance_package *pkg,const dc_instance_camera *cam,flo
     if(r1>r0){r0=r1;}
     if(r2>r0){r0=r2;}
     if(dc_instance_sphere_outside(c,s[3]*sqrtf(r0)*0.25f/* DC_RENDER_WORLD_SCALE */)){st->triangles+=p->indices/3u;++st->sphere_culled;continue;}}
-   if(header!=current){flush(&queued);pvr_prim(header,sizeof(pvr_poly_hdr_t));current=header;}
+   if(header!=current){header_out(header);current=header;}
    /* the instance's matrix only once a geometry of it is drawn in this list */
    if(!composed){compose(b,cam,m,mv);if(!pkg->quant)mat_load(&mv);composed=1;}
    /* every vertex through XMTRX: one ftrv each. DCI3 folds the geometry's
@@ -306,10 +316,10 @@ static int draw(const dc_instance_package *pkg,const dc_instance_camera *cam,flo
      float area=(c1->px-c0->px)*(c2->py-c0->py)-(c1->py-c0->py)*(c2->px-c0->px);
      if(area==0){++st->culled;continue;}
      if(single&&area<0){++st->culled;++st->back_faces;continue;}
-     for(j=0;j<3;++j){const struct vertex_cache *c=j==0?c0:j==1?c1:c2;pvr_vertex_t *v=&commands[queued++];
+     for(j=0;j<3;++j){const struct vertex_cache *c=j==0?c0:j==1?c1:c2;pvr_vertex_t *v=pvr_dr_target(dr);
       v->flags=j==2?PVR_CMD_VERTEX_EOL:PVR_CMD_VERTEX;v->x=c->px;v->y=c->py;v->z=c->inv;
-      v->u=c->u;v->v=c->v;v->argb=c->argb;v->oargb=0;}
-     ++st->submitted;if(queued==96)flush(&queued);
+      v->u=c->u;v->v=c->v;v->argb=c->argb;v->oargb=0;pvr_dr_commit(v);}
+     ++st->submitted;
      continue;
     }
     for(j=0;j<3;++j){const float *v=view[ix[j]];float u=0,w=0;uint32_t argb;
@@ -326,7 +336,7 @@ static int draw(const dc_instance_package *pkg,const dc_instance_camera *cam,flo
       inside=z>=DC_SCENE_NEAR&&z<=4e6f&&390.f*x<=319.9f*z&&-390.f*x<=319.9f*z&&390.f*y<=259.9f*z&&-390.f*y<=219.9f*z;}
      if(inside){memcpy(poly,input,sizeof input);n=3;}
      else n=dc_render_clip_viewport(input,poly);}
-    if(n<0){++st->invalid;flush(&queued);return 0;}
+    if(n<0){++st->invalid;return 0;}
     if(n<3){++st->culled;continue;}
     if(front<3)++st->near_clipped;
     for(j=0;j<(unsigned)n;++j){float inv=1.f/poly[j].z;px[j]=320.f+390.f*poly[j].x*inv;py[j]=260.f-390.f*poly[j].y*inv;pz[j]=inv;}
@@ -335,15 +345,14 @@ static int draw(const dc_instance_package *pkg,const dc_instance_camera *cam,flo
      {float area=(px[fan]-px[0])*(py[fan+1]-py[0])-(py[fan]-py[0])*(px[fan+1]-px[0]);
       if(area==0){++st->culled;continue;}
       if(single&&area<0){++st->culled;++st->back_faces;continue;}}
-     for(j=0;j<3;++j){unsigned q=ids[j];pvr_vertex_t *v=&commands[queued++];
+     for(j=0;j<3;++j){unsigned q=ids[j];pvr_vertex_t *v=pvr_dr_target(dr);
       v->flags=j==2?PVR_CMD_VERTEX_EOL:PVR_CMD_VERTEX;v->x=px[q];v->y=py[q];v->z=pz[q];
-      v->u=poly[q].u;v->v=poly[q].v;v->argb=poly[q].argb;v->oargb=0;}
-     ++st->submitted;if(queued==96)flush(&queued);
+      v->u=poly[q].u;v->v=poly[q].v;v->argb=poly[q].argb;v->oargb=0;pvr_dr_commit(v);}
+     ++st->submitted;
     }
    }
   }
  }
- flush(&queued);
  return 1;
 }
 int dc_instance_draw(const dc_instance_package *pkg,const dc_instance_camera *cam,float (*view)[3],dc_instance_stats *st) {

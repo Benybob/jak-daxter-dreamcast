@@ -22,22 +22,37 @@ static int code_error(dc_goal_runtime *rt,enum dc_goal_error error) {
  * runner turns it on (dc_goal_code_cache_enabled): the registry tests expect
  * any corrupt record anywhere in the chain to fail every lookup closed. */
 /* dc_goal_code_cache_enabled is defined in goal_runtime.c (its find cache) */
-enum {CODE_CACHE=256};
-static struct {const dc_goal_runtime *rt;uint32_t head,count,at;code_record record;} code_cache[CODE_CACHE];
-/* function entries are 16-byte aligned: index from bit 4 up, folded */
-static unsigned code_cache_slot(uint32_t entry){return ((entry>>4)^(entry>>12))&(CODE_CACHE-1u);}
+/* 256 sets of two ways, the most recent first. A miss walks the whole chain
+ * (15 ms in the level ELF), and which entries share a set depends on where the
+ * arena lies, which moves with the ELF's size: with one way a set, two fiber
+ * entries that alternate could evict each other every frame in one build and
+ * not in the next. */
+enum {CODE_SETS=256};
+typedef struct {const dc_goal_runtime *rt;uint32_t head,count,at;code_record record;} code_cache_entry;
+static code_cache_entry code_cache[CODE_SETS][2];
+/* function entries are 16-byte aligned: a multiplicative hash of bit 4 up */
+static unsigned code_cache_set(uint32_t entry){return ((entry>>4)*2654435761u)>>24;}
 static int code_cache_hit(dc_goal_runtime *rt,uint32_t entry,dc_goal_code_entry_info *out) {
-  const code_record *c;const void *p;unsigned slot=code_cache_slot(entry);
-  if(code_cache[slot].rt!=rt || code_cache[slot].head!=rt->code_registry_head ||
-     code_cache[slot].count!=rt->code_registry_count || code_cache[slot].record.entry!=entry)return 0;
-  c=&code_cache[slot].record;
-  if(!(p=dc_goal_resolve(rt,code_cache[slot].at,sizeof *c)) || memcmp(p,c,sizeof *c) ||
+  code_cache_entry *set=code_cache[code_cache_set(entry)],*e=NULL;const code_record *c;const void *p;unsigned way;
+  for(way=0;way<2;++way){e=&set[way];
+    if(e->rt==rt && e->head==rt->code_registry_head && e->count==rt->code_registry_count && e->record.entry==entry)break;}
+  if(way==2)return 0;
+  c=&e->record;
+  if(!(p=dc_goal_resolve(rt,e->at,sizeof *c)) || memcmp(p,c,sizeof *c) ||
      !dc_goal_resolve(rt,c->entry-4u,c->bytes+4u) || dc_goal_type_of(rt,c->symbol)!=rt->symbol_type ||
      dc_goal_type_of(rt,entry)!=rt->function_type || dc_goal_symbol_value(rt,c->symbol)!=entry){
-    code_cache[slot].rt=NULL;rt->error=DC_GOAL_OK;return 0;}
+    e->rt=NULL;rt->error=DC_GOAL_OK;return 0;}
   out->entry=c->entry;out->bytes=c->bytes;out->symbol=c->symbol;
+  if(way){code_cache_entry t=set[0];set[0]=set[1];set[1]=t;}
   rt->error=DC_GOAL_OK;return 1;
 }
+static void code_cache_store(dc_goal_runtime *rt,uint32_t entry,uint32_t at,const code_record *record) {
+  code_cache_entry *set=code_cache[code_cache_set(entry)];
+  if(set[0].rt!=rt || set[0].record.entry!=entry)set[1]=set[0];
+  set[0].rt=rt;set[0].head=rt->code_registry_head;set[0].count=rt->code_registry_count;
+  set[0].at=at;set[0].record=*record;
+}
+volatile uint32_t dc_goal_code_walks;  /* whole-chain walks, for a runner's timing report */
 int dc_goal_code_entry_diagnose(dc_goal_runtime *rt,uint32_t entry,dc_goal_code_entry_info *out,
                                 dc_goal_code_diagnostic *diagnostic) {
   uint32_t at,i,previous_entry=UINT32_MAX,found_at=0;
@@ -56,6 +71,7 @@ int dc_goal_code_entry_diagnose(dc_goal_runtime *rt,uint32_t entry,dc_goal_code_
   if(rt->used>rt->capacity || rt->code_registry_count>rt->used/sizeof(code_record))
     REFUSE(DC_GOAL_BAD_MODULE,DC_CODE_RUNTIME);
   at=rt->code_registry_head;
+  ++dc_goal_code_walks;
   for(i=0;i<rt->code_registry_count;++i) {
     code_record record;
     const void *p;
@@ -98,9 +114,7 @@ int dc_goal_code_entry_diagnose(dc_goal_runtime *rt,uint32_t entry,dc_goal_code_
      dc_goal_symbol_value(rt,found.symbol)!=entry)
     REFUSE(DC_GOAL_BAD_FUNCTION,DC_CODE_FUNCTION);
   out->entry=found.entry;out->bytes=found.bytes;out->symbol=found.symbol;
-  if(found_at && dc_goal_code_cache_enabled){unsigned slot=code_cache_slot(entry);
-    code_cache[slot].rt=rt;code_cache[slot].head=rt->code_registry_head;code_cache[slot].count=rt->code_registry_count;
-    code_cache[slot].at=found_at;code_cache[slot].record=found;}
+  if(found_at && dc_goal_code_cache_enabled)code_cache_store(rt,entry,found_at,&found);
   rt->error=DC_GOAL_OK;return 1;
 #undef REFUSE
 }

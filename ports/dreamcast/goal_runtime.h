@@ -7,7 +7,16 @@
 #define DC_GOAL_RUNTIME_H
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
 #include "goal_layout.h"
+/* KOS compiles with -fno-builtin, which makes every memcpy and memset a call
+ * into the C library, even the fixed 4-byte copies that read a GOAL word. In a
+ * level frame those calls were about 15% of the game-logic time. The builtins
+ * expand the fixed sizes in line and still call the library for the rest. */
+#if defined(__GNUC__) && !defined(__cplusplus)
+#define memcpy(...) __builtin_memcpy(__VA_ARGS__)
+#define memset(...) __builtin_memset(__VA_ARGS__)
+#endif
 
 enum dc_goal_error {
   DC_GOAL_OK=0,DC_GOAL_BAD_ARGUMENT,DC_GOAL_OUT_OF_MEMORY,DC_GOAL_BOUNDS,
@@ -47,7 +56,19 @@ int dc_goal_init(dc_goal_runtime *rt,void *memory,uint32_t capacity,uint32_t vir
 #ifdef __DREAMCAST__
 int dc_goal_init_native(dc_goal_runtime *rt,void *memory,uint32_t capacity);
 #endif
-void *dc_goal_resolve(dc_goal_runtime *rt,uint32_t address,uint32_t size);
+/* The checked address of [address, address+size) in the arena, its temporary
+ * region, the extension or the resident region; NULL and DC_GOAL_BOUNDS
+ * otherwise. The arena's allocated part is tested in line: a level frame
+ * resolves about 70,000 addresses, nearly all of them there. */
+void *dc_goal_resolve_other(dc_goal_runtime *rt,uint32_t address,uint32_t size);
+static inline void *dc_goal_resolve(dc_goal_runtime *rt,uint32_t address,uint32_t size) {
+  if (rt && rt->memory && rt->temporary<=rt->capacity && rt->used<=rt->capacity-rt->temporary &&
+      address>=rt->base) {
+    uint32_t offset=address-rt->base;
+    if (offset<=rt->used && size<=rt->used-offset) return rt->memory+offset;
+  }
+  return dc_goal_resolve_other(rt,address,size);
+}
 uint32_t dc_goal_alloc(dc_goal_runtime *rt,uint32_t bytes);
 /* Zeroed 16-byte-aligned memory below the arena's top, released all at once by
  * dc_goal_release_temporary. Ordinary allocations stop below it. */

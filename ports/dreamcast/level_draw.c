@@ -13,6 +13,7 @@
 #include <string.h>
 #include <zlib.h>
 #include "goal_runtime.h"
+#include "goal_module.h"
 #include "render_base.h"
 #include "render_block_cache.h"
 #include "instance_cells.h"
@@ -43,12 +44,13 @@ volatile struct {
  * skinned models' share of 7-9 (counted in both), 14 the kernel-dispatcher
  * call alone (dc_level_time_dispatch, part of 12). frame_us is
  * stages 0-11 of each of the first 96 draw frames, goal_us stage 12.
- * --dump dc_level_frame_timing 920 */
+ * --dump dc_level_frame_timing 1112 */
 enum {TIME_STAGES=15,TIME_FRAMES=96};
 volatile struct {
  uint32_t frames,pad;uint32_t sum_us[TIME_STAGES],max_us[TIME_STAGES];
  uint32_t frame_us[TIME_FRAMES],goal_us[TIME_FRAMES];
  uint32_t submitted[3],triangles[3];  /* instance triangles per list, summed */
+ uint16_t code_walks[TIME_FRAMES];    /* code-registry walks in each GOAL frame (goal_module.c) */
 } dc_level_frame_timing;
 static uint64_t time_at,time_frame_start,time_last_end;
 static void time_stage(unsigned stage){
@@ -220,13 +222,16 @@ int dc_level_draw_frame(dc_goal_runtime *rt){
  ok&=pvr_scene_finish()==0;
  dc_level_models_end_frame();
  CHECK(ok&&base.invalid==0&&inst.invalid==0,1,"level draw frame submitted without invalid geometry");
- CHECK(pvr_wait_ready(),0,"level draw frame TA complete");
+ /* No wait for the TA or the render here: they finish while the next GOAL
+  * frame runs, and the next draw waits for the PVR before its scene (stage
+  * 6). Waiting here cost about 13 ms of every frame. */
  time_stage(10);
- CHECK(pvr_wait_render_done(),0,"level draw frame rendered");
  time_stage(11);
  {uint32_t n=dc_level_frame_timing.frames++,goal=time_last_end?(uint32_t)(time_frame_start-time_last_end):0;
   if(time_last_end){dc_level_frame_timing.sum_us[12]+=goal;if(goal>dc_level_frame_timing.max_us[12])dc_level_frame_timing.max_us[12]=goal;}
-  if(n<TIME_FRAMES){dc_level_frame_timing.frame_us[n]=(uint32_t)(time_at-time_frame_start);dc_level_frame_timing.goal_us[n]=goal;}
+  if(n<TIME_FRAMES){static uint32_t walks;
+   dc_level_frame_timing.frame_us[n]=(uint32_t)(time_at-time_frame_start);dc_level_frame_timing.goal_us[n]=goal;
+   dc_level_frame_timing.code_walks[n]=(uint16_t)(dc_goal_code_walks-walks);walks=dc_goal_code_walks;}
   time_last_end=time_at;}
  CHECK(pvr_get_stats(&stats),0,"level draw PVR stats");
  if((uint32_t)stats.vtx_buffer_used_max>dc_level_draw_metrics.max_vertex_bytes)

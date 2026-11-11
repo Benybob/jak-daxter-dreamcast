@@ -136,6 +136,14 @@ typedef uint64_t (*dc_goal_rpc_hook)(uint64_t port,uint64_t fno,uint64_t async,u
                                      uint64_t send_bytes,uint64_t recv,uint64_t recv_bytes);
 typedef uint64_t (*dc_goal_link_hook)(uint64_t data,uint64_t name,uint64_t length,uint64_t heap,uint64_t flags);
 extern dc_goal_rpc_hook dc_goal_rpc_handler;
+/* The clock GOAL sees (__read-ee-timer, from which display-frame-start takes
+ * its time ratio) and the dialogue stream's position follows: KOS's
+ * nanosecond clock, or the value a runner fixes. With a fixed clock stepped
+ * once a frame, what the game does in a frame does not depend on how long the
+ * frames before it took, so two builds run the same frames. */
+void dc_goal_clock_fix(uint64_t ns);
+void dc_goal_clock_free(void);
+uint64_t dc_goal_clock_ns(void);
 extern dc_goal_link_hook dc_goal_link_begin_handler;
 /* The STR server (rpc-call port 4) and the C kernel's link (streamed art
  * chunks), both optional: without them port 4 answers error and link refuses. */

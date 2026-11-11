@@ -499,6 +499,14 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
        for(frame=0;frame<DISPLAY_FRAMES && rt.error==DC_GOAL_OK;++frame){
          dc_goal_error_site=0;dc_boot_display_frame=frame+1u;
 #ifdef DC_LEVEL_LOGIC  /* the level ELF */
+         /* A fixed clock, one step a frame, so the frames this runner checks
+          * and times are the same frames however long each one takes on the
+          * target or in an emulator. The step is 200 ms, about what a frame
+          * took in Flycast when these checks were written: display-frame-start
+          * reads it as its largest time ratio, 4, and the dialogue line the
+          * checks wait for ends within the run. (At 33 ms a frame, the ratio
+          * of 30 frames a second, the line does not end in 184 frames.) */
+         dc_goal_clock_fix(UINT64_C(3600000000000)+(uint64_t)(frame+1u)*200000000u);  /* from an hour, past any boot */
          {void dc_level_time_dispatch(uint32_t);uint64_t t0=timer_us_gettime64();
           dispatch();
           dc_level_time_dispatch((uint32_t)(timer_us_gettime64()-t0));}
@@ -513,6 +521,9 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
        }
        dc_boot_display_frames=completed;
        dc_goal_code_cache_enabled=0;
+#ifdef DC_LEVEL_LOGIC
+       dc_goal_clock_free();
+#endif
        CHECK(completed,DISPLAY_FRAMES,"original display-loop runs and suspends each frame, headless");
        CHECK(rt.error,DC_GOAL_OK,"display-loop frames leave no runtime fault");
 #ifdef DC_LEVEL_LOGIC

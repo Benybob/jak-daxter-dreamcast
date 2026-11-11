@@ -15,7 +15,7 @@ static uint32_t fail(dc_goal_runtime *rt,enum dc_goal_error error) {
   if (rt) rt->error=error;
   return 0;
 }
-void *dc_goal_resolve(dc_goal_runtime *rt,uint32_t address,uint32_t size) {
+void *dc_goal_resolve_other(dc_goal_runtime *rt,uint32_t address,uint32_t size) {
   uint32_t offset,low;
   if (!rt || !rt->memory || rt->temporary>rt->capacity || rt->used>rt->capacity-rt->temporary ||
       address<rt->base) { fail(rt,DC_GOAL_BOUNDS); return NULL; }
@@ -296,22 +296,30 @@ int dc_goal_bind_fixed(dc_goal_runtime *rt,uint32_t offset,const char *name,uint
  * table, misses and takes the full lookup. The level ELF's frames look names
  * up thousands of times each (process status, *kernel-context*, ...). */
 int dc_goal_code_cache_enabled;  /* declared in goal_module.h */
-enum {FIND_CACHE=256};
-static struct {const dc_goal_runtime *rt;const char *name;uint32_t slot;} find_cache[FIND_CACHE];
-static unsigned find_cache_index(const char *name){uintptr_t p=(uintptr_t)name;return (unsigned)((p>>2)^(p>>10))&(FIND_CACHE-1u);}
+/* 128 sets of two ways, the most recent first: which names share a set
+ * depends on where the linker put the strings, so one way a set made the
+ * misses differ from build to build. */
+enum {FIND_SETS=128};
+typedef struct {const dc_goal_runtime *rt;const char *name;uint32_t slot;} find_cache_entry;
+static find_cache_entry find_cache[FIND_SETS][2];
+static unsigned find_cache_index(const char *name){return (unsigned)(((uint32_t)(uintptr_t)name*2654435761u)>>25);}
 static uint32_t find_cached(dc_goal_runtime *rt,const char *name) {
-  unsigned i;const char *old;
+  find_cache_entry *set,*e=NULL;unsigned way;const char *old;
   if (!dc_goal_code_cache_enabled || !rt || !name) return 0;
-  i=find_cache_index(name);
-  if (find_cache[i].rt!=rt || find_cache[i].name!=name) return 0;
-  old=dc_goal_symbol_name(rt,find_cache[i].slot);
-  if (!old || strcmp(old,name)) { find_cache[i].rt=NULL; rt->error=DC_GOAL_OK; return 0; }
-  return find_cache[i].slot;
+  set=find_cache[find_cache_index(name)];
+  for (way=0;way<2;++way) { e=&set[way]; if (e->rt==rt && e->name==name) break; }
+  if (way==2) return 0;
+  old=dc_goal_symbol_name(rt,e->slot);
+  if (!old || strcmp(old,name)) { e->rt=NULL; rt->error=DC_GOAL_OK; return 0; }
+  if (way) { find_cache_entry t=set[0]; set[0]=set[1]; set[1]=t; }
+  return set[0].slot;
 }
 static void find_remember(dc_goal_runtime *rt,const char *name,uint32_t slot) {
-  unsigned i;
+  find_cache_entry *set;
   if (!dc_goal_code_cache_enabled || !slot) return;
-  i=find_cache_index(name);find_cache[i].rt=rt;find_cache[i].name=name;find_cache[i].slot=slot;
+  set=find_cache[find_cache_index(name)];
+  if (set[0].rt!=rt || set[0].name!=name) set[1]=set[0];
+  set[0].rt=rt;set[0].name=name;set[0].slot=slot;
 }
 uint32_t dc_goal_find(dc_goal_runtime *rt,const char *name) {
   uint32_t slot,result;

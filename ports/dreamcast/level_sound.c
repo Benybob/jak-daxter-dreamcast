@@ -63,7 +63,7 @@ static uint32_t be32(const unsigned char *p){return (uint32_t)p[0]<<24|(uint32_t
  * stream position once per real vblank (srpc.cpp), so the position follows
  * the audio actually played, not the game's own clock, which runs ahead of it
  * when frames are slow (set-time-ratios lets one frame count for up to 4). */
-static int64_t real_us(void){return (int64_t)timer_us_gettime64();}
+static int64_t real_us(void){return (int64_t)(dc_goal_clock_ns()/1000u);}
 static int load_dir(void){
   FILE *f;size_t n;
   if(dir_loaded)return dir_loaded>0;

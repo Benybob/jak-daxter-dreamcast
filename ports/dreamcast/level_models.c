@@ -49,7 +49,7 @@ static uint32_t scratch_verts;
 static uint32_t frame_triangles;
 static int frame_jak,frame_actor;
 static pvr_poly_hdr_t colour[3] __attribute__((aligned(32)));
-static pvr_vertex_t commands[96] __attribute__((aligned(32)));
+static pvr_dr_state_t dr;  /* direct rendering: vertices written at their store-queue address (instance_pass.c) */
 static float V[MAX_JOINTS+1][12];
 static uint32_t have[8];
 
@@ -266,14 +266,19 @@ static int joints(dc_goal_runtime *rt,model *m,uint32_t proc,const float b[10],c
  return 1;
 }
 
-static void flush(unsigned *n){if(*n){pvr_prim(commands,*n*sizeof *commands);*n=0;}}
+static void header_out(const void *header){
+ uint32_t *out=(uint32_t *)(void *)pvr_dr_target(dr);const uint32_t *in=header;unsigned i;
+ for(i=0;i<8;++i)out[i]=in[i];
+ pvr_dr_commit(out);
+}
 
 int dc_level_models_draw(dc_goal_runtime *rt,const dc_instance_camera *cam,int list){
  enum dc_goal_error prior=rt->error;int li=list_index(list);float b[10];unsigned e;
  if(li<0)return 0;
  dc_instance_view(cam,b);
+ pvr_dr_init(&dr);
  for(e=0;e<kept_count;++e){
-  kept *kp=&frame_kept[e];model *m=&models[kp->model];uint32_t i,start;unsigned queued=0;const void *current=NULL;
+  kept *kp=&frame_kept[e];model *m=&models[kp->model];uint32_t i,start;const void *current=NULL;
   if(!(m->lists&(1u<<li)))continue;
   if(!joints(rt,m,kp->proc,b,cam)){++dc_level_model_metrics.joint_misses;continue;}
   start=(uint32_t)timer_us_gettime64();
@@ -295,7 +300,7 @@ int dc_level_models_draw(dc_goal_runtime *rt,const dc_instance_camera *cam,int l
    const dsk_batch *bt=&m->batches[i];uint32_t k;int textured=bt->texture!=0xffffu;const void *header;
    if(m->batch_list[i]!=list)continue;
    header=textured?(const void *)&m->headers[i]:(const void *)&colour[li];
-   if(header!=current){flush(&queued);pvr_prim((void *)header,sizeof(pvr_poly_hdr_t));current=header;}
+   if(header!=current){header_out(header);current=header;}
    for(k=0;k<bt->count;k+=3){
     const uint16_t *ix=&m->ix[bt->first+k];dc_clip_vertex input[3],poly[DC_RENDER_CLIP_CAP];
     float px[DC_RENDER_CLIP_CAP],py[DC_RENDER_CLIP_CAP],pz[DC_RENDER_CLIP_CAP];unsigned j;int n,fan,inside=1;
@@ -304,20 +309,18 @@ int dc_level_models_draw(dc_goal_runtime *rt,const dc_instance_camera *cam,int l
      inside=inside&&s[2]>=DC_SCENE_NEAR&&s[2]<=4e6f&&390.f*s[0]<=319.9f*s[2]&&-390.f*s[0]<=319.9f*s[2]&&
             390.f*s[1]<=259.9f*s[2]&&-390.f*s[1]<=219.9f*s[2];}
     if(inside){memcpy(poly,input,sizeof input);n=3;}else n=dc_render_clip_viewport(input,poly);
-    if(n<0){++dc_level_model_metrics.invalid;flush(&queued);rt->error=prior;return 0;}
+    if(n<0){++dc_level_model_metrics.invalid;rt->error=prior;return 0;}
     if(n<3)continue;
     for(j=0;j<(unsigned)n;++j){float inv=1.f/poly[j].z;px[j]=320.f+390.f*poly[j].x*inv;py[j]=260.f-390.f*poly[j].y*inv;pz[j]=inv;}
     for(fan=1;fan<n-1;++fan){
      unsigned ids[3]={0,(unsigned)fan,(unsigned)fan+1};
-     for(j=0;j<3;++j){unsigned q=ids[j];pvr_vertex_t *pv=&commands[queued++];
+     for(j=0;j<3;++j){unsigned q=ids[j];pvr_vertex_t *pv=pvr_dr_target(dr);
       pv->flags=j==2?PVR_CMD_VERTEX_EOL:PVR_CMD_VERTEX;pv->x=px[q];pv->y=py[q];pv->z=pz[q];
-      pv->u=poly[q].u;pv->v=poly[q].v;pv->argb=poly[q].argb;pv->oargb=0;}
+      pv->u=poly[q].u;pv->v=poly[q].v;pv->argb=poly[q].argb;pv->oargb=0;pvr_dr_commit(pv);}
      ++frame_triangles;++dc_level_model_metrics.triangles;
-     if(queued==96)flush(&queued);
     }
    }
   }
-  flush(&queued);
  }
  if(frame_triangles>dc_level_model_metrics.max_triangles)dc_level_model_metrics.max_triangles=frame_triangles;
  rt->error=prior;return 1;
