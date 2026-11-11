@@ -52,11 +52,60 @@ static void code_cache_store(dc_goal_runtime *rt,uint32_t entry,uint32_t at,cons
   set[0].rt=rt;set[0].head=rt->code_registry_head;set[0].count=rt->code_registry_count;
   set[0].at=at;set[0].record=*record;
 }
+/* An index of the whole chain, built by the first walk made while the caches
+ * are on: the address of every record, hashed by its entry. A lookup then
+ * probes it, re-reads the one record it finds and makes the checks a walk makes
+ * of that record, so an entry seen for the first time (each new process's code)
+ * costs a probe, not a 15 ms walk. A registration or rollback changes the head
+ * or the count and the next walk rebuilds it. Without memory for it (four bytes
+ * a slot, at most two thirds full) lookups use the two-way cache above. */
+static struct {const dc_goal_runtime *rt;uint32_t head,count,slots,*at;int complete;} code_index;
+static uint32_t index_slot(uint32_t entry){return (((entry>>4)*2654435761u)>>8)&(code_index.slots-1u);}
+static int index_current(const dc_goal_runtime *rt) {
+  return code_index.complete && code_index.rt==rt && code_index.head==rt->code_registry_head &&
+         code_index.count==rt->code_registry_count;
+}
+static int index_begin(const dc_goal_runtime *rt) {
+  uint32_t need=1024u;
+  code_index.complete=0;
+  if(rt->code_registry_count>(1u<<20))return 0;
+  while(need<rt->code_registry_count+rt->code_registry_count/2u)need<<=1;
+  if(need!=code_index.slots || !code_index.at) {
+    free(code_index.at);code_index.at=malloc((size_t)need*sizeof *code_index.at);
+    code_index.slots=code_index.at?need:0;
+  }
+  if(!code_index.at)return 0;
+  memset(code_index.at,0,(size_t)need*sizeof *code_index.at);
+  return 1;
+}
+static void index_add(uint32_t entry,uint32_t at) {
+  uint32_t i=index_slot(entry);
+  while(code_index.at[i])i=(i+1u)&(code_index.slots-1u);
+  code_index.at[i]=at;
+}
+static int index_hit(dc_goal_runtime *rt,uint32_t entry,dc_goal_code_entry_info *out) {
+  uint32_t i,n;code_record record;const void *p;
+  if(!index_current(rt))return 0;
+  for(i=index_slot(entry),n=0;;i=(i+1u)&(code_index.slots-1u),++n) {
+    uint32_t at=code_index.at[i];
+    if(!at || n>=code_index.slots){rt->error=DC_GOAL_OK;return 0;}
+    if(!(p=dc_goal_resolve(rt,at,sizeof record))){code_index.complete=0;rt->error=DC_GOAL_OK;return 0;}
+    memcpy(&record,p,sizeof record);
+    if(record.entry==entry)break;
+  }
+  if(record.bytes<2u || (record.bytes&1u) || record.bytes>UINT32_MAX-4u ||
+     !dc_goal_resolve(rt,record.entry-4u,record.bytes+4u) || dc_goal_type_of(rt,record.symbol)!=rt->symbol_type ||
+     dc_goal_type_of(rt,entry)!=rt->function_type || dc_goal_symbol_value(rt,record.symbol)!=entry){
+    rt->error=DC_GOAL_OK;return 0;}  /* the walk decides and reports */
+  out->entry=record.entry;out->bytes=record.bytes;out->symbol=record.symbol;
+  rt->error=DC_GOAL_OK;return 1;
+}
 volatile uint32_t dc_goal_code_walks;  /* whole-chain walks, for a runner's timing report */
 int dc_goal_code_entry_diagnose(dc_goal_runtime *rt,uint32_t entry,dc_goal_code_entry_info *out,
                                 dc_goal_code_diagnostic *diagnostic) {
   uint32_t at,i,previous_entry=UINT32_MAX,found_at=0;
   code_record found={0,0,0,0};
+  int indexing=0;
   /* The walk overwrites this; a match must be restored after the chain tail. */
   dc_goal_code_diagnostic matched={0};
   int matched_saved=0;
@@ -72,6 +121,7 @@ int dc_goal_code_entry_diagnose(dc_goal_runtime *rt,uint32_t entry,dc_goal_code_
     REFUSE(DC_GOAL_BAD_MODULE,DC_CODE_RUNTIME);
   at=rt->code_registry_head;
   ++dc_goal_code_walks;
+  if(dc_goal_code_cache_enabled && !index_current(rt))indexing=index_begin(rt);
   for(i=0;i<rt->code_registry_count;++i) {
     code_record record;
     const void *p;
@@ -93,10 +143,13 @@ int dc_goal_code_entry_diagnose(dc_goal_runtime *rt,uint32_t entry,dc_goal_code_
       found=record;found_at=at;
       if(diagnostic) { matched=*diagnostic; matched_saved=1; }
     }
+    if(indexing)index_add(record.entry,at);
     previous_entry=record.entry;
     at=record.next;
   }
   if(at) REFUSE(DC_GOAL_BAD_MODULE,DC_CODE_CHAIN_TAIL);
+  if(indexing){code_index.rt=rt;code_index.head=rt->code_registry_head;code_index.count=rt->code_registry_count;
+    code_index.complete=1;}
   /* A resident temporary startup is an exact entry outside the chain. */
   if(!found.entry && entry==rt->temporary_entry && rt->temporary_symbol &&
      dc_goal_resolve(rt,entry-4u,rt->temporary_bytes+4u) &&
@@ -119,7 +172,8 @@ int dc_goal_code_entry_diagnose(dc_goal_runtime *rt,uint32_t entry,dc_goal_code_
 #undef REFUSE
 }
 int dc_goal_code_entry(dc_goal_runtime *rt,uint32_t entry,dc_goal_code_entry_info *out) {
-  if(dc_goal_code_cache_enabled && rt && rt->memory && out && entry && !(entry&3u) && code_cache_hit(rt,entry,out))return 1;
+  if(dc_goal_code_cache_enabled && rt && rt->memory && out && entry && !(entry&3u) &&
+     (index_hit(rt,entry,out) || code_cache_hit(rt,entry,out)))return 1;
   return dc_goal_code_entry_diagnose(rt,entry,out,NULL);
 }
 static const char *import_name(const char *symbol,enum import_kind *kind) {

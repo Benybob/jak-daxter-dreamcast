@@ -40,6 +40,7 @@ char g_assert[160];
 struct Slot {
   u64 (*exec)(void*);
   u32 stack;
+  bool skip;  /* dc_mips2c_skip: return 0 without running */
 };
 
 u64 to_bits(float f) {
@@ -70,6 +71,7 @@ u64 dc_run(unsigned index, const u64* args) {
     if (g_rt) g_rt->error = DC_GOAL_UNSUPPORTED_TRANSFER;
     return 0;
   }
+  if (slot.skip) return 0;
   ++g_calls;
   ExecutionContext c;
   memset(&c, 0, sizeof c);
@@ -188,6 +190,19 @@ static bool typed_callee(u32 addr, const u64* args, u64* result) {
     }
   }
   return false;
+}
+/* A runner that does not use a function's output turns it off by name: the
+ * call returns 0 at once. For functions whose only effect is data for a PS2
+ * renderer the runner has disabled (ocean-generate-verts fills *ocean-verts*
+ * for draw-ocean-texture). Returns whether the name is a registered function. */
+extern "C" int dc_mips2c_skip(const char* name, int skip) {
+  for (unsigned i = 0; i < kEntries; ++i) {
+    if (!strcmp(name, dc_entries[i].name)) {
+      g_slots[i].skip = skip != 0;
+      return 1;
+    }
+  }
+  return 0;
 }
 extern "C" uint32_t dc_mips2c_typed_calls(void) {
   return (uint32_t)g_typed_calls;

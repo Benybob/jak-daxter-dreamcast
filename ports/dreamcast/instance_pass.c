@@ -219,8 +219,8 @@ static void compose(const float b[10],const dc_instance_camera *cam,const float 
  * than the cache, take the clipper path. */
 #define VERTEX_CACHE 1024u
 static struct vertex_cache {float px,py,inv,u,v;uint32_t argb,inside,out;} vertex_cache[VERTEX_CACHE];
-/* inside: 1 within the viewport, 2 in front of the near plane and within the
- * guard band around it (the PVR clips those triangles to the screen itself). */
+/* inside: in front of the near plane and within the guard band around the
+ * viewport (the PVR clips those triangles to the screen itself). */
 /* The planes a vertex is clearly outside of, by dc_render_clip_viewport's own
  * single-precision test (render_frustum.c outside()): three corners outside one
  * plane are a triangle the clipper returns empty. A vertex the clipper would
@@ -259,7 +259,7 @@ static int draw(const dc_instance_package *pkg,const dc_instance_camera *cam,flo
   if(counting){++st->drawn_instances;++st->lod_instances[lod];}
   static matrix_t mv __attribute__((aligned(32)));
   for(g=first;g<first+count;++g){
-   const dc_instance_proto *p=&pkg->protos[g];const void *header=NULL;uint32_t k;int textured=0,single=0,cached;
+   const dc_instance_proto *p=&pkg->protos[g];const void *header=NULL;uint32_t k,all_out;int textured=0,single=0,cached;
    if(materials&&p->material<material_count&&materials[p->material].header){
     if(materials[p->material].list!=(uint32_t)list)continue;
     header=materials[p->material].header;textured=1;single=materials[p->material].single_sided!=0;
@@ -273,7 +273,7 @@ static int draw(const dc_instance_package *pkg,const dc_instance_camera *cam,flo
     r0=m[0]*m[0]+m[1]*m[1]+m[2]*m[2];r1=m[3]*m[3]+m[4]*m[4]+m[5]*m[5];r2=m[6]*m[6]+m[7]*m[7]+m[8]*m[8];
     if(r1>r0){r0=r1;}
     if(r2>r0){r0=r2;}
-    if(dc_instance_sphere_outside(c,s[3]*sqrtf(r0)*0.25f/* DC_RENDER_WORLD_SCALE */)){st->triangles+=p->indices/3u;++st->sphere_culled;continue;}}
+    if(dc_instance_sphere_outside(c,s[3]*__builtin_sqrtf(r0)*0.25f/* DC_RENDER_WORLD_SCALE */)){st->triangles+=p->indices/3u;++st->sphere_culled;continue;}}
    if(header!=current){header_out(header);current=header;}
    /* the instance's matrix only once a geometry of it is drawn in this list */
    if(!composed){compose(b,cam,m,mv);if(!pkg->quant)mat_load(&mv);composed=1;}
@@ -288,23 +288,21 @@ static int draw(const dc_instance_package *pkg,const dc_instance_camera *cam,flo
    }else
    for(k=0;k<p->verts;++k){const dc_instance_vertex *v=&pkg->verts[p->first_vert+k];float x=v->x,y=v->y,z=v->z;
     mat_trans_single3_nodiv(x,y,z);view[k][0]=x;view[k][1]=y;view[k][2]=z;}
-   cached=p->verts<=VERTEX_CACHE;
+   cached=p->verts<=VERTEX_CACHE;all_out=31u;
    if(cached)for(k=0;k<p->verts;++k){struct vertex_cache *c=&vertex_cache[k];const float x=view[k][0],y=view[k][1],z=view[k][2];
-    c->inside=z>=DC_SCENE_NEAR&&z<=4e6f&&390.f*x<=319.9f*z&&-390.f*x<=319.9f*z&&390.f*y<=259.9f*z&&-390.f*y<=219.9f*z;
-    c->out=0;
-    if(!c->inside&&pkg->cverts)c->out=clearly_outside(x,y,z);
-    if(!c->inside&&!(z>=DC_SCENE_NEAR&&z<=4e6f))continue;
-    {float inv=1.f/z;c->px=320.f+390.f*x*inv;c->py=260.f-390.f*y*inv;c->inv=inv;}
-    if(!c->inside){
-     if(!(c->px>=-1024.f&&c->px<=1664.f&&c->py>=-1024.f&&c->py<=1504.f))continue;
-     c->inside=2;
-    }
+    c->inside=0;c->out=0;
+    if(z>=DC_SCENE_NEAR&&z<=4e6f){float inv=1.f/z;c->px=320.f+390.f*x*inv;c->py=260.f-390.f*y*inv;c->inv=inv;
+     c->inside=c->px>=-1024.f&&c->px<=1664.f&&c->py>=-1024.f&&c->py<=1504.f;}
+    if(!c->inside){if(pkg->cverts)c->out=clearly_outside(x,y,z);all_out&=c->out;continue;}
+    all_out=0;
     c->u=0;c->v=0;
     if(pkg->cverts){const dc_instance_cvertex *s=&pkg->cverts[p->first_vert+k];
      c->argb=lighting?dc_instance_palette_colour(pkg,lighting,table,g,k):s->argb;
      if(textured){c->u=s->u*(1.f/2048.f);c->v=s->v*(1.f/2048.f);}}
     else{const dc_instance_vertex *s=&pkg->verts[p->first_vert+k];c->argb=s->argb;if(textured){c->u=s->u;c->v=s->v;}}
    }
+   /* every vertex clearly outside the same plane: no triangle of it is drawn */
+   if(cached&&all_out){st->triangles+=p->indices/3u;st->culled+=p->indices/3u;continue;}
    for(k=0;k<p->indices;k+=3){
     const uint16_t *ix=&pkg->indices[p->first_index+k];dc_clip_vertex input[3],poly[DC_RENDER_CLIP_CAP];
     unsigned j,front=0;int n,fan;float px[DC_RENDER_CLIP_CAP],py[DC_RENDER_CLIP_CAP],pz[DC_RENDER_CLIP_CAP];

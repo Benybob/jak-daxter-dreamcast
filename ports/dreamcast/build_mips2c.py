@@ -34,7 +34,11 @@ DEFAULT_FILES = ('collide_cache', 'sky_tng', 'collide_edge_grab', 'collide_mesh'
                  'tie_methods', 'draw_string', 'texture', 'time_of_day')
 # Built at -O2 over the -Os default: they carry most of the level frame's mips2c
 # time, and -O2 inlines the ExecutionContext accessors for about 41 KiB more code.
-HOT_FILES = ('collide_cache', 'sky_tng', 'ocean', 'ocean_vu0', 'sparticle', 'bones')
+HOT_FILES = ('collide_cache', 'sky_tng', 'ocean', 'ocean_vu0', 'sparticle', 'bones', 'collide_func', 'collide_probe')
+# Not joint: at -O2 it grows by 36 KiB, and with it the Jak ELF's GAME.CGO load runs out of arena.
+# -O2 alone. Raising GCC's inlining limits for these files (large-function-growth and the
+# rest) adds 41 KiB more, and with that the level ELF's code startups run out of memory.
+HOT_FLAGS = ['-O2']
 CPP_TOKEN = re.compile(r'"(?:\\.|[^"\\])*"|//[^\n]*|/\*.*?\*/', re.S)
 
 
@@ -319,7 +323,7 @@ def main():
     objects = []
     for source in sources + [port / 'mips2c_dc.cpp']:
         obj = out / (source.stem + '.o')
-        result = subprocess.run([str(args.gxx), *flags, *(['-O2'] if source.stem in HOT_FILES else []), '-c', str(source), '-o', str(obj)],
+        result = subprocess.run([str(args.gxx), *flags, *(HOT_FLAGS if source.stem in HOT_FILES else []), '-c', str(source), '-o', str(obj)],
                                 capture_output=True, text=True)
         if result.returncode:
             sys.exit(f'{source.name} failed:\n' + '\n'.join(result.stderr.splitlines()[:20]))

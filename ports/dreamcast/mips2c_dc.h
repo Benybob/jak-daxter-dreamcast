@@ -13,6 +13,7 @@ extern "C" {
 #endif
 /* Runs every built file's link() (symbol caches and registrations) against rt.
  * Returns the number of registered functions, 0 on failure. */
+int dc_mips2c_skip(const char *name,int skip);
 unsigned dc_mips2c_install(dc_goal_runtime *rt);
 /* The native entry for a registered name: a C function with the GOAL
  * function's own native signature (float arguments and result where GOAL has

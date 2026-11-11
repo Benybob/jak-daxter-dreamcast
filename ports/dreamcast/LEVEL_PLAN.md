@@ -787,6 +787,97 @@ What the steady frames spend (Flycast, after the renderers went off):
   what the game does in later frames. A change smaller than that effect cannot
   be timed this way; it needs a fixed-step benchmark. Not in the tree.
 
+### A fixed clock, and the frame from 195 ms to 122 ms (Flycast, 2811 of 2811, 2026-11-11)
+
+**The runner's clock is fixed.** `display-frame-start` takes its time ratio
+from `timer-count`, which the port reads from `__read-ee-timer`, and the
+dialogue position followed KOS's clock. Both now read `dc_goal_clock_ns`
+(goal_bridge.c), and the level runner sets it to 200 ms a frame
+(`dc_goal_clock_fix`), about what a frame took when the checks were written:
+the ratio is its largest, 4, and the dialogue line the checks wait for ends
+within the run. At 33 ms a frame (the ratio of 30 frames a second) that line
+does not end in 184 frames. The frames a run checks and times are now the same
+frames whatever each one costs. Timings below are the median of frames 40 to
+95 (`scratch` timing dump; the dump also carries each frame's code-registry
+walks).
+
+Even so, a build could time 5 to 25 ms slower than the one before it for no
+reason in the change. The cause was the lookup caches: one way a set, indexed
+by address, so which entries shared a slot moved with the ELF's layout, and a
+code-entry miss walks the registry (15 ms). Both caches are two-way now, and
+the first walk made with the caches on builds an index of every record
+(goal_module.c `code_index`, four bytes a record), so no steady frame walks.
+
+| Step | GOAL frame | Draw |
+| --- | --- | --- |
+| Start (fixed clock) | 122.6 ms | 71.9 ms |
+| `current_process` remembers its answer; `typed_callee` finds each symbol once; two-way caches | 96.9 ms | |
+| `dc_goal_resolve` tests the arena in line | 92.9 ms | 68.1 ms |
+| No wait for the TA and the render at the end of the draw | | |
+| Vertices written at their store-queue address | | 53.2 ms |
+| Ocean vertices off, MMI word copies, serial output off, more mips2c files at -O2 | 75.2 ms | |
+| Models: one skin and one projection per vertex | | 50.7 ms |
+| Instances: one projection per vertex, whole geometries rejected; the registry index | 75.3 ms | 47.9 ms |
+| Fixed 4-, 8- and 16-byte copies in line (`dc_goal_copy`) | 73.0 ms | 47.6 ms |
+| `joint` back at -Os (the Jak ELF's arena) | 74.2 ms | 47.6 ms |
+
+- **`current_process`** is asked for about 900 times a frame. While the
+  caches are on it remembers an answer that passed its whole check, with the
+  three words that show it is still the answer (the value of
+  `*kernel-context*`, the process's type tag and the context's
+  current-process field).
+- **`typed_callee`** (mips2c_dc.cpp) looked every typed callee not yet bound
+  up by name on every jalr, 865 lookups a frame. It finds each symbol once.
+- **`dc_goal_resolve`** was a fifth of the steady frame and the C library's
+  `memcpy` a seventh, both leaves called about 100,000 times a frame.
+  `dc_goal_resolve` now tests the arena's allocated part in line
+  (goal_runtime.h). For `memcpy`, `__builtin_memcpy` is no help: for SH-4, GCC
+  still calls the library for four bytes when it cannot see the alignment.
+  `dc_goal_copy` moves words when the size is 4, 8 or 16 and both addresses
+  are word aligned.
+- **The draw does not wait at its end.** The TA and the render finish during
+  the next GOAL frame, and the next draw waits for the PVR before its scene.
+  The two checks a frame that went with the waits are gone (3178 to 2810).
+- **Direct rendering.** Instance and model vertices and headers are written
+  at their store-queue address and flushed, not built in a buffer for
+  `pvr_prim` to copy.
+- **Models** skinned every vertex once per list and tested, divided and
+  clipped each triangle corner. A vertex is now skinned and projected once;
+  a triangle in front of the near plane and within the guard band goes to
+  the PVR whole, one clearly outside a plane is dropped, and the rest are
+  skinned again for the clipper.
+- **`ocean-generate-verts`** runs before `draw-ocean` tests the renderer's
+  enable. The runner turns the mips2c function off by name
+  (`dc_mips2c_skip`), with one check that it was found (2811).
+- **GOAL's console output** went to the serial port in every frame, about 4%
+  of the GOAL time; `dbgio` is off for the frames.
+- **mips2c at -O2** now covers `collide_func` and `collide_probe` as well.
+  Code size is the limit here, because the ELF's code and the GOAL arena
+  share the 16 MiB and the level's arena is 12,048,560 of 12,124,096 bytes
+  full. With `joint` at -O2 too, the Jak ELF's GAME.CGO load ran out of
+  arena at object 274. Raising GCC's inlining limits for the hot files adds
+  41 KiB, and with that the level's code startups fail. Neither is in the
+  tree.
+
+A frame is now about 122 ms, 8 frames a second, against about 195 ms this
+morning. What a steady GOAL frame still spends, by a sampling profile:
+
+- mips2c, about a third: collision (`collide_cache` methods 26, 27, 29 and
+  32, `moving_sphere_triangle_intersect`, `collide_probe_node`), joints,
+  particles, each instruction a call into an accessor where GCC did not
+  inline it.
+- Lowered GOAL code, about a quarter and rising as the rest shrinks. The
+  largest single part is `(method lookup-tag-idx res-lump)` and its callers
+  (`get-property-struct`, `entity-by-name`), about 15% of the frame: a
+  binary search over 64-bit names, in code that keeps every value in a stack
+  slot and calls a helper for a 64-bit shift.
+- The 1.2 KiB context each mips2c call clears, about 5%.
+
+Twenty frames a second is a 50 ms frame. The bridge's own checks are no
+longer where the time is; the next factor of two is in the code generator
+(registers for values, in-line shifts) and in the translated collision code,
+not in more caches.
+
 The instance pass (instance_pass.c) had three costs in the punch-through list:
 
 - Each triangle corner was tested against the viewport, divided and coloured

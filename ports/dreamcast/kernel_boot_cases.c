@@ -490,11 +490,16 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
         * frame. Joint math and the bones it writes do not depend on them. */
        {uint32_t vu1=dc_goal_find(&rt,"*vu1-enable-user-menu*"),tex=dc_goal_find(&rt,"*texture-enable-user-menu*");
         CHECK(vu1 && tex,1,"original renderer enables found");
-        if(vu1 && tex){dc_goal_set_symbol(&rt,vu1,0);dc_goal_set_symbol(&rt,tex,0);}}
+        if(vu1 && tex){dc_goal_set_symbol(&rt,vu1,0);dc_goal_set_symbol(&rt,tex,0);}
+        /* draw-ocean builds the ocean's vertices before it tests the enable. */
+        CHECK(dc_mips2c_skip("ocean-generate-verts",1),1,"ocean vertex generation found and turned off");}
 #endif
        before=word(&rt,entry(&rt,"*display*"),REAL_INTEGRAL_FRAMES);
 #ifdef DC_LEVEL_LOGIC  /* the level ELF */
        dc_goal_code_cache_enabled=1;  /* the display frames look entries up hundreds of times each */
+       /* GOAL's console output (format #t) goes to the serial port a byte at a
+        * time; in the frames it was about 4% of the GOAL time. */
+       dbgio_disable();
 #endif
        for(frame=0;frame<DISPLAY_FRAMES && rt.error==DC_GOAL_OK;++frame){
          dc_goal_error_site=0;dc_boot_display_frame=frame+1u;
@@ -523,6 +528,7 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
        dc_goal_code_cache_enabled=0;
 #ifdef DC_LEVEL_LOGIC
        dc_goal_clock_free();
+       dbgio_enable();
 #endif
        CHECK(completed,DISPLAY_FRAMES,"original display-loop runs and suspends each frame, headless");
        CHECK(rt.error,DC_GOAL_OK,"display-loop frames leave no runtime fault");

@@ -1,7 +1,20 @@
 /* PS2 MMI 128-bit integer operations for lowered SH-4 code (AI-assisted), ISC. */
 #include "goal_mmi.h"
 #include <string.h>
-typedef struct {uint8_t b[16];} q128;
+typedef union {uint8_t b[16];uint32_t w[4];} q128;
+/* Operands are the lowered code's stack slots and GOAL fields, nearly always
+ * word aligned: four word moves, not a library memcpy of 16 bytes (KOS
+ * compiles with -fno-builtin; these copies were 5% of a level frame). */
+typedef uint32_t __attribute__((may_alias)) word_alias;
+static void load16(q128 *d,const void *s){
+  if(!((uintptr_t)s&3u)){const word_alias *w=s;d->w[0]=w[0];d->w[1]=w[1];d->w[2]=w[2];d->w[3]=w[3];}
+  else{const uint8_t *p=s;unsigned i;for(i=0;i<16;++i)d->b[i]=p[i];}
+}
+static void store16(void *d,const q128 *s){
+  if(!((uintptr_t)d&3u)){word_alias *w=d;w[0]=s->w[0];w[1]=s->w[1];w[2]=s->w[2];w[3]=s->w[3];}
+  else{uint8_t *p=d;unsigned i;for(i=0;i<16;++i)p[i]=s->b[i];}
+}
+static void zero16(q128 *d){d->w[0]=d->w[1]=d->w[2]=d->w[3]=0;}
 static uint32_t w32(const q128 *v,unsigned i){return (uint32_t)v->b[4*i]|(uint32_t)v->b[4*i+1]<<8|(uint32_t)v->b[4*i+2]<<16|(uint32_t)v->b[4*i+3]<<24;}
 static void set32(q128 *v,unsigned i,uint32_t x){v->b[4*i]=(uint8_t)x;v->b[4*i+1]=(uint8_t)(x>>8);v->b[4*i+2]=(uint8_t)(x>>16);v->b[4*i+3]=(uint8_t)(x>>24);}
 static uint16_t w16(const q128 *v,unsigned i){return (uint16_t)(v->b[2*i]|v->b[2*i+1]<<8);}
@@ -18,9 +31,9 @@ static void unpack(q128 *out,const q128 *first,const q128 *second,unsigned size,
 static int8_t s8(uint8_t x){return (int8_t)x;}
 int dc_goal_mmi(uint32_t op,void *dst,const void *pa,const void *pb){
   q128 a,b,r;unsigned i,kind=op&0xffu,imm=op>>8;
-  memcpy(&a,pa,16);
-  if(pb)memcpy(&b,pb,16);else memset(&b,0,16);
-  memset(&r,0,16);
+  load16(&a,pa);
+  if(pb)load16(&b,pb);else zero16(&b);
+  zero16(&r);
   switch(kind){
   /* IR.cpp emits these _swapped: x86 operands (src2, src1). */
   case DC_MMI_PEXTLB:unpack(&r,&b,&a,1,0);break;
@@ -63,6 +76,6 @@ int dc_goal_mmi(uint32_t op,void *dst,const void *pa,const void *pb){
     break;
   default:return 0;
   }
-  memcpy(dst,&r,16);
+  store16(dst,&r);
   return 1;
 }

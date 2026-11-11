@@ -9,13 +9,24 @@
 #include <stdint.h>
 #include <string.h>
 #include "goal_layout.h"
-/* KOS compiles with -fno-builtin, which makes every memcpy and memset a call
- * into the C library, even the fixed 4-byte copies that read a GOAL word. In a
- * level frame those calls were about 15% of the game-logic time. The builtins
- * expand the fixed sizes in line and still call the library for the rest. */
+/* A fixed 4-, 8- or 16-byte copy between word-aligned addresses, in line: the
+ * copies that read and write GOAL words. For SH-4 GCC makes even
+ * __builtin_memcpy of four bytes a call into the C library when it cannot see
+ * the alignment, and in a level frame those calls were a tenth of the
+ * game-logic time. Anything else is the library's memcpy. */
 #if defined(__GNUC__) && !defined(__cplusplus)
-#define memcpy(...) __builtin_memcpy(__VA_ARGS__)
-#define memset(...) __builtin_memset(__VA_ARGS__)
+typedef uint32_t __attribute__((may_alias)) dc_goal_word_alias;
+static inline __attribute__((always_inline)) void *dc_goal_copy(void *d,const void *s,size_t n) {
+  if (__builtin_constant_p(n) && (n==4 || n==8 || n==16) && !(((uintptr_t)d|(uintptr_t)s)&3u)) {
+    dc_goal_word_alias *o=d;const dc_goal_word_alias *i=s;
+    o[0]=i[0];
+    if (n>=8) o[1]=i[1];
+    if (n==16) { o[2]=i[2];o[3]=i[3]; }
+    return d;
+  }
+  return memcpy(d,s,n);
+}
+#define memcpy(...) dc_goal_copy(__VA_ARGS__)
 #endif
 
 enum dc_goal_error {

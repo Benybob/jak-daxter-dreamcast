@@ -44,7 +44,13 @@ static model models[MAX_MODELS];
 static unsigned model_count;
 static kept frame_kept[MAX_KEPT];
 static unsigned kept_count;
+/* Per vertex of the model being drawn: the screen position (x, y, 1/z) when the
+ * vertex is in front of the near plane and within the guard band, else the
+ * view position; and flags. One skin, one viewport test and one divide per
+ * vertex serve every triangle that uses it (as instance_pass.c). */
+enum {VERTEX_GUARD=0x80};  /* else the low five bits are the planes it is clearly outside */
 static float (*scratch)[3];
+static uint8_t *vertex_flags;
 static uint32_t scratch_verts;
 static uint32_t frame_triangles;
 static int frame_jak,frame_actor;
@@ -150,8 +156,9 @@ static int load(model *m){
   m->batch_list[i]=list;m->lists|=1u<<list_index(list);
  }
  if(m->verts>scratch_verts){
-  free(scratch);
-  if(!(scratch=memalign(32,m->verts*sizeof *scratch))){scratch_verts=0;goto fail;}
+  free(scratch);free(vertex_flags);vertex_flags=NULL;
+  if(!(scratch=memalign(32,m->verts*sizeof *scratch)) || !(vertex_flags=malloc(m->verts))){
+   free(scratch);scratch=NULL;scratch_verts=0;goto fail;}
   scratch_verts=m->verts;
  }
  m->radius=sqrtf(3.f)*32767.f*m->scale+sqrtf(m->centre[0]*m->centre[0]+m->centre[1]*m->centre[1]+m->centre[2]*m->centre[2]);
@@ -266,6 +273,35 @@ static int joints(dc_goal_runtime *rt,model *m,uint32_t proc,const float b[10],c
  return 1;
 }
 
+/* A vertex's view position: the weighted sum of its joints' transforms. */
+static void skin(const model *m,uint32_t i,float o[3]){
+ const dsk_vertex *v=&m->v[i];float p[3];unsigned k;
+ const unsigned w[3]={v->weight[0],v->weight[1],255u-v->weight[0]-v->weight[1]};
+ o[0]=o[1]=o[2]=0;
+ p[0]=m->centre[0]+v->x*m->scale;p[1]=m->centre[1]+v->y*m->scale;p[2]=m->centre[2]+v->z*m->scale;
+ for(k=0;k<3;++k){const float *q;float f;
+  if(!w[k])continue;
+  q=V[v->joint[k]];f=w[k]*(1.f/255.f);
+  o[0]+=f*(q[0]*p[0]+q[1]*p[1]+q[2]*p[2]+q[3]);
+  o[1]+=f*(q[4]*p[0]+q[5]*p[1]+q[6]*p[2]+q[7]);
+  o[2]+=f*(q[8]*p[0]+q[9]*p[1]+q[10]*p[2]+q[11]);}
+}
+/* The planes a view position is clearly outside of, by dc_render_clip_viewport's
+ * own single-precision test (instance_pass.c clearly_outside). */
+static unsigned outside_planes(float x,float y,float z){
+ unsigned mask=z<DC_SCENE_NEAR,plane;
+ if(!(fabsf(x)<=4000000.f)||!(fabsf(y)<=4000000.f)||!(fabsf(z)<=4000000.f))return 0;
+ for(plane=1;plane<5;++plane){float a,b2;
+  switch(plane){
+  case 1:a=390.f*x;b2=320.f*z;break;
+  case 2:a=-390.f*x;b2=320.f*z;break;
+  case 3:a=-390.f*y;b2=260.f*z;break;
+  default:a=390.f*y;b2=220.f*z;break;
+  }
+  if(a+b2< -((fabsf(a)+fabsf(b2))*(4.f*1.1920928955078125e-7f)))mask|=1u<<plane;
+ }
+ return mask;
+}
 static void header_out(const void *header){
  uint32_t *out=(uint32_t *)(void *)pvr_dr_target(dr);const uint32_t *in=header;unsigned i;
  for(i=0;i<8;++i)out[i]=in[i];
@@ -283,16 +319,14 @@ int dc_level_models_draw(dc_goal_runtime *rt,const dc_instance_camera *cam,int l
   if(!joints(rt,m,kp->proc,b,cam)){++dc_level_model_metrics.joint_misses;continue;}
   start=(uint32_t)timer_us_gettime64();
   for(i=0;i<m->verts;++i){
-   const dsk_vertex *v=&m->v[i];float p[3],o[3]={0,0,0};unsigned k;
-   const unsigned w[3]={v->weight[0],v->weight[1],255u-v->weight[0]-v->weight[1]};
-   p[0]=m->centre[0]+v->x*m->scale;p[1]=m->centre[1]+v->y*m->scale;p[2]=m->centre[2]+v->z*m->scale;
-   for(k=0;k<3;++k){const float *q;float f;
-    if(!w[k])continue;
-    q=V[v->joint[k]];f=w[k]*(1.f/255.f);
-    o[0]+=f*(q[0]*p[0]+q[1]*p[1]+q[2]*p[2]+q[3]);
-    o[1]+=f*(q[4]*p[0]+q[5]*p[1]+q[6]*p[2]+q[7]);
-    o[2]+=f*(q[8]*p[0]+q[9]*p[1]+q[10]*p[2]+q[11]);}
-   scratch[i][0]=o[0];scratch[i][1]=o[1];scratch[i][2]=o[2];
+   float o[3];
+   skin(m,i,o);
+   vertex_flags[i]=0;
+   if(o[2]>=DC_SCENE_NEAR&&o[2]<=4e6f){float inv=1.f/o[2],px=320.f+390.f*o[0]*inv,py=260.f-390.f*o[1]*inv;
+    if(px>=-1024.f&&px<=1664.f&&py>=-1024.f&&py<=1504.f){
+     scratch[i][0]=px;scratch[i][1]=py;scratch[i][2]=inv;vertex_flags[i]=VERTEX_GUARD;continue;}
+   }
+   vertex_flags[i]=(uint8_t)outside_planes(o[0],o[1],o[2]);
   }
   {uint32_t us=(uint32_t)timer_us_gettime64()-start;if(us>dc_level_model_metrics.skin_us_max)dc_level_model_metrics.skin_us_max=us;}
   if(!kp->drawn){kp->drawn=1;++dc_level_model_metrics.drawn;if(kp->target)frame_jak=1;else frame_actor=1;}
@@ -303,12 +337,21 @@ int dc_level_models_draw(dc_goal_runtime *rt,const dc_instance_camera *cam,int l
    if(header!=current){header_out(header);current=header;}
    for(k=0;k<bt->count;k+=3){
     const uint16_t *ix=&m->ix[bt->first+k];dc_clip_vertex input[3],poly[DC_RENDER_CLIP_CAP];
-    float px[DC_RENDER_CLIP_CAP],py[DC_RENDER_CLIP_CAP],pz[DC_RENDER_CLIP_CAP];unsigned j;int n,fan,inside=1;
-    for(j=0;j<3;++j){const float *s=scratch[ix[j]];const dsk_vertex *v=&m->v[ix[j]];
-     input[j]=(dc_clip_vertex){s[0],s[1],s[2],textured?v->u*(1.f/1024.f):0.f,textured?v->v*(1.f/1024.f):0.f,v->argb};
-     inside=inside&&s[2]>=DC_SCENE_NEAR&&s[2]<=4e6f&&390.f*s[0]<=319.9f*s[2]&&-390.f*s[0]<=319.9f*s[2]&&
-            390.f*s[1]<=259.9f*s[2]&&-390.f*s[1]<=219.9f*s[2];}
-    if(inside){memcpy(poly,input,sizeof input);n=3;}else n=dc_render_clip_viewport(input,poly);
+    float px[DC_RENDER_CLIP_CAP],py[DC_RENDER_CLIP_CAP],pz[DC_RENDER_CLIP_CAP];unsigned j;int n,fan;
+    const unsigned f0=vertex_flags[ix[0]],f1=vertex_flags[ix[1]],f2=vertex_flags[ix[2]];
+    if(f0&f1&f2&VERTEX_GUARD){  /* the PVR clips it to the screen */
+     for(j=0;j<3;++j){const float *s=scratch[ix[j]];const dsk_vertex *v=&m->v[ix[j]];pvr_vertex_t *pv=pvr_dr_target(dr);
+      pv->flags=j==2?PVR_CMD_VERTEX_EOL:PVR_CMD_VERTEX;pv->x=s[0];pv->y=s[1];pv->z=s[2];
+      pv->u=textured?v->u*(1.f/1024.f):0.f;pv->v=textured?v->v*(1.f/1024.f):0.f;pv->argb=v->argb;pv->oargb=0;pvr_dr_commit(pv);}
+     ++frame_triangles;++dc_level_model_metrics.triangles;
+     continue;
+    }
+    if(f0&f1&f2&31u)continue;  /* wholly outside one plane: the clipper returns it empty */
+    /* crosses the near plane or leaves the guard band: the clipper, from view positions */
+    for(j=0;j<3;++j){float s[3];const dsk_vertex *v=&m->v[ix[j]];
+     skin(m,ix[j],s);
+     input[j]=(dc_clip_vertex){s[0],s[1],s[2],textured?v->u*(1.f/1024.f):0.f,textured?v->v*(1.f/1024.f):0.f,v->argb};}
+    n=dc_render_clip_viewport(input,poly);
     if(n<0){++dc_level_model_metrics.invalid;rt->error=prior;return 0;}
     if(n<3)continue;
     for(j=0;j<(unsigned)n;++j){float inv=1.f/poly[j].z;px[j]=320.f+390.f*poly[j].x*inv;py[j]=260.f-390.f*poly[j].y*inv;pz[j]=inv;}
