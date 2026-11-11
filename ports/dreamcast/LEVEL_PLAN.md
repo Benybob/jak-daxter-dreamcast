@@ -878,6 +878,30 @@ longer where the time is; the next factor of two is in the code generator
 (registers for values, in-line shifts) and in the translated collision code,
 not in more caches.
 
+### The level links only the mips2c files it calls (Flycast, 2728 of 2728, 2026-11-11)
+
+A call count of every mips2c function over a level run, outside the
+differential cases: the frames call functions from 11 of the 24 files
+(collision, edge grab, collide-mesh, ripple, joints, the ocean's waves,
+particles, time of day). The other 13 only build data for PS2 renderers the
+level has turned off: sky, generic, merc and blend shapes, shadow, tfrag, tie,
+the ocean's renderer, text and textures.
+
+`build_mips2c.py --level` builds `LEVEL_FILES` into
+`build/mips2c-level/libdcmips2c.a`, which the level ELF links instead of the
+full library; `build_kernel_boot.py` builds both. GAME.CGO's lookups of the
+other files' functions get the bridge's missing-function stub, which faults
+the runtime (`DC_GOAL_UNSUPPORTED_TRANSFER`) if it is ever called. The level
+checks 39 native lookups, not 76. The differential cases no longer run in the
+level ELF; every file's cases still run in the kernel and arena ELFs, which
+link the full library (level 2811 to 2728 checks).
+
+The level ELF's code went from 3,100,680 to 2,465,889 bytes: 635 KB back to
+the KOS heap. With that, all 11 files build at -O2 with GCC's inlining limits
+raised (`LEVEL_FLAGS`), which failed for want of memory with the full library.
+That costs 93 KB of the 635. The GOAL frame went from 74.2 ms to 67.4 ms; the
+draw is unchanged at 47.6 ms, so a frame is about 115 ms.
+
 The instance pass (instance_pass.c) had three costs in the punch-through list:
 
 - Each triangle corner was tested against the viewport, divided and coloured

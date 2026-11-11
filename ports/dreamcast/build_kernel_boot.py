@@ -88,6 +88,7 @@ def main():
     write_dgo(port / 'build/kernel-dgo/KERNEL.CGO', 'KERNEL.CGO', [(n, dcsh / f'{n}.dcsh') for n in order])
     # The PC port's mips2c functions, built natively for SH-4 into the DGO ELF.
     subprocess.run([sys.executable, str(port / 'build_mips2c.py')], check=True, stdout=subprocess.DEVNULL)
+    subprocess.run([sys.executable, str(port / 'build_mips2c.py'), '--level'], check=True, stdout=subprocess.DEVNULL)
     if args.dgo_tests is None:
         # Each disc case header says how many cases it adds; each case is two checks.
         args.dgo_tests = EXPECTED_DGO_CHECKS + sum(

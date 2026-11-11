@@ -39,6 +39,19 @@ HOT_FILES = ('collide_cache', 'sky_tng', 'ocean', 'ocean_vu0', 'sparticle', 'bon
 # -O2 alone. Raising GCC's inlining limits for these files (large-function-growth and the
 # rest) adds 41 KiB more, and with that the level ELF's code startups run out of memory.
 HOT_FLAGS = ['-O2']
+# The files whose functions the level ELF's frames call (a call count of every
+# function over a level run, 2026-11-11). The other 13 build data for PS2
+# renderers the level turns off (sky, generic, merc, shadow, tfrag, tie, the
+# ocean's renderer, text, textures); GAME.CGO's lookups of their functions get
+# the stub that fails explicitly if one is ever called. About 420 KiB of code.
+LEVEL_FILES = ('collide_cache', 'collide_edge_grab', 'collide_mesh', 'ripple', 'collide_func', 'collide_probe',
+               'joint', 'ocean_vu0', 'sparticle', 'sparticle_launcher', 'time_of_day')
+# The level's library is a third of the full one, so all of it builds at -O2 with
+# GCC's inlining limits raised: the accessors of ExecutionContext inline into the
+# translated functions instead of being called once per MIPS instruction.
+LEVEL_FLAGS = ['-O2', '--param', 'large-function-growth=2000', '--param', 'large-function-insns=100000',
+               '--param', 'inline-unit-growth=1000', '--param', 'max-inline-insns-single=400',
+               '--param', 'large-stack-frame-growth=5000']
 CPP_TOKEN = re.compile(r'"(?:\\.|[^"\\])*"|//[^\n]*|/\*.*?\*/', re.S)
 
 
@@ -284,10 +297,14 @@ def main():
     parser.add_argument('--ar', type=Path, default=work / 'dc-sdk/sh-elf/bin/sh-elf-ar.exe')
     parser.add_argument('--host-gxx', type=Path, default=Path('C:/msys64/mingw64/bin/g++.exe'))
     parser.add_argument('--table-only', action='store_true', help='write the generated table and stop')
+    parser.add_argument('--level', action='store_true',
+                        help='LEVEL_FILES only, into build/mips2c-level, without the differential cases')
     args = parser.parse_args()
     goal_text = '\n'.join(p.read_text(encoding='utf-8', errors='replace')
                           for p in sorted((root / 'goal_src/jak1').rglob('*.gc')))
     all_types = (root / 'decompiler/config/jak1/all-types.gc').read_text(encoding='utf-8', errors='replace')
+    if args.level:
+        args.files = list(LEVEL_FILES)
     sources = [root / 'game/mips2c/jak1_functions' / f'{name}.cpp' for name in args.files]
     entries = []
     for source in sources:
@@ -303,7 +320,7 @@ def main():
             sig = signature(name, goal_text, all_types)
             if 'float' in sig[0] or sig[1] == 'float':
                 typed.append((name, sig))
-    out = port / 'build/mips2c'
+    out = port / ('build/mips2c-level' if args.level else 'build/mips2c')
     out.mkdir(parents=True, exist_ok=True)
     (out / 'mips2c_dc_table.inc').write_bytes(table(entries, typed).encode())
     for name, (a, r) in typed:
@@ -319,11 +336,11 @@ def main():
     flags = ['-std=gnu++20', '-Os', '-m4-single', '-ml', '-ffp-contract=off', '-ffunction-sections', '-fdata-sections',
              '-fno-exceptions', '-fno-rtti', '-D__forceinline=__attribute__((always_inline))', '-DFMT_HEADER_ONLY',
              f'-I{port / "mips2c_dc"}', f'-I{port}', f'-I{root}', f'-I{root / "third-party"}',
-             f'-I{root / "third-party/fmt/include"}']
+             f'-I{root / "third-party/fmt/include"}'] + (['-DDC_MIPS2C_LEVEL'] if args.level else [])
     objects = []
     for source in sources + [port / 'mips2c_dc.cpp']:
         obj = out / (source.stem + '.o')
-        result = subprocess.run([str(args.gxx), *flags, *(HOT_FLAGS if source.stem in HOT_FILES else []), '-c', str(source), '-o', str(obj)],
+        result = subprocess.run([str(args.gxx), *flags, *(LEVEL_FLAGS if args.level else HOT_FLAGS if source.stem in HOT_FILES else []), '-c', str(source), '-o', str(obj)],
                                 capture_output=True, text=True)
         if result.returncode:
             sys.exit(f'{source.name} failed:\n' + '\n'.join(result.stderr.splitlines()[:20]))
@@ -332,6 +349,8 @@ def main():
     library.unlink(missing_ok=True)
     subprocess.run([str(args.ar), 'rcs', str(library), *map(str, objects)], check=True)
     print(f'{len(entries)} functions from {len(sources)} files -> {library.relative_to(port)}')
+    if args.level:
+        return
     # The animation case's data, from the user's own GAME.CGO when it is there
     # (anim_case_data.py); mips2c_cases.h leaves the case out without it.
     import anim_case_data

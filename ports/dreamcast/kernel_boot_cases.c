@@ -12,8 +12,14 @@
 #include "goal_bridge.h"
 #ifdef DC_KERNEL_DGO
 #include "mips2c_dc.h"
+/* The level ELF links only the mips2c files its frames call (build_mips2c.py
+ * LEVEL_FILES); the differential cases of every file run in the kernel and arena
+ * ELFs, which link them all. */
+#ifndef DC_LEVEL_LOGIC
+#define DC_BOOT_M2C_CASES 1
 #include "mips2c_cases.h"
 #include "build/mips2c/mips2c_cases_expect.h"
+#endif
 #endif
 #include "goal_kernel_types.h"
 #include "goal_main_start.h"
@@ -58,6 +64,7 @@ void dc_arena_fly_report(char *,size_t,uint32_t,uint32_t);
 int dc_kernel_load_vf_fixture(dc_goal_runtime *,dc_goal_cache_sync,dc_goal_module_result *);
 /* First BAD_ARGUMENT site while GAME.CGO loads (dc_goal_error_site encoding). */
 volatile uint32_t dc_boot_game_error_site;
+#ifdef DC_BOOT_M2C_CASES
 /* The boot's environment for the mips2c differential cases: symbols a case
  * points into its region are restored after it. */
 typedef struct {dc_goal_runtime *rt;unsigned count;uint32_t symbol[16],value[16];} dc_boot_m2c_saved;
@@ -91,6 +98,7 @@ static void boot_m2c_restore(dc_boot_m2c_saved *saved){
   memset(boot_m2c_goal,0,sizeof boot_m2c_goal);
   while(saved->count){--saved->count;dc_goal_set_symbol(saved->rt,saved->symbol[saved->count],saved->value[saved->count]);}
 }
+#endif
 /* Diagnostics (verify_backend.py --dump): display-loop frames completed, and the
  * error and first refusal site where they stopped. */
 volatile uint32_t dc_boot_display_frames,dc_boot_display_error,dc_boot_display_site;
@@ -235,7 +243,11 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
     CHECK(dc_goal_register_pp_scope(&rt,&game_scopes),1,"lexical scope metadata registered for GAME.CGO startups");
     /* The PC port's mips2c functions built for SH-4 (build_mips2c.py): every
      * registration links, and GAME.CGO's lookups of them get native functions. */
+#ifdef DC_LEVEL_LOGIC
+    CHECK(dc_mips2c_install(&rt),39,"the 39 functions of the level's 11 mips2c files link natively");
+#else
     CHECK(dc_mips2c_install(&rt),94,"the 94 functions of the 24 built mips2c files link natively");
+#endif
 #ifdef DC_ARENA_COEXIST
     CHECK(dc_arena_extension(&rt),1,"PVR loan registered as the GOAL extension region");
 #else
@@ -270,12 +282,18 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
          if(cell)dc_goal_set_symbol(&rt,packages,cell);
        }
        rt.error=DC_GOAL_OK;}
+#ifdef DC_LEVEL_LOGIC
+      /* the rest get the stub that fails explicitly if a frame ever calls one */
+      CHECK(dc_goal_mips2c_native(),39,"GAME.CGO's lookups of the level's mips2c functions return native code");
+#else
       CHECK(dc_goal_mips2c_native(),76,"all 76 of GAME.CGO's mips2c lookups return native code");
+#endif
       /* gkernel.gc aligns it to 64 KiB, and translated code relies on that:
        * setup-blerc-chains-for-one-fragment ends each chain with its address as a
        * DMA tag, an empty refe only when the low 16 bits are 0. */
       {uint32_t spad=dc_goal_symbol_value(&rt,dc_goal_find(&rt,"*fake-scratchpad-data*"));
        CHECK(spad!=0 && spad!=rt.s7 && (spad&0xffffu)==0,1,"*fake-scratchpad-data* is 64 KiB aligned");}
+#ifdef DC_BOOT_M2C_CASES
       /* The differential cases (mips2c_cases.h) through the native SH-4 build,
        * compared with the host oracle: the same C++ as desktop runs it. */
       {dc_m2c_env env;dc_boot_m2c_saved saved;uint32_t region=dc_goal_alloc_temporary(&rt,2u*DC_M2C_REGION);unsigned k;
@@ -301,6 +319,7 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
          CHECK(rt.error,DC_GOAL_OK,"native mips2c calls leave no runtime fault");
        }
        dc_goal_release_temporary(&rt);rt.error=DC_GOAL_OK;}
+#endif
       {uint32_t placed_bytes,placed=dc_goal_extension_placed(&placed_bytes);
        CHECK(placed,2,"display's two global DMA buffers live in VRAM");
        CHECK(placed_bytes>=2u*1712u*1024u && rt.extension_used>=placed_bytes,1,"they take their 1,712 KiB each there");}

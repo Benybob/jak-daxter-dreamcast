@@ -57,7 +57,11 @@ float from_bits(u64 v) {
 u64 dc_run(unsigned index, const u64* args);
 }  // namespace
 
+#ifdef DC_MIPS2C_LEVEL  /* build_mips2c.py --level: the level ELF's files */
+#include "build/mips2c-level/mips2c_dc_table.inc"
+#else
 #include "build/mips2c/mips2c_dc_table.inc"
+#endif
 
 namespace {
 constexpr unsigned kEntries = sizeof(dc_entries) / sizeof(dc_entries[0]);
