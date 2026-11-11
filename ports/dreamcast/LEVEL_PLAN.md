@@ -697,7 +697,7 @@ steps, which include it, are about 330 to 390 ms inclusive. The next frame-rate
 gains are in the game code paths (collision, the camera, actors), not in the
 bridge.
 
-### A sampling profile of the frame (Flycast, 3177 of 3177, 2026-11-11)
+### A sampling profile of the frame (Flycast, 3178 of 3178, 2026-11-11)
 
 A temporary KOS thread sampled the main thread's saved pc and pr each
 millisecond while `dispatch()` ran, into a hash table of 64-byte buckets, and
@@ -714,6 +714,7 @@ changed:
 | The same, without the profiler thread | 146 ms | | |
 | One projection and colour per vertex | | 62 ms | 91 ms |
 | Early reject, then the guard band | | 46 ms | 75 ms |
+| PS2 renderers off (below) | 123 ms | 46 ms | 72 ms |
 
 - **mips2c accessors.** About 22% of the samples were in newlib `memcpy`,
   called from `ExecutionContext` (game/mips2c/mips2c_private.h). The mips2c
@@ -728,14 +729,29 @@ changed:
   `sparticle` and `bones` (`HOT_FILES` in build_mips2c.py) carry most of the
   translated-code samples. At `-O2` they inline the accessors and add about
   41 KiB of code; the other 18 files stay at `-Os`.
-- **Not the disc.** 45% of the samples were in `genwait_wait`, but timed
-  `fread`/`fopen` calls in level_str.c, level_sound.c and level_dgo_rpc.c come
-  to about 2 ms a frame. The waits belong to a few very long frames
-  (`dispatch` peaks at 12.6 s, the GOAL frame at 45 s), which the medians do
-  not see. What blocks there is not yet known.
+- **Not the disc, and mostly not waiting.** 45% of the samples were in
+  `genwait_wait`, but that share is the sampler's bias, not blocked time. KOS
+  preempts at `THD_SCHED_HZ` (100), so while the main thread runs the sampler
+  wakes once per 10 ms tick; when the main thread blocks, the scheduler runs
+  at once and the sampler takes a sample on every block (the PVR waits, DMA
+  and sound locks). Timed `fread`/`fopen` calls in level_str.c, level_sound.c
+  and level_dgo_rpc.c come to about 2 ms a frame, and the draw's timed PVR
+  waits to about 13 ms. Read the other entries as shares of the running
+  samples. A few very long frames (`dispatch` peaks at 12.6 s, the GOAL frame
+  at 45 s) are not in the medians and are not yet explained.
 - **Tried, no gain:** `__builtin_memcpy` for the fixed copies in goal_runtime.c,
   goal_bridge.c and the other bridge files (KOS compiles with `-fno-builtin`).
   The median did not move (175.7 to 175.2 ms), so it is not in the tree.
+
+- **The PS2 renderers are off.** `real-main-draw-hook` still built the sky,
+  ocean, tfrag, tie, shrub, merc, generic, shadow, sprite and depth-cue
+  display lists and the texture uploads every frame, for a GS that is not
+  there. The level ELF clears the original debug menu's enables
+  (`*vu1-enable-user-menu*` and `*texture-enable-user-menu*`), which the hook
+  copies each frame; with the sky off the hook queues the original's plain
+  gradient instead. The level draw uses its own packages and the joints'
+  bones, which the joint math writes regardless, and the framebuffer is
+  unchanged. One check is added (3178).
 
 After these the profile is flat. The largest single entries are
 `dc_goal_resolve` (about 15% of the samples outside the waits, called from the

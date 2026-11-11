@@ -482,6 +482,15 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
        /* Jak: eichar, then original start 'play at the original continue point;
         * his armed main thread runs in the display frames (level_player.c). */
        CHECK(dc_level_player(&rt),1,"original start spawns Jak at the original continue point");
+       /* The PS2 renderers build VU1 and GS display lists that this port does
+        * not draw: the level draw (level_draw.c) draws the terrain, instances
+        * and skinned models from its own packages and the joints' bones. The
+        * original debug menu's enables turn them off; real-main-draw-hook
+        * copies them to *vu1-enable-user* and *texture-enable-user* each
+        * frame. Joint math and the bones it writes do not depend on them. */
+       {uint32_t vu1=dc_goal_find(&rt,"*vu1-enable-user-menu*"),tex=dc_goal_find(&rt,"*texture-enable-user-menu*");
+        CHECK(vu1 && tex,1,"original renderer enables found");
+        if(vu1 && tex){dc_goal_set_symbol(&rt,vu1,0);dc_goal_set_symbol(&rt,tex,0);}}
 #endif
        before=word(&rt,entry(&rt,"*display*"),REAL_INTEGRAL_FRAMES);
 #ifdef DC_LEVEL_LOGIC  /* the level ELF */
