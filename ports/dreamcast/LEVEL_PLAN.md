@@ -760,6 +760,33 @@ symbol, type and code-entry checks and from `dc_goal_mmi`), the out-of-line
 each mips2c call's context. The sky, ocean, sprite and shadow functions still
 build PS2 display lists that this port does not draw.
 
+What the steady frames spend (Flycast, after the renderers went off):
+
+- Frames 3 to 5 are the level and player load (45 s, 8 s and 12.6 s of GOAL
+  frame); from about frame 40 the GOAL frame is a steady 118 to 124 ms. The
+  profiles above include those load frames, which weigh far more than all the
+  steady ones together. A profile of frames 30 on is the one to read.
+- In those frames the code-entry cache hits about 90 times a frame and walks
+  the registry two times every six or seven frames (15 ms a walk) until frame
+  100, then not at all. A two-way cache changed nothing, so it is not in the
+  tree.
+- A caller count of the runtime's checks in frames 30 on: about 70,000
+  `dc_goal_resolve` calls a frame, 26,000 of them from `type_fields` (the
+  parent walks of `dc_goal_is_subtype`, such as the process check of each of
+  the about 1,100 `dc_goal_process_heap_open` calls), 13,500 from
+  `symbol_address` and 11,600 from `dc_goal_symbol_name`. 2,850 of the
+  symbol-name calls are find-cache hits re-checking their name, almost all
+  from `typed_callee` (mips2c_dc.cpp), which looks each typed callee not yet
+  bound up by name on every jalr (865 lookups a frame).
+- Looking those callees up once removed every one of those lookups, with the
+  same 35,868 typed and 55,249 generic calls, but the GOAL frame median went
+  from 122.6 to 149.3 ms on two runs, and the run drew different models
+  (163,666 kept against 211,994). The baseline reproduces exactly (122,561 us
+  both times), so the run is deterministic, but its path depends on time: the
+  dialogue position follows real time, so a change in frame cost can change
+  what the game does in later frames. A change smaller than that effect cannot
+  be timed this way; it needs a fixed-step benchmark. Not in the tree.
+
 The instance pass (instance_pass.c) had three costs in the punch-through list:
 
 - Each triangle corner was tested against the viewport, divided and coloured
