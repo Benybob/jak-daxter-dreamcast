@@ -255,6 +255,41 @@ struct Mips2c_acc {
   };
 };
 
+// Fixed-size copies for the register and memory accessors (AI-assisted).
+// On SH-4 the translated files build with -Os, where GCC makes every 16-byte
+// struct copy and every fixed memcpy a call to the C library: one or two calls
+// per translated instruction. A MIPS load or store traps unless its address is
+// aligned to its size, so the original code only makes aligned accesses and
+// whole words can be moved. Other targets keep memcpy.
+#if defined(__sh__)
+__attribute__((always_inline)) static inline void m2c_copy(void* dst, const void* src, unsigned n) {
+  typedef u32 __attribute__((may_alias)) word;
+  typedef u16 __attribute__((may_alias)) half;
+  switch (n) {
+    case 16:
+      ((word*)dst)[3] = ((const word*)src)[3];
+      ((word*)dst)[2] = ((const word*)src)[2];
+      [[fallthrough]];
+    case 8:
+      ((word*)dst)[1] = ((const word*)src)[1];
+      [[fallthrough]];
+    case 4:
+      ((word*)dst)[0] = ((const word*)src)[0];
+      break;
+    case 2:
+      *(half*)dst = *(const half*)src;
+      break;
+    case 1:
+      *(u8*)dst = *(const u8*)src;
+      break;
+    default:
+      memcpy(dst, src, n);
+  }
+}
+#else
+#define m2c_copy memcpy
+#endif
+
 struct ExecutionContext {
   // EE general purpose registers
   u128 gprs[32];
@@ -284,7 +319,13 @@ struct ExecutionContext {
       result.f[3] = 1.f;
       return result;
     } else {
+#if defined(__sh__)
+      Mips2c_vf result;
+      m2c_copy(&result, &vfs[idx], 16);
+      return result;
+#else
       return vfs[idx];
+#endif
     }
   }
 
@@ -295,13 +336,20 @@ struct ExecutionContext {
       result.du64[1] = 0;
       return result;
     } else {
+#if defined(__sh__)
+      u128 result;
+      m2c_copy(&result, &gprs[idx], 16);
+      return result;
+#else
       return gprs[idx];
+#endif
     }
   }
 
-  u64 sgpr64(int idx) { return gpr_src(idx).du64[0]; }
+  // The same values without a 16-byte copy of the register.
+  u64 sgpr64(int idx) { return idx == 0 ? 0 : gprs[idx].du64[0]; }
 
-  u32 gpr_addr(int idx) { return gpr_src(idx).du32[0]; }
+  u32 gpr_addr(int idx) { return idx == 0 ? 0 : gprs[idx].du32[0]; }
 
   void load_symbol(int gpr, void* sym_addr) {
     s32 val;
@@ -323,34 +371,34 @@ struct ExecutionContext {
 
   void lbu(int dst, int offset, int src) {
     u8 val;
-    memcpy(&val, g_ee_main_mem + gpr_src(src).du32[0] + offset, 1);
+    m2c_copy(&val, g_ee_main_mem + gpr_addr(src) + offset, 1);
     gprs[dst].du64[0] = val;
   }
 
   void lb(int dst, int offset, int src) {
     s8 val;
-    memcpy(&val, g_ee_main_mem + gpr_src(src).du32[0] + offset, 1);
+    m2c_copy(&val, g_ee_main_mem + gpr_addr(src) + offset, 1);
     gprs[dst].du64[0] = val;
   }
 
   void lqc2(int vf, int offset, int gpr) {
-    ASSERT(((gpr_src(gpr).du32[0] + offset) & 0xf) == 0);
-    memcpy(&vfs[vf], g_ee_main_mem + gpr_src(gpr).du32[0] + offset, 16);
+    ASSERT(((gpr_addr(gpr) + offset) & 0xf) == 0);
+    m2c_copy(&vfs[vf], g_ee_main_mem + gpr_addr(gpr) + offset, 16);
   }
 
   void lwc1(int dst, int offset, int gpr) {
-    memcpy(&fprs[dst], g_ee_main_mem + gpr_src(gpr).du32[0] + offset, 4);
+    m2c_copy(&fprs[dst], g_ee_main_mem + gpr_addr(gpr) + offset, 4);
   }
 
   void lw(int dst, int offset, int src) {
     s32 val;
 #if defined(__sh__)
-    if (ps2_hardware_word(gpr_src(src).du32[0] + offset)) {
+    if (ps2_hardware_word(gpr_addr(src) + offset)) {
       gprs[dst].ds64[0] = 0;
       return;
     }
 #endif
-    memcpy(&val, g_ee_main_mem + gpr_src(src).du32[0] + offset, 4);
+    m2c_copy(&val, g_ee_main_mem + gpr_addr(src) + offset, 4);
     gprs[dst].ds64[0] = val;
   }
 
@@ -361,34 +409,34 @@ struct ExecutionContext {
 
   void lh(int dst, int offset, int src) {
     s16 val;
-    memcpy(&val, g_ee_main_mem + gpr_src(src).du32[0] + offset, 2);
+    m2c_copy(&val, g_ee_main_mem + gpr_addr(src) + offset, 2);
     gprs[dst].ds64[0] = val;
   }
 
   void lhu(int dst, int offset, int src) {
     u16 val;
-    memcpy(&val, g_ee_main_mem + gpr_src(src).du32[0] + offset, 2);
+    m2c_copy(&val, g_ee_main_mem + gpr_addr(src) + offset, 2);
     gprs[dst].du64[0] = val;
   }
 
   void lwu(int dst, int offset, int src) {
     u32 val;
 #if defined(__sh__)
-    if (ps2_hardware_word(gpr_src(src).du32[0] + offset)) {
+    if (ps2_hardware_word(gpr_addr(src) + offset)) {
       gprs[dst].du64[0] = 0;
       return;
     }
 #endif
-    memcpy(&val, g_ee_main_mem + gpr_src(src).du32[0] + offset, 4);
+    m2c_copy(&val, g_ee_main_mem + gpr_addr(src) + offset, 4);
     gprs[dst].du64[0] = val;
   }
 
   void lq(int dst, int offset, int src) {
-    memcpy(&gprs[dst].du64[0], g_ee_main_mem + ((gpr_addr(src) + offset) & (~15)), 16);
+    m2c_copy(&gprs[dst].du64[0], g_ee_main_mem + ((gpr_addr(src) + offset) & (~15)), 16);
   }
 
   void ld(int dst, int offset, int src) {
-    memcpy(&gprs[dst].du64[0], g_ee_main_mem + gpr_addr(src) + offset, 8);
+    m2c_copy(&gprs[dst].du64[0], g_ee_main_mem + gpr_addr(src) + offset, 8);
   }
 
   void sw(int src, int offset, int addr) {
@@ -396,7 +444,7 @@ struct ExecutionContext {
 #if defined(__sh__)
     if (ps2_hardware_word(gpr_addr(addr) + offset)) return;
 #endif
-    memcpy(g_ee_main_mem + gpr_addr(addr) + offset, &s.du32[0], 4);
+    m2c_copy(g_ee_main_mem + gpr_addr(addr) + offset, &s.du32[0], 4);
   }
 
   void jalr(u32 addr) {
@@ -435,33 +483,33 @@ struct ExecutionContext {
 
   void sb(int src, int offset, int addr) {
     auto s = gpr_src(src);
-    memcpy(g_ee_main_mem + gpr_addr(addr) + offset, &s.du32[0], 1);
+    m2c_copy(g_ee_main_mem + gpr_addr(addr) + offset, &s.du32[0], 1);
   }
 
   void sh(int src, int offset, int addr) {
     auto s = gpr_src(src);
-    memcpy(g_ee_main_mem + gpr_addr(addr) + offset, &s.du32[0], 2);
+    m2c_copy(g_ee_main_mem + gpr_addr(addr) + offset, &s.du32[0], 2);
   }
 
   void sd(int src, int offset, int addr) {
     auto s = gpr_src(src);
-    memcpy(g_ee_main_mem + gpr_addr(addr) + offset, &s.du32[0], 8);
+    m2c_copy(g_ee_main_mem + gpr_addr(addr) + offset, &s.du32[0], 8);
   }
 
   void sq(int src, int offset, int addr) {
     auto s = gpr_src(src);
     // ASSERT((offset & 15) == 0);
-    memcpy(g_ee_main_mem + ((gpr_addr(addr) + offset) & (~15)), &s.du32[0], 16);
+    m2c_copy(g_ee_main_mem + ((gpr_addr(addr) + offset) & (~15)), &s.du32[0], 16);
   }
 
   void sqc2(int src, int offset, int addr) {
     auto s = vf_src(src);
     ASSERT(((gpr_addr(addr) + offset) & 0xf) == 0);
-    memcpy(g_ee_main_mem + gpr_addr(addr) + offset, &s.du32[0], 16);
+    m2c_copy(g_ee_main_mem + gpr_addr(addr) + offset, &s.du32[0], 16);
   }
 
   void swc1(int src, int offset, int addr) {
-    memcpy(g_ee_main_mem + gpr_addr(addr) + offset, &fprs[src], 4);
+    m2c_copy(g_ee_main_mem + gpr_addr(addr) + offset, &fprs[src], 4);
   }
 
   void vadd_bc(DEST mask, BC bc, int dest, int src0, int src1) {
@@ -1400,8 +1448,8 @@ struct ExecutionContext {
     }
   }
 
-  void mov128_vf_gpr(int dst, int src) { memcpy(vfs[dst].f, gpr_src(src).f, 16); }
-  void mov128_gpr_vf(int dst, int src) { memcpy(gprs[dst].f, vf_src(src).f, 16); }
+  void mov128_vf_gpr(int dst, int src) { m2c_copy(vfs[dst].f, gpr_src(src).f, 16); }
+  void mov128_gpr_vf(int dst, int src) { m2c_copy(gprs[dst].f, vf_src(src).f, 16); }
   void mov128_gpr_gpr(int dst, int src) { gprs[dst] = gpr_src(src); }
 
   void vitof0(DEST mask, int dst, int src) {
@@ -1488,13 +1536,13 @@ struct ExecutionContext {
 
   void mfc1(int dst, int src) {
     s32 val;
-    memcpy(&val, &fprs[src], 4);
+    m2c_copy(&val, &fprs[src], 4);
     gprs[dst].ds64[0] = val;
   }
 
   void mtc1(int dst, int src) {
     u32 val = gpr_src(src).du32[0];
-    memcpy(&fprs[dst], &val, 4);
+    m2c_copy(&fprs[dst], &val, 4);
   }
 
   void muls(int dst, int src0, int src1) { fprs[dst] = fprs[src0] * fprs[src1]; }
@@ -1522,9 +1570,9 @@ struct ExecutionContext {
 
   void negs(int dst, int src) {
     u32 v;
-    memcpy(&v, &fprs[src], 4);
+    m2c_copy(&v, &fprs[src], 4);
     v ^= 0x80000000;
-    memcpy(&fprs[dst], &v, 4);
+    m2c_copy(&fprs[dst], &v, 4);
   }
 
   void movs(int dst, int src) { fprs[dst] = fprs[src]; }
@@ -1533,13 +1581,13 @@ struct ExecutionContext {
   void cvtws(int dst, int src) {
     // float to int
     s32 value = fprs[src];
-    memcpy(&fprs[dst], &value, 4);
+    m2c_copy(&fprs[dst], &value, 4);
   }
 
   void cvtsw(int dst, int src) {
     // int to float
     s32 value;
-    memcpy(&value, &fprs[src], 4);
+    m2c_copy(&value, &fprs[src], 4);
     fprs[dst] = value;
   }
 
@@ -1574,7 +1622,7 @@ struct ExecutionContext {
     u32 shift = addr & 3;
 
     u32 mem;
-    memcpy(&mem, g_ee_main_mem + (addr & ~3), 4);
+    m2c_copy(&mem, g_ee_main_mem + (addr & ~3), 4);
 
     if (!dst)
       return;
@@ -1598,7 +1646,7 @@ struct ExecutionContext {
     u32 shift = addr & 3;
 
     u32 mem;
-    memcpy(&mem, g_ee_main_mem + (addr & ~3), 4);
+    m2c_copy(&mem, g_ee_main_mem + (addr & ~3), 4);
 
     if (!dst)
       return;
@@ -1632,7 +1680,7 @@ struct ExecutionContext {
 
     u64 mem;
     // memRead64(addr & ~7, &mem);
-    memcpy(&mem, g_ee_main_mem + (addr & ~7), 8);
+    m2c_copy(&mem, g_ee_main_mem + (addr & ~7), 8);
 
     if (!dst)
       return;
@@ -1645,7 +1693,7 @@ struct ExecutionContext {
 
     u64 mem;
     // memRead64(addr & ~7, &mem);
-    memcpy(&mem, g_ee_main_mem + (addr & ~7), 8);
+    m2c_copy(&mem, g_ee_main_mem + (addr & ~7), 8);
 
     if (!dst)
       return;

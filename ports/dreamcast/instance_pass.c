@@ -200,6 +200,36 @@ static void compose(const float b[10],const dc_instance_camera *cam,const float 
  out[3][2]+=b[9];
  out[0][3]=out[1][3]=out[2][3]=0;out[3][3]=1;
 }
+/* A geometry's vertices are shared by its triangles. One viewport test, one
+ * perspective divide and one colour per vertex serve every triangle whose three
+ * corners are in front of the near plane and within the guard band. Inside the
+ * viewport the arithmetic is the per-triangle path's, so those vertices are
+ * the same; a triangle that crosses a screen edge goes to the PVR whole, which
+ * clips it to the screen, instead of through the binary64 clipper. Triangles
+ * that cross the near plane or leave the guard band, and geometries larger
+ * than the cache, take the clipper path. */
+#define VERTEX_CACHE 1024u
+static struct vertex_cache {float px,py,inv,u,v;uint32_t argb,inside,out;} vertex_cache[VERTEX_CACHE];
+/* inside: 1 within the viewport, 2 in front of the near plane and within the
+ * guard band around it (the PVR clips those triangles to the screen itself). */
+/* The planes a vertex is clearly outside of, by dc_render_clip_viewport's own
+ * single-precision test (render_frustum.c outside()): three corners outside one
+ * plane are a triangle the clipper returns empty. A vertex the clipper would
+ * refuse as out of range, or would decide in binary64, reports no plane. */
+static uint32_t clearly_outside(float x,float y,float z) {
+ uint32_t mask=z<DC_SCENE_NEAR;unsigned plane;
+ if(!(fabsf(x)<=4000000.f)||!(fabsf(y)<=4000000.f)||!(fabsf(z)<=4000000.f))return 0;
+ for(plane=1;plane<5;++plane){float a,b2;
+  switch(plane){
+  case 1:a=390.f*x;b2=320.f*z;break;
+  case 2:a=-390.f*x;b2=320.f*z;break;
+  case 3:a=-390.f*y;b2=260.f*z;break;
+  default:a=390.f*y;b2=220.f*z;break;
+  }
+  if(a+b2< -((fabsf(a)+fabsf(b2))*(4.f*1.1920928955078125e-7f)))mask|=1u<<plane;
+ }
+ return mask;
+}
 static int draw(const dc_instance_package *pkg,const dc_instance_camera *cam,float (*view)[3],dc_instance_stats *st,
                 int list,const dc_instance_material *materials,uint32_t material_count) {
  float b[10];uint32_t i;unsigned queued=0;const void *current=NULL;pvr_poly_cxt_t cxt;int counting=list==PVR_LIST_OP_POLY;
@@ -211,16 +241,15 @@ static int draw(const dc_instance_package *pkg,const dc_instance_camera *cam,flo
   const dc_instance_palette *lighting=palette_package==pkg?palette_active:NULL;
   const unsigned char *table=NULL;
   const float *m=in->m;float dx=m[9]-cam->tx,dz=m[11]-cam->tz,dx2=dx*dx,dz2=dz*dz,d2=dx2+dz2;
-  uint32_t first,g;unsigned lod,count;
+  uint32_t first,g;unsigned lod,count;int composed=0;
   if(counting)++st->instances;
   if(d2>cam->draw_distance*cam->draw_distance)continue;
   if(lighting)table=lighting->tables?lighting->tables[i]:lighting->data+rd32(lighting->data+lighting->resident+4*i);
   first=dc_instance_run(pkg,in,d2,&lod,&count);
   if(counting){++st->drawn_instances;++st->lod_instances[lod];}
-  static matrix_t mv __attribute__((aligned(32)));compose(b,cam,m,mv);
-  if(!pkg->quant)mat_load(&mv);
+  static matrix_t mv __attribute__((aligned(32)));
   for(g=first;g<first+count;++g){
-   const dc_instance_proto *p=&pkg->protos[g];const void *header=NULL;uint32_t k;int textured=0,single=0;
+   const dc_instance_proto *p=&pkg->protos[g];const void *header=NULL;uint32_t k;int textured=0,single=0,cached;
    if(materials&&p->material<material_count&&materials[p->material].header){
     if(materials[p->material].list!=(uint32_t)list)continue;
     header=materials[p->material].header;textured=1;single=materials[p->material].single_sided!=0;
@@ -236,6 +265,8 @@ static int draw(const dc_instance_package *pkg,const dc_instance_camera *cam,flo
     if(r2>r0){r0=r2;}
     if(dc_instance_sphere_outside(c,s[3]*sqrtf(r0)*0.25f/* DC_RENDER_WORLD_SCALE */)){st->triangles+=p->indices/3u;++st->sphere_culled;continue;}}
    if(header!=current){flush(&queued);pvr_prim(header,sizeof(pvr_poly_hdr_t));current=header;}
+   /* the instance's matrix only once a geometry of it is drawn in this list */
+   if(!composed){compose(b,cam,m,mv);if(!pkg->quant)mat_load(&mv);composed=1;}
    /* every vertex through XMTRX: one ftrv each. DCI3 folds the geometry's
     * centre and scale into the matrix, leaving the 16-bit steps to convert. */
    if(pkg->quant){static matrix_t mq __attribute__((aligned(32)));const float *q=pkg->quant[g];unsigned c,r;
@@ -247,10 +278,40 @@ static int draw(const dc_instance_package *pkg,const dc_instance_camera *cam,flo
    }else
    for(k=0;k<p->verts;++k){const dc_instance_vertex *v=&pkg->verts[p->first_vert+k];float x=v->x,y=v->y,z=v->z;
     mat_trans_single3_nodiv(x,y,z);view[k][0]=x;view[k][1]=y;view[k][2]=z;}
+   cached=p->verts<=VERTEX_CACHE;
+   if(cached)for(k=0;k<p->verts;++k){struct vertex_cache *c=&vertex_cache[k];const float x=view[k][0],y=view[k][1],z=view[k][2];
+    c->inside=z>=DC_SCENE_NEAR&&z<=4e6f&&390.f*x<=319.9f*z&&-390.f*x<=319.9f*z&&390.f*y<=259.9f*z&&-390.f*y<=219.9f*z;
+    c->out=0;
+    if(!c->inside&&pkg->cverts)c->out=clearly_outside(x,y,z);
+    if(!c->inside&&!(z>=DC_SCENE_NEAR&&z<=4e6f))continue;
+    {float inv=1.f/z;c->px=320.f+390.f*x*inv;c->py=260.f-390.f*y*inv;c->inv=inv;}
+    if(!c->inside){
+     if(!(c->px>=-1024.f&&c->px<=1664.f&&c->py>=-1024.f&&c->py<=1504.f))continue;
+     c->inside=2;
+    }
+    c->u=0;c->v=0;
+    if(pkg->cverts){const dc_instance_cvertex *s=&pkg->cverts[p->first_vert+k];
+     c->argb=lighting?dc_instance_palette_colour(pkg,lighting,table,g,k):s->argb;
+     if(textured){c->u=s->u*(1.f/2048.f);c->v=s->v*(1.f/2048.f);}}
+    else{const dc_instance_vertex *s=&pkg->verts[p->first_vert+k];c->argb=s->argb;if(textured){c->u=s->u;c->v=s->v;}}
+   }
    for(k=0;k<p->indices;k+=3){
     const uint16_t *ix=&pkg->indices[p->first_index+k];dc_clip_vertex input[3],poly[DC_RENDER_CLIP_CAP];
     unsigned j,front=0;int n,fan;float px[DC_RENDER_CLIP_CAP],py[DC_RENDER_CLIP_CAP],pz[DC_RENDER_CLIP_CAP];
     ++st->triangles;
+    /* wholly outside one plane: the clipper's own early return, without the call */
+    if(cached&&(vertex_cache[ix[0]].out&vertex_cache[ix[1]].out&vertex_cache[ix[2]].out)){++st->culled;continue;}
+    if(cached&&vertex_cache[ix[0]].inside&&vertex_cache[ix[1]].inside&&vertex_cache[ix[2]].inside){
+     const struct vertex_cache *c0=&vertex_cache[ix[0]],*c1=&vertex_cache[ix[1]],*c2=&vertex_cache[ix[2]];
+     float area=(c1->px-c0->px)*(c2->py-c0->py)-(c1->py-c0->py)*(c2->px-c0->px);
+     if(area==0){++st->culled;continue;}
+     if(single&&area<0){++st->culled;++st->back_faces;continue;}
+     for(j=0;j<3;++j){const struct vertex_cache *c=j==0?c0:j==1?c1:c2;pvr_vertex_t *v=&commands[queued++];
+      v->flags=j==2?PVR_CMD_VERTEX_EOL:PVR_CMD_VERTEX;v->x=c->px;v->y=c->py;v->z=c->inv;
+      v->u=c->u;v->v=c->v;v->argb=c->argb;v->oargb=0;}
+     ++st->submitted;if(queued==96)flush(&queued);
+     continue;
+    }
     for(j=0;j<3;++j){const float *v=view[ix[j]];float u=0,w=0;uint32_t argb;
      if(pkg->cverts){const dc_instance_cvertex *s=&pkg->cverts[p->first_vert+ix[j]];argb=lighting?dc_instance_palette_colour(pkg,lighting,table,g,ix[j]):s->argb;
       if(textured){u=s->u*(1.f/2048.f);w=s->v*(1.f/2048.f);}}

@@ -696,3 +696,71 @@ frame), `context_fields` is 12 us (about 980), `dc_goal_pp_scope_resolve` is
 steps, which include it, are about 330 to 390 ms inclusive. The next frame-rate
 gains are in the game code paths (collision, the camera, actors), not in the
 bridge.
+
+### A sampling profile of the frame (Flycast, 3177 of 3177, 2026-11-11)
+
+A temporary KOS thread sampled the main thread's saved pc and pr each
+millisecond while `dispatch()` ran, into a hash table of 64-byte buckets, and
+resolved the buckets in GOAL code against the code registry at the end. (The
+tables must stay small: 160 KiB of them made the level startups fail for want
+of memory; 33 KiB fits.) It is not in the tree. What it showed, and what
+changed:
+
+| Step | GOAL frame median | Punch-through list | Draw median |
+| --- | --- | --- | --- |
+| Before | 301 ms | 83 ms | 115 ms |
+| Word copies in the mips2c accessors | 225 ms (profiler running) | | |
+| Six hot mips2c files at -O2 | 176 ms (profiler running) | | |
+| The same, without the profiler thread | 146 ms | | |
+| One projection and colour per vertex | | 62 ms | 91 ms |
+| Early reject, then the guard band | | 46 ms | 75 ms |
+
+- **mips2c accessors.** About 22% of the samples were in newlib `memcpy`,
+  called from `ExecutionContext` (game/mips2c/mips2c_private.h). The mips2c
+  files build with `-Os`, where GCC makes every 16-byte struct copy
+  (`gpr_src`, `vf_src`) and every fixed `memcpy` in a load or store a library
+  call: one or two calls per translated MIPS instruction. On SH-4 the
+  accessors now move whole words (`m2c_copy`); a MIPS load or store traps
+  unless its address is aligned to its size, so the original code only makes
+  aligned accesses. Symbol loads and the variable-size scratchpad copies keep
+  `memcpy`. The library shrank by 21 KiB.
+- **-O2 for six files.** `collide_cache`, `sky_tng`, `ocean`, `ocean_vu0`,
+  `sparticle` and `bones` (`HOT_FILES` in build_mips2c.py) carry most of the
+  translated-code samples. At `-O2` they inline the accessors and add about
+  41 KiB of code; the other 18 files stay at `-Os`.
+- **Not the disc.** 45% of the samples were in `genwait_wait`, but timed
+  `fread`/`fopen` calls in level_str.c, level_sound.c and level_dgo_rpc.c come
+  to about 2 ms a frame. The waits belong to a few very long frames
+  (`dispatch` peaks at 12.6 s, the GOAL frame at 45 s), which the medians do
+  not see. What blocks there is not yet known.
+- **Tried, no gain:** `__builtin_memcpy` for the fixed copies in goal_runtime.c,
+  goal_bridge.c and the other bridge files (KOS compiles with `-fno-builtin`).
+  The median did not move (175.7 to 175.2 ms), so it is not in the tree.
+
+After these the profile is flat. The largest single entries are
+`dc_goal_resolve` (about 15% of the samples outside the waits, called from the
+symbol, type and code-entry checks and from `dc_goal_mmi`), the out-of-line
+`vf_src`/`gpr_src` of the files still at `-Os`, and the 1.2 KiB `memset` of
+each mips2c call's context. The sky, ocean, sprite and shadow functions still
+build PS2 display lists that this port does not draw.
+
+The instance pass (instance_pass.c) had three costs in the punch-through list:
+
+- Each triangle corner was tested against the viewport, divided and coloured
+  again for every triangle that shares it. A cache of 1,024 entries now does
+  that once per vertex of a geometry; a triangle whose corners are all inside
+  the viewport is submitted from it with the same arithmetic as before.
+- `dc_render_clip_viewport` clips in binary64, which is software arithmetic
+  with `-m4-single`; the clipper, `append` and `distance` were 45% of the pass.
+  A triangle whose corners are all clearly outside one plane, by the clipper's
+  own single-precision test, is now counted as culled without the call.
+- A triangle in front of the near plane whose corners project within the
+  guard band (x from -1024 to 1664, y from -1024 to 1504) goes to the PVR
+  whole; the PVR clips it to the screen. Only triangles that cross the near
+  plane or leave the guard band reach the clipper. This changes the submitted
+  count slightly (10,130 to 10,005 a frame: a clipped triangle was a fan).
+
+An instance's matrix is composed only when one of its geometries is drawn in
+the list. The remaining cost of the pass is the vertex transform and the
+submission itself: about 30,000 vertices a frame as separate triangles.
+Strips would cut that.

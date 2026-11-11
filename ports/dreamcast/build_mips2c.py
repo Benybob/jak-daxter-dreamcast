@@ -32,6 +32,9 @@ DEFAULT_FILES = ('collide_cache', 'sky_tng', 'collide_edge_grab', 'collide_mesh'
                  'generic_merc', 'ripple', 'bones', 'generic_effect2', 'collide_func', 'collide_probe', 'generic_tie',
                  'joint', 'merc_blend_shape', 'ocean', 'ocean_vu0', 'shadow', 'sparticle', 'sparticle_launcher', 'tfrag',
                  'tie_methods', 'draw_string', 'texture', 'time_of_day')
+# Built at -O2 over the -Os default: they carry most of the level frame's mips2c
+# time, and -O2 inlines the ExecutionContext accessors for about 41 KiB more code.
+HOT_FILES = ('collide_cache', 'sky_tng', 'ocean', 'ocean_vu0', 'sparticle', 'bones')
 CPP_TOKEN = re.compile(r'"(?:\\.|[^"\\])*"|//[^\n]*|/\*.*?\*/', re.S)
 
 
@@ -316,7 +319,7 @@ def main():
     objects = []
     for source in sources + [port / 'mips2c_dc.cpp']:
         obj = out / (source.stem + '.o')
-        result = subprocess.run([str(args.gxx), *flags, '-c', str(source), '-o', str(obj)],
+        result = subprocess.run([str(args.gxx), *flags, *(['-O2'] if source.stem in HOT_FILES else []), '-c', str(source), '-o', str(obj)],
                                 capture_output=True, text=True)
         if result.returncode:
             sys.exit(f'{source.name} failed:\n' + '\n'.join(result.stderr.splitlines()[:20]))
