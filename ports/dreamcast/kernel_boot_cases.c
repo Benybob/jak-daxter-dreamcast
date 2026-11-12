@@ -562,6 +562,9 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
        CHECK(dc_res_native.mismatches,0,"native res lookups match the GOAL method");
        CHECK(dc_res_native.by_name_checked>=32u,1,"remembered entity-by-name answers were compared with GOAL");
        CHECK(dc_res_native.by_name_mismatches,0,"remembered entity-by-name answers match GOAL");
+       {extern volatile uint32_t dc_m27_checked,dc_m27_mismatches;  /* collide_cache.cpp, SH-4 */
+        CHECK(dc_m27_checked>=32u,1,"collide-cache method 27's C strip walk was compared with the translation");
+        CHECK(dc_m27_mismatches,0,"collide-cache method 27's C strip walk matches the translation");}
 #endif
        /* Every swap-display's display-frame-start counts at least one frame. */
        CHECK(word(&rt,entry(&rt,"*display*"),REAL_INTEGRAL_FRAMES)-before>=DISPLAY_FRAMES,1,

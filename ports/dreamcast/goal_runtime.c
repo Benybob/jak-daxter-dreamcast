@@ -300,7 +300,12 @@ int dc_goal_code_cache_enabled;  /* declared in goal_module.h */
  * depends on where the linker put the strings, so one way a set made the
  * misses differ from build to build. */
 enum {FIND_SETS=128};
-typedef struct {const dc_goal_runtime *rt;const char *name;uint32_t slot;} find_cache_entry;
+/* string: the slot's name string when it was remembered. A hit reads that one
+ * word back (a rebound or rolled-back slot names another string) and compares
+ * the caller's name with its text, instead of re-validating the symbol, its
+ * hash and the string object each time (2026-11-12 profile: the checked
+ * accessors under dc_goal_find were about 7% of a level GOAL frame). */
+typedef struct {const dc_goal_runtime *rt;const char *name;uint32_t slot,string;} find_cache_entry;
 static find_cache_entry find_cache[FIND_SETS][2];
 static unsigned find_cache_index(const char *name){return (unsigned)(((uint32_t)(uintptr_t)name*2654435761u)>>25);}
 static uint32_t find_cached(dc_goal_runtime *rt,const char *name) {
@@ -309,17 +314,23 @@ static uint32_t find_cached(dc_goal_runtime *rt,const char *name) {
   set=find_cache[find_cache_index(name)];
   for (way=0;way<2;++way) { e=&set[way]; if (e->rt==rt && e->name==name) break; }
   if (way==2) return 0;
-  old=dc_goal_symbol_name(rt,e->slot);
+  {uint32_t string;
+   old=read32(rt,e->slot+DC_GOAL_SYM_TO_STRING_OFFSET,&string) && string==e->string?
+       dc_goal_resolve(rt,e->string+4u,1):NULL;}
   if (!old || strcmp(old,name)) { e->rt=NULL; rt->error=DC_GOAL_OK; return 0; }
   if (way) { find_cache_entry t=set[0]; set[0]=set[1]; set[1]=t; }
   return set[0].slot;
 }
 static void find_remember(dc_goal_runtime *rt,const char *name,uint32_t slot) {
   find_cache_entry *set;
+  uint32_t string;const char *text;
   if (!dc_goal_code_cache_enabled || !slot) return;
+  /* only a slot whose name string checks out now, and is this name */
+  if (!read32(rt,slot+DC_GOAL_SYM_TO_STRING_OFFSET,&string) || !(text=dc_goal_symbol_name(rt,slot)) ||
+      text!=dc_goal_resolve(rt,string+4u,1) || strcmp(text,name)) { rt->error=DC_GOAL_OK; return; }
   set=find_cache[find_cache_index(name)];
   if (set[0].rt!=rt || set[0].name!=name) set[1]=set[0];
-  set[0].rt=rt;set[0].name=name;set[0].slot=slot;
+  set[0].rt=rt;set[0].name=name;set[0].slot=slot;set[0].string=string;
 }
 uint32_t dc_goal_find(dc_goal_runtime *rt,const char *name) {
   uint32_t slot,result;

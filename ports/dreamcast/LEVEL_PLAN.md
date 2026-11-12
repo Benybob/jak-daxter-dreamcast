@@ -1041,3 +1041,26 @@ little-endian); tests/test_mmi_pad.py still matches its independent model.
 | MMI lanes | 54.7 ms |
 
 A frame is about 82 ms (12.2 fps in Flycast).
+
+### Cheaper symbol-cache hits, and collide-cache method 27's strip walk in C (Flycast, 2736 of 2736, 2026-11-12)
+
+- **dc_goal_find hits.** The bridge looks up `*kernel-context*`,
+  `kernel-context` and others by name on each process switch. With the code
+  cache on, a hit re-validated the slot through the checked accessors
+  (symbol_address, read32, string_data): about 7% of the logic samples. A
+  cache entry now also keeps the slot's name-string pointer from when it was
+  remembered; a hit reads that one word back and compares the name with its
+  text. A rebound or rolled-back slot names another string and misses.
+  54.7 to 53.6 ms.
+- **collide-cache method 27** (game/mips2c/jak1_functions/collide_cache.cpp)
+  walks a mesh's triangle strips over the scratchpad vertices, keeps the
+  triangles whose integer bounds meet the box and whose pat passes the ignore
+  mask, and copies them into the cache. Under `__sh__` the walk is C on 32-bit
+  integers, with the MIPS order of tests (the first triangle of a strip checks
+  for a full cache before the pat mask, the rest after). The translated
+  prologue (its method 29 call) is unchanged. The first 64 calls also run the
+  translation and compare a hash of the count and the triangles written; the
+  level checks that at least 32 were compared and none differed (2734 to 2736
+  checks). 53.6 to 50.2 ms.
+
+A frame is about 78 ms (12.9 fps in Flycast).
