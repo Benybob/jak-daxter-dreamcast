@@ -172,3 +172,29 @@ int dc_res_native_install_by_name(dc_goal_runtime *rt,dc_goal_cache_sync sync){
  native=dc_goal_symbol_value(rt,dc_goal_find(rt,"dc-native-entity-by-name"));
  return native && dc_goal_set_symbol(rt,symbol,native);
 }
+
+/* bones-mtx-calc-execute (bones.gc) without the matrices. It turns each drawn
+ * process's joints and bones into the PS2 renderers' skinning matrices (merc,
+ * generic, shadow) in the frame's DMA buffer, then empties
+ * *bone-calculation-list*. The level's renderers are off and level_models.c
+ * skins from the cspace bones themselves, so only the list reset is kept
+ * (the original bone-list-init). About 4% of a level GOAL frame. */
+typedef uint64_t (*none_fn)(void);
+static none_fn bone_list_init;
+static uint64_t bones_execute_native(void){++dc_res_native.bones_skipped;return bone_list_init();}
+int dc_res_native_install_bones(dc_goal_runtime *rt,dc_goal_cache_sync sync){
+ static unsigned char code[12]={1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0};
+ dc_goal_code_export function={"dc-native-bones-mtx-calc-execute",code,12,NULL,0};
+ dc_goal_module_result result;dc_goal_code_entry_info info;
+ uint32_t target=(uint32_t)(uintptr_t)bones_execute_native,symbol,old,init,native;
+ enum dc_goal_error prior=rt->error;
+ symbol=dc_goal_find(rt,"bones-mtx-calc-execute");old=symbol?dc_goal_symbol_value(rt,symbol):0;
+ init=dc_goal_symbol_value(rt,dc_goal_find(rt,"bone-list-init"));
+ if(rt->error!=DC_GOAL_OK || !old || !init || !dc_goal_code_entry(rt,old,&info) || info.symbol!=symbol ||
+    !dc_goal_code_entry(rt,init,&info)){rt->error=prior;return 0;}
+ bone_list_init=(none_fn)(uintptr_t)init;
+ memcpy(code+8,&target,4);
+ if(!dc_goal_load_module(rt,&function,1,sync,NULL,&result))return 0;
+ native=dc_goal_symbol_value(rt,dc_goal_find(rt,"dc-native-bones-mtx-calc-execute"));
+ return native && dc_goal_set_symbol(rt,symbol,native);
+}

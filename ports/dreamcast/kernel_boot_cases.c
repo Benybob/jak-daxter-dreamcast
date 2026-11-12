@@ -517,6 +517,14 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
         * compared with the original method's. */
        CHECK(dc_res_native_install(&rt,sync_code),1,"res-lump lookup-tag-idx runs natively");
        CHECK(dc_res_native_install_by_name(&rt,sync_code),1,"entity-by-name answers are remembered");
+       CHECK(dc_res_native_install_bones(&rt,sync_code),1,"the PS2 renderers' bone matrices are not computed");
+       /* The level draw has no sprite renderer yet, so the particle system's
+        * update (process-particles, about 6% of a GOAL frame with its
+        * callbacks) is off through the original debug menu's *particles-flag*.
+        * Turn it back on with a particle renderer. */
+       {uint32_t particles=dc_goal_find(&rt,"*particles-flag*");
+        CHECK(particles && dc_goal_symbol_value(&rt,particles)!=rt.s7,1,"original particle enable found, on");
+        if(particles)dc_goal_set_symbol(&rt,particles,rt.s7);}
 #endif
        before=word(&rt,entry(&rt,"*display*"),REAL_INTEGRAL_FRAMES);
 #ifdef DC_LEVEL_LOGIC  /* the level ELF */
@@ -562,6 +570,7 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
        CHECK(dc_res_native.mismatches,0,"native res lookups match the GOAL method");
        CHECK(dc_res_native.by_name_checked>=32u,1,"remembered entity-by-name answers were compared with GOAL");
        CHECK(dc_res_native.by_name_mismatches,0,"remembered entity-by-name answers match GOAL");
+       CHECK(dc_res_native.bones_skipped>=DISPLAY_FRAMES/2u,1,"the bone-matrix pass was skipped in the display frames");
        {extern volatile uint32_t dc_m27_checked,dc_m27_mismatches;  /* collide_cache.cpp, SH-4 */
         CHECK(dc_m27_checked>=32u,1,"collide-cache method 27's C strip walk was compared with the translation");
         CHECK(dc_m27_mismatches,0,"collide-cache method 27's C strip walk matches the translation");}

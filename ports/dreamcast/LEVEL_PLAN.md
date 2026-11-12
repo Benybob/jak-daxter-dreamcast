@@ -1085,3 +1085,28 @@ The C paths are compiled only into the level library (`DC_MIPS2C_LEVEL`):
 with them in the full library the Jak ELF ran out of arena loading GAME.CGO
 (object 285, out of memory). The kernel, arena and Jak ELFs run the
 translation alone, as before.
+
+### Where the logic goes by process; work for renderers the level does not have (Flycast, 2743 of 2743, 2026-11-12)
+
+The sampling profiler, tagging each sample with `*kernel-context*`'s current
+process: target (Jak) 39%, the display process 24%, the cameras 19%
+(camera-voicebox and camera-slave 8% each, master 3%), crates 5%, everything
+else under 3% each. Updating far actors less often would gain almost
+nothing in Geyser Rock: the cost is Jak, the camera and the frame's own
+passes.
+
+Two of those passes only feed renderers the level ELF does not have:
+
+- **bones-mtx-calc-execute** builds the PS2 renderers' skinning matrices
+  (merc, generic, shadow) in the DMA buffer. `level_models.c` skins from the
+  cspace bones, so `res_native.c` replaces the function with one that only
+  empties *bone-calculation-list* (the original bone-list-init).
+  47.9 to 46.0 ms.
+- **process-particles.** The level draw has no sprite renderer yet. The
+  original debug menu's `*particles-flag*` turns the particle update off:
+  46.0 to 37.7 ms, far more than its samples suggested (the mips2c block
+  processing, its GOAL callbacks and the sprite arrays). Turn it back on
+  when particles are drawn.
+
+The framebuffer is unchanged by both. A frame is about 65 ms (15.3 fps in
+Flycast).
