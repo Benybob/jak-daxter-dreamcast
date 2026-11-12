@@ -817,8 +817,10 @@ jak-dc-kernel-dgo.elf: kernel_boot_main.o kernel_dgo_cases.o kernel_vf_fixture.o
 # The DGO boot, then a level's logic BSP from /cd through original login
 # (AI-assisted), ISC. Disc: build/level-disc with TRAINING.DGO and VILLAGE1.DGO (logic BSPs), TRA-CODE.DGO and VI1-CODE.DGO. A disc boot loads
 # the flat binary, so the boot romdisk sits low, as in the Jak ELF.
-level_kernel_cases.o: kernel_boot_cases.c level_logic.h level_dgo_rpc.h level_str.h level_sound.h level_player.h goal_dgo.h goal_dgo_zst.h goal_bridge.h goal_fiber.h goal_main_start.h runtime_cases.h build/game_cgo_order.h build/vf_cases.h mips2c_dc.h mips2c_cases.h build/mips2c/mips2c_cases_expect.h
+level_kernel_cases.o: kernel_boot_cases.c res_native.h level_logic.h level_dgo_rpc.h level_str.h level_sound.h level_player.h goal_dgo.h goal_dgo_zst.h goal_bridge.h goal_fiber.h goal_main_start.h runtime_cases.h build/game_cgo_order.h build/vf_cases.h mips2c_dc.h mips2c_cases.h build/mips2c/mips2c_cases_expect.h
 	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -DDC_KERNEL_DGO -DDC_LEVEL_LOGIC -DDC_ARENA_COEXIST -I. -c kernel_boot_cases.c -o $@
+res_native.o: res_native.c res_native.h goal_module.h goal_runtime.h goal_layout.h
+	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -I. -c $< -o $@
 level_logic.o: level_logic.c level_logic.h goal_module.h goal_runtime.h
 	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -I. -c $< -o $@
 level_dgo_rpc.o: level_dgo_rpc.c level_dgo_rpc.h goal_art.h goal_bridge.h goal_runtime.h
@@ -860,7 +862,7 @@ level_romdisk_stage.o: romdisk_stage.c
 	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -DDC_ARENA_COEXIST -c $< -o $@
 level_process_spans.o: process_spans.c $(wildcard *.h)
 	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -DDC_ARENA_JAK_PLAYER -I. -c $< -o $@
-jak-dc-level.elf: kernel_boot_main.o level_kernel_cases.o kernel_vf_fixture.o goal_dgo.o goal_dgo_zst.o level_romdisk_stage.o level_coexist.o level_draw.o level_models.o arena_slab.o arena_live_math.o arena_fly_instance_cells.o arena_fly_render_base.o arena_fly_render_block_cache.o arena_fly_render_indexed.o arena_fly_render_draw_window.o arena_fly_render_gpu.o arena_fly_render_cache.o arena_fly_render_package.o arena_fly_sector_inflate_stored.o render_world_view_scalar.o render_world_view_gate.o render_frustum.o instance_pass.o level_logic.o level_dgo_rpc.o level_str.o level_sound.o level_player.o level_goal_art.o level_goal_bridge.o level_process_spans.o level_goal_pad.o $(ZSTD_OBJS) build/kernel-dgo-romdisk.o $(filter-out goal_bridge.o process_spans.o goal_pad.o,$(KERNEL_BOOT_LIBS)) build/mips2c-level/libdcmips2c.a
+jak-dc-level.elf: kernel_boot_main.o level_kernel_cases.o res_native.o kernel_vf_fixture.o goal_dgo.o goal_dgo_zst.o level_romdisk_stage.o level_coexist.o level_draw.o level_models.o arena_slab.o arena_live_math.o arena_fly_instance_cells.o arena_fly_render_base.o arena_fly_render_block_cache.o arena_fly_render_indexed.o arena_fly_render_draw_window.o arena_fly_render_gpu.o arena_fly_render_cache.o arena_fly_render_package.o arena_fly_sector_inflate_stored.o render_world_view_scalar.o render_world_view_gate.o render_frustum.o instance_pass.o level_logic.o level_dgo_rpc.o level_str.o level_sound.o level_player.o level_goal_art.o level_goal_bridge.o level_process_spans.o level_goal_pad.o $(ZSTD_OBJS) build/kernel-dgo-romdisk.o $(filter-out goal_bridge.o process_spans.o goal_pad.o,$(KERNEL_BOOT_LIBS)) build/mips2c-level/libdcmips2c.a
 	kos-c++ -o $@ $^ -Wl,--section-start=.dc_stage=0x8cb00000 -lm
 
 # GOAL's 60-frame boot with PVR clears and a separate slab (AI-assisted), ISC.

@@ -28,6 +28,7 @@
 #include "runtime_cases.h"
 #ifdef DC_LEVEL_LOGIC
 #include "level_logic.h"
+#include "res_native.h"
 #include "level_dgo_rpc.h"
 #include "level_str.h"
 #include "level_sound.h"
@@ -512,6 +513,9 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
         if(vu1 && tex){dc_goal_set_symbol(&rt,vu1,0);dc_goal_set_symbol(&rt,tex,0);}
         /* draw-ocean builds the ocean's vertices before it tests the enable. */
         CHECK(dc_mips2c_skip("ocean-generate-verts",1),1,"ocean vertex generation found and turned off");}
+       /* res-lump lookup-tag-idx in C (res_native.c); its first calls are
+        * compared with the original method's. */
+       CHECK(dc_res_native_install(&rt,sync_code),1,"res-lump lookup-tag-idx runs natively");
 #endif
        before=word(&rt,entry(&rt,"*display*"),REAL_INTEGRAL_FRAMES);
 #ifdef DC_LEVEL_LOGIC  /* the level ELF */
@@ -553,6 +557,8 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
        CHECK(rt.error,DC_GOAL_OK,"display-loop frames leave no runtime fault");
 #ifdef DC_LEVEL_LOGIC
        CHECK(dc_level_check(&rt),1,"original level loading makes Geyser Rock active with its bsp attached");
+       CHECK(dc_res_native.checked>=1000u,1,"native res lookups were compared with the GOAL method");
+       CHECK(dc_res_native.mismatches,0,"native res lookups match the GOAL method");
 #endif
        /* Every swap-display's display-frame-start counts at least one frame. */
        CHECK(word(&rt,entry(&rt,"*display*"),REAL_INTEGRAL_FRAMES)-before>=DISPLAY_FRAMES,1,

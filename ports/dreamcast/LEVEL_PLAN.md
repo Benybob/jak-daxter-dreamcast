@@ -984,3 +984,37 @@ session) and its raw sectors (Mode 2, subheader 00 00 08 00) are correct.
 The drive had rounded the 8x request up to 48x; it offers 16x to 48x for
 this media. `burn_cdr.py` now sets the slowest offered speed and refuses to
 burn unless the drive reports it.
+
+### res lookups in C, and the mips2c context cleared eight bytes a store (Flycast, 2731 of 2731, 2026-11-12)
+
+A sampling profile of the logic frames, after the draw work:
+
+| Where | Share of logic samples |
+| --- | --- |
+| res-lump lookup-tag-idx, get-property-struct, make-property-data, entity-by-name, name=, string= | about 14% |
+| memset of each mips2c call's 1.2 KB ExecutionContext (from dc_run) | 6.8% |
+| collide-cache methods 26-32, moving-sphere-triangle-intersect, collide-probe-node (mips2c) | about 20% |
+| new-bones-mtx-calc, mmi_native, mem-move | about 10% |
+
+- **lookup-tag-idx** (res.gc) binary-searches a lump's tags on the first
+  eight characters of each name as a 64-bit integer; entity-by-name runs it
+  for every actor, ambient and camera it passes. The backend keeps GOAL
+  integers in register pairs, so the search was pair arithmetic.
+  `res_native.c` is the same method in C, installed in res-lump's method 19
+  and the descendants that hold it (`dc_goal_method_set`). The first 4,096
+  calls also run the original GOAL method and compare the 64-bit result; the
+  level checks that over 1,000 were compared and none differed (2728 to 2731
+  checks).
+- **The context clear.** The profiler's 64-byte buckets put memset's 8-byte
+  store loop under its byte-loop label. `clear_context` (mips2c_dc.cpp) sets
+  FPSCR.SZ, so each fmov.d stores 8 bytes: about a third of the instructions.
+  KOS saves FPSCR and resets it on each interrupt. The whole context is still
+  cleared (collide-edge-grab reads vector state it does not write).
+
+| Change | GOAL frame median (steady) |
+| --- | --- |
+| Before | 67.4 ms |
+| Native lookup-tag-idx | 63.8 ms |
+| The FPU clear | 61.4 ms |
+
+With the draw at 27.6 ms, a frame is about 89 ms (11.2 fps in Flycast).

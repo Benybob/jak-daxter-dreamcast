@@ -67,6 +67,32 @@ namespace {
 constexpr unsigned kEntries = sizeof(dc_entries) / sizeof(dc_entries[0]);
 Slot g_slots[kEntries];
 
+/* The context zeroed eight bytes a store: FPSCR.SZ=1 makes fmov.d a 64-bit move
+ * (fschg), so 1.2 KB is about 190 instructions instead of memset's 600. The
+ * translated code may read any register it did not write (collide-edge-grab
+ * reads vector state), so all of it is cleared. */
+static inline void clear_context(Mips2C::ExecutionContext* c) {
+  static_assert(sizeof(*c) % 8 == 0 && alignof(Mips2C::ExecutionContext) >= 8, "context clear");
+#if defined(__sh__) && defined(__SH_FPU_DOUBLE__)
+  char* start = reinterpret_cast<char*>(c);
+  char* end = start + sizeof(*c);
+  char* blocks = start + sizeof(*c) % 64;
+  asm volatile(
+      "fldi0 fr0\n\tfldi0 fr1\n\tfschg\n"
+      "1:\tfmov dr0,@-%0\n\tfmov dr0,@-%0\n\tfmov dr0,@-%0\n\tfmov dr0,@-%0\n"
+      "\tfmov dr0,@-%0\n\tfmov dr0,@-%0\n\tfmov dr0,@-%0\n\tfmov dr0,@-%0\n"
+      "\tcmp/hi %1,%0\n\tbt 1b\n"
+      "\tcmp/hi %2,%0\n\tbf 3f\n"
+      "2:\tfmov dr0,@-%0\n\tcmp/hi %2,%0\n\tbt 2b\n"
+      "3:\tfschg\n"
+      : "+r"(end)
+      : "r"(blocks), "r"(start)
+      : "fr0", "fr1", "t", "memory");
+#else
+  memset(c, 0, sizeof *c);
+#endif
+}
+
 /* One call: the desktop trampoline's ExecutionContext and translated-code stack. */
 u64 dc_run(unsigned index, const u64* args) {
   using Mips2C::ExecutionContext;
@@ -78,7 +104,7 @@ u64 dc_run(unsigned index, const u64* args) {
   if (slot.skip) return 0;
   ++g_calls;
   ExecutionContext c;
-  memset(&c, 0, sizeof c);
+  clear_context(&c);
   const int positions[8] = {Mips2C::a0, Mips2C::a1, Mips2C::a2, Mips2C::a3,
                             Mips2C::t0, Mips2C::t1, Mips2C::t2, Mips2C::t3};
   for (int i = 0; i < 8; ++i) c.gprs[positions[i]].du64[0] = args[i];
@@ -245,7 +271,7 @@ extern "C" uint64_t dc_mips2c_call_jalr(const char* name, const uint64_t* args) 
     return 0;
   }
   Mips2C::ExecutionContext c;
-  memset(&c, 0, sizeof c);
+  clear_context(&c);
   const int positions[8] = {Mips2C::a0, Mips2C::a1, Mips2C::a2, Mips2C::a3,
                             Mips2C::t0, Mips2C::t1, Mips2C::t2, Mips2C::t3};
   for (int i = 0; i < 8; ++i) c.gprs[positions[i]].du64[0] = args[i];
