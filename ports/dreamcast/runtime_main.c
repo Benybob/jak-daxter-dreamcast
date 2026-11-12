@@ -17,6 +17,9 @@ uint32_t __attribute__((weak)) dc_kernel_arena_bytes(void) { return 12u*1024u*10
 #endif
 
 KOS_INIT_FLAGS(INIT_DEFAULT);
+/* The level ELF's TV results (level_draw.c): installed first, shown at the end. */
+void __attribute__((weak)) dc_results_install(const volatile void *telemetry) { (void)telemetry; }
+void __attribute__((weak)) dc_results_show(const volatile void *telemetry) { (void)telemetry; }
 typedef struct {
   uint32_t magic,version,state,total,passed,failed_case,system_ram,code_bytes;
   uint32_t observed_lo,observed_hi,expected_lo,expected_hi;
@@ -48,6 +51,7 @@ int main(void) {
 #endif
   unsigned char *allocation=memalign(32,capacity+32);
   dc_runtime_stats stats;
+  dc_results_install(&dc_backend);
   dc_backend.state=1; dc_backend.system_ram=_arch_mem_top-0x8c000000u;
   if (!allocation) {
     check(0,1,1000,"runtime arena allocation",NULL); dc_backend.state=3; return 1;
@@ -82,5 +86,6 @@ int main(void) {
   printf("GOAL_RUNTIME %lu/%lu checks: %s\n",(unsigned long)dc_backend.passed,
          (unsigned long)dc_backend.total,(const char*)dc_backend.description);
   thd_sleep(500);
+  dc_results_show(&dc_backend);
   return dc_backend.failed_case?1:0;
 }

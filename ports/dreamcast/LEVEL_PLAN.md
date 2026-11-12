@@ -944,3 +944,43 @@ projected his 3,400 triangles again for each (up to 7.3 ms a pass). The kept
 model whose joints and vertices are in the scratch is remembered for the frame;
 a later list reuses them. The GOAL frame is unchanged at 67.4 ms, so a frame is
 about 95 ms (10.5 fps in Flycast), and the game logic is now 70% of it.
+
+### A real-hardware test disc (2026-11-12)
+
+The level ELF now ends on a results screen in the BIOS font, for a photo of the
+TV (level_draw.c `dc_results_show`, hooked into runtime_main.c by weak
+symbols the other ELFs leave empty). It shows the checks passed, the run
+time, the steady median logic and draw times and the fps, the draw stages'
+averages, the scenery's triangles and LODs, and memory; A on a controller
+shows each frame's logic and draw time. An unhandled exception shows the
+same screen in red with its code, pc and pr (`EXC_UNHANDLED_EXC`), and a
+watchdog thread shows it after 90 s without a check or a draw frame, with
+the main thread's saved pc.
+
+`make_boot_cdr.py` builds the second session of a self-booting CD-R:
+IP.BIN in the system area, 1ST_READ.BIN scrambled (the same bytes as KOS's
+utils/scramble), and the staged /cd files, with ISO extents absolute from
+the session's first block. `burn_cdr.py` burns it through Windows SCSI
+pass-through, without administrator rights: session 1 is 300 silent audio
+sectors, closed with the next session allowed; session 2 is written
+track-at-once as CD-ROM XA Mode 2 Form 1 and closed, which finalizes the
+disc. It refuses session 2 unless the drive's next writable address is the
+track's. `--test` runs a step with the laser off. On the LG WH14NS40 the
+second session starts at 11702; the burned disc's TOC is an audio track at
+0 and a data track at 11702 in an XA session, and its 12,527 data sectors
+read back identical as Mode 2 Form 1.
+
+```
+py make_boot_cdr.py jak-dc-level.elf --ip-template ../../../kos-source/utils/makeip/rsrc/templates/ip.tmpl --staged build/level-disc --lba 11702 --output build/cdr
+py burn_cdr.py D: session1
+py burn_cdr.py D: nwa
+py burn_cdr.py D: session2 build/cdr/session2.iso
+```
+
+The first disc, burned at 48x, did not boot on a September 1999 US console
+(revision 1, which boots CD-Rs): the console played it as a one-track music
+CD. Its TOC (B0 pointer to 02:36:02, the data track at 11702 in an XA
+session) and its raw sectors (Mode 2, subheader 00 00 08 00) are correct.
+The drive had rounded the 8x request up to 48x; it offers 16x to 48x for
+this media. `burn_cdr.py` now sets the slowest offered speed and refuses to
+burn unless the drive reports it.

@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <zlib.h>
+#include <stdarg.h>
 #include "goal_runtime.h"
 #include "goal_module.h"
 #include "render_base.h"
@@ -297,4 +298,131 @@ int dc_level_draw_finish(void){
  return 1;
 }
 #undef CHECK
+
+/* Results on the TV for real hardware (AI-assisted): when the run ends, on an
+ * unhandled exception, or after 90 s without a check or a frame, the level ELF
+ * shows what it measured in the BIOS font, for a photo. t is runtime_main.c's
+ * dc_backend: words 2-5 state, total, passed, failed case; 8-11 observed and
+ * expected; the description from byte 48. A on a controller turns the page. */
+static const volatile uint32_t *results_t;
+static kthread_t *results_main;
+static volatile int results_shown;
+static uint64_t results_start_ms;
+static int results_row;
+static uint32_t median_of(const volatile uint32_t *v,unsigned from,unsigned to){
+ uint32_t a[TIME_FRAMES];unsigned n=0,i,j;
+ for(i=from;i<to&&i<TIME_FRAMES&&i<dc_level_frame_timing.frames;++i)a[n++]=v[i];
+ if(!n)return 0;
+ for(i=1;i<n;++i){uint32_t x=a[i];for(j=i;j&&a[j-1]>x;--j)a[j]=a[j-1];a[j]=x;}
+ return n&1?a[n/2]:(a[n/2-1]+a[n/2])/2u;
+}
+static void line(uint16_t colour,const char *format,...) __attribute__((format(printf,2,3)));
+static void line(uint16_t colour,const char *format,...){
+ char text[56];va_list args;
+ if(results_row>=19)return;
+ va_start(args,format);vsnprintf(text,sizeof text,format,args);va_end(args);
+ bfont_set_foreground_color(colour);
+ bfont_draw_str(vram_s+(6+24*results_row)*640+8,640,1,text);++results_row;
+}
+static void screen(uint16_t background){
+ unsigned i;
+ vid_set_mode(DM_640x480,PM_RGB565);
+ for(i=0;i<640u*480u;++i)vram_s[i]=background;
+ bfont_set_background_color(background);results_row=0;
+}
+#define MS(us) (unsigned)((us)/1000u),(unsigned)((us)%1000u/100u)
+static void page_summary(const char *why,uint16_t background){
+ const volatile uint32_t *t=results_t;unsigned frames=dc_level_frame_timing.frames,f=frames?frames:1,k;
+ uint32_t goal=median_of(dc_level_frame_timing.goal_us,40,96),draw=median_of(dc_level_frame_timing.frame_us,40,96);
+ uint32_t total=goal+draw;
+ screen(background);
+ line(0xffff,"JAK DC LEVEL TEST %s %s",__DATE__,__TIME__);
+ line(0xffe0,"%s: %lu of %lu checks",why,(unsigned long)t[4],(unsigned long)t[3]);
+ if(t[5]){line(0xffff,"failed #%lu: %.38s",(unsigned long)t[5],(const char *)(t+12));
+  line(0xffff," got %08lx%08lx want %08lx%08lx",(unsigned long)t[9],(unsigned long)t[8],(unsigned long)t[11],(unsigned long)t[10]);}
+ else line(0xffff,"%.52s",(const char *)(t+12));
+ line(0xffff,"run %lu s  frames %u  camera %lu  PVR errors %lu",
+  (unsigned long)((timer_ms_gettime64()-results_start_ms)/1000u),frames,
+  (unsigned long)dc_level_draw_metrics.camera_reads,(unsigned long)dc_level_draw_metrics.pvr_errors);
+ line(0x07e0,"STEADY FRAMES 40-95, MEDIAN MS");
+ line(0xffff," logic %u.%u  draw %u.%u  frame %u.%u  fps %u.%u",MS(goal),MS(draw),MS(total),
+  (unsigned)(total?10000000u/total/10u:0),(unsigned)(total?10000000u/total%10u:0));
+ line(0xffff," all frames: logic %u.%u  draw %u.%u",
+  MS(median_of(dc_level_frame_timing.goal_us,1,96)),MS(median_of(dc_level_frame_timing.frame_us,0,96)));
+ line(0x07e0,"DRAW STAGES, AVERAGE MS OVER %u FRAMES",frames);
+ {static const char *names[]={"samp","cell","wind","base","prep","modl","rdy","OP","PT","TR","TA","rend","logc","mdrw","disp"};
+  char text[3][60];unsigned n[3]={0,0,0};
+  for(k=0;k<TIME_STAGES;++k){unsigned r=k/5,us=dc_level_frame_timing.sum_us[k]/f;
+   if(n[r]<sizeof text[r])n[r]+=(unsigned)snprintf(text[r]+n[r],sizeof text[r]-n[r]," %s %u.%u",names[k],MS(us));}
+  for(k=0;k<3;++k)line(0xffff,"%s",text[k]);}
+ line(0xffff," max: modl %u.%u  PT %u.%u  logc %u.%u",MS(dc_level_frame_timing.max_us[5]),
+  MS(dc_level_frame_timing.max_us[8]),MS(dc_level_frame_timing.max_us[12]));
+ line(0x07e0,"SCENERY PER FRAME");
+ line(0xffff," tris visited %lu/%lu  sent %lu/%lu (OP/PT)",
+  (unsigned long)(dc_level_frame_timing.triangles[0]/f),(unsigned long)(dc_level_frame_timing.triangles[1]/f),
+  (unsigned long)(dc_level_frame_timing.submitted[0]/f),(unsigned long)(dc_level_frame_timing.submitted[1]/f));
+ line(0xffff," LOD 0-3: %lu %lu %lu %lu  terrain faces %lu",
+  (unsigned long)(dc_level_frame_timing.lods[0]/f),(unsigned long)(dc_level_frame_timing.lods[1]/f),
+  (unsigned long)(dc_level_frame_timing.lods[2]/f),(unsigned long)(dc_level_frame_timing.lods[3]/f),
+  (unsigned long)dc_level_draw_metrics.last_window_faces);
+ line(0xffff," models drawn %lu  skin max %lu us  slab peak %lu K",(unsigned long)dc_level_model_metrics.drawn,
+  (unsigned long)dc_level_model_metrics.skin_us_max,(unsigned long)(dc_level_draw_metrics.slab_high_water/1024u));
+ line(0x8410,"A: per-frame milliseconds");
+}
+static void page_frames(void){
+ unsigned i,n=dc_level_frame_timing.frames<TIME_FRAMES?dc_level_frame_timing.frames:TIME_FRAMES;
+ screen(0x0010);
+ line(0xffe0,"PER FRAME MS, LOGIC/DRAW, FRAMES 24-95");
+ for(i=24;i<n&&results_row<18;i+=6){char text[60];unsigned j,m=0;
+  m+=(unsigned)snprintf(text,sizeof text,"%2u",i);
+  for(j=i;j<i+6&&j<n&&m<sizeof text;++j)m+=(unsigned)snprintf(text+m,sizeof text-m," %3u/%2u",
+   (unsigned)(dc_level_frame_timing.goal_us[j]/1000u),(unsigned)(dc_level_frame_timing.frame_us[j]/1000u));
+  line(0xffff,"%s",text);}
+ line(0x8410,"A: summary");
+}
+/* Pages until power off; A toggles them. Never returns. */
+static void results_pages(const char *why,uint16_t background,int threads){
+ int page=0,held=0;
+ page_summary(why,background);
+ for(;;){
+  maple_device_t *pad=threads?maple_enum_type(0,MAPLE_FUNC_CONTROLLER):NULL;
+  cont_state_t *st=pad?(cont_state_t *)maple_dev_status(pad):NULL;
+  int a=st&&(st->buttons&CONT_A);
+  if(a&&!held){page^=1;if(page)page_frames();else page_summary(why,background);}
+  held=a;
+  if(threads)thd_sleep(50);
+ }
+}
+static void results_fault(irq_t code,irq_context_t *c,void *data){
+ char why[44];(void)data;
+ results_shown=1;
+ snprintf(why,sizeof why,"CRASH %03lx pc %08lx pr %08lx",(unsigned long)code,(unsigned long)c->pc,(unsigned long)c->pr);
+ results_pages(why,0x8000,0);
+}
+static void *results_watch(void *unused){
+ uint32_t last=0,quiet=0;(void)unused;
+ for(;;){
+  uint32_t now=results_t[3]+dc_level_draw_metrics.frames;
+  thd_sleep(1000);
+  if(results_shown)return NULL;
+  if(now!=last){last=now;quiet=0;continue;}
+  if(++quiet<90)continue;
+  results_shown=1;
+  {char why[44];snprintf(why,sizeof why,"HANG pc %08lx pr %08lx",
+    (unsigned long)(results_main?results_main->context.pc:0),(unsigned long)(results_main?results_main->context.pr:0));
+   results_pages(why,0x8200,1);}
+ }
+}
+void dc_results_install(const volatile void *telemetry){
+ results_t=telemetry;results_main=thd_get_current();results_start_ms=timer_ms_gettime64();
+ irq_set_handler(EXC_UNHANDLED_EXC,results_fault,NULL);
+ thd_create(1,results_watch,NULL);
+}
+void dc_results_show(const volatile void *telemetry){
+ results_t=telemetry;
+ if(results_shown){for(;;)thd_sleep(1000);}
+ results_shown=1;
+ pvr_shutdown();
+ results_pages(results_t[2]==2u?"PASS":"FAIL",results_t[2]==2u?0x0200:0x8000,1);
+}
 #endif
