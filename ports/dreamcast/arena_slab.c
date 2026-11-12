@@ -63,19 +63,30 @@ void dc_arena_free(void *memory){
 #include "arena_slab.h"
 /* These opaque FILE tokens are used only by the redirected objects. KOS VFS
  * does the disc I/O; newlib never allocates FILEs or buffering for the renderer. */
-typedef struct {file_t fd;int error;} slab_file;
+/* mem: a whole file the level's read-ahead thread staged (level_prefetch.c),
+ * read from memory at pos; else the KOS descriptor. */
+typedef struct {file_t fd;int error;unsigned char *mem;long size,pos;} slab_file;
+int __attribute__((weak)) dc_level_prefetch_take(const char *path,unsigned char **data,uint32_t *bytes){
+ (void)path;(void)data;(void)bytes;return 0;
+}
+void __attribute__((weak)) dc_level_prefetch_free(unsigned char *data){(void)data;}
 FILE *dc_arena_fopen(const char *path,const char *mode){
- slab_file *f;file_t fd;
+ slab_file *f;file_t fd;unsigned char *staged;uint32_t staged_bytes;
  if(strcmp(mode,"rb")){errno=EINVAL;return NULL;}
+ if(dc_level_prefetch_take(path,&staged,&staged_bytes)){
+  f=dc_arena_malloc(sizeof(*f));if(!f){dc_level_prefetch_free(staged);errno=ENOMEM;return NULL;}
+  f->fd=-1;f->error=0;f->mem=staged;f->size=(long)staged_bytes;f->pos=0;return (FILE *)(void *)f;
+ }
  fd=fs_open(path,O_RDONLY);
  /* instance_cells treats ENOENT as an empty cell. KOS usually sets errno;
   * a bare failure would otherwise look like a hard open error. */
  if(fd<0){if(!errno)errno=ENOENT;return NULL;}
  f=dc_arena_malloc(sizeof(*f));if(!f){fs_close(fd);errno=ENOMEM;return NULL;}
- f->fd=fd;f->error=0;return (FILE *)(void *)f;
+ f->fd=fd;f->error=0;f->mem=NULL;f->size=0;f->pos=0;return (FILE *)(void *)f;
 }
 int dc_arena_fclose(FILE *file){
- slab_file *f=(slab_file *)(void *)file;int result=fs_close(f->fd);
+ slab_file *f=(slab_file *)(void *)file;int result=0;
+ if(f->mem)dc_level_prefetch_free(f->mem);else result=fs_close(f->fd);
  dc_arena_free(f);return result?EOF:0;
 }
 size_t dc_arena_fread(void *data,size_t bytes,size_t count,FILE *file){
@@ -83,6 +94,10 @@ size_t dc_arena_fread(void *data,size_t bytes,size_t count,FILE *file){
  if(!bytes||!count)return 0;
  if(count>SIZE_MAX/bytes){f->error=1;errno=EOVERFLOW;return 0;}
  total=bytes*count;
+ if(f->mem){
+  if((long)total>f->size-f->pos)total=(size_t)(f->size-f->pos);
+  memcpy(data,f->mem+f->pos,total);f->pos+=(long)total;return total/bytes;
+ }
  while(done<total){
   ssize_t n=fs_read(f->fd,(unsigned char *)data+done,total-done);
   if(n<0){f->error=1;break;}if(!n)break;done+=(size_t)n;
@@ -94,10 +109,17 @@ int dc_arena_fgetc(FILE *file){
 }
 int dc_arena_fseek(FILE *file,long offset,int whence){
  slab_file *f=(slab_file *)(void *)file;
+ if(f->mem){
+  long at=whence==SEEK_SET?offset:whence==SEEK_CUR?f->pos+offset:whence==SEEK_END?f->size+offset:-1;
+  if(at<0||at>f->size){f->error=1;return -1;}
+  f->pos=at;return 0;
+ }
  if(fs_seek(f->fd,offset,whence)<0){f->error=1;return -1;}return 0;
 }
 long dc_arena_ftell(FILE *file){
- slab_file *f=(slab_file *)(void *)file;off_t at=fs_tell(f->fd);
+ slab_file *f=(slab_file *)(void *)file;off_t at;
+ if(f->mem)return f->pos;
+ at=fs_tell(f->fd);
  if(at<0)f->error=1;
  return (long)at;
 }

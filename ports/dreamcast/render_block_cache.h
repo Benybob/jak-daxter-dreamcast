@@ -8,6 +8,8 @@ enum { DC_RENDER_BLOCK_CACHE_SLOTS=128 };
 typedef struct {void *state;} dc_render_block_cache;
 /* Called with a missed .drx held in full, if set: a sampling point for tests. */
 extern void (*dc_render_block_cache_probe)(void);
+/* Whether a local entry's block is resident now (no load, no LRU touch). */
+int dc_render_block_cache_holds(const dc_render_block_cache *,const dc_render_entry *entry);
 typedef struct {
  uint32_t hits,misses,loads,evictions,bypasses,failures;
  uint32_t bytes,peak_bytes,blocks,metadata_bytes;

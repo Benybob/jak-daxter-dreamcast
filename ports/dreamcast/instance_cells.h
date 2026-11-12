@@ -14,6 +14,7 @@ typedef struct {
  dc_instance_palette *palette;
  unsigned char *lighting;uint32_t lighting_capacity,lighting_used;
  const unsigned char **tables;
+ const unsigned char *pack;uint32_t pack_count;  /* dc_instance_cells_use_pack: not owned */
 } dc_instance_cells;
 /* Zeroed/unowned output. capacity records, allocated once. root holds
  * cells/IX_IZ.dci, written by instance_cells.py: 52-byte records whose pad is the
@@ -26,6 +27,13 @@ const char *dc_instance_cells_make(dc_instance_cells *,const char *root,double c
 const char *dc_instance_cells_palette_make(dc_instance_cells *,const char *root,double cell,
                                           uint32_t capacity,dc_instance_palette *,uint32_t bytes);
 void dc_instance_cells_free(dc_instance_cells *);
+/* Every cell of root/cells in one resident blob (instance_cells.py pack: 'DCCP',
+ * count, then count rows of ix, iz, offset, bytes in ascending (ix, iz), then
+ * the 52-byte records), which the caller keeps: updates copy a cell's records
+ * from it instead of opening a file, and a cell it does not list is empty. A
+ * walk across 16 m cells otherwise opens a file or two most frames (17-51 ms
+ * each from the disc). Not for palette cells. */
+const char *dc_instance_cells_use_pack(dc_instance_cells *,const void *pack,size_t bytes);
 /* Hold exactly the cells a disc of radius draw (plus a small margin, for the
  * renderer's rounding) around (x, z) touches, in original record order, and point
  * pkg at them. Cells that left go first, so capacity need

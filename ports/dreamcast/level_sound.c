@@ -121,14 +121,41 @@ static void *audio_data(snd_stream_hnd_t hnd,int bytes,int *got){
   *got=want*2;
   return pcm;
 }
+/* The stream is fed on its own thread: a poll decodes a run of blocks and reads
+ * the next 2 KB of VAGWAD from the disc, which was 10-35 ms of the frames a
+ * line played in. audio_lock covers the decoder, the stream and changes to the
+ * line (only the game's thread writes the line, so it reads it unlocked). */
+static mutex_t audio_lock=MUTEX_INITIALIZER;
+static kthread_t *audio_thread;
+/* A line's start is the feed thread's too: snd_stream_start fills the whole
+ * stream buffer through audio_data, a burst of disc reads (300 ms of the
+ * frame a line began in, with the disc shared). */
+static int start_pending;
+static void *audio_feed(void *unused){
+  (void)unused;
+  for(;;){
+    thd_sleep(20);
+    mutex_lock(&audio_lock);
+    if(start_pending && line.active && !line.paused){
+      start_pending=0;
+      if(stream==SND_STREAM_INVALID){
+        if(snd_stream_init()<0)++dc_level_sound_evidence.errors;
+        else if((stream=snd_stream_alloc(audio_data,SND_STREAM_BUFFER_MAX))==SND_STREAM_INVALID)++dc_level_sound_evidence.errors;
+      } else snd_stream_stop(stream);
+      if(stream!=SND_STREAM_INVALID){
+        hist1=hist2=0;audio_at=line.offset;audio_left=line.bytes;carry_at=BLOCK_SAMPLES;run_at=run_len=0;
+        snd_stream_start(stream,line.rate,0);
+      }
+    } else if(!start_pending && stream!=SND_STREAM_INVALID && line.active && !line.paused){
+      snd_stream_poll(stream);++dc_level_sound_evidence.polls;}
+    mutex_unlock(&audio_lock);
+  }
+  return NULL;
+}
+/* With audio_lock held. */
 static void start_audio(void){
-  if(stream==SND_STREAM_INVALID){
-    if(snd_stream_init()<0){++dc_level_sound_evidence.errors;return;}
-    stream=snd_stream_alloc(audio_data,SND_STREAM_BUFFER_MAX);
-    if(stream==SND_STREAM_INVALID){++dc_level_sound_evidence.errors;return;}
-  } else snd_stream_stop(stream);
-  hist1=hist2=0;audio_at=line.offset;audio_left=line.bytes;carry_at=BLOCK_SAMPLES;run_at=run_len=0;
-  snd_stream_start(stream,line.rate,0);
+  if(!audio_thread && !(audio_thread=thd_create(1,audio_feed,NULL))){++dc_level_sound_evidence.errors;return;}
+  start_pending=1;
   ++dc_level_sound_evidence.audio;
 }
 static void play_line(const char *name,uint32_t id){
@@ -138,22 +165,27 @@ static void play_line(const char *name,uint32_t id){
   dc_level_sound_evidence.last_name[i]=0;
   if(load_dir())
     for(i=0;i<dir_count && !found;++i)if(!memcmp(dir+4+12*i,key,8)){sector=rd32(dir+12+12*i);found=1;}
+  mutex_lock(&audio_lock);  /* the feed thread reads wad and the line */
   if(!found || (!wad && !(wad=fopen("/cd/VAG/VAGWAD.ENG","rb"))) ||
      fseek(wad,(long)sector*2048,SEEK_SET) || fread(header,1,VAG_HEADER,wad)!=VAG_HEADER || memcmp(header,"VAGp",4)){
-    ++dc_level_sound_evidence.missing;return;
+    ++dc_level_sound_evidence.missing;mutex_unlock(&audio_lock);return;
   }
   line.bytes=be32(header+12);line.rate=be32(header+16);
-  if(!line.bytes || (line.bytes&15u) || line.rate<8000 || line.rate>48000){++dc_level_sound_evidence.missing;return;}
+  if(!line.bytes || (line.bytes&15u) || line.rate<8000 || line.rate>48000){++dc_level_sound_evidence.missing;mutex_unlock(&audio_lock);return;}
   line.active=1;line.paused=0;line.id=id;line.offset=sector*2048u+VAG_HEADER;
   line.start=real_us();line.paused_total=0;
   ++dc_level_sound_evidence.streams;dc_level_sound_evidence.last_id=id;
   dc_level_sound_evidence.bytes=line.bytes;dc_level_sound_evidence.rate=line.rate;
   dc_level_sound_evidence.length_ms=(uint32_t)((uint64_t)line.bytes/BLOCK*BLOCK_SAMPLES*1000u/line.rate);
   start_audio();
+  mutex_unlock(&audio_lock);
 }
 static void stop_line(void){
+  mutex_lock(&audio_lock);
   line.active=0;line.id=1;  /* StopVAG: gVAG_Id = 1 (iso.cpp) */
+  start_pending=0;
   if(stream!=SND_STREAM_INVALID)snd_stream_stop(stream);
+  mutex_unlock(&audio_lock);
 }
 static uint64_t sound_rpc(uint64_t port,uint64_t fno,uint64_t async,uint64_t send,
                           uint64_t send_bytes,uint64_t recv,uint64_t recv_bytes){
@@ -179,10 +211,14 @@ static uint64_t sound_rpc(uint64_t port,uint64_t fno,uint64_t async,uint64_t sen
       else if(command==SRPC_PAUSE && line.active && id==line.id && !line.paused){
         ++dc_level_sound_evidence.pauses;line.paused=1;line.paused_at=real_us();
         /* PauseVAG silences the voice; the decoder keeps its place */
-        if(stream!=SND_STREAM_INVALID)snd_stream_stop(stream);}
+        mutex_lock(&audio_lock);
+        if(stream!=SND_STREAM_INVALID)snd_stream_stop(stream);
+        mutex_unlock(&audio_lock);}
       else if(command==SRPC_CONTINUE && line.active && id==line.id && line.paused){
         line.paused=0;line.paused_total+=real_us()-line.paused_at;
-        if(stream!=SND_STREAM_INVALID)snd_stream_start(stream,line.rate,0);}
+        mutex_lock(&audio_lock);
+        if(!start_pending && stream!=SND_STREAM_INVALID)snd_stream_start(stream,line.rate,0);
+        mutex_unlock(&audio_lock);}
     }
   }
   return 0;
@@ -205,7 +241,6 @@ void dc_level_sound_frame(dc_goal_runtime *rt){
     memcpy(info,&frame,4);memcpy(info+4,&strpos,4);memcpy(info+8,&line.id,4);
   }
   dc_level_sound_evidence.last_strpos=(uint32_t)strpos;
-  if(stream!=SND_STREAM_INVALID && line.active && !line.paused){snd_stream_poll(stream);++dc_level_sound_evidence.polls;}
   rt->error=prior;
 }
 void dc_level_sound_install(dc_goal_runtime *rt){

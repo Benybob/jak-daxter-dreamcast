@@ -336,6 +336,13 @@ const char *dc_render_block_cache_window(dc_render_block_cache *owner,const dc_r
  window->count=faces;window->vertex_count=again;window->coverage=*query;window->catalog_crc=catalog->crc;window->valid=1;window->prepared=0;
  return NULL;
 }
+int dc_render_block_cache_holds(const dc_render_block_cache *owner,const dc_render_entry *entry) {
+ const state *s=owner?owner->state:NULL;unsigned i;
+ if(!s||!entry)return 0;
+ for(i=0;i<DC_RENDER_BLOCK_CACHE_SLOTS;++i)if(s->slots[i].valid&&!s->slots[i].global&&
+     !memcmp(&s->slots[i].entry,entry,sizeof(*entry)))return 1;
+ return 0;
+}
 dc_render_block_source dc_render_block_cache_source(dc_render_block_cache *owner) {
  dc_render_block_source source={owner,load,release,peek,face};return source;
 }

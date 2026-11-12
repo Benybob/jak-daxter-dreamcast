@@ -74,6 +74,24 @@ def split(blob, out, cell=CELL):
     return prefix[:12] + struct.pack('<I', 0) + prefix[16:]
 
 
+def pack(folder):
+    """Every plain cell file of folder/cells as one blob (dc_instance_cells_use_pack)."""
+    cells = []
+    for path in (Path(folder) / 'cells').glob('*.dci'):
+        ix, iz = (int(v) for v in path.stem.split('_'))
+        data = path.read_bytes()
+        if not data or len(data) % 52:
+            raise ValueError('cell pack needs plain 52-byte record cells: ' + path.name)
+        cells.append((ix, iz, data))
+    cells.sort(key=lambda c: c[:2])
+    at = 8 + 16 * len(cells)
+    index = b''
+    for ix, iz, data in cells:
+        index += struct.pack('<iiII', ix, iz, at, len(data))
+        at += len(data)
+    return b'DCCP' + struct.pack('<I', len(cells)) + index + b''.join(c[2] for c in cells)
+
+
 def touches(ix, iz, x, z, draw, cell=CELL):
     x0, z0 = ix * cell, iz * cell
     x1, z1 = x0 + cell, z0 + cell

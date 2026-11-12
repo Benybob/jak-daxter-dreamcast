@@ -66,10 +66,36 @@ static const char *read_palette_cell(dc_instance_cells *c,const dc_instance_pack
  c->cells[c->cell_count++]=(dc_instance_cell){ix,iz,n,c->lighting_used,(uint32_t)size};
  c->lighting_used+=(uint32_t)size;c->count+=n;return NULL;
 }
+const char *dc_instance_cells_use_pack(dc_instance_cells *c,const void *pack,size_t bytes) {
+ const unsigned char *p=pack;uint32_t n,i,end;int32_t px=0,pz=0;
+ if(!c||!c->records||c->palette||!p||((uintptr_t)p&3)||bytes<8||memcmp(p,"DCCP",4))return "instance cell pack arguments";
+ n=rd32(p+4);
+ if(!n||n>65536u||bytes<8u+16u*(size_t)n)return "instance cell pack header";
+ end=8u+16u*n;
+ for(i=0;i<n;++i){const unsigned char *row=p+8+16*i;int32_t ix=(int32_t)rd32(row),iz=(int32_t)rd32(row+4);
+  uint32_t offset=rd32(row+8),size=rd32(row+12);
+  if(offset!=end||!size||size%52u||size>bytes-offset)return "instance cell pack row";
+  if(i&&(ix<px||(ix==px&&iz<=pz)))return "instance cell pack order";
+  px=ix;pz=iz;end+=size;}
+ if(end!=bytes)return "instance cell pack size";
+ c->pack=p;c->pack_count=n;return NULL;
+}
 static const char *read_cell(dc_instance_cells *c,const dc_instance_package *pkg,int32_t ix,int32_t iz) {
  char path[256];FILE *file;long size;uint32_t n,i,limit=pkg->lods?pkg->lod_count:pkg->proto_count;dc_instance *in=c->records+c->count;
- snprintf(path,sizeof path,"%s/cells/%" PRId32 "_%" PRId32 ".dci",c->root,ix,iz);
  if(c->cell_count>=DC_INSTANCE_CELLS_MAX)return "instance cells table";
+ if(c->pack){uint32_t lo=0,hi=c->pack_count;
+  while(lo<hi){uint32_t mid=lo+(hi-lo)/2;const unsigned char *row=c->pack+8+16*mid;
+   int32_t rx=(int32_t)rd32(row),rz=(int32_t)rd32(row+4);
+   if(rx<ix||(rx==ix&&rz<iz))lo=mid+1;else hi=mid;}
+  if(lo<c->pack_count){const unsigned char *row=c->pack+8+16*lo;
+   if((int32_t)rd32(row)==ix&&(int32_t)rd32(row+4)==iz){
+    n=rd32(row+12)/52u;
+    if(n>c->capacity-c->count)return "instance cells capacity";
+    memcpy(in,c->pack+rd32(row+8),52u*(size_t)n);
+    goto check;}}
+  c->cells[c->cell_count++]=(dc_instance_cell){ix,iz,0,0,0};return NULL;
+ }
+ snprintf(path,sizeof path,"%s/cells/%" PRId32 "_%" PRId32 ".dci",c->root,ix,iz);
  errno=0;file=fopen(path,"rb");
  if(!file) {
   if(errno!=ENOENT)return "instance cell open";
@@ -81,6 +107,7 @@ static const char *read_cell(dc_instance_cells *c,const dc_instance_package *pkg
  if(n>c->capacity-c->count){fclose(file);return "instance cells capacity";}
  if(fread(in,52,n,file)!=n||fgetc(file)!=EOF){fclose(file);return "instance cell read";}
  fclose(file);
+check:
  for(i=0;i<n;++i) {
   unsigned k;
   if(in[i].proto>=limit||(i&&in[i].pad<=in[i-1].pad))return "instance cell record";

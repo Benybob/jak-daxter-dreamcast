@@ -24,13 +24,15 @@
 #include "level_logic.h"
 #include "level_str.h"
 #include "level_sound.h"
+#include "level_prefetch.h"
+#include <inttypes.h>
 #include "build/level_render_fixture.h"
 
 #define LEVEL_DRAW_ROOT "/cd/GEYSER"
 /* Scenery: 45 m instead of TIE's 60, and the LOD planes halved (LOD_BIAS), so
  * the lowest LOD, about a quarter of the triangles, starts at 30 m instead of
  * never (its plane was the draw distance). Draw 47.6 to 32.3 ms in Flycast. */
-enum {TARGET_DISTANCE_M=12,DRAW_DISTANCE_M=45,WINDOW_HALF_M=14};
+enum {TARGET_DISTANCE_M=12,DRAW_DISTANCE_M=45,WINDOW_HALF_M=14,WINDOW_MARGIN_M=4,WINDOW_AHEAD_M=10};
 #define LOD_BIAS 2.f
 int dc_level_draw_check(uint64_t,uint64_t,const char *);
 int dc_level_draw_release_boot(uint32_t *vram_available);
@@ -137,6 +139,15 @@ static int initialize(void){
  CHECK(crc32(0,data,FLY_PACKAGE_BYTES),FLY_PACKAGE_CRC,"level draw package CRC");
  error=dc_instance_package_open(data,FLY_PACKAGE_BYTES,&pkg);CHECK(error==NULL,1,error);
  error=dc_instance_cells_make(&cells,LEVEL_DRAW_ROOT,16.0,FLY_INSTANCE_RECORDS+128u);CHECK(error==NULL,1,error);
+ /* Every instance cell, read once and kept on the KOS heap (cells.pak, 170 KB):
+  * walking opened a cell file or two most frames, 17-51 ms each. */
+ {long bytes=0;unsigned char *pack;
+  file=fopen(LEVEL_DRAW_ROOT "/CELLS.PAK","rb");CHECK(file!=NULL,1,"level draw cell pack opens from the disc");
+  read=!fseek(file,0,SEEK_END)&&(bytes=ftell(file))>8&&bytes<1048576&&!fseek(file,0,SEEK_SET);
+  pack=read?dc_level_heap_alloc((size_t)bytes):NULL;
+  read=pack&&fread(pack,1,(size_t)bytes,file)==(size_t)bytes;
+  read=fclose(file)==0&&read;CHECK(read,1,"level draw cell pack read into the KOS heap");
+  error=dc_instance_cells_use_pack(&cells,pack,(size_t)bytes);CHECK(error==NULL,1,error);}
  view=memalign(32,(size_t)pkg.max_proto_verts*sizeof *view);CHECK(view!=NULL,1,"level draw view slab allocation");
  bounds=memalign(32,(size_t)pkg.proto_count*sizeof *bounds);CHECK(bounds!=NULL,1,"level draw bounds slab allocation");
  dc_instance_bounds(&pkg,bounds);pkg.bounds=(const float (*)[4])bounds;
@@ -201,7 +212,34 @@ int dc_level_draw_frame(dc_goal_runtime *rt){
  time_at=timer_us_gettime64();
  error=dc_instance_cells_update(&cells,&pkg,ic.tx,ic.tz,ic.draw_distance);CHECK(error==NULL,1,error);
  time_stage(1);
- error=dc_render_block_cache_window(&cache,&catalog,&query,&window);CHECK(error==NULL,1,error);
+ /* The window is built WINDOW_MARGIN_M wider than the 14 m asked for and kept
+  * while it still covers that: an exact window was merged again on every
+  * frame the target moved (about 18 ms), now once every few meters. */
+ if(!(window.valid&&window.coverage.x0<=query.x0&&window.coverage.x1>=query.x1&&
+      window.coverage.z0<=query.z0&&window.coverage.z1>=query.z1)){
+  dc_render_query wide={query.x0-WINDOW_MARGIN_M,query.z0-WINDOW_MARGIN_M,query.x1+WINDOW_MARGIN_M,query.z1+WINDOW_MARGIN_M};
+  error=dc_render_block_cache_window(&cache,&catalog,&wide,&window);
+ }else error=NULL;
+ CHECK(error==NULL,1,error?error:"level draw terrain window");
+ /* Read ahead: the sector files of a window WINDOW_AHEAD_M wider still that
+  * the cache does not hold go to the read-ahead thread, each time the target
+  * has moved a meter, so the next rebuild finds them in memory. */
+ {static float ahead_x=1e30f,ahead_z=1e30f;
+  float mx=c.target[0]-ahead_x,mz=c.target[2]-ahead_z;
+  dc_level_prefetch_frame();
+  if(mx*mx+mz*mz>=1.f){
+   const double reach=WINDOW_MARGIN_M+WINDOW_AHEAD_M;uint32_t n=0,k;
+   dc_render_query far={query.x0-reach,query.z0-reach,query.x1+reach,query.z1+reach};
+   ahead_x=c.target[0];ahead_z=c.target[2];
+   /* the catalog's sectors themselves: dc_render_window_entries caps a
+    * window at 11 cells an axis, and this one is wider */
+   for(k=0;k<catalog.sector_count;++k){dc_render_entry e;double cell=(double)catalog.cell_size,x0,z0;char path[64];
+    if(!dc_render_entry_get(&catalog,k,&e))break;
+    x0=(double)e.ix*cell;z0=(double)e.iz*cell;
+    if(x0>far.x1||x0+cell<far.x0||z0>far.z1||z0+cell<far.z0||dc_render_block_cache_holds(&cache,&e))continue;
+    snprintf(path,sizeof path,LEVEL_DRAW_ROOT "/sectors/%" PRId32 "_%" PRId32 ".drx",e.ix,e.iz);
+    dc_level_prefetch_request(path);++n;}
+  }}
  time_stage(2);
  error=dc_render_base_frame_make_draw(&window,&bank,&frame);CHECK(error==NULL,1,error);
  time_stage(3);

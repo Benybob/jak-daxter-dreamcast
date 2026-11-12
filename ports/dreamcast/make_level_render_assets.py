@@ -38,6 +38,8 @@ def main():
     report, rows = fly.make(a.glb, a.package, a.out, a.frames, 0.0, a.half, a.header, instance_cells=True,
                             recorded_targets=ring, coverage_targets=corners)
     report['draw_file_bytes'] = indexed_sectors.write_draw_files(a.out, remove_sectors=True)
+    import instance_cells  # every cell in one resident blob: no cell opens while walking
+    (a.out / 'cells.pak').write_bytes(instance_cells.pack(a.out))
     report['window'] = fly.window_caps_for(a.out, rows, a.half, a.header)
     report.update(at=[x, y, z], radius=r, ai_assisted=True)
     (a.out / 'FLY.json').write_text(json.dumps(report, indent=1), newline='\n')

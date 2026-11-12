@@ -1133,3 +1133,42 @@ blocks and instance cells read from the disc as the window moves), which is
 the next thing for play to feel right. The pad map is goal_pad.c's: A is X
 (jump), B circle, X square, Y triangle, the triggers L1 and R1. Nothing is
 mapped to L2/R2 (the camera) yet.
+
+### Hitches while Jak moves (Flycast, 2746 of 2746, 2026-11-12)
+
+A per-frame trace of the play ELF's draw stages while the Lua run walks Jak
+(stick forward, jump, stick left) showed three causes, all disc reads in the
+frame:
+
+| Cause | Before | After |
+| --- | --- | --- |
+| Instance cells: a 16 m cell's file opened as it comes into range | 17-51 ms on many frames | under 4 ms |
+| Terrain window: merged again every frame the target moved; a sector's .drx read when first needed | 18 ms a moving frame, 80-470 ms on a new sector | 0 most frames; 30-45 ms on a rebuild every 25 frames or so |
+| Dialogue: snd_stream_poll decoding and reading VAGWAD in the frame | 10-39 ms a frame while a line plays | 0 |
+
+- **cells.pak.** `instance_cells.py pack` (run by make_level_render_assets.py)
+  writes every cell as one blob, 170 KB for Geyser Rock; the level draw reads
+  it once into the KOS heap and `dc_instance_cells_use_pack` copies a cell's
+  records from it. No file is opened for a cell (3 more checks).
+- **The window's margin.** level_draw.c builds the terrain window 4 m wider
+  than the 14 m it needs and keeps it while it still covers that, so the
+  merge runs once every few meters. The per-frame check stays.
+- **Read-ahead** (level_prefetch.c). The sector files of a window 10 m wider
+  still that the cache does not hold (`dc_render_block_cache_holds`) are
+  queued each meter the target moves; a KOS thread reads each whole into the
+  KOS heap (24 files, 160 KB at most), and the renderer's fopen
+  (arena_slab.c, a weak hook) takes a staged file from memory. In the level
+  run 13 files were staged and none was read in a frame.
+- **The dialogue feed thread** (level_sound.c). The stream is polled, and a
+  line started (snd_stream_start fills the whole buffer), on a thread under
+  a lock that the game's thread takes only to start, stop, pause or continue
+  a line.
+
+Tried and left out: the sectors as one pack file with a memory index. It
+doubled the rebuild spikes: KOS reads an unaligned range as single sectors at
+each end, and the cost is per disc command, not per directory lookup.
+
+What is left: two logic frames of 270-390 ms in the run, where
+external-art-buffer's `str-load` (level_str.c) reads a spooled animation
+chunk in the call. On the PS2 the IOP read it while the game polled
+`str-load-status`; here the read should move to a thread the same way.
