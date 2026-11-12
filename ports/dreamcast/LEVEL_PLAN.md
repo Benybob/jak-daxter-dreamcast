@@ -1064,3 +1064,24 @@ A frame is about 82 ms (12.2 fps in Flycast).
   checks). 53.6 to 50.2 ms.
 
 A frame is about 78 ms (12.9 fps in Flycast).
+
+### collide-cache methods 26 and 29 in C (Flycast, 2740 of 2740, 2026-11-12)
+
+Method 26 is method 27's strip walk on the scratchpad vertices' own integer
+positions (+0) with the box at the cache's +60 and +76; both now share one C
+walk (`m27_walk`, with the bounds' offset). Method 29 transforms each
+scratchpad vertex by *collide-work*'s matrix and truncates it to integers at
++4096, four vertices a group; its C loop keeps the translation's order of
+products and sums, and the library is built with -ffp-contract=off, so the
+bits are the same. Each compares its first 64 calls with the translation
+(2736 to 2740 checks). The GOAL frame goes from 50.2 to 47.9 ms; a frame is
+about 75.5 ms (13.2 fps in Flycast).
+
+Tried and left out: turning the Jak ELF's heartbeat and heap records off in
+the level frames, and memcpy for non-overlapping `__mem-move`s (no gain,
+50.5 ms).
+
+The C paths are compiled only into the level library (`DC_MIPS2C_LEVEL`):
+with them in the full library the Jak ELF ran out of arena loading GAME.CGO
+(object 285, out of memory). The kernel, arena and Jak ELFs run the
+translation alone, as before.

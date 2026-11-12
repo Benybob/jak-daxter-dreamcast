@@ -511,6 +511,116 @@ void link() {
 namespace Mips2C::jak1 {
 
 // clip by box
+#if defined(__sh__) && defined(DC_MIPS2C_LEVEL)
+/* Dreamcast level ELF (AI-assisted; the level library only: the other ELFs
+ * have no room for it): methods 26 and 27's strip walk in C. Each MIPS 128-bit op is
+ * memory traffic on the ExecutionContext, in 64-bit arithmetic, on the SH-4;
+ * this was 8.5% of a level GOAL frame. Same order of tests as the MIPS: the
+ * first triangle of a strip checks for a full cache before the pat mask, the
+ * others after. The first 64 calls also run the translation and compare a
+ * hash of the count and the triangles written (dc_m27_checked/mismatches). */
+extern "C" {
+volatile u32 dc_m27_checked, dc_m27_mismatches, dc_m27_calls;
+volatile u32 dc_m26_checked, dc_m26_mismatches, dc_m29_checked, dc_m29_mismatches;
+}
+static inline void m27_ld(s32* d, u32 a) { memcpy(d, (const void*)(uintptr_t)a, 16); }
+static inline bool m27_out(const s32* A, const s32* B, const s32* C, const s32* lo, const s32* hi) {
+  for (int k = 0; k < 3; ++k) {
+    s32 mn = A[k] < B[k] ? A[k] : B[k], mx = A[k] > B[k] ? A[k] : B[k];
+    if (C[k] < mn) mn = C[k];
+    if (C[k] > mx) mx = C[k];
+    if (mn > hi[k] || lo[k] > mx) return true;
+  }
+  return false;
+}
+static inline void m27_tri(u32 out, u32 a, u32 b, u32 cc, u32 pat) {
+  u8* o = (u8*)(uintptr_t)out;
+  memcpy(o, (const void*)(uintptr_t)(a + 16), 16);
+  memcpy(o + 16, (const void*)(uintptr_t)(b + 16), 16);
+  memcpy(o + 32, (const void*)(uintptr_t)(cc + 16), 16);
+  memset(o + 48, 0, 16);
+  memcpy(o + 48, &pat, 4);
+}
+/* The count to store at gp (max when the cache filled, as block_17 stores). */
+static u32 m27_walk(u32 spad, u32 bounds, u32 strips, u32 pats, u32 patidx, u32 mask, u32 count, u32 max,
+                    u32 out, const s32* lo, const s32* hi) {
+  const s8* a3 = (const s8*)(uintptr_t)strips;
+  const u8* t2 = (const u8*)(uintptr_t)patidx;
+  for (;;) {
+    s32 i0 = a3[0], i1 = a3[1], i2 = a3[2];
+    if (i0 < 0) return count;
+    u32 A = spad + 32 * (u32)i0, B = spad + 32 * (u32)i1, C = spad + 32 * (u32)i2;
+    s32 vA[4], vB[4], vC[4];
+    m27_ld(vA, A + bounds);
+    m27_ld(vB, B + bounds);
+    m27_ld(vC, C + bounds);
+    u32 pat;
+    memcpy(&pat, (const void*)(uintptr_t)(pats + 4u * *t2), 4);
+    if (!m27_out(vA, vB, vC, lo, hi)) {
+      if (count == max) return max;
+      if (!(pat & mask)) { m27_tri(out, A, B, C, pat); out += 64; ++count; }
+    }
+    ++t2;
+    a3 += 3;
+    s32 wind = 16;
+    for (;;) {
+      s32 k = *a3++;
+      if (k == 0) break;
+      if (k < 0) k = -k;
+      else { memcpy(vA, vB, 16); A = B; wind = -wind; }
+      --k;
+      B = C;
+      memcpy(vB, vC, 16);
+      C = spad + 32 * (u32)k;
+      m27_ld(vC, C + bounds);
+      u32 idx = *t2++;
+      if (m27_out(vA, vB, vC, lo, hi)) continue;
+      memcpy(&pat, (const void*)(uintptr_t)(pats + 4u * idx), 4);
+      if (pat & mask) continue;
+      if (count == max) return max;
+      if (wind > 0) m27_tri(out, A, B, C, pat); else m27_tri(out, C, B, A, pat);
+      out += 64;
+      ++count;
+    }
+  }
+}
+static u32 m27_hash(u32 gp, u32 first, u32 count) {
+  u32 h = 2166136261u ^ count;
+  const u8* p = (const u8*)(uintptr_t)(gp + 4908 + 64 * first);
+  for (u32 i = 0; first + i < count; ++i)
+    for (int b = 0; b < 64; ++b) h = (h ^ p[64 * i + b]) * 16777619u;
+  return h;
+}
+/* Method 29: each scratchpad vertex (+16, four floats) through *collide-work*'s
+ * matrix (+48, four columns) and truncated to integers at +4096, four vertices
+ * a group and at least one group, as the MIPS loop. The products and sums are
+ * in the translation's order (built with -ffp-contract=off): the same bits. */
+static void m29_transform(u32 work, u32 spad, u32 count) {
+  float m[4][4];
+  memcpy(m, (const void*)(uintptr_t)(work + 48), sizeof m);
+  u32 n = count <= 4 ? 4 : (count + 3u) & ~3u;
+  for (u32 i = 0; i < n; ++i) {
+    float v[4];
+    s32 o[4];
+    memcpy(v, (const void*)(uintptr_t)(spad + 16 + 32 * i), 16);
+    for (int k = 0; k < 4; ++k) {
+      float acc = m[3][k] * 1.f;
+      acc += m[0][k] * v[0];
+      acc += m[1][k] * v[1];
+      o[k] = (s32)(acc + m[2][k] * v[2]);
+    }
+    memcpy((void*)(uintptr_t)(spad + 4096 + 32 * i), o, 16);
+  }
+}
+static u32 m29_hash(u32 spad, u32 count) {
+  u32 h = 2166136261u, n = count <= 4 ? 4 : (count + 3u) & ~3u;
+  const u8* q = (const u8*)(uintptr_t)(spad + 4096);
+  for (u32 i = 0; i < n; ++i)
+    for (int b = 0; b < 16; ++b) h = (h ^ q[32 * i + b]) * 16777619u;
+  return h;
+}
+#endif
+
 namespace method_26_collide_cache {
 struct Cache {
   void* already_printed_exeeded_max_cache_tris; // *already-printed-exeeded-max-cache-tris*
@@ -526,6 +636,10 @@ u64 execute(void* ctxt) {
   auto* c = (ExecutionContext*)ctxt;
   bool bc = false;
   [[maybe_unused]] u32 call_addr = 0;
+#if defined(__sh__) && defined(DC_MIPS2C_LEVEL)
+  u32 m26_first = 0, m26_native_hash = 0;
+  bool m26_check = false;
+#endif
   c->daddiu(sp, sp, -112);                          // daddiu sp, sp, -112
   c->sd(ra, 0, sp);                                 // sd ra, 0(sp)
   c->sd(fp, 8, sp);                                 // sd fp, 8(sp)
@@ -560,6 +674,24 @@ u64 execute(void* ctxt) {
   c->lwu(a1, 4, a1);                                // lwu a1, 4(a1)
   c->daddu(t3, t1, t3);                             // daddu t3, t1, t3
   c->lwu(t4, 8, a0);                                // lwu t4, 8(a0)
+#if defined(__sh__) && defined(DC_MIPS2C_LEVEL)
+  m26_first = c->gprs[a2].du32[0];
+  {
+    s32 lo[4], hi[4];
+    memcpy(lo, &c->gprs[t0], 16);
+    memcpy(hi, &c->gprs[t2], 16);
+    u32 cachev = c->gprs[a0].du32[0], spad;
+    memcpy(&spad, cache.fake_scratchpad_data, 4);
+    u32 n = m27_walk(spad, 0, c->gprs[t1].du32[0], c->gprs[a1].du32[0], c->gprs[t3].du32[0],
+                     c->gprs[t4].du32[0], m26_first, c->gprs[v1].du32[0], c->gprs[a3].du32[0], lo, hi);
+    if (dc_m26_checked >= 64) {
+      memcpy((void*)(uintptr_t)cachev, &n, 4);
+      goto block_21;
+    }
+    m26_check = true;
+    m26_native_hash = m27_hash(cachev, m26_first, n);
+  }
+#endif
 
   block_2:
   // c->lui(t5, 28672);                                // lui t5, 28672
@@ -758,6 +890,14 @@ u64 execute(void* ctxt) {
 
 
   block_21:
+#if defined(__sh__) && defined(DC_MIPS2C_LEVEL)
+  if (m26_check) {
+    u32 cachev = c->gprs[a0].du32[0], n;
+    memcpy(&n, (const void*)(uintptr_t)cachev, 4);
+    ++dc_m26_checked;
+    if (m27_hash(cachev, m26_first, n) != m26_native_hash) ++dc_m26_mismatches;
+  }
+#endif
   c->gprs[v0].du64[0] = 0;                          // or v0, r0, r0
   c->ld(ra, 0, sp);                                 // ld ra, 0(sp)
   c->ld(fp, 8, sp);                                 // ld fp, 8(sp)
@@ -1089,91 +1229,12 @@ struct Cache {
   void* fake_scratchpad_data;
 } cache;
 
-#if defined(__sh__)
-/* Dreamcast (AI-assisted): the strip walk below in C. Each MIPS 128-bit op is
- * memory traffic on the ExecutionContext, in 64-bit arithmetic, on the SH-4;
- * this was 8.5% of a level GOAL frame. Same order of tests as the MIPS: the
- * first triangle of a strip checks for a full cache before the pat mask, the
- * others after. The first 64 calls also run the translation and compare a
- * hash of the count and the triangles written (dc_m27_checked/mismatches). */
-extern "C" {
-volatile u32 dc_m27_checked, dc_m27_mismatches, dc_m27_calls;
-}
-static inline void m27_ld(s32* d, u32 a) { memcpy(d, (const void*)(uintptr_t)a, 16); }
-static inline bool m27_out(const s32* A, const s32* B, const s32* C, const s32* lo, const s32* hi) {
-  for (int k = 0; k < 3; ++k) {
-    s32 mn = A[k] < B[k] ? A[k] : B[k], mx = A[k] > B[k] ? A[k] : B[k];
-    if (C[k] < mn) mn = C[k];
-    if (C[k] > mx) mx = C[k];
-    if (mn > hi[k] || lo[k] > mx) return true;
-  }
-  return false;
-}
-static inline void m27_tri(u32 out, u32 a, u32 b, u32 cc, u32 pat) {
-  u8* o = (u8*)(uintptr_t)out;
-  memcpy(o, (const void*)(uintptr_t)(a + 16), 16);
-  memcpy(o + 16, (const void*)(uintptr_t)(b + 16), 16);
-  memcpy(o + 32, (const void*)(uintptr_t)(cc + 16), 16);
-  memset(o + 48, 0, 16);
-  memcpy(o + 48, &pat, 4);
-}
-/* The count to store at gp (max when the cache filled, as block_17 stores). */
-static u32 m27_walk(u32 spad, u32 strips, u32 pats, u32 patidx, u32 mask, u32 count, u32 max,
-                    u32 out, const s32* lo, const s32* hi) {
-  const s8* a3 = (const s8*)(uintptr_t)strips;
-  const u8* t2 = (const u8*)(uintptr_t)patidx;
-  for (;;) {
-    s32 i0 = a3[0], i1 = a3[1], i2 = a3[2];
-    if (i0 < 0) return count;
-    u32 A = spad + 32 * (u32)i0, B = spad + 32 * (u32)i1, C = spad + 32 * (u32)i2;
-    s32 vA[4], vB[4], vC[4];
-    m27_ld(vA, A + 4096);
-    m27_ld(vB, B + 4096);
-    m27_ld(vC, C + 4096);
-    u32 pat;
-    memcpy(&pat, (const void*)(uintptr_t)(pats + 4u * *t2), 4);
-    if (!m27_out(vA, vB, vC, lo, hi)) {
-      if (count == max) return max;
-      if (!(pat & mask)) { m27_tri(out, A, B, C, pat); out += 64; ++count; }
-    }
-    ++t2;
-    a3 += 3;
-    s32 wind = 16;
-    for (;;) {
-      s32 k = *a3++;
-      if (k == 0) break;
-      if (k < 0) k = -k;
-      else { memcpy(vA, vB, 16); A = B; wind = -wind; }
-      --k;
-      B = C;
-      memcpy(vB, vC, 16);
-      C = spad + 32 * (u32)k;
-      m27_ld(vC, C + 4096);
-      u32 idx = *t2++;
-      if (m27_out(vA, vB, vC, lo, hi)) continue;
-      memcpy(&pat, (const void*)(uintptr_t)(pats + 4u * idx), 4);
-      if (pat & mask) continue;
-      if (count == max) return max;
-      if (wind > 0) m27_tri(out, A, B, C, pat); else m27_tri(out, C, B, A, pat);
-      out += 64;
-      ++count;
-    }
-  }
-}
-static u32 m27_hash(u32 gp, u32 first, u32 count) {
-  u32 h = 2166136261u ^ count;
-  const u8* p = (const u8*)(uintptr_t)(gp + 4908 + 64 * first);
-  for (u32 i = 0; first + i < count; ++i)
-    for (int b = 0; b < 64; ++b) h = (h ^ p[64 * i + b]) * 16777619u;
-  return h;
-}
-#endif
 
 u64 execute(void* ctxt) {
   auto* c = (ExecutionContext*)ctxt;
   bool bc = false;
   u32 call_addr = 0;
-#if defined(__sh__)
+#if defined(__sh__) && defined(DC_MIPS2C_LEVEL)
   u32 m27_first = 0, m27_native_hash = 0;
   bool m27_check = false;
 #endif
@@ -1221,7 +1282,7 @@ u64 execute(void* ctxt) {
   c->lwu(t1, 4, s5);                                // lwu t1, 4(s5)
   c->daddu(t2, a3, t2);                             // daddu t2, a3, t2
   c->lwu(t3, 8, gp);                                // lwu t3, 8(gp)
-#if defined(__sh__)
+#if defined(__sh__) && defined(DC_MIPS2C_LEVEL)
   m27_first = c->gprs[a0].du32[0];
   {
     s32 lo[4], hi[4];
@@ -1229,7 +1290,7 @@ u64 execute(void* ctxt) {
     memcpy(hi, &c->gprs[t0], 16);
     u32 gpv = c->gprs[gp].du32[0], spad;
     memcpy(&spad, cache.fake_scratchpad_data, 4);
-    u32 n = m27_walk(spad, c->gprs[a3].du32[0], c->gprs[t1].du32[0], c->gprs[t2].du32[0],
+    u32 n = m27_walk(spad, 4096, c->gprs[a3].du32[0], c->gprs[t1].du32[0], c->gprs[t2].du32[0],
                      c->gprs[t3].du32[0], m27_first, c->gprs[v1].du32[0], c->gprs[a1].du32[0], lo, hi);
     ++dc_m27_calls;
     if (dc_m27_checked >= 64) {
@@ -1439,7 +1500,7 @@ u64 execute(void* ctxt) {
 
 
   block_21:
-#if defined(__sh__)
+#if defined(__sh__) && defined(DC_MIPS2C_LEVEL)
   if (m27_check) {
     u32 gpv = c->gprs[gp].du32[0], n;
     memcpy(&n, (const void*)(uintptr_t)gpv, 4);
@@ -1501,6 +1562,14 @@ u64 execute(void* ctxt) {
   // c->lui(v1, 28672);                                // lui v1, 28672
   get_fake_spad_addr(v1, cache.fake_scratchpad_data, 0, c);
   c->lbu(a1, 24, a1);                               // lbu a1, 24(a1)
+#if defined(__sh__) && defined(DC_MIPS2C_LEVEL)
+  u32 m29_native_hash = 0, m29_spad = c->gprs[v1].du32[0], m29_count = c->gprs[a1].du32[0];
+  bool m29_check = false;
+  m29_transform(c->gprs[a0].du32[0], m29_spad, m29_count);
+  if (dc_m29_checked >= 64) goto block_4;
+  m29_check = true;
+  m29_native_hash = m29_hash(m29_spad, m29_count);
+#endif
   // nop                                            // sll r0, r0, 0
   c->lqc2(vf1, 48, a0);                             // lqc2 vf1, 48(a0)
   // nop                                            // sll r0, r0, 0
@@ -1649,6 +1718,12 @@ u64 execute(void* ctxt) {
 
 
   block_4:
+#if defined(__sh__) && defined(DC_MIPS2C_LEVEL)
+  if (m29_check) {
+    ++dc_m29_checked;
+    if (m29_hash(m29_spad, m29_count) != m29_native_hash) ++dc_m29_mismatches;
+  }
+#endif
   c->gprs[v0].du64[0] = 0;                          // or v0, r0, r0
   //jr ra                                           // jr ra
   c->daddu(sp, sp, r0);                             // daddu sp, sp, r0

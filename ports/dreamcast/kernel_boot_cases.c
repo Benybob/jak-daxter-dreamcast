@@ -565,6 +565,11 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
        {extern volatile uint32_t dc_m27_checked,dc_m27_mismatches;  /* collide_cache.cpp, SH-4 */
         CHECK(dc_m27_checked>=32u,1,"collide-cache method 27's C strip walk was compared with the translation");
         CHECK(dc_m27_mismatches,0,"collide-cache method 27's C strip walk matches the translation");}
+       {extern volatile uint32_t dc_m26_checked,dc_m26_mismatches,dc_m29_checked,dc_m29_mismatches;
+        CHECK(dc_m26_checked>=16u,1,"collide-cache method 26's C strip walk was compared with the translation");
+        CHECK(dc_m26_mismatches,0,"collide-cache method 26's C strip walk matches the translation");
+        CHECK(dc_m29_checked>=32u,1,"collide-cache method 29's C transform was compared with the translation");
+        CHECK(dc_m29_mismatches,0,"collide-cache method 29's C transform matches the translation");}
 #endif
        /* Every swap-display's display-frame-start counts at least one frame. */
        CHECK(word(&rt,entry(&rt,"*display*"),REAL_INTEGRAL_FRAMES)-before>=DISPLAY_FRAMES,1,
