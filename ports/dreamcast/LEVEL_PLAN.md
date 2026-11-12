@@ -1110,3 +1110,26 @@ Two of those passes only feed renderers the level ELF does not have:
 
 The framebuffer is unchanged by both. A frame is about 65 ms (15.3 fps in
 Flycast).
+
+### Geyser Rock played with the controller: jak-dc-level-play.elf (Flycast, 2026-11-12)
+
+`jak-dc-level-play.elf` is the level ELF's sources with `DC_LEVEL_PLAY`: the
+cpad path reads the maple controller in port A (level_player.c) instead of
+the scripted stick, the clock is the real one, and the display frames run
+until A+B+X+Y+Start, then the results screen. The level ELF itself is
+unchanged (the suites' scripted run).
+
+```
+make jak-dc-level-play.elf
+python make_boot_gdi.py jak-dc-level-play.elf --ip-template ../../../kos-source/utils/makeip/rsrc/templates/ip.tmpl --staged build/level-disc --require TRAINING.DGO --output build/play-gdi
+flycast build/play-gdi/jak-arena.gdi
+```
+
+A Flycast run driven by Lua (stick forward, A, stick left, the chord): Jak
+walks, jumps and turns, and the run ends on the results screen with no
+runtime fault. Standing, a frame is about 39 ms of logic and 35 of draw;
+while he runs into new ground the draw rises to 45-180 ms a frame (terrain
+blocks and instance cells read from the disc as the window moves), which is
+the next thing for play to feel right. The pad map is goal_pad.c's: A is X
+(jump), B circle, X square, Y triangle, the triggers L1 and R1. Nothing is
+mapped to L2/R2 (the camera) yet.

@@ -161,6 +161,22 @@ done:
 /* Port 0 of the level ELF: neutral, then the stick held forward (up, as on a
  * Dreamcast controller) for DC_LEVEL_WALK_FRAMES, then neutral; frames count
  * the samples of dc_level_target_trace. */
+#ifdef DC_LEVEL_PLAY  /* jak-dc-level-play.elf: the controller in port A, live */
+#include <dc/maple.h>
+#include <dc/maple/controller.h>
+volatile int dc_level_play_quit;  /* A+B+X+Y+Start, the console's own reset chord: end the run */
+int dc_level_pad_state(int port,dc_goal_pad_state *out){
+  maple_device_t *dev;cont_state_t *st;
+  memset(out,0,sizeof *out);
+  if(port!=0)return 0;
+  dev=maple_enum_type(0,MAPLE_FUNC_CONTROLLER);st=dev?(cont_state_t *)maple_dev_status(dev):NULL;
+  if(!st)return 0;
+  out->buttons=st->buttons;out->ltrig=st->ltrig;out->rtrig=st->rtrig;out->joyx=st->joyx;out->joyy=st->joyy;
+  {const uint32_t chord=DC_PAD_A|DC_PAD_B|DC_PAD_X|DC_PAD_Y|DC_PAD_START;
+   if((st->buttons&chord)==chord)dc_level_play_quit=1;}
+  return 1;
+}
+#else
 int dc_level_pad_state(int port,dc_goal_pad_state *out){
   uint32_t f=dc_level_target_trace.frames;
   memset(out,0,sizeof *out);
@@ -168,6 +184,7 @@ int dc_level_pad_state(int port,dc_goal_pad_state *out){
   if(f>=DC_LEVEL_WALK_FIRST && f<DC_LEVEL_WALK_FIRST+DC_LEVEL_WALK_FRAMES)out->joyy=-127;
   return 1;
 }
+#endif
 void dc_level_player_walk(dc_level_walk *out){
   uint32_t n=dc_level_target_trace.frames,i,walk=0xffu;float x0,z0,y0;
   memset(out,0,sizeof *out);

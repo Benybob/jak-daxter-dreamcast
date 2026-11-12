@@ -533,7 +533,12 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
         * time; in the frames it was about 4% of the GOAL time. */
        dbgio_disable();
 #endif
-       for(frame=0;frame<DISPLAY_FRAMES && rt.error==DC_GOAL_OK;++frame){
+#ifdef DC_LEVEL_PLAY  /* jak-dc-level-play.elf: frames until the pad's reset chord, on the real clock */
+       {extern volatile int dc_level_play_quit;
+       for(frame=0;!dc_level_play_quit && rt.error==DC_GOAL_OK;++frame){
+#else
+       {for(frame=0;frame<DISPLAY_FRAMES && rt.error==DC_GOAL_OK;++frame){
+#endif
          dc_goal_error_site=0;dc_boot_display_frame=frame+1u;
 #ifdef DC_LEVEL_LOGIC  /* the level ELF */
          /* A fixed clock, one step a frame, so the frames this runner checks
@@ -543,7 +548,9 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
           * reads it as its largest time ratio, 4, and the dialogue line the
           * checks wait for ends within the run. (At 33 ms a frame, the ratio
           * of 30 frames a second, the line does not end in 184 frames.) */
+#ifndef DC_LEVEL_PLAY
          dc_goal_clock_fix(UINT64_C(3600000000000)+(uint64_t)(frame+1u)*200000000u);  /* from an hour, past any boot */
+#endif
          {void dc_level_time_dispatch(uint32_t);uint64_t t0=timer_us_gettime64();
           dispatch();
           dc_level_time_dispatch((uint32_t)(timer_us_gettime64()-t0));}
@@ -556,8 +563,14 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
          if(rt.error==DC_GOAL_OK && word(&rt,dproc,STATUS)==suspended)++completed;
          else {dc_boot_display_error=rt.error|((uint32_t)dc_goal_sticky_error<<8);dc_boot_display_site=dc_goal_error_site;}
        }
+       }
        dc_boot_display_frames=completed;
        dc_goal_code_cache_enabled=0;
+#ifdef DC_LEVEL_PLAY
+       CHECK(rt.error,DC_GOAL_OK,"play frames leave no runtime fault");
+       snprintf(description,description_bytes,"PLAY: %lu frames, ended by the pad",(unsigned long)completed);
+       goto done;
+#endif
 #ifdef DC_LEVEL_LOGIC
        dc_goal_clock_free();
        dbgio_enable();
