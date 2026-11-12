@@ -110,7 +110,7 @@ int dc_live_camera_matches(const dc_live_pose *p,const dc_game_camera *c){
  for(i=0;i<3;++i)if(!dc_live_bounded(c->eye[i],1000000)||
     fabsf(c->eye[i]-p->trans[i]/4096.f)>.0001f||!dc_live_bounded(c->target[i],1000000)||
     fabsf(c->target[i]-(p->trans[i]/4096.f+p->inv[8+i]*c->distance))>.0001f)return 0;
- submitted=(dc_instance_camera){c->target[0],c->target[1],c->target[2],c->yaw,c->pitch,c->distance,80};
+ submitted=(dc_instance_camera){c->target[0],c->target[1],c->target[2],c->yaw,c->pitch,c->distance,80,1};
  return dc_live_instance_matches(p,&submitted);
 }
 /* Query received by the terrain cache, compared with raw original lanes.

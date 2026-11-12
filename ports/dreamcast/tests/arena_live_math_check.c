@@ -27,7 +27,7 @@ static void conversion(void){
   CHECK(dc_live_convert(&p,20,&c));CHECK(fabsf(c.eye[0]-eye[0])<.0001f&&c.eye[1]==-20&&c.eye[2]==30);
   CHECK(fabsf(sinf(c.yaw)-sinf(yaw))<.0001f&&fabsf(c.pitch-.7f)<.0001f);
   rc=(dc_render_camera){{c.target[0],c.target[1],c.target[2]},c.yaw,c.pitch,c.distance};
-  ic=(dc_instance_camera){c.target[0],c.target[1],c.target[2],c.yaw,c.pitch,c.distance,80};
+  ic=(dc_instance_camera){c.target[0],c.target[1],c.target[2],c.yaw,c.pitch,c.distance,80,1};
   w.valid=1;w.vertex_count=3;w.vertices=(unsigned char *)points;w.view=v;
   CHECK(dc_render_draw_window_prepare(&w,&rc));CHECK(dc_live_terrain_matches(&p,&w));CHECK(dc_live_instance_matches(&p,&ic));
   rc.yaw+=3.14159265f;CHECK(dc_render_draw_window_prepare(&w,&rc));CHECK(!dc_live_terrain_matches(&p,&w));

@@ -254,7 +254,7 @@ static int game_camera(dc_render_camera *rc,dc_instance_camera *ic,dc_render_que
  CHECK(!memcmp(&original,&script,sizeof script),1,"arena game original fields match script");
  CHECK(dc_arena_game_convert(&original,fly_distance,&c),1,"arena game camera converted to world meters");
  *rc=(dc_render_camera){{c.target[0],c.target[1],c.target[2]},c.yaw,c.pitch,c.distance};
- *ic=(dc_instance_camera){c.target[0],c.target[1],c.target[2],c.yaw,c.pitch,c.distance,fly_draw_distance};
+ *ic=(dc_instance_camera){c.target[0],c.target[1],c.target[2],c.yaw,c.pitch,c.distance,fly_draw_distance,1};
  half=(float)((fly_frames[0].query.x1-fly_frames[0].query.x0)*.5);
  CHECK(bounded(half,128.f) && half>0 && bounded(fly_draw_distance,128.f) && fly_draw_distance>0,1,
        "arena game bounded streaming radius");

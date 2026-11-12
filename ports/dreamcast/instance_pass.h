@@ -79,7 +79,8 @@ void dc_instance_palette_bind(const dc_instance_package *,const dc_instance_pale
  * Returns NULL and fills out, or a reason with out unchanged. */
 const char *dc_instance_package_open(const void *data,size_t size,dc_instance_package *out);
 
-typedef struct {float tx,ty,tz,yaw,pitch,distance,draw_distance;} dc_instance_camera;
+/* lod_bias: the LOD planes are divided by it (0 or 1: the package's own planes). */
+typedef struct {float tx,ty,tz,yaw,pitch,distance,draw_distance,lod_bias;} dc_instance_camera;
 typedef struct {uint32_t instances,drawn_instances,triangles,submitted,near_clipped,culled,invalid,lod_instances[4],
  sphere_culled,back_faces;} dc_instance_stats;
 

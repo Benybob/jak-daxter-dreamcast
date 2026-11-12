@@ -147,7 +147,7 @@ int dc_arena_fly_frame(void){
  }
  half=(float)((fly_frames[0].query.x1-fly_frames[0].query.x0)*.5);
  rc=(dc_render_camera){{c.target[0],c.target[1],c.target[2]},c.yaw,c.pitch,c.distance};
- ic=(dc_instance_camera){c.target[0],c.target[1],c.target[2],c.yaw,c.pitch,c.distance,fly_draw_distance};
+ ic=(dc_instance_camera){c.target[0],c.target[1],c.target[2],c.yaw,c.pitch,c.distance,fly_draw_distance,1};
  query=(dc_render_query){(double)c.target[0]-half,(double)c.target[2]-half,
                          (double)c.target[0]+half,(double)c.target[2]+half};
  CHECK(dc_live_coverage(&c,&query,live_crop,fly_frames[0].target,half,fly_draw_distance),1,

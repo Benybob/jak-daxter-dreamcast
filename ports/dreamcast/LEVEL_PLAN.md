@@ -922,3 +922,25 @@ An instance's matrix is composed only when one of its geometries is drawn in
 the list. The remaining cost of the pass is the vertex transform and the
 submission itself: about 30,000 vertices a frame as separate triangles.
 Strips would cut that.
+
+### Scenery LOD and distance, and Jak skinned once (Flycast, 2728 of 2728, 2026-11-11)
+
+The package carries TIE's own four LODs a prototype, with planes mostly at 25,
+35.5 and 60 m. LOD 1 is usually the same geometry as LOD 0, and the lowest LOD
+(about a quarter of the triangles) started at 60 m, the draw distance, so no
+instance ever drew it. `dc_instance_camera` now has a `lod_bias` that divides
+the planes (0 or 1: the package's own), and `dc_level_frame_timing` counts the
+instances drawn at each LOD (1128 bytes).
+
+| Change | Instances at LOD 0-3 a frame | Triangles visited / submitted | Draw median |
+| --- | --- | --- | --- |
+| Before (60 m, the package's planes) | 386, 25, 142, 0 | 43,446 / 11,111 | 47.6 ms |
+| LOD planes halved | 370, 3, 22, 157 | 23,210 / 7,018 | 40.3 ms |
+| Draw distance 45 m | 202, 3, 22, 50 | 14,165 / 4,088 | 32.3 ms |
+| Skinned models once a frame | | | 27.6 ms |
+
+Jak is in more than one PVR list, and `dc_level_models_draw` skinned and
+projected his 3,400 triangles again for each (up to 7.3 ms a pass). The kept
+model whose joints and vertices are in the scratch is remembered for the frame;
+a later list reuses them. The GOAL frame is unchanged at 67.4 ms, so a frame is
+about 95 ms (10.5 fps in Flycast), and the game logic is now 70% of it.

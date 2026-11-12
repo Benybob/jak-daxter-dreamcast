@@ -255,7 +255,7 @@ static int draw(const dc_instance_package *pkg,const dc_instance_camera *cam,flo
   if(counting)++st->instances;
   if(d2>cam->draw_distance*cam->draw_distance)continue;
   if(lighting)table=lighting->tables?lighting->tables[i]:lighting->data+rd32(lighting->data+lighting->resident+4*i);
-  first=dc_instance_run(pkg,in,d2,&lod,&count);
+  first=dc_instance_run(pkg,in,cam->lod_bias>1.f?d2*cam->lod_bias*cam->lod_bias:d2,&lod,&count);
   if(counting){++st->drawn_instances;++st->lod_instances[lod];}
   static matrix_t mv __attribute__((aligned(32)));
   for(g=first;g<first+count;++g){

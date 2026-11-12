@@ -26,7 +26,11 @@
 #include "build/level_render_fixture.h"
 
 #define LEVEL_DRAW_ROOT "/cd/GEYSER"
-enum {TARGET_DISTANCE_M=12,DRAW_DISTANCE_M=60,WINDOW_HALF_M=14};
+/* Scenery: 45 m instead of TIE's 60, and the LOD planes halved (LOD_BIAS), so
+ * the lowest LOD, about a quarter of the triangles, starts at 30 m instead of
+ * never (its plane was the draw distance). Draw 47.6 to 32.3 ms in Flycast. */
+enum {TARGET_DISTANCE_M=12,DRAW_DISTANCE_M=45,WINDOW_HALF_M=14};
+#define LOD_BIAS 2.f
 int dc_level_draw_check(uint64_t,uint64_t,const char *);
 int dc_level_draw_release_boot(uint32_t *vram_available);
 extern volatile uint32_t dc_arena_slab_live,dc_arena_slab_high_water,dc_arena_slab_failures;
@@ -44,13 +48,14 @@ volatile struct {
  * skinned models' share of 7-9 (counted in both), 14 the kernel-dispatcher
  * call alone (dc_level_time_dispatch, part of 12). frame_us is
  * stages 0-11 of each of the first 96 draw frames, goal_us stage 12.
- * --dump dc_level_frame_timing 1112 */
+ * --dump dc_level_frame_timing 1128 */
 enum {TIME_STAGES=15,TIME_FRAMES=96};
 volatile struct {
  uint32_t frames,pad;uint32_t sum_us[TIME_STAGES],max_us[TIME_STAGES];
  uint32_t frame_us[TIME_FRAMES],goal_us[TIME_FRAMES];
  uint32_t submitted[3],triangles[3];  /* instance triangles per list, summed */
  uint16_t code_walks[TIME_FRAMES];    /* code-registry walks in each GOAL frame (goal_module.c) */
+ uint32_t lods[4];                    /* instances drawn at each LOD, summed */
 } dc_level_frame_timing;
 static uint64_t time_at,time_frame_start,time_last_end;
 static void time_stage(unsigned stage){
@@ -189,7 +194,7 @@ int dc_level_draw_frame(dc_goal_runtime *rt){
  if(dc_level_draw_metrics.frames<=192u){unsigned k;for(k=0;k<3;++k)dc_level_draw_metrics.eye[dc_level_draw_metrics.frames-1u][k]=c.eye[k];}
  if(!ready && !initialize())return 0;
  rc=(dc_render_camera){{c.target[0],c.target[1],c.target[2]},c.yaw,c.pitch,c.distance};
- ic=(dc_instance_camera){c.target[0],c.target[1],c.target[2],c.yaw,c.pitch,c.distance,DRAW_DISTANCE_M};
+ ic=(dc_instance_camera){c.target[0],c.target[1],c.target[2],c.yaw,c.pitch,c.distance,DRAW_DISTANCE_M,LOD_BIAS};
  query=(dc_render_query){(double)c.target[0]-WINDOW_HALF_M,(double)c.target[2]-WINDOW_HALF_M,
                          (double)c.target[0]+WINDOW_HALF_M,(double)c.target[2]+WINDOW_HALF_M};
  time_at=timer_us_gettime64();
@@ -211,7 +216,8 @@ int dc_level_draw_frame(dc_goal_runtime *rt){
   if(window.count)ok&=dc_render_base_draw(&bank,&frame,lists[i],&base);
   {uint32_t s0=inst.submitted,t0=inst.triangles;
    if(lists[i]!=PVR_LIST_TR_POLY)ok&=dc_instance_draw_list(&pkg,&ic,view,&inst,lists[i],materials,FLY_MATERIAL_SLOTS);
-   dc_level_frame_timing.submitted[i]+=inst.submitted-s0;dc_level_frame_timing.triangles[i]+=inst.triangles-t0;}
+   dc_level_frame_timing.submitted[i]+=inst.submitted-s0;
+   if(lists[i]==PVR_LIST_OP_POLY){unsigned k;for(k=0;k<4;++k)dc_level_frame_timing.lods[k]+=inst.lod_instances[k];}dc_level_frame_timing.triangles[i]+=inst.triangles-t0;}
   {uint64_t m0=timer_us_gettime64();uint32_t us;
    ok&=dc_level_models_draw(rt,&ic,lists[i]);
    us=(uint32_t)(timer_us_gettime64()-m0);dc_level_frame_timing.sum_us[13]+=us;

@@ -52,6 +52,9 @@ enum {VERTEX_GUARD=0x80};  /* else the low five bits are the planes it is clearl
 static float (*scratch)[3];
 static uint8_t *vertex_flags;
 static uint32_t scratch_verts;
+/* The kept model scratch and V now hold (NULL: none): a model drawn in more
+ * than one list is skinned once a frame, in the first. */
+static const kept *skinned;
 static uint32_t frame_triangles;
 static int frame_jak,frame_actor;
 static pvr_poly_hdr_t colour[3] __attribute__((aligned(32)));
@@ -200,7 +203,7 @@ int dc_level_models_frame(dc_goal_runtime *rt,const dc_instance_camera *cam){
  enum dc_goal_error prior=rt->error;
  uint32_t stack[WALK_DEPTH],pd=named(rt,"process-drawable"),dc=named(rt,"draw-control"),root=named(rt,"*active-pool*");
  uint32_t target=named(rt,"*target*"),drawables=0,missing=0;unsigned depth=0,visits=0;float b[10];
- ++dc_level_model_metrics.frames;kept_count=0;frame_triangles=0;frame_jak=frame_actor=0;
+ ++dc_level_model_metrics.frames;kept_count=0;skinned=NULL;frame_triangles=0;frame_jak=frame_actor=0;
  dc_level_model_metrics.last_missing=0;
  if(!pd || !dc || !ptr(rt,root) || !model_count){rt->error=prior;return 1;}
  dc_instance_view(cam,b);
@@ -316,6 +319,8 @@ int dc_level_models_draw(dc_goal_runtime *rt,const dc_instance_camera *cam,int l
  for(e=0;e<kept_count;++e){
   kept *kp=&frame_kept[e];model *m=&models[kp->model];uint32_t i,start;const void *current=NULL;
   if(!(m->lists&(1u<<li)))continue;
+  if(kp!=skinned){
+  skinned=NULL;
   if(!joints(rt,m,kp->proc,b,cam)){++dc_level_model_metrics.joint_misses;continue;}
   start=(uint32_t)timer_us_gettime64();
   for(i=0;i<m->verts;++i){
@@ -329,6 +334,8 @@ int dc_level_models_draw(dc_goal_runtime *rt,const dc_instance_camera *cam,int l
    vertex_flags[i]=(uint8_t)outside_planes(o[0],o[1],o[2]);
   }
   {uint32_t us=(uint32_t)timer_us_gettime64()-start;if(us>dc_level_model_metrics.skin_us_max)dc_level_model_metrics.skin_us_max=us;}
+  skinned=kp;
+  }
   if(!kp->drawn){kp->drawn=1;++dc_level_model_metrics.drawn;if(kp->target)frame_jak=1;else frame_actor=1;}
   for(i=0;i<m->batch_count;++i){
    const dsk_batch *bt=&m->batches[i];uint32_t k;int textured=bt->texture!=0xffffu;const void *header;
