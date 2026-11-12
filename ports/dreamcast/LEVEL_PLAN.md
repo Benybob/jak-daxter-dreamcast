@@ -1018,3 +1018,26 @@ A sampling profile of the logic frames, after the draw work:
 | The FPU clear | 61.4 ms |
 
 With the draw at 27.6 ms, a frame is about 89 ms (11.2 fps in Flycast).
+
+### entity-by-name remembered, and MMI ops on whole lanes (Flycast, 2734 of 2734, 2026-11-12)
+
+A count of the native lookup's names over the level run: 175,755 of 196,858
+were `'name`. entity-by-name ran 370 times (about two a frame), and each
+call scanned about 475 actors, ambients and cameras, one res lookup each.
+Its answer depends only on the name and the levels it scans, so
+`res_native.c` remembers it: 64 names, under a signature of *level*'s length
+and each level's status and bsp (+16, +44); a change to any of them clears
+the table, and a miss runs the original GOAL function. The first 64 answers
+from the table also run the original and must match (2731 to 2734 checks).
+
+`goal_mmi.c`'s word and halfword operations now work on whole 32- and 16-bit
+lanes instead of assembling each element from bytes (all three hosts are
+little-endian); tests/test_mmi_pad.py still matches its independent model.
+
+| Change | GOAL frame median (steady) |
+| --- | --- |
+| Before | 61.4 ms |
+| entity-by-name remembered | 55.0 ms |
+| MMI lanes | 54.7 ms |
+
+A frame is about 82 ms (12.2 fps in Flycast).

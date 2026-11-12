@@ -516,6 +516,7 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
        /* res-lump lookup-tag-idx in C (res_native.c); its first calls are
         * compared with the original method's. */
        CHECK(dc_res_native_install(&rt,sync_code),1,"res-lump lookup-tag-idx runs natively");
+       CHECK(dc_res_native_install_by_name(&rt,sync_code),1,"entity-by-name answers are remembered");
 #endif
        before=word(&rt,entry(&rt,"*display*"),REAL_INTEGRAL_FRAMES);
 #ifdef DC_LEVEL_LOGIC  /* the level ELF */
@@ -559,6 +560,8 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
        CHECK(dc_level_check(&rt),1,"original level loading makes Geyser Rock active with its bsp attached");
        CHECK(dc_res_native.checked>=1000u,1,"native res lookups were compared with the GOAL method");
        CHECK(dc_res_native.mismatches,0,"native res lookups match the GOAL method");
+       CHECK(dc_res_native.by_name_checked>=32u,1,"remembered entity-by-name answers were compared with GOAL");
+       CHECK(dc_res_native.by_name_mismatches,0,"remembered entity-by-name answers match GOAL");
 #endif
        /* Every swap-display's display-frame-start counts at least one frame. */
        CHECK(word(&rt,entry(&rt,"*display*"),REAL_INTEGRAL_FRAMES)-before>=DISPLAY_FRAMES,1,
