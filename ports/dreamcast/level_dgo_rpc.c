@@ -14,6 +14,9 @@
 #include "goal_bridge.h"
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
+#include <malloc.h>
+#include <kos.h>
 
 enum { RPC_DGO=3, LOAD_BEGIN=0, LOAD_NEXT=1, LOAD_CANCEL=2 };
 enum { RESULT_DONE=0, RESULT_ERROR=1, RESULT_MORE=2, RESULT_ABORTED=3 };
@@ -57,6 +60,12 @@ static int load_next(uint32_t bt){
 volatile struct { uint32_t fills,loads,failed,id,bytes,last_offset,last_length; char name[20]; } dc_level_ramdisk_evidence;
 typedef char dc_level_ramdisk_evidence_bytes[sizeof dc_level_ramdisk_evidence==48?1:-1];
 static FILE *ramdisk;static uint32_t ramdisk_id;
+/* The file whole, as the IOP held it, when it is at most RAMDISK_RESIDENT and
+ * the KOS heap has room (Geyser Rock's TRA.VIS is 215 KB): a load is then a
+ * copy. Read from the disc on demand, each load was a disc command on the
+ * game's thread, which also waits out any read another thread has in hand. */
+enum {RAMDISK_RESIDENT=256*1024};
+static unsigned char *ramdisk_image;static uint32_t ramdisk_bytes;
 static void ramdisk_rpc(uint64_t fno,uint64_t send,uint64_t recv,uint64_t recv_bytes){
   unsigned char *msg=send<=UINT32_MAX?dc_goal_resolve(runtime,(uint32_t)send,32):NULL,*out;
   if(!msg){++dc_level_ramdisk_evidence.failed;return;}
@@ -69,7 +78,19 @@ static void ramdisk_rpc(uint64_t fno,uint64_t send,uint64_t recv,uint64_t recv_b
       if(i<19)dc_level_ramdisk_evidence.name[i]=path[n-1];
     }
     path[n]=0;memcpy(&ramdisk_id,msg+4,4);dc_level_ramdisk_evidence.id=ramdisk_id;
+    free(ramdisk_image);ramdisk_image=NULL;ramdisk_bytes=0;
     if(!(ramdisk=fopen(path,"rb")))++dc_level_ramdisk_evidence.failed;
+    else {long size=-1;
+      /* 32-byte aligned, through the KOS descriptor: one DMA command */
+      if(!fseek(ramdisk,0,SEEK_END) && (size=ftell(ramdisk))>0 && size<=RAMDISK_RESIDENT && !fseek(ramdisk,0,SEEK_SET) &&
+         (ramdisk_image=memalign(32,((size_t)size+2047u)&~(size_t)2047u))){
+        file_t fd=fs_open(path,O_RDONLY);size_t done=0;
+        while(fd>=0 && done<(size_t)size){ssize_t got=fs_read(fd,ramdisk_image+done,(size_t)size-done);if(got<=0)break;done+=(size_t)got;}
+        if(fd>=0)fs_close(fd);
+        if(done==(size_t)size)ramdisk_bytes=(uint32_t)size;
+        else {free(ramdisk_image);ramdisk_image=NULL;}
+      }
+    }
   } else if(fno==0){
     uint32_t id,offset,length;
     memcpy(&id,msg+4,4);memcpy(&offset,msg+8,4);memcpy(&length,msg+12,4);
@@ -77,7 +98,8 @@ static void ramdisk_rpc(uint64_t fno,uint64_t send,uint64_t recv,uint64_t recv_b
     dc_level_ramdisk_evidence.last_offset=offset;dc_level_ramdisk_evidence.last_length=length;
     if(!ramdisk || id!=ramdisk_id || recv>UINT32_MAX || length>recv_bytes ||
        !(out=dc_goal_resolve(runtime,(uint32_t)recv,length)) ||
-       fseek(ramdisk,(long)offset,SEEK_SET) || fread(out,1,length,ramdisk)!=length){
+       (ramdisk_image?(offset>ramdisk_bytes || length>ramdisk_bytes-offset || !memcpy(out,ramdisk_image+offset,length)):
+        (fseek(ramdisk,(long)offset,SEEK_SET) || fread(out,1,length,ramdisk)!=length))){
       ++dc_level_ramdisk_evidence.failed;runtime->error=DC_GOAL_OK;return;
     }
     dc_level_ramdisk_evidence.bytes+=length;

@@ -36,7 +36,9 @@ static void *read_ahead(void *unused){
   fd=fs_open(path,O_RDONLY);
   if(fd>=0){
    size_t total=fs_total(fd);
-   if(total&&total<=BUDGET&&(data=malloc(total))){
+   /* 32-byte aligned and whole sectors long: fs_iso9660 then reads the file's
+    * full sectors as one DMA command, not a command a sector */
+   if(total&&total<=BUDGET&&(data=memalign(32,(total+2047u)&~(size_t)2047u))){
     size_t done=0;
     while(done<total){ssize_t n=fs_read(fd,data+done,total-done);if(n<=0)break;done+=(size_t)n;}
     ok=done==total;bytes=(uint32_t)total;

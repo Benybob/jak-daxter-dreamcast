@@ -534,7 +534,8 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
        dbgio_disable();
 #endif
 #ifdef DC_LEVEL_PLAY  /* jak-dc-level-play.elf: frames until the pad's reset chord, on the real clock */
-       {extern volatile int dc_level_play_quit;
+       {extern volatile int dc_level_play_quit;extern int dc_level_str_async;
+       dc_level_str_async=1;  /* level_str.c: spooled chunks read on a thread */
        for(frame=0;!dc_level_play_quit && rt.error==DC_GOAL_OK;++frame){
 #else
        {for(frame=0;frame<DISPLAY_FRAMES && rt.error==DC_GOAL_OK;++frame){

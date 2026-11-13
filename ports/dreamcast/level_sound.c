@@ -52,10 +52,14 @@ static snd_stream_hnd_t stream=SND_STREAM_INVALID;
 static uint32_t audio_left,audio_at;int hist1,hist2;
 static int16_t pcm[PCM_SAMPLES] __attribute__((aligned(32)));
 /* A block's samples carry over a buffer boundary (4096 is not a multiple of
- * 28), and the wad is read RUN bytes at a time, not a seek per block. */
-enum {RUN=2048};
+ * 28). The wad is read RUN bytes at a time from a sector boundary into a
+ * 32-byte aligned buffer through the KOS descriptor: that is one DMA command
+ * (fs_iso9660 reads anything else a sector at a time, a disc command each:
+ * the 2 KB unaligned runs were a command or two a frame). */
+enum {RUN=16384};
 static int16_t carry[BLOCK_SAMPLES];static int carry_at=BLOCK_SAMPLES;
-static unsigned char run[RUN];static uint32_t run_at,run_len;
+static unsigned char run[RUN] __attribute__((aligned(32)));static uint32_t run_base=UINT32_MAX,run_have;
+static file_t wad_fd=-1;
 
 static uint32_t rd32(const unsigned char *p){uint32_t v;memcpy(&v,p,4);return v;}
 static uint32_t be32(const unsigned char *p){return (uint32_t)p[0]<<24|(uint32_t)p[1]<<16|(uint32_t)p[2]<<8|p[3];}
@@ -94,15 +98,17 @@ static int decode_block(const unsigned char *b,int16_t *out){
 /* the next 16 bytes of the line, from the run buffer; consumed only once
  * decoded (consume_block), so a bad block is not skipped */
 static const unsigned char *next_block(void){
-  if(audio_left<BLOCK || !wad)return NULL;
-  if(run_at>=run_len){
-    uint32_t want=audio_left<RUN?audio_left&~(BLOCK-1u):RUN;
-    if(fseek(wad,(long)audio_at,SEEK_SET) || fread(run,1,want,wad)!=want)return NULL;
-    run_at=0;run_len=want;
+  if(audio_left<BLOCK || wad_fd<0)return NULL;
+  if(run_base==UINT32_MAX || audio_at<run_base || audio_at+BLOCK>run_base+run_have){
+    ssize_t n;
+    run_base=audio_at&~2047u;run_have=0;
+    if(fs_seek(wad_fd,(off_t)run_base,SEEK_SET)<0 || (n=fs_read(wad_fd,run,RUN))<=0){run_base=UINT32_MAX;return NULL;}
+    run_have=(uint32_t)n;
+    if(audio_at+BLOCK>run_base+run_have){run_base=UINT32_MAX;return NULL;}
   }
-  return run+run_at;
+  return run+(audio_at-run_base);
 }
-static void consume_block(void){audio_at+=BLOCK;audio_left-=BLOCK;run_at+=BLOCK;}
+static void consume_block(void){audio_at+=BLOCK;audio_left-=BLOCK;}
 static void *audio_data(snd_stream_hnd_t hnd,int bytes,int *got){
   int samples=0,want=bytes/2;
   (void)hnd;
@@ -143,7 +149,7 @@ static void *audio_feed(void *unused){
         else if((stream=snd_stream_alloc(audio_data,SND_STREAM_BUFFER_MAX))==SND_STREAM_INVALID)++dc_level_sound_evidence.errors;
       } else snd_stream_stop(stream);
       if(stream!=SND_STREAM_INVALID){
-        hist1=hist2=0;audio_at=line.offset;audio_left=line.bytes;carry_at=BLOCK_SAMPLES;run_at=run_len=0;
+        hist1=hist2=0;audio_at=line.offset;audio_left=line.bytes;carry_at=BLOCK_SAMPLES;run_base=UINT32_MAX;
         snd_stream_start(stream,line.rate,0);
       }
     } else if(!start_pending && stream!=SND_STREAM_INVALID && line.active && !line.paused){
@@ -166,7 +172,8 @@ static void play_line(const char *name,uint32_t id){
   if(load_dir())
     for(i=0;i<dir_count && !found;++i)if(!memcmp(dir+4+12*i,key,8)){sector=rd32(dir+12+12*i);found=1;}
   mutex_lock(&audio_lock);  /* the feed thread reads wad and the line */
-  if(!found || (!wad && !(wad=fopen("/cd/VAG/VAGWAD.ENG","rb"))) ||
+  if(found && wad_fd<0)wad_fd=fs_open("/cd/VAG/VAGWAD.ENG",O_RDONLY);
+  if(!found || wad_fd<0 || (!wad && !(wad=fopen("/cd/VAG/VAGWAD.ENG","rb"))) ||
      fseek(wad,(long)sector*2048,SEEK_SET) || fread(header,1,VAG_HEADER,wad)!=VAG_HEADER || memcmp(header,"VAGp",4)){
     ++dc_level_sound_evidence.missing;mutex_unlock(&audio_lock);return;
   }

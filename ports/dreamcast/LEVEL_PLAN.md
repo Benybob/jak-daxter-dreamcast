@@ -1172,3 +1172,42 @@ What is left: two logic frames of 270-390 ms in the run, where
 external-art-buffer's `str-load` (level_str.c) reads a spooled animation
 chunk in the call. On the PS2 the IOP read it while the game polled
 `str-load-status`; here the read should move to a thread the same way.
+
+### Disc reads as one DMA command; spooled animation served on a thread; the camera on the D-pad (Flycast, 2026-11-12)
+
+The two logic frames of 270-440 ms left in the play ELF's walk were not one
+slow call (a log of every RPC, link and thread resume over 15 ms found
+none): they were disc reads elsewhere stalling the game's thread. KOS's
+fs_iso9660 reads whole sectors with one DMA command only into a 32-byte
+aligned buffer from a sector boundary; anything else goes a 2 KB sector at a
+time through its block cache, a disc command each. The read-ahead's malloc
+buffers, a spool heap's 16-byte aligned address, the VIS image and the
+dialogue's 2 KB unaligned runs all took that path: a 128 KB chunk was 64
+commands.
+
+- **level_prefetch.c** stages into memalign(32) buffers of whole sectors.
+- **level_str.c** (`dc_level_str_async`, set by the play ELF): a request
+  returns at once and a thread serves it (opening the .STR, its header, the
+  chunk or a whole file by name) through `read_aligned`, a 32-byte aligned
+  buffer copied to the heap; `rpc-busy?` on port 4 (a new
+  `dc_goal_rpc_busy_handler`) answers 1 until it is in place and writes the
+  reply when it first answers 0, as the IOP's server did while the game
+  polled str-load-status. The level ELF's scripted run keeps the answer in
+  the call.
+- **level_dgo_rpc.c**: the RPC-RAMDISK file (TRA.VIS, 215 KB) is held whole
+  when it is at most 256 KB, as the IOP held it; a load is a copy.
+- **level_sound.c**: the dialogue is read 16 KB at a time from a sector
+  boundary into an aligned buffer through the KOS descriptor.
+- **goal_pad.c** (level ELFs): the D-pad is the PS2 right stick, which turns
+  and raises the original camera.
+
+| Play ELF's walk, frames 80-240 | Before today | After |
+| --- | --- | --- |
+| Worst frame | 472 ms | 156 ms |
+| Logic spikes when a line or its animation starts | 270-440 ms | 80-95 ms |
+| Terrain rebuild frames (draw) | 160-470 ms | 70-85 ms |
+| Median logic / draw | 45 / 37 ms | 48 / 36 ms |
+
+Open: large black shapes at a distance in some views (not the LOD bias: every
+LOD's geometries have a mapped material and colours). The terrain is only
+drawn 18 m out, so faces it would hide may be what shows.

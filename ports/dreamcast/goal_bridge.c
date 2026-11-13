@@ -2298,6 +2298,8 @@ static uint64_t pc_kopen_native(uint64_t fs,uint64_t name,uint64_t mode){
 }
 static uint64_t pc_kclose_native(uint64_t fs){return fs;}
 dc_goal_rpc_hook dc_goal_rpc_handler;
+uint64_t (*dc_goal_rpc_busy_handler)(uint64_t port);
+static uint64_t rpc_busy_native(uint64_t port){return dc_goal_rpc_busy_handler?dc_goal_rpc_busy_handler(port):0;}
 dc_goal_link_hook dc_goal_link_begin_handler;
 dc_goal_rpc_hook dc_goal_str_handler;
 dc_goal_link_hook dc_goal_link_handler;
@@ -2417,6 +2419,7 @@ int dc_goal_install_pc_services(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_g
   for(i=0;i<sizeof void_setters/sizeof void_setters[0];++i){
     functions[k]=(dc_goal_code_export){void_setters[i],code[k],12,NULL,0};targets[k++]=(uint32_t)(uintptr_t)pc_zero_native;
     if(!strcmp(void_setters[i],"rpc-call"))targets[k-1]=(uint32_t)(uintptr_t)rpc_call_native;
+    if(!strcmp(void_setters[i],"rpc-busy?"))targets[k-1]=(uint32_t)(uintptr_t)rpc_busy_native;
 #ifdef DC_ARENA_COEXIST
     if(!strcmp(void_setters[i],"syncv"))targets[k-1]=(uint32_t)(uintptr_t)dc_arena_syncv;
     if(!strcmp(void_setters[i],"__send-gfx-dma-chain"))targets[k-1]=(uint32_t)(uintptr_t)dc_arena_chain;

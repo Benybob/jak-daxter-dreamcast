@@ -136,6 +136,8 @@ typedef uint64_t (*dc_goal_rpc_hook)(uint64_t port,uint64_t fno,uint64_t async,u
                                      uint64_t send_bytes,uint64_t recv,uint64_t recv_bytes);
 typedef uint64_t (*dc_goal_link_hook)(uint64_t data,uint64_t name,uint64_t length,uint64_t heap,uint64_t flags);
 extern dc_goal_rpc_hook dc_goal_rpc_handler;
+/* rpc-busy? for a port, when set (else 0: every RPC is answered in the call). */
+extern uint64_t (*dc_goal_rpc_busy_handler)(uint64_t port);
 /* The clock GOAL sees (__read-ee-timer, from which display-frame-start takes
  * its time ratio) and the dialogue stream's position follows: KOS's
  * nanosecond clock, or the value a runner fixes. With a fixed clock stepped

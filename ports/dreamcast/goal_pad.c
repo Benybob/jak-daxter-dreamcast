@@ -84,6 +84,15 @@ void dc_goal_pad_fill(uint8_t *cpad,const dc_goal_pad_state *s){
   cpad[OFF_STATUS]=0x70|(20/2);  /* DualShock 2, 20 bytes of data */
   memcpy(cpad+OFF_BUTTON0,&b,2);
   cpad[OFF_RIGHTX]=128;cpad[OFF_RIGHTY]=128;
+#ifdef DC_LEVEL_PAD
+  /* One stick on a Dreamcast pad: the D-pad is the PS2 right stick, which
+   * turns (left/right) and raises or lowers (up/down) the original camera.
+   * The game itself does not use the D-pad outside menus. */
+  if(s->buttons&DC_PAD_LEFT)cpad[OFF_RIGHTX]=0;
+  if(s->buttons&DC_PAD_RIGHT)cpad[OFF_RIGHTX]=255;
+  if(s->buttons&DC_PAD_UP)cpad[OFF_RIGHTY]=0;
+  if(s->buttons&DC_PAD_DOWN)cpad[OFF_RIGHTY]=255;
+#endif
 #ifdef DC_ARENA_LIVE
   if(s->buttons&DC_PAD_RX_POS)cpad[OFF_RIGHTX]=207;
 #endif

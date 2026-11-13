@@ -20,6 +20,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <malloc.h>
+#include <kos.h>
 
 enum {STR_RESULT_DONE=0,STR_RESULT_ERROR=1,STR_CHUNKS=64,STR_SECTOR=2048};
 /* The two spool buffers: original external-art-buffer update puts each one's
@@ -118,6 +119,83 @@ static int open_str(const char *animation){
   return 1;
 }
 
+/* Requests served on a thread (dc_level_str_async, the play ELF): the RPC
+ * returns at once, rpc-busy? on port 4 answers 1 until the file or chunk is in
+ * place, and the reply is written when it first answers 0, as the IOP's server
+ * did while the game polled str-load-status. Opening the .STR, its header and
+ * a chunk of up to 128 KB are all disc: in the call they were 150-390 ms of
+ * that frame. The game sends no second request while one is busy
+ * (*load-str-lock*); one that came would be answered error. */
+int dc_level_str_async;
+enum {JOB_IDLE=0,JOB_READING,JOB_DONE,JOB_MISSING=100};
+static struct {volatile int state;int32_t chunk;unsigned char *dest,*msg,*reply;uint32_t size,address,maxlen;int error;char name[49];} job;
+static kthread_t *job_thread;
+/* size bytes at offset of a disc file into dest. Through a 32-byte aligned
+ * buffer when the KOS heap has one: a spool heap's address is only 16-byte
+ * aligned, and fs_iso9660 reads an unaligned destination a sector a command
+ * (a 128 KB chunk was 64 of them); aligned, it is one DMA command. */
+static int read_aligned(const char *path,uint32_t offset,unsigned char *dest,uint32_t size){
+  file_t fd=fs_open(path,O_RDONLY);unsigned char *stage;int ok=0;
+  if(fd<0)return 0;
+  stage=memalign(32,(size+2047u)&~2047u);
+  if(fs_seek(fd,(off_t)offset,SEEK_SET)>=0){
+    unsigned char *to=stage?stage:dest;uint32_t done=0;
+    while(done<size){ssize_t n=fs_read(fd,to+done,size-done);if(n<=0)break;done+=(uint32_t)n;}
+    ok=done==size;
+    if(ok && stage)memcpy(dest,stage,size);
+  }
+  free(stage);fs_close(fd);
+  return ok;
+}
+static void *job_reader(void *unused){
+  (void)unused;
+  for(;;){
+    int error=0;uint32_t size=0;
+    if(job.state!=JOB_READING){thd_sleep(5);continue;}
+    if(job.chunk<0){
+      static const char *const dirs[2]={"/cd/","/cd/TEXT/"};char path[96];FILE *f=NULL;long bytes;unsigned d,j;
+      for(d=0;d<2 && !f;++d){
+        size_t at=strlen(dirs[d]);
+        snprintf(path,sizeof path,"%s%s",dirs[d],job.name);
+        for(j=(unsigned)at;path[j];++j)if(path[j]>='a' && path[j]<='z')path[j]=(char)(path[j]-32);
+        f=fopen(path,"rb");
+      }
+      if(!f)error=JOB_MISSING;
+      else {
+        if(fseek(f,0,SEEK_END) || (bytes=ftell(f))<=0 || (uint32_t)bytes>job.maxlen)error=1;
+        fclose(f);
+        if(!error && !read_aligned(path,0,job.dest,(uint32_t)bytes))error=1;
+        if(!error)size=(uint32_t)bytes;
+      }
+    } else if(!open_str(job.name))error=JOB_MISSING;
+    else {
+      uint32_t heap_end=spool_base+((job.address-spool_base)/SPOOL_BYTES+1u)*SPOOL_BYTES;
+      size=str_sizes[job.chunk];
+      error=!size?2:size>job.maxlen?3:size>heap_end-job.address?8:0;
+      if(!error && !read_aligned(str_path,str_sectors[job.chunk]*STR_SECTOR,job.dest,size))error=6;
+    }
+    job.size=size;job.error=error;
+    job.state=JOB_DONE;
+  }
+  return NULL;
+}
+static uint64_t str_busy(uint64_t port){
+  uint16_t result=STR_RESULT_ERROR;
+  if(port!=4 || job.state==JOB_IDLE)return 0;
+  if(job.state==JOB_READING)return 1;
+  if(job.error==JOB_MISSING)++dc_level_str_evidence.missing;
+  else if(job.error){dc_level_str_evidence.last_error=(uint32_t)job.error;++dc_level_str_evidence.errors;}
+  else {
+    memcpy(job.msg+12,&job.size,4);
+    if(job.chunk>=0){dc_level_str_evidence.last_error=0;++dc_level_str_evidence.chunk_served;}else ++dc_level_str_evidence.files;
+    ++dc_level_str_evidence.served;dc_level_str_evidence.last_bytes=job.size;dc_level_str_evidence.last_dest=job.address;
+    result=STR_RESULT_DONE;
+  }
+  memcpy(job.reply+2,&result,2);
+  if(job.reply!=job.msg)memcpy(job.reply+12,job.msg+12,4);
+  job.state=JOB_IDLE;
+  return 0;
+}
 /* RPC_STR for a chunk (chunk-id >= 0): load-chunk-msg is u16 rsvd, u16 result,
  * u32 address, s32 chunk, u32 length (the most to load in, the loaded length
  * out), char name[48]: 64 bytes (load-dgo.gc load-chunk-msg). Loading is synchronous, so the next rpc-busy? is 0. */
@@ -142,6 +220,25 @@ static uint64_t str_rpc(uint64_t port,uint64_t fno,uint64_t async,uint64_t send,
    tag[0]=chunk<0?' ':'#';for(j=0;j<22 && name[j];++j)tag[j+1]=name[j];tag[j+1]=0;
    for(k=0;k<8 && dc_level_str_evidence.names[k][0];++k)if(!strncmp((const char *)dc_level_str_evidence.names[k],tag,24))break;
    if(k<8 && !dc_level_str_evidence.names[k][0])for(j=0;j<24;++j)dc_level_str_evidence.names[k][j]=tag[j];}
+  if(dc_level_str_async && job.state!=JOB_IDLE){++dc_level_str_evidence.errors;goto reply;}
+  if(dc_level_str_async && !(chunk>=0 && address>=PS2_SPOOL_BASE && address<PS2_SPOOL_BASE+2u*PS2_SPOOL_HEAP) &&
+     (job_thread || (job_thread=thd_create(1,job_reader,NULL)))){
+    /* where it goes, checked here: a file's whole length, a chunk's start in
+     * a spool heap (the thread holds it to that heap's end) */
+    unsigned char *to=NULL;
+    if(chunk<0)to=dc_goal_resolve(runtime,address,maxlen);
+    else if(chunk<STR_CHUNKS && !(address&15u) && spool_base && address>=spool_base && address<spool_base+2u*SPOOL_BYTES)
+      to=dc_goal_resolve(runtime,address,16);
+    runtime->error=DC_GOAL_OK;
+    if(to){
+      if(chunk>=0)++dc_level_str_evidence.chunk_requests;
+      job.chunk=chunk;job.dest=to;job.msg=msg;job.reply=reply;job.address=address;job.maxlen=maxlen;
+      memcpy(job.name,name,sizeof job.name);
+      result=666;memcpy(reply+2,&result,2);  /* load-msg-result invalid until it is served */
+      job.state=JOB_READING;
+      return 0;
+    }
+  }
   if(chunk<0){
     /* a whole file by name, at most length bytes */
     static const char *const dirs[2]={"/cd/","/cd/TEXT/"};char path[96];FILE *f=NULL;long bytes;unsigned d,j;
@@ -270,7 +367,7 @@ static uint64_t link_v2(uint64_t data,uint64_t name,uint64_t length,uint64_t hea
 }
 
 void dc_level_str_install(dc_goal_runtime *rt){
-  runtime=rt;dc_goal_str_handler=str_rpc;dc_goal_link_handler=link_v2;
+  runtime=rt;dc_goal_str_handler=str_rpc;dc_goal_link_handler=link_v2;dc_goal_rpc_busy_handler=str_busy;
 }
 /* Each frame: both spool buffers' status (+8) and how many frames any was
  * 'locked or 'active (an art-group in use). --dump dc_level_spool_probe 64 */
