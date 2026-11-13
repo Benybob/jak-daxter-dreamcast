@@ -159,8 +159,18 @@ def shared(a, b):
     return [a[i] for i, _ in shared_matches(a, b)]
 
 
-def mean_vertex_colours(base, cuts):
+LIT = 0.04  # GLB colour units: under this in R, G and B a corner is blacked out
+
+
+def mean_vertex_colours(base, cuts, lit=False):
     """Mean matched RGB per triangle corner; keep donor alpha (AI-assisted).
+
+    lit: the mean of the placements where the corner is not blacked out. TIE
+    paints a placement's buried corners black (terrain covers them there); a
+    package has one colour a corner for every placement, so the donor's black
+    lands on copies that stand in the open (Geyser Rock's walllarge-01 was 43%
+    black), and a plain mean dims them. A corner black in every placement
+    stays black.
 
     Missing triangles contribute neither colour nor count. Leave the mean in
     GLB colour units: argb()/tie_lods.colour() round to the nearest byte after
@@ -168,15 +178,22 @@ def mean_vertex_colours(base, cuts):
     """
     sums = [[[0.0] * 3 for _ in range(3)] for _ in base]
     counts = [0] * len(base)
+    lit_sums = [[[0.0] * 3 for _ in range(3)] for _ in base]
+    lit_counts = [[0] * 3 for _ in base]
     for other in cuts:
         for i, n in shared_matches(base, other):
             counts[i] += 1
             for corner, c in enumerate(other[n][2]):
                 for k in range(3):
                     sums[i][corner][k] += c[k]
+                if lit and max(c[:3]) >= LIT:
+                    lit_counts[i][corner] += 1
+                    for k in range(3):
+                        lit_sums[i][corner][k] += c[k]
     out = []
     for i, (pts, uvs, cols, mat) in enumerate(base):
-        mean = tuple(tuple(v / counts[i] for v in sums[i][corner]) + tuple(c[3:])
+        mean = tuple((tuple(v / lit_counts[i][corner] for v in lit_sums[i][corner]) if lit_counts[i][corner]
+                      else tuple(v / counts[i] for v in sums[i][corner])) + tuple(c[3:])
                      for corner, c in enumerate(cols)) if counts[i] else cols
         out.append((pts, uvs, mean, mat))
     return out
@@ -253,7 +270,8 @@ def build(dgo, glb, mean_colours=False):  # optional RGB averaging (AI-assisted)
         if mean_colours and 'geometry' in row:
             # All source instances, including those beyond the selection's first
             # eight, contribute once through the same position match (AI-assisted).
-            row['geometry'] = mean_vertex_colours(row['geometry'], (cut(source, inst) for inst in own))
+            row['geometry'] = mean_vertex_colours(row['geometry'], (cut(source, inst) for inst in own),
+                                                  lit=mean_colours == 'lit')
     return results, instances, prototypes
 
 

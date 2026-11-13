@@ -54,6 +54,11 @@ slot. Cells stream the tables with their records (AI-assisted), ISC.
 --mean-colours (with --textured) averages matched source-instance RGB at LOD 0,
 keeping donor alpha and the same nearest-vertex transfer to lower LODs
 (AI-assisted). By default the original donor colours are kept.
+
+--lit-colours (with --textured) is that mean over the placements where the
+corner is not blacked out (prototype_geometry.mean_vertex_colours): the level
+ELF's Geyser Rock package, whose walls and cliffs were black where the donor
+placement was buried (AI-assisted).
 """
 import argparse
 import glob
@@ -434,11 +439,15 @@ def main():
     ap.add_argument('--textured', action='store_true')
     ap.add_argument('--mean-colours', action='store_true',
                     help='average matched instance RGB (with --textured; AI-assisted)')
+    ap.add_argument('--lit-colours', action='store_true',
+                    help='mean of the placements that do not black the corner out (with --textured; AI-assisted)')
     ap.add_argument('--palette-lighting', action='store_true', help='DCI4 static placement palettes (implies --compact; AI-assisted, ISC)')
     ap.add_argument('--compact', action='store_true', help='DCI3: 16-byte vertices (with --textured)')
     ap.add_argument('--out', type=Path)
     ap.add_argument('--json', type=Path)
     a = ap.parse_args()
+    if a.lit_colours and (not a.textured or a.mean_colours or a.palette_lighting):
+        ap.error('--lit-colours requires --textured, without --mean-colours or --palette-lighting')
     if a.palette_lighting and (not a.textured or a.mean_colours):
         ap.error('--palette-lighting requires --textured and donor colours')
     if a.mean_colours and not a.textured:  # averaging needs the GLB source instances (AI-assisted)
@@ -447,7 +456,7 @@ def main():
     if a.textured:
         import prepare_render_sectors as rs
         import prototype_geometry
-        results, instances, _ = prototype_geometry.build(a.dgo, a.package, mean_colours=a.mean_colours)  # AI-assisted
+        results, instances, _ = prototype_geometry.build(a.dgo, a.package, mean_colours='lit' if a.lit_colours else a.mean_colours)  # AI-assisted
         doc, _ = rs.read_glb(a.package)
         factors = {i: tuple(m.get('pbrMetallicRoughness', {}).get('baseColorFactor', (1, 1, 1, 1)))
                    for i, m in enumerate(doc.get('materials', []))}

@@ -1208,6 +1208,26 @@ commands.
 | Terrain rebuild frames (draw) | 160-470 ms | 70-85 ms |
 | Median logic / draw | 45 / 37 ms | 48 / 36 ms |
 
-Open: large black shapes at a distance in some views (not the LOD bias: every
-LOD's geometries have a mapped material and colours). The terrain is only
-drawn 18 m out, so faces it would hide may be what shows.
+### The black walls and cliffs (2026-11-13)
+
+The large black shapes at a distance were the package's colours, not the LODs
+or the terrain: tinting each LOD in the play ELF showed the black faces
+textured and drawn at LOD 3 and LOD 0 alike. A package holds one colour a
+vertex for every placement of a prototype, taken from one placement (the
+donor). TIE paints a placement's buried corners black, and Geyser Rock's
+donors were buried: 43% of `walllarge-01`'s vertices and 30% of `cliffmed`'s
+were black on all 54 and 21 placements.
+
+`tie_lods.py --lit-colours` (`prototype_geometry.mean_vertex_colours(lit=True)`)
+takes each corner's mean over the placements that do not black it out; a
+corner black everywhere stays black (`coralrocks`' undersides). Geyser Rock's
+package is built with it:
+
+```text
+python tie_lods.py --textured --compact --lit-colours training-background.glb TRA.DGO debug_out --out build/geyser-render/package.dci3
+```
+
+The package is 208 bytes larger (817,952); the cells, sectors and manifest
+are unchanged. The walls and cliffs are now lit rock in every capture of the
+play ELF's walk. Per-placement colour (DCI4 palettes) would be exact; it is
+not in the level draw.

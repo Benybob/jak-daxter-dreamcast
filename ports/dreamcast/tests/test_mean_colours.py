@@ -116,6 +116,22 @@ class MeanColoursTest(unittest.TestCase):
         self.assertEqual(mean[1], a)
         self.assertAlmostEqual(mean[0][2][0][0], (a[2][0][0] + 1.0) / 2)
 
+    def test_lit_mean_leaves_out_blacked_out_corners(self):
+        a = triangle()
+        buried = triangle(colours=((0.0, 0.0, 0.0, 1.0), (0.01, 0.03, 0.02, 1.0), (0.5, 0.5, 0.5, 1.0)))
+        lit = pg.mean_vertex_colours([a], [[a], [buried]], lit=True)[0][2]
+        plain = pg.mean_vertex_colours([a], [[a], [buried]])[0][2]
+        for corner in range(2):  # black in one placement: the other's colour
+            for k in range(3):
+                self.assertAlmostEqual(lit[corner][k], a[2][corner][k])
+                self.assertAlmostEqual(plain[corner][k], (a[2][corner][k] + buried[2][corner][k]) / 2)
+        for k in range(3):  # lit in both: the mean
+            self.assertAlmostEqual(lit[2][k], (a[2][2][k] + 0.5) / 2)
+        self.assertEqual([c[3] for c in lit], [c[3] for c in a[2]])
+        # black in every placement stays black
+        black = triangle(colours=((0.0, 0.0, 0.0, 1.0),) * 3)
+        self.assertEqual(pg.mean_vertex_colours([black], [[black], [black]], lit=True), [black])
+
     def test_single_instance_keeps_its_colours(self):
         results, _, _ = synthetic_build(count=1, mean_colours=True)
         self.assertEqual(results[0]['status'], 'ok (one instance only)')
