@@ -122,12 +122,17 @@ volatile struct {
   float coverage[DC_LEVEL_TRACE_FRAMES],surface_angle[DC_LEVEL_TRACE_FRAMES];  /* control +428, +416 */
 } dc_level_target_trace={.version=1};
 void dc_level_cache_sample(dc_goal_runtime *rt,uint32_t frame);
+/* A test's way to put Jak somewhere: set [1..3] (meters), then [0]; cleared when done. */
+volatile float dc_level_warp[4];
 void dc_level_player_sample(dc_goal_runtime *rt){
   enum dc_goal_error prior=rt->error;
   uint32_t target=named(rt,"*target*"),root,state,status,i,f;const float *t;const char *name;
   if(!target || target==rt->s7 || (target&3u))goto done;
   root=word(rt,target+108u);
   if(!root || root==rt->s7 || (root&3u) || !(t=dc_goal_resolve(rt,root+12u,12)))goto done;
+  if(dc_level_warp[0]!=0){float *to=dc_goal_resolve(rt,root+12u,12);
+   for(i=0;i<3u;++i)to[i]=4096.f*dc_level_warp[i+1u];
+   dc_level_warp[0]=0;}
   status=word(rt,root+268u);f=dc_level_target_trace.frames;
   if(!f){dc_level_target_trace.first[0]=t[0];dc_level_target_trace.first[1]=t[1];dc_level_target_trace.first[2]=t[2];
          dc_level_target_trace.min_y=dc_level_target_trace.max_y=t[1];}

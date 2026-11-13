@@ -434,7 +434,7 @@ disc, `/cd/GEYSER`:
 
 ```text
 python tie_lods.py --textured --compact training-background.glb TRA.DGO debug_out --out build/geyser-render/package.dci3
-python make_level_render_assets.py training-background.glb build/geyser-render/package.dci3 build/geyser-render/assets --at=-1316.8,6.9,1057.8 --radius 100
+python make_level_render_assets.py training-background.glb build/geyser-render/package.dci3 build/geyser-render/assets --at=-1316.8,6.9,1057.8 --area=-1390,790,-1040,1265
 copy build/geyser-render/assets (without *.json) to build/level-disc/GEYSER
 ```
 
@@ -1231,3 +1231,64 @@ The package is 208 bytes larger (817,952); the cells, sectors and manifest
 are unchanged. The walls and cliffs are now lit rock in every capture of the
 play ELF's walk. Per-placement colour (DCI4 palettes) would be exact; it is
 not in the level draw.
+
+### The sea, the whole of Geyser Rock staged, and room for it (Flycast, 2747 of 2747, 2026-11-13)
+
+**The sea.** `level_ocean.c` draws the ocean in the opaque list before the
+terrain: eleven rings of 24 sectors around the eye (6 m to 3 km) at the
+height of `*ocean-map*`'s start corner, each vertex coloured from the map's
+own colour grid (52 by 49 words, 96 m cells, 128 full) and textured with a
+64 by 64 wave pattern made at boot (mipmapped, 8 m a tile, drifting a tile in
+1024 frames). It is clipped and projected as the instance pass does. Nothing
+is drawn while `*ocean-map*` is `#f`. The opaque list's time is unchanged
+(about 11 ms). Not there: the original's waves and near-field mesh, shore
+masks, time of day, and the original texture.
+
+**All of Geyser Rock.** The staged square (100 m around the start) held half
+of the level; the lake is 145 m away. `make_level_render_assets.py --area
+X0,Z0,X1,Z1` stages a rectangle and takes the window caps and instance records
+from an 8 m grid over it (34 s). The manifest's own bounds are no guide to
+the level: far scenery and a sentinel stretch them to 100 km, and a sweep of
+them never ends.
+
+```text
+python make_level_render_assets.py training-background.glb build/geyser-render/package.dci3 build/geyser-render/assets --at=-1316.8,6.9,1057.8 --area=-1390,790,-1040,1265
+```
+
+353 sectors (223 before); caps 2149 faces, 2103 vertices, 3709 remap, 149,896
+cache bytes, 1893 instance records. The header marks swept caps (`FLY_SWEPT`)
+and `level_draw.c` then adds 512 faces and 128 KiB of cache above them, not
+the 2048 and 256 KiB a ring of sixteen targets needed.
+
+**Room.** With the rectangle staged the renderer slab's high water rose from
+921,824 to 1,252,896 bytes, and the KOS heap then had no 32 KB left for a
+model's texture (`dc_level_model_fail_line`). 476,608 of the slab's bytes were
+the manifest's texture pixels, kept after they were in VRAM:
+`dc_render_catalog_drop_pixels` now moves the catalog to a block without them
+once the bank is made. High water 784,608 at the lake; the slab is 832 KiB
+(1 MiB before), and the KOS heap has 196 KB more than it had with the square
+staged. The block cache gives up its oldest blocks when the slab, not its
+budget, is the limit.
+
+**Models take the draw control's `color-mult`.** `training-water` sets
+(0.01, 0.45, 0.5, 0.75) on its surface; a model's vertex colours are
+multiplied by it, and translucent batches modulate alpha too. A model's
+colours are untouched while it is all ones.
+
+**The lake itself is not yet seen.** Its model is in the bundle
+(`water-anim-training-lake-lod0`: flat, 88 by 62 m about (-1240, 16, 936),
+texture alpha 4 of 15). The original `actors-update` births an actor only
+when the level's visibility data shows it from the camera, and kills it when
+it does not: with Jak put near the lake by a test the `training-water`
+process lived seven frames in `water-vol-idle` with that model, and the four
+sea `water-vol`s were alive. A test that drops Jak into the lake before it
+is born finds nothing: he sinks, and from under the surface the lake is never
+visible. Jak put on the shore went back to the start within the run, so no
+capture holds the lake; it wants a walk there. Two actors are visible and
+never born in every sample; which two is not known.
+
+Two hooks for tests, both zero unless a script writes them:
+`dc_level_warp` (meters, then a flag) puts Jak somewhere, and
+`dc_level_draw_view` (eye, yaw, pitch, then a flag) replaces the draw's
+camera. `dc_level_model_fates` lists what became of each shown model's
+process in the last frame.

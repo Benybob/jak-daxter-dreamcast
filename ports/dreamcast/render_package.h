@@ -37,6 +37,10 @@ typedef struct {
  * Neither function closes FILE; caller must check close before committing.
  * No external file data or structs may change concurrently. */
 const char *dc_render_catalog_load(FILE *,dc_render_catalog *);
+/* Once the textures are in VRAM: the catalog without its pixel bytes, in a
+ * smaller block (Geyser Rock's 476 KB of 487). dc_render_texture_get then
+ * fails; the storage no longer matches its CRC. NULL, or the catalog as it was. */
+const char *dc_render_catalog_drop_pixels(dc_render_catalog *);
 void dc_render_catalog_free(dc_render_catalog *);
 int dc_render_entry_get(const dc_render_catalog *,uint32_t,dc_render_entry *);
 int dc_render_global_get(const dc_render_catalog *,dc_render_entry *);

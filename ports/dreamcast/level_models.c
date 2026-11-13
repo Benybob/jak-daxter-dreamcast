@@ -37,7 +37,8 @@ typedef struct {
  int bind_checked;
  void *geometry;
 } model;
-typedef struct {uint32_t proc;unsigned model;int target,drawn;} kept;
+/* mult: the draw control's color-mult (r, g, b, a), 256 for 1.0; tinted when it is not all ones. */
+typedef struct {uint32_t proc;unsigned model;int target,drawn;uint16_t mult[4];int tinted;} kept;
 
 static FILE *bundle;
 static model models[MAX_MODELS];
@@ -100,50 +101,53 @@ int dc_level_models_open(const char *path){
 
 static int pow2(uint32_t v){return v>=8u && v<=1024u && !(v&(v-1u));}
 /* Reads and validates one model; textures go to VRAM one at a time. */
+/* The line of the last model load that failed. */
+volatile uint32_t dc_level_model_fail_line;
+#define FAIL do{dc_level_model_fail_line=__LINE__;goto fail;}while(0)
 static int load(model *m){
  uint32_t head[12],crc=0,geometry,rest,i,texture_count,texture_bytes;
  unsigned char *g=NULL,*pixels=NULL;pvr_ptr_t slots[MAX_TEXTURES];uint32_t sizes[MAX_TEXTURES][3];
- if(fseek(bundle,(long)m->offset,SEEK_SET) || !read_exact(head,48,&crc) || memcmp(head,"DSK1",4) || head[1]!=1u)goto fail;
+ if(fseek(bundle,(long)m->offset,SEEK_SET) || !read_exact(head,48,&crc) || memcmp(head,"DSK1",4) || head[1]!=1u)FAIL;
  m->joints=head[2];m->verts=head[3];m->indices=head[4];m->batch_count=head[5];texture_count=head[6];texture_bytes=head[7];
  memcpy(m->centre,&head[8],12);memcpy(&m->scale,&head[11],4);
  if(m->joints<3u || m->joints>MAX_JOINTS || !m->verts || m->verts>MAX_VERTICES || !m->indices || m->indices%3u ||
     m->indices>196608u || !m->batch_count || m->batch_count>MAX_BATCHES || texture_count>MAX_TEXTURES ||
-    texture_bytes>MAX_TEXTURE_BYTES || !(m->scale>0) || !isfinite(m->scale))goto fail;
- for(i=0;i<3;++i)if(!isfinite(m->centre[i]))goto fail;
+    texture_bytes>MAX_TEXTURE_BYTES || !(m->scale>0) || !isfinite(m->scale))FAIL;
+ for(i=0;i<3;++i)if(!isfinite(m->centre[i]))FAIL;
  geometry=m->joints*48u+m->verts*20u+((m->indices*2u+3u)&~3u)+m->batch_count*12u;
- if(48u+geometry>m->bytes || !(g=malloc(geometry)) || !read_exact(g,geometry,&crc))goto fail;
+ if(48u+geometry>m->bytes || !(g=malloc(geometry)) || !read_exact(g,geometry,&crc))FAIL;
  m->ibm=(const float *)(void *)g;m->v=(const dsk_vertex *)(void *)(g+m->joints*48u);
  m->ix=(const uint16_t *)(void *)(g+m->joints*48u+m->verts*20u);
  m->batches=(const dsk_batch *)(void *)(g+m->joints*48u+m->verts*20u+((m->indices*2u+3u)&~3u));
- for(i=0;i<m->joints*12u;++i)if(!isfinite(m->ibm[i]))goto fail;
+ for(i=0;i<m->joints*12u;++i)if(!isfinite(m->ibm[i]))FAIL;
  for(i=0;i<m->verts;++i){const dsk_vertex *v=&m->v[i];unsigned k;
-  if(v->weight[0]+v->weight[1]>255)goto fail;
-  for(k=0;k<3;++k){if(v->joint[k]>=m->joints)goto fail;m->used[v->joint[k]>>5]|=1u<<(v->joint[k]&31u);}
+  if(v->weight[0]+v->weight[1]>255)FAIL;
+  for(k=0;k<3;++k){if(v->joint[k]>=m->joints)FAIL;m->used[v->joint[k]>>5]|=1u<<(v->joint[k]&31u);}
  }
- for(i=0;i<m->indices;++i)if(m->ix[i]>=m->verts)goto fail;
+ for(i=0;i<m->indices;++i)if(m->ix[i]>=m->verts)FAIL;
  for(i=0;i<m->batch_count;++i){const dsk_batch *b=&m->batches[i];
   if(b->first>m->indices || b->count>m->indices-b->first || b->count%3u || (b->flags&~3u) || (b->flags&3u)==3u ||
-     (b->texture!=0xffffu && b->texture>=texture_count))goto fail;}
+     (b->texture!=0xffffu && b->texture>=texture_count))FAIL;}
  /* textures */
  rest=m->bytes-48u-geometry;
- if(texture_count && !(pixels=malloc(128u*128u*2u)))goto fail;
+ if(texture_count && !(pixels=malloc(128u*128u*2u)))FAIL;
  for(i=0;i<texture_count;++i){
   uint32_t rec[3];uint16_t wh[2];
-  if(rest<12u || !read_exact(rec,12,&crc))goto fail;
+  if(rest<12u || !read_exact(rec,12,&crc))FAIL;
   memcpy(wh,rec,4);rest-=12u;
-  if(!pow2(wh[0]) || !pow2(wh[1]) || (rec[1]!=1u && rec[1]!=3u) || rec[2]!=(uint32_t)wh[0]*wh[1]*2u || rec[2]>rest)goto fail;
-  if(rec[2]>128u*128u*2u){free(pixels);if(!(pixels=malloc(rec[2])))goto fail;}
-  if(!read_exact(pixels,rec[2],&crc))goto fail;
+  if(!pow2(wh[0]) || !pow2(wh[1]) || (rec[1]!=1u && rec[1]!=3u) || rec[2]!=(uint32_t)wh[0]*wh[1]*2u || rec[2]>rest)FAIL;
+  if(rec[2]>128u*128u*2u){free(pixels);if(!(pixels=malloc(rec[2])))FAIL;}
+  if(!read_exact(pixels,rec[2],&crc))FAIL;
   rest-=rec[2];
-  {uint32_t pad=(4u-(rec[2]&3u))&3u;unsigned char z[4];if(pad){if(rest<pad||!read_exact(z,pad,&crc))goto fail;rest-=pad;}}
-  if(!(slots[i]=pvr_mem_malloc(rec[2])))goto fail;
+  {uint32_t pad=(4u-(rec[2]&3u))&3u;unsigned char z[4];if(pad){if(rest<pad||!read_exact(z,pad,&crc))FAIL;rest-=pad;}}
+  if(!(slots[i]=pvr_mem_malloc(rec[2])))FAIL;
   pvr_txr_load(pixels,slots[i],rec[2]);
   sizes[i][0]=wh[0];sizes[i][1]=wh[1];sizes[i][2]=rec[1];
   dc_level_model_metrics.texture_bytes+=rec[2];
  }
  free(pixels);pixels=NULL;
- if(rest || crc!=m->crc)goto fail;
- if(!(m->headers=memalign(32,m->batch_count*sizeof *m->headers)) || !(m->batch_list=malloc(m->batch_count*sizeof(int))))goto fail;
+ if(rest || crc!=m->crc)FAIL;
+ if(!(m->headers=memalign(32,m->batch_count*sizeof *m->headers)) || !(m->batch_list=malloc(m->batch_count*sizeof(int))))FAIL;
  for(i=0;i<m->batch_count;++i){
   const dsk_batch *b=&m->batches[i];
   int list=(b->flags&2u)?PVR_LIST_TR_POLY:(b->flags&1u)?PVR_LIST_PT_POLY:PVR_LIST_OP_POLY;
@@ -152,7 +156,7 @@ static int load(model *m){
   else{const uint32_t *s=sizes[b->texture];
    pvr_poly_cxt_txr(&cxt,list,(s[2]==3u?PVR_TXRFMT_ARGB4444:PVR_TXRFMT_ARGB1555)|PVR_TXRFMT_TWIDDLED,
                     (int)s[0],(int)s[1],slots[b->texture],PVR_FILTER_BILINEAR);
-   cxt.txr.env=PVR_TXRENV_MODULATE;}
+   cxt.txr.env=list==PVR_LIST_TR_POLY?PVR_TXRENV_MODULATEALPHA:PVR_TXRENV_MODULATE;}
   cxt.gen.culling=PVR_CULLING_NONE;cxt.gen.shading=PVR_SHADE_GOURAUD;cxt.depth.comparison=PVR_DEPTHCMP_GEQUAL;
   cxt.depth.write=list==PVR_LIST_TR_POLY?PVR_DEPTHWRITE_DISABLE:PVR_DEPTHWRITE_ENABLE;
   pvr_poly_compile(&m->headers[i],&cxt);
@@ -161,7 +165,7 @@ static int load(model *m){
  if(m->verts>scratch_verts){
   free(scratch);free(vertex_flags);vertex_flags=NULL;
   if(!(scratch=memalign(32,m->verts*sizeof *scratch)) || !(vertex_flags=malloc(m->verts))){
-   free(scratch);scratch=NULL;scratch_verts=0;goto fail;}
+   free(scratch);scratch=NULL;scratch_verts=0;FAIL;}
   scratch_verts=m->verts;
  }
  m->radius=sqrtf(3.f)*32767.f*m->scale+sqrtf(m->centre[0]*m->centre[0]+m->centre[1]*m->centre[1]+m->centre[2]*m->centre[2]);
@@ -199,10 +203,19 @@ static int find_model(dc_goal_runtime *rt,uint32_t mgeo){
  return -2;
 }
 
+/* The last frame's shown process-drawables with a bundled model: what became of
+ * each (1 kept, 3 beyond the draw distance, 4 outside the viewport, 5 not
+ * loaded) and its draw origin in meters. */
+volatile struct {uint32_t count;struct {uint32_t model,fate;float origin[3];} row[8];} dc_level_model_fates;
+static void fate(unsigned n,int index,uint32_t what,const float *o){
+ if(n>=8u)return;
+ dc_level_model_fates.row[n].model=(uint32_t)index;dc_level_model_fates.row[n].fate=what;
+ if(o){dc_level_model_fates.row[n].origin[0]=o[0]/4096.f;dc_level_model_fates.row[n].origin[1]=o[1]/4096.f;dc_level_model_fates.row[n].origin[2]=o[2]/4096.f;}
+}
 int dc_level_models_frame(dc_goal_runtime *rt,const dc_instance_camera *cam){
  enum dc_goal_error prior=rt->error;
  uint32_t stack[WALK_DEPTH],pd=named(rt,"process-drawable"),dc=named(rt,"draw-control"),root=named(rt,"*active-pool*");
- uint32_t target=named(rt,"*target*"),drawables=0,missing=0;unsigned depth=0,visits=0;float b[10];
+ uint32_t target=named(rt,"*target*"),drawables=0,missing=0;unsigned depth=0,visits=0,rows=0,row;float b[10];
  ++dc_level_model_metrics.frames;kept_count=0;skinned=NULL;frame_triangles=0;frame_jak=frame_actor=0;
  dc_level_model_metrics.last_missing=0;
  if(!pd || !dc || !ptr(rt,root) || !model_count){rt->error=prior;return 1;}
@@ -224,20 +237,28 @@ int dc_level_models_frame(dc_goal_runtime *rt,const dc_instance_camera *cam){
   index=find_model(rt,mgeo);
   if(index==-2){++missing;continue;}
   if(index<0)continue;
+  row=rows++;
   {const float *o=dc_goal_resolve(rt,draw+108u,12);float w[3],c[3],dx,dz;model *m=&models[index];
    if(!o || !isfinite(o[0]) || !isfinite(o[1]) || !isfinite(o[2]))continue;
    w[0]=o[0]/4096.f;w[1]=o[1]/4096.f;w[2]=o[2]/4096.f;dx=w[0]-cam->tx;dz=w[2]-cam->tz;
-   if(dx*dx+dz*dz>cam->draw_distance*cam->draw_distance){++dc_level_model_metrics.culled;continue;}
-   if(!m->state && !load(m))continue;
-   if(m->state<0)continue;
+   if(dx*dx+dz*dz>cam->draw_distance*cam->draw_distance){++dc_level_model_metrics.culled;fate(row,index,3,o);continue;}
+   if((!m->state && !load(m)) || m->state<0){fate(row,index,5,o);continue;}
    dc_instance_to_view(b,cam,w,c);
    /* the origin is the skeleton's, not the bind-space centre: twice the radius */
    if(dc_instance_sphere_outside(c,2.f*m->radius*0.25f)){
-    ++dc_level_model_metrics.culled;continue;}
+    ++dc_level_model_metrics.culled;fate(row,index,4,o);continue;}
+   fate(row,index,1,o);
   }
-  if(kept_count<MAX_KEPT)frame_kept[kept_count++]=(kept){node,(unsigned)index,node==target,0};
+  if(kept_count<MAX_KEPT){
+   const float *cm=dc_goal_resolve(rt,draw+140u,16);kept *kp=&frame_kept[kept_count++];unsigned k;
+   *kp=(kept){node,(unsigned)index,node==target,0,{256,256,256,256},0};
+   for(k=0;cm && k<4u;++k){float f=cm[k];
+    if(!(f>=0)){f=0;}
+    if(f>2.f){f=2.f;}
+    kp->mult[k]=(uint16_t)(f*256.f+.5f);if(kp->mult[k]!=256u)kp->tinted=1;}
+  }
  }
- dc_level_model_metrics.drawables=drawables;dc_level_model_metrics.missing=missing;
+ dc_level_model_metrics.drawables=drawables;dc_level_model_metrics.missing=missing;dc_level_model_fates.count=rows;
  dc_level_model_metrics.kept+=kept_count;dc_level_model_metrics.last_kept=kept_count;
  if(kept_count>dc_level_model_metrics.max_kept)dc_level_model_metrics.max_kept=kept_count;
  rt->error=prior;return 1;
@@ -305,6 +326,10 @@ static unsigned outside_planes(float x,float y,float z){
  }
  return mask;
 }
+static uint32_t tint(uint32_t argb,const uint16_t m[4]){
+ uint32_t a=((argb>>24)*m[3])>>8,r=(((argb>>16)&255u)*m[0])>>8,g=(((argb>>8)&255u)*m[1])>>8,b=((argb&255u)*m[2])>>8;
+ return (a>255u?255u:a)<<24|(r>255u?255u:r)<<16|(g>255u?255u:g)<<8|(b>255u?255u:b);
+}
 static void header_out(const void *header){
  uint32_t *out=(uint32_t *)(void *)pvr_dr_target(dr);const uint32_t *in=header;unsigned i;
  for(i=0;i<8;++i)out[i]=in[i];
@@ -349,7 +374,7 @@ int dc_level_models_draw(dc_goal_runtime *rt,const dc_instance_camera *cam,int l
     if(f0&f1&f2&VERTEX_GUARD){  /* the PVR clips it to the screen */
      for(j=0;j<3;++j){const float *s=scratch[ix[j]];const dsk_vertex *v=&m->v[ix[j]];pvr_vertex_t *pv=pvr_dr_target(dr);
       pv->flags=j==2?PVR_CMD_VERTEX_EOL:PVR_CMD_VERTEX;pv->x=s[0];pv->y=s[1];pv->z=s[2];
-      pv->u=textured?v->u*(1.f/1024.f):0.f;pv->v=textured?v->v*(1.f/1024.f):0.f;pv->argb=v->argb;pv->oargb=0;pvr_dr_commit(pv);}
+      pv->u=textured?v->u*(1.f/1024.f):0.f;pv->v=textured?v->v*(1.f/1024.f):0.f;pv->argb=kp->tinted?tint(v->argb,kp->mult):v->argb;pv->oargb=0;pvr_dr_commit(pv);}
      ++frame_triangles;++dc_level_model_metrics.triangles;
      continue;
     }
@@ -357,7 +382,7 @@ int dc_level_models_draw(dc_goal_runtime *rt,const dc_instance_camera *cam,int l
     /* crosses the near plane or leaves the guard band: the clipper, from view positions */
     for(j=0;j<3;++j){float s[3];const dsk_vertex *v=&m->v[ix[j]];
      skin(m,ix[j],s);
-     input[j]=(dc_clip_vertex){s[0],s[1],s[2],textured?v->u*(1.f/1024.f):0.f,textured?v->v*(1.f/1024.f):0.f,v->argb};}
+     input[j]=(dc_clip_vertex){s[0],s[1],s[2],textured?v->u*(1.f/1024.f):0.f,textured?v->v*(1.f/1024.f):0.f,kp->tinted?tint(v->argb,kp->mult):v->argb};}
     n=dc_render_clip_viewport(input,poly);
     if(n<0){++dc_level_model_metrics.invalid;rt->error=prior;return 0;}
     if(n<3)continue;

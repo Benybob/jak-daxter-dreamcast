@@ -31,11 +31,13 @@ int dc_stage_romdisk_at(void *);
 enum {SLAB_BYTES=DC_JAK_RENDER_SLAB_BYTES,ARENA_BYTES=DC_JAK_ARENA_BYTES,DMA_BYTES=3506176,
 #elif defined(DC_LEVEL_DRAW)
 /* The level ELF: the GOAL arena keeps 13 MiB less the Jak ELF's measured slab
- * (high water 1,441,856 plus a 65,536 margin). The renderer slab itself is 1 MiB:
- * with the instance package in the KOS heap its high water is 921,824 bytes. The
- * 458,816 bytes between stay in the KOS heap, which holds that package, the
- * models, the spool heaps and the sound stream. */
-enum {SLAB_BYTES=1048576,ARENA_BYTES=13u*1024u*1024u-1507392,DMA_BYTES=3506176,
+ * (high water 1,441,856 plus a 65,536 margin). The renderer slab itself is
+ * 832 KiB: with the instance package in the KOS heap, the manifest's pixels
+ * dropped once they are in VRAM and the whole of Geyser Rock staged, its high
+ * water is 784,608 bytes at the lake (the block cache gives up its oldest
+ * blocks if the slab fills). The 655,424 bytes between stay in the KOS heap,
+ * which holds that package, the models, the spool heaps and the sound stream. */
+enum {SLAB_BYTES=851968,ARENA_BYTES=13u*1024u*1024u-1507392,DMA_BYTES=3506176,
 #else
 enum {SLAB_BYTES=2621440,ARENA_BYTES=11010048,DMA_BYTES=3506176,
 #endif

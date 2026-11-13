@@ -124,6 +124,8 @@ static int read_draw_file(state *s,const dc_render_entry *entry,int global) {
    i=oldest(s);if(i==DC_RENDER_BLOCK_CACHE_SLOTS)room=0;else evict(s,i);
   }
   if(room)blob=ALLOC(bytes);
+  /* Under the budget and still no room: the slab is the tighter limit, so the oldest blocks go. */
+  while(room&&!blob){i=oldest(s);if(i==DC_RENDER_BLOCK_CACHE_SLOTS)break;evict(s,i);blob=ALLOC(bytes);}
   ok=blob&&fread(blob,1,bytes,file)==bytes&&fgetc(file)==EOF;
   if(blob&&dc_render_block_cache_probe)dc_render_block_cache_probe();
  }

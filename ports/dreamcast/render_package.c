@@ -61,7 +61,7 @@ int dc_render_global_get(const dc_render_catalog *c,dc_render_entry *out) {
 }
 int dc_render_texture_get(const dc_render_catalog *c,uint32_t n,dc_render_texture *out) {
  const unsigned char *p;
- if(!c||!c->storage||!out||n>=c->texture_count)return 0;
+ if(!c||!c->storage||!out||n>=c->texture_count||c->material_offset==c->pixel_offset)return 0;
  p=c->storage+HEADER+n*16u;out->pixels=c->storage+c->pixel_offset+u32(p);
  out->bytes=u32(p+4);out->width=u16(p+8);out->height=u16(p+10);out->format=u32(p+12);return 1;
 }
@@ -162,6 +162,16 @@ const char *dc_render_catalog_load(FILE *file,dc_render_catalog *out) {
  error=tables_check(&stage);if(error)goto fail;
  *out=stage;return NULL;
 fail:free(stage.storage);return error;
+}
+const char *dc_render_catalog_drop_pixels(dc_render_catalog *c) {
+ uint32_t tail,bytes;unsigned char *kept;
+ if(!c||!c->storage)return "render catalog arguments";
+ if(c->material_offset==c->pixel_offset)return NULL;
+ tail=c->bytes-c->material_offset;bytes=c->pixel_offset+tail;
+ if(!(kept=(unsigned char *)malloc(bytes)))return "render allocation";
+ memcpy(kept,c->storage,c->pixel_offset);memcpy(kept+c->pixel_offset,c->storage+c->material_offset,tail);
+ free(c->storage);c->storage=kept;c->entry_offset-=c->material_offset-c->pixel_offset;
+ c->material_offset=c->pixel_offset;c->bytes=bytes;return NULL;
 }
 void dc_render_catalog_free(dc_render_catalog *c) { if(c){free(c->storage);memset(c,0,sizeof(*c));} }
 void dc_render_block_free(dc_render_block *b) { if(b){free(b->records);memset(b,0,sizeof(*b));} }

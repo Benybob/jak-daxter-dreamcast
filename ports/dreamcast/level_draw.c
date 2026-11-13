@@ -25,6 +25,16 @@
 #include "level_str.h"
 #include "level_sound.h"
 #include "level_prefetch.h"
+#include "level_ocean.h"
+/* Room above the staged caps. Caps measured on a ring of sixteen targets need a
+ * wide allowance; caps swept over the whole staged rectangle (FLY_SWEPT, from
+ * make_level_render_assets.py --area) are already the level's maxima on an 8 m
+ * grid, and the slab has no room for both. */
+#ifdef FLY_SWEPT
+enum {FACE_SLACK=512,CACHE_SLACK=131072};
+#else
+enum {FACE_SLACK=2048,CACHE_SLACK=262144};
+#endif
 #include <inttypes.h>
 #include "build/level_render_fixture.h"
 
@@ -84,6 +94,8 @@ static int ready;
 /* The package's KOS block, taken at boot while the heap is still one piece
  * (dc_level_draw_reserve); later, freed temporaries can leave no 652 KB run. */
 static unsigned char *package_memory;
+/* A test's way to look from somewhere: eye [1..3] (meters), yaw [4], pitch [5], then [0] nonzero. */
+volatile float dc_level_draw_view[6];
 volatile uint32_t dc_level_reserve_probe[4];  /* free KOS heap, largest block found, sbrk top, reserved */
 void dc_level_draw_reserve(void){
  if(package_memory)return;
@@ -125,9 +137,10 @@ static int initialize(void){
  error=dc_render_gpu_make(&catalog,&gpu);CHECK(error==NULL,1,error);
  dc_level_draw_metrics.texture_bytes=gpu.bytes;dc_level_draw_metrics.vram_after_textures=pvr_mem_available();
  error=dc_render_base_bank_make(&catalog,&gpu,&bank);CHECK(error==NULL,1,error);
- error=dc_render_block_cache_make_draw(&catalog,LEVEL_DRAW_ROOT,fly_source_sha,FLY_CACHE_BUDGET+262144u,&cache);
+ error=dc_render_catalog_drop_pixels(&catalog);CHECK(error==NULL,1,error);
+ error=dc_render_block_cache_make_draw(&catalog,LEVEL_DRAW_ROOT,fly_source_sha,FLY_CACHE_BUDGET+CACHE_SLACK,&cache);
  CHECK(error==NULL,1,error);
- error=dc_render_draw_window_make(&window,FLY_WINDOW_FACES+2048u,FLY_WINDOW_VERTICES+2048u,FLY_WINDOW_REMAP+4096u);
+ error=dc_render_draw_window_make(&window,FLY_WINDOW_FACES+FACE_SLACK,FLY_WINDOW_VERTICES+FACE_SLACK,FLY_WINDOW_REMAP+2u*FACE_SLACK);
  CHECK(error==NULL,1,error);
  /* The package is read once and kept: the KOS heap holds it, leaving the slab
   * to the block cache, which reads terrain as the camera moves. */
@@ -201,6 +214,11 @@ int dc_level_draw_frame(dc_goal_runtime *rt){
  if(!camera || !type || !dc_live_read(rt,camera,type,&pose) || !dc_live_convert(&pose,TARGET_DISTANCE_M,&c))
   {rt->error=DC_GOAL_OK;return clear();}
  ++dc_level_draw_metrics.camera_reads;
+ if(dc_level_draw_view[0]!=0){  /* a test's own view */
+  float cp=cosf(dc_level_draw_view[5]),f[3]={-cp*sinf(dc_level_draw_view[4]),sinf(dc_level_draw_view[5]),cp*cosf(dc_level_draw_view[4])};unsigned k;
+  c.yaw=dc_level_draw_view[4];c.pitch=dc_level_draw_view[5];
+  for(k=0;k<3;++k){c.eye[k]=dc_level_draw_view[k+1u];c.target[k]=c.eye[k]+c.distance*f[k];}
+ }
  dc_level_draw_metrics.last_eye[0]=c.eye[0];dc_level_draw_metrics.last_eye[1]=c.eye[1];dc_level_draw_metrics.last_eye[2]=c.eye[2];
  dc_level_draw_metrics.last_yaw=c.yaw;dc_level_draw_metrics.last_pitch=c.pitch;
  if(dc_level_draw_metrics.frames<=192u){unsigned k;for(k=0;k<3;++k)dc_level_draw_metrics.eye[dc_level_draw_metrics.frames-1u][k]=c.eye[k];}
@@ -252,6 +270,7 @@ int dc_level_draw_frame(dc_goal_runtime *rt){
  pvr_scene_begin();pvr_set_bg_color(.45f,.62f,.80f);
  for(i=0;i<sizeof lists/sizeof lists[0];++i){
   ok&=pvr_list_begin(lists[i])==0;
+  if(lists[i]==PVR_LIST_OP_POLY)ok&=dc_level_ocean_draw(rt,&ic,c.eye);
   if(window.count)ok&=dc_render_base_draw(&bank,&frame,lists[i],&base);
   {uint32_t s0=inst.submitted,t0=inst.triangles;
    if(lists[i]!=PVR_LIST_TR_POLY)ok&=dc_instance_draw_list(&pkg,&ic,view,&inst,lists[i],materials,FLY_MATERIAL_SLOTS);
