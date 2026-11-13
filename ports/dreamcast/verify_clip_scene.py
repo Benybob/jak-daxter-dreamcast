@@ -10,6 +10,7 @@ import struct
 import subprocess
 import time
 from verify_training import LUA as TRAINING_LUA
+import flycast_profile
 
 CAPTURE=TRAINING_LUA[TRAINING_LUA.index('local function capture(name)'):TRAINING_LUA.index('local function finish(name)')]
 LUA='''local phase=0
@@ -64,7 +65,7 @@ def main():
         lua=out/'config/flycast/verify.lua';lua.parent.mkdir(parents=True,exist_ok=True)
         env.update(SDL_VIDEODRIVER='offscreen',LIBGL_ALWAYS_SOFTWARE='1',XDG_CONFIG_HOME=str(out/'config'),XDG_DATA_HOME=str(out/'data'))
     lua.write_text(script)
-    command=[str(exe),'-config','config:UseReios=yes','-config','config:Dreamcast.RamMod32MB=no',
+    command=[str(exe),'-config','config:UseReios=yes',*flycast_profile.config(),
         '-config','config:Debug.SerialConsoleEnabled=no','-config','config:LuaFileName=verify.lua',
         '-config','config:rend.EmulateFramebuffer=yes','-config','audio:backend=null',str(a.elf.resolve())]
     with (out/'frontend.log').open('w') as log:

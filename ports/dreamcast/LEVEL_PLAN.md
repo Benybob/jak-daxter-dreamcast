@@ -1292,3 +1292,15 @@ Two hooks for tests, both zero unless a script writes them:
 `dc_level_draw_view` (eye, yaw, pitch, then a flag) replaces the draw's
 camera. `dc_level_model_fates` lists what became of each shown model's
 process in the last frame.
+
+### Two consoles for Flycast: stock and modded (2026-11-13)
+
+Every launcher takes Flycast's RAM and clock from `flycast_profile.py`. Stock
+(16 MB, 200 MHz) is the default, the console the port has to run on, and the
+one every suite's counts and timings are for. `DC_FLYCAST_PROFILE=modded` is a
+console with the 32 MB RAM modification and a 250 MHz SH-4, for getting a
+build running before it fits; `verify_backend.py` writes the profile in its
+result. The boot check takes 16 or 32 MiB (it wanted 16, and the level ELF
+went on to fault). Under modded the play ELF passes 3439 of 3439; the second
+16 MiB is KOS heap only. The GOAL arena is still 13 MiB less the slab:
+a larger arena for the modded console is a build option not yet written.

@@ -10,6 +10,7 @@ import pathlib
 import re
 import subprocess
 import time
+import flycast_profile
 
 
 def main():
@@ -81,7 +82,7 @@ flycast_callbacks.overlay=cbOverlay
                "-config", "config:Debug.SerialConsoleEnabled=yes",
                "-config", "config:LuaFileName=verify.lua",
                "-config", "config:rend.EmulateFramebuffer=yes",
-               "-config", "config:Dreamcast.RamMod32MB=no",
+               *flycast_profile.config(),
                "-config", "audio:backend=null", str(args.elf.resolve())]
     log_path = output / "serial.log"
     with log_path.open("w") as log:

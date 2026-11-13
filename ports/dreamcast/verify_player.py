@@ -1,6 +1,7 @@
 """Real controller/animation/framebuffer playable-slice oracle (AI-assisted)."""
 import argparse,hashlib,json,os,re,shutil,struct,subprocess,time
 from pathlib import Path
+import flycast_profile
 LUA=r'''
 local phase=0
 local start_frame=0
@@ -89,7 +90,7 @@ def main():
   env.update(SDL_VIDEODRIVER='offscreen',LIBGL_ALWAYS_SOFTWARE='1',XDG_CONFIG_HOME=str(out/'config'),XDG_DATA_HOME=str(out/'data'))
  lua=LUA.replace('PLATFORM','true' if a.platform else 'false').replace('ADDRESS',str(address('dc_telemetry'))).replace('PLAYER',str(address('dc_player_state'))).replace('CLIP',str(address('dc_play_clip'))).replace('OUT',json.dumps(out.as_posix()))
  lua_path.write_text(lua)
- command=[str(exe),'-config','config:UseReios=yes','-config','config:Dreamcast.RamMod32MB=no','-config','config:Debug.SerialConsoleEnabled=no','-config','config:LuaFileName=verify.lua','-config','config:rend.EmulateFramebuffer=yes','-config','audio:backend=null','-config','log:LogToFile=yes',str(a.elf.resolve())]
+ command=[str(exe),'-config','config:UseReios=yes',*flycast_profile.config(),'-config','config:Debug.SerialConsoleEnabled=no','-config','config:LuaFileName=verify.lua','-config','config:rend.EmulateFramebuffer=yes','-config','audio:backend=null','-config','log:LogToFile=yes',str(a.elf.resolve())]
  with (out/'frontend.log').open('w') as log:
   proc=subprocess.Popen(command,cwd=out,env=env,stdout=log,stderr=subprocess.STDOUT,startupinfo=startup)
   try:

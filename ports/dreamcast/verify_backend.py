@@ -23,6 +23,7 @@ parser.add_argument('--capture',action='store_true',help='Capture completed RGB5
 parser.add_argument('--dump',nargs=2,metavar=('SYMBOL','BYTES'),help='Also write BYTES of a guest symbol (or a raw 0x8c... address) to dump.bin at the end and on each progress sample')
 args=parser.parse_args()
 from verify_arena_live import capture_contract
+import flycast_profile
 try:
     args.dump,args.tests=capture_contract(args.suite,args.dump,args.tests)
 except ValueError as error:
@@ -119,7 +120,7 @@ lua=lua.replace('METRIC_BYTES',str(metrics_bytes))
 lua=lua.replace('METRICS_OUTPUT',json.dumps((out/('dump.bin' if args.dump else 'metrics.bin')).as_posix())).replace('METRICS',str(metrics_address))
 lua=lua.replace('CACHE_OUTPUT',json.dumps((out/'cache-progress.bin').as_posix())).replace('CACHE',str(cache_address)).replace('ADDRESS',str(address)).replace('OUTPUT',json.dumps(result_path.as_posix())).replace('PROGRESS',json.dumps(progress_path.as_posix()))
 lua_path.write_text(lua)
-command=[str(exe),'-config','config:UseReios=yes','-config','config:Dreamcast.RamMod32MB=no',
+command=[str(exe),'-config','config:UseReios=yes',*flycast_profile.config(),
          '-config','config:Debug.SerialConsoleEnabled=no','-config','config:LuaFileName=verify.lua',
          '-config','audio:backend=null','-config','log:LogToFile=yes',str((args.disc or args.elf).resolve())]
 if args.capture:command[1:1]=['-config','config:rend.EmulateFramebuffer=yes']
@@ -150,6 +151,7 @@ result=dict(zip(names,struct.unpack_from('<12I',data)))
 result['description']=data[48:].split(b'\0',1)[0].decode('utf-8',errors='replace')
 result['elf_sha256']=hashlib.sha256(args.elf.read_bytes()).hexdigest()
 if disc: result['disc']=disc
+result['flycast_profile']=flycast_profile.name()
 result['scope']=('Native typed GOAL subset and codegen/ABI bootstrap; not a complete compiler or game runtime'
                  if args.tests!=17 else 'Native codegen/ABI bootstrap; not an integrated GOAL compiler or game runtime')
 if args.suite=='runtime': result['scope']='Native C runtime layout, symbols, types and bounded allocation foundation; not a complete GOAL kernel or game'

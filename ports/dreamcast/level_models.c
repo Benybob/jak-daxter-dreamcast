@@ -65,7 +65,7 @@ static uint32_t have[8];
 
 static uint32_t heap_free(void){
  struct mallinfo mi=mallinfo();uintptr_t top=(uintptr_t)sbrk(0);
- return (uint32_t)mi.fordblks+(top<0x8d000000u?(uint32_t)(0x8d000000u-top):0u);
+ return (uint32_t)mi.fordblks+(top<_arch_mem_top?(uint32_t)(_arch_mem_top-top):0u);  /* 0x8d000000, or 0x8e000000 with 32 MiB */
 }
 static int list_index(int list){return list==PVR_LIST_OP_POLY?0:list==PVR_LIST_PT_POLY?1:list==PVR_LIST_TR_POLY?2:-1;}
 static int read_exact(void *to,uint32_t bytes,uint32_t *crc){

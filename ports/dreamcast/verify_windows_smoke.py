@@ -11,6 +11,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import time
+import flycast_profile
 
 LUA = r'''
 local frames=0
@@ -66,7 +67,7 @@ def main():
         lua=lua.replace(key,json.dumps(path.as_posix()))
     (out/'verify.lua').write_text(lua)
     command=[str(exe),'-config','config:UseReios=yes','-config','config:Debug.SerialConsoleEnabled=no',
-             '-config','config:Dreamcast.RamMod32MB=no','-config','config:LuaFileName=verify.lua',
+             *flycast_profile.config(),'-config','config:LuaFileName=verify.lua',
              '-config','config:rend.EmulateFramebuffer=yes','-config','audio:backend=null',
              '-config','log:LogToFile=yes',str(args.elf.resolve())]
     startup=subprocess.STARTUPINFO()

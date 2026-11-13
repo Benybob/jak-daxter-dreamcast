@@ -171,7 +171,8 @@ int dc_arena_stage(void){
   params.vertex_buf_size=DC_ARENA_FLY_VERTEX_BYTES;
 #endif
   dc_backend.state=1;dc_backend.system_ram=_arch_mem_top-0x8c000000u;
-  CHECK(dc_backend.system_ram,16777216u,"arena stock 16 MiB RAM");
+  /* 16 MiB, or the 32 MiB of a modified console (flycast_profile.py); nothing here uses the second half */
+  CHECK(dc_backend.system_ram==16777216u || dc_backend.system_ram==33554432u,1,"arena 16 MiB of RAM, or a 32 MiB console");
   root_owner=dc_goal_kos_stack_owner();
   CHECK(root_owner!=0 && owner!=NULL,1,"arena starts on the KOS stack");
   root_stack=owner->stack;root_stack_bytes=owner->stack_size;
