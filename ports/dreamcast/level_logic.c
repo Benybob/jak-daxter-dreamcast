@@ -91,7 +91,9 @@ volatile struct { uint32_t count; struct { char type[24]; char state[24]; uint32
  * before the first frame, so alloc-levels! (which allocates only while level0's
  * heap base is 0) keeps them; the art and common packages it would also note
  * are recorded by the DGO boot. dc_level_check confirms which level is where. */
-enum {LEVEL0_HEAP_BYTES=1024u*1024u,LEVEL1_HEAP_BYTES=1664u*1024u};
+/* level0 holds Geyser Rock: 955,584 bytes, and 151,312 more with its tie
+ * collision (build_logic_bsp.py) */
+enum {LEVEL0_HEAP_BYTES=1152u*1024u,LEVEL1_HEAP_BYTES=1664u*1024u};
 static int alloc_level_heaps(dc_goal_runtime *rt){
   static const uint32_t slot[2]={96u,2704u},bytes[2]={LEVEL0_HEAP_BYTES,LEVEL1_HEAP_BYTES};  /* level-group level0/1 */
   uint32_t group=named(rt,"*level*"),i;

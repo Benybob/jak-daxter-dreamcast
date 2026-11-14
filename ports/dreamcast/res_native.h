@@ -20,4 +20,8 @@ int dc_res_native_install(dc_goal_runtime *rt,dc_goal_cache_sync sync);
 int dc_res_native_install_by_name(dc_goal_runtime *rt,dc_goal_cache_sync sync);
 /* bones-mtx-calc-execute only empties its list (the PS2 renderers are off). */
 int dc_res_native_install_bones(dc_goal_runtime *rt,dc_goal_cache_sync sync);
+/* drawable-tree-instance-tie's draw a no-op: the logic BSP keeps the tie trees
+ * for their collision only (build_logic_bsp.py). Counts calls. */
+extern volatile uint32_t dc_res_native_tie_draws;
+int dc_res_native_install_tie_draw(dc_goal_runtime *rt,dc_goal_cache_sync sync);
 #endif

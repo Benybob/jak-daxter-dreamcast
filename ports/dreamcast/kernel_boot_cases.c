@@ -518,6 +518,7 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
        CHECK(dc_res_native_install(&rt,sync_code),1,"res-lump lookup-tag-idx runs natively");
        CHECK(dc_res_native_install_by_name(&rt,sync_code),1,"entity-by-name answers are remembered");
        CHECK(dc_res_native_install_bones(&rt,sync_code),1,"the PS2 renderers' bone matrices are not computed");
+       CHECK(dc_res_native_install_tie_draw(&rt,sync_code),1,"tie trees are kept for collision and not drawn");
        /* The level draw has no sprite renderer yet, so the particle system's
         * update (process-particles, about 6% of a GOAL frame with its
         * callbacks) is off through the original debug menu's *particles-flag*.

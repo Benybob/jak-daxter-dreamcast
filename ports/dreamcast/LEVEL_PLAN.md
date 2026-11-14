@@ -83,7 +83,7 @@ more, an exact multiple of 255, 1- to 4-byte binding deltas).
 
 Not yet shown: that original `login`, entity birth and collision accept it.
 Tie collision (11,744 bytes of `collide-frag-mesh` under Geyser Rock's ties)
-is dropped with the tie trees.
+was dropped with the tie trees; it is kept since 2026-11-13 (below).
 
 ## Original login accepts it (Flycast)
 
@@ -1304,3 +1304,45 @@ result. The boot check takes 16 or 32 MiB (it wanted 16, and the level ELF
 went on to fault). Under modded the play ELF passes 3439 of 3439; the second
 16 MiB is KOS heap only. The GOAL arena is still 13 MiB less the slab:
 a larger arena for the modded console is a build option not yet written.
+
+### Rock walls are solid: the tie trees kept for their collision (Flycast, 2748 of 2748, 2026-11-13)
+
+A walk steered toward the lake showed why a test that put Jak on the shore
+found him back at the start: he walked into the rock wall between the start
+and the scarecrows, found no floor behind it, fell to -147 m and the original
+death plane sent him to his continue point. That wall, and every wall and
+cliff of Geyser Rock, is TIE: its collision is the `collide-frag` meshes of
+35 of the 42 tie prototypes, and the logic BSP dropped them with the tie
+trees.
+
+`build_logic_bsp.py` now keeps the two `drawable-tree-instance-tie` trees and
+cuts (zeroes) the pointers only the PS2 tie renderer reads: each prototype's
+four geometry slots, its envmap shader and its colour palette, each
+instance's colour indices and the proxy's wind vectors (1,693 pointers).
+Login skips a zero geometry or shader. The logic BSP grows from 378,128 to
+529,440 bytes (the trees with their geometry would be 1,096,912), and
+`TRAINING.DGO` from 961,248 to 1,118,416. `--no-tie-collision` builds the
+old one.
+
+```text
+python build_logic_bsp.py --art TRA.DGO --output build/logic-bsp-tie
+```
+
+The tree's original `draw` would hand it to the PS2 tie renderer in
+`finish-background`; `res_native.c` (`dc_res_native_install_tie_draw`) sets
+`drawable-tree-instance-tie`'s method 10 to a native function that only
+counts. Level0's heap is 1,152 KiB (1 MiB before) and the arena 256 KiB larger,
+taken from the KOS heap the smaller renderer slab left (1.34 MB of it still
+free in the play ELF). The level ELF's arena ends at 12,176,224 of 12,386,240
+bytes.
+
+With the walls solid, the steered walk is stopped by the rock in front of
+the start, as on PS2, and goes round it with a sidestep when it stops making
+progress.
+
+The cost is in the logic frame: the original collision now visits the tie
+instances near Jak and transforms their meshes. The standard scripted walk
+takes 63 ms of logic a frame on open ground (54 without the ties) and 85 to
+100 ms while Jak pushes into the rock (about 55 without, when he walked
+through it). It is the original's work; making it cheaper is for the
+performance pass.

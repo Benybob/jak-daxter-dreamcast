@@ -182,6 +182,28 @@ int dc_res_native_install_by_name(dc_goal_runtime *rt,dc_goal_cache_sync sync){
 typedef uint64_t (*none_fn)(void);
 static none_fn bone_list_init;
 static uint64_t bones_execute_native(void){++dc_res_native.bones_skipped;return bone_list_init();}
+/* The draw method (10) of drawable-tree-instance-tie adds the tree to
+ * *background-work*, and finish-background then runs the PS2 tie renderer
+ * on it. The logic BSP keeps Geyser Rock's tie trees with their collision
+ * and without the prototypes' geometry, so the tree is not added at all. */
+enum {DRAW_METHOD=10};
+volatile uint32_t dc_res_native_tie_draws;
+static uint64_t tie_draw_native(void){++dc_res_native_tie_draws;return 0;}
+int dc_res_native_install_tie_draw(dc_goal_runtime *rt,dc_goal_cache_sync sync){
+ static unsigned char code[12]={1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0};
+ dc_goal_code_export function={"dc-native-tie-tree-draw",code,12,NULL,0};
+ dc_goal_module_result result;dc_goal_code_entry_info info;
+ uint32_t target=(uint32_t)(uintptr_t)tie_draw_native,type,old,native,symbol;
+ enum dc_goal_error prior=rt->error;
+ type=dc_goal_symbol_value(rt,dc_goal_find(rt,"drawable-tree-instance-tie"));
+ old=type?dc_goal_get_method(rt,type,DRAW_METHOD):0;
+ if(rt->error!=DC_GOAL_OK || !type || !old || !dc_goal_code_entry(rt,old,&info)){rt->error=prior;return 0;}
+ memcpy(code+8,&target,4);
+ if(!dc_goal_load_module(rt,&function,1,sync,NULL,&result))return 0;
+ symbol=dc_goal_find(rt,"dc-native-tie-tree-draw");native=symbol?dc_goal_symbol_value(rt,symbol):0;
+ if(!native || !dc_goal_method_set(rt,type,DRAW_METHOD,native,1))return 0;
+ return dc_goal_get_method(rt,type,DRAW_METHOD)==native;
+}
 int dc_res_native_install_bones(dc_goal_runtime *rt,dc_goal_cache_sync sync){
  static unsigned char code[12]={1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0};
  dc_goal_code_export function={"dc-native-bones-mtx-calc-execute",code,12,NULL,0};

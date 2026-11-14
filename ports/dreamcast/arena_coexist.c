@@ -36,8 +36,9 @@ enum {SLAB_BYTES=DC_JAK_RENDER_SLAB_BYTES,ARENA_BYTES=DC_JAK_ARENA_BYTES,DMA_BYT
  * dropped once they are in VRAM and the whole of Geyser Rock staged, its high
  * water is 784,608 bytes at the lake (the block cache gives up its oldest
  * blocks if the slab fills). The 655,424 bytes between stay in the KOS heap,
- * which holds that package, the models, the spool heaps and the sound stream. */
-enum {SLAB_BYTES=851968,ARENA_BYTES=13u*1024u*1024u-1507392,DMA_BYTES=3506176,
+ * which holds that package, the models, the spool heaps and the sound stream.
+ * 256 KiB of that went back to the arena for Geyser Rock's tie collision. */
+enum {SLAB_BYTES=851968,ARENA_BYTES=13u*1024u*1024u-1507392+262144,DMA_BYTES=3506176,
 #else
 enum {SLAB_BYTES=2621440,ARENA_BYTES=11010048,DMA_BYTES=3506176,
 #endif
