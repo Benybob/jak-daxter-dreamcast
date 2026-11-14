@@ -1382,3 +1382,34 @@ the original `actors-update` births `training-water`, its model
 the basin shows its tinted surface (about RGB 41, 113, 131); the lake bed
 under it is 8 to 12 m of beach and geyser terrain, so this is not the sea at
 0 m showing through.
+
+### Crates, precursor orbs, fuel cells and scout flies have art (Flycast, 2748 of 2748, 2026-11-13)
+
+A census of the process-drawables by the crates near the start: all 7 `crate`
+and 7 `crate-buzzer` processes in `process-drawable-art-error`, 31 `money`
+and 2 `fuel-cell` without a draw control. Their skeleton groups are
+`:texture-level 2`, which `initialize-skeleton` looks up in the default
+level's art groups, where retail GAME.CGO's art lands at boot; the port's
+GAME.CGO load runs code only, and only eichar was staged.
+
+`stage_common_art.py GAME.CGO` writes `CRATE.DGO`, `MONEY.DGO`,
+`FUELCELL.DGO` and `BUZZER.DGO` (one retail art group each, 102,352 bytes
+resident) to `build/level-disc`; `level_player.c` loads each after
+`EICHAR.DGO` with `dc_goal_load_v4_single` and the original art-group
+relocate under the default loading level (`dc_level_common_art` counts them;
+a file the disc lacks is skipped). Putting them in the level DGO instead does
+not work: level loading files them under Geyser Rock, not the default level.
+
+The model bundle gains `crate-wood`, `crate-steel`, `crate-iron`, `money`,
+`fuel-cell` and `buzzer` (LOD 0): 1,336,608 bytes for 16 models.
+
+```text
+python stage_common_art.py GAME.CGO
+python make_skin_models.py common/eichar-lod0.glb training/{jng-iris-door,plat-eco-lit,plat-eco,pontoonfive,scarecrow-a,scarecrow-b,sharkey,warp-gate-switch,water-anim-training-lake}-lod0.glb common/{crate-wood,crate-steel,crate-iron,money,fuel-cell,buzzer}-lod0.glb --out build/geyser-render/MODELS.DSK
+```
+
+By the start the crates now stand (and block Jak), and the orbs along the
+rock wall are drawn; 49 process-drawables with a bundled model in one frame
+against 9 before. Not yet: orb and fuel-cell glow, and the eco pickups
+(particles). Only LOD 0 is bundled; if a draw control ever asks for its
+lod1 or lod2 geometry, `dc_level_model_metrics.missing_name` will say so.

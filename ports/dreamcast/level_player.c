@@ -56,6 +56,23 @@ static int relocate_art(dc_goal_runtime *rt,uint32_t art,void *context){
   {enum dc_goal_error error=rt->error;memcpy(dc_goal_resolve(rt,levels+8,4),&old,4);rt->error=error;}
   return rt->error==DC_GOAL_OK;
 }
+/* GAME.CGO art groups the level's actors look up in the default level
+ * (stage_common_art.py): loaded and relocated like eichar. A file the disc
+ * lacks is skipped; loaded counts the ones in. */
+volatile struct {uint32_t loaded,missing,failed,bytes;} dc_level_common_art;
+static void load_common_art(dc_goal_runtime *rt,uint32_t level){
+  static const char *const files[][2]={{"/cd/CRATE.DGO","crate"},{"/cd/MONEY.DGO","money"},
+                                       {"/cd/FUELCELL.DGO","fuel-cell"},{"/cd/BUZZER.DGO","buzzer"}};
+  unsigned i;
+  for(i=0;i<sizeof files/sizeof files[0];++i){
+    dc_goal_art_result r;uint32_t root=0,before=rt->used;FILE *f=fopen(files[i][0],"rb");
+    if(!f){++dc_level_common_art.missing;continue;}
+    if(dc_goal_load_v4_single(rt,f,files[i][0]+4,files[i][1],"art-group",&root,&r) && relocate_art(rt,root,&level)){
+      ++dc_level_common_art.loaded;dc_level_common_art.bytes+=rt->used-before;}
+    else{++dc_level_common_art.failed;rt->error=DC_GOAL_OK;}
+    fclose(f);
+  }
+}
 int dc_level_player(dc_goal_runtime *rt){
   typedef uint64_t (*two_fn)(uint64_t,uint64_t);
   dc_goal_art_result art;FILE *f;int ok;
@@ -72,6 +89,7 @@ int dc_level_player(dc_goal_runtime *rt){
   ok=dc_goal_load_art_dgo(rt,f,DC_JAK_EICHAR_BYTES,relocate_art,&level,&art);fclose(f);
   dc_level_player_evidence.art_linked=art.linked;dc_level_player_evidence.art_relocated=art.relocated;
   if(!ok || rt->error!=DC_GOAL_OK)return stop(rt,5);
+  load_common_art(rt,level);
   /* The original continue point, then original start with the listener caller. */
   /* Geyser Rock's new-game continue point, by the original lookup. */
   {uint32_t name=dc_goal_string(rt,"training-start");
