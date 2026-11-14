@@ -149,6 +149,9 @@ volatile struct {
 void dc_level_cache_sample(dc_goal_runtime *rt,uint32_t frame);
 /* A test's way to put Jak somewhere: set [1..3] (meters), then [0]; cleared when done. */
 volatile float dc_level_warp[4];
+/* *game-info* money, buzzer-total and fuel (+16, +88, +92) each frame, for
+ * tests that collect them. */
+volatile float dc_level_collected[3];
 void dc_level_player_sample(dc_goal_runtime *rt){
   enum dc_goal_error prior=rt->error;
   uint32_t target=named(rt,"*target*"),root,state,status,i,f;const float *t;const char *name;
@@ -158,6 +161,8 @@ void dc_level_player_sample(dc_goal_runtime *rt){
   if(dc_level_warp[0]!=0){float *to=dc_goal_resolve(rt,root+12u,12);
    for(i=0;i<3u;++i)to[i]=4096.f*dc_level_warp[i+1u];
    dc_level_warp[0]=0;}
+  {uint32_t gi=named(rt,"*game-info*");const float *g=gi && gi!=rt->s7?dc_goal_resolve(rt,gi+16u,80):NULL;
+   if(g){dc_level_collected[0]=g[0];dc_level_collected[1]=g[18];dc_level_collected[2]=g[19];}}
   status=word(rt,root+268u);f=dc_level_target_trace.frames;
   if(!f){dc_level_target_trace.first[0]=t[0];dc_level_target_trace.first[1]=t[1];dc_level_target_trace.first[2]=t[2];
          dc_level_target_trace.min_y=dc_level_target_trace.max_y=t[1];}

@@ -525,7 +525,12 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
         * Turn it back on with a particle renderer. */
        {uint32_t particles=dc_goal_find(&rt,"*particles-flag*");
         CHECK(particles && dc_goal_symbol_value(&rt,particles)!=rt.s7,1,"original particle enable found, on");
-        if(particles)dc_goal_set_symbol(&rt,particles,rt.s7);}
+        /* level_sprites.c draws particles, but the update costs +20 ms with
+         * the 2d system capped at 256 and +60 uncapped; it stays off for now. */
+        if(particles)dc_goal_set_symbol(&rt,particles,rt.s7);
+       }
+       {extern int dc_level_sprites_install(dc_goal_runtime *,dc_goal_cache_sync);
+        CHECK(dc_level_sprites_install(&rt,sync_code),1,"particle textures are recorded for the sprite pass");}
 #endif
        before=word(&rt,entry(&rt,"*display*"),REAL_INTEGRAL_FRAMES);
 #ifdef DC_LEVEL_LOGIC  /* the level ELF */

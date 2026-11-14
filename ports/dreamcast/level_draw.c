@@ -26,6 +26,7 @@
 #include "level_sound.h"
 #include "level_prefetch.h"
 #include "level_ocean.h"
+#include "level_sprites.h"
 /* Room above the staged caps. Caps measured on a ring of sixteen targets need a
  * wide allowance; caps swept over the whole staged rectangle (FLY_SWEPT, from
  * make_level_render_assets.py --area) are already the level's maxima on an 8 m
@@ -171,6 +172,7 @@ static int initialize(void){
  }
  CHECK(mapped,1,"level draw material map inside catalog");
  CHECK(dc_level_models_open(LEVEL_DRAW_ROOT "/MODELS.DSK"),1,"level draw model bundle opens from the disc");
+ dc_level_sprites_open(LEVEL_DRAW_ROOT "/SPRITES.DSK");  /* particles; a disc without it draws none */
  ready=1;return 1;
 }
 /* A clear scene while the game camera is not yet valid (boot, early frames). */
@@ -278,6 +280,7 @@ int dc_level_draw_frame(dc_goal_runtime *rt){
    if(lists[i]==PVR_LIST_OP_POLY){unsigned k;for(k=0;k<4;++k)dc_level_frame_timing.lods[k]+=inst.lod_instances[k];}dc_level_frame_timing.triangles[i]+=inst.triangles-t0;}
   {uint64_t m0=timer_us_gettime64();uint32_t us;
    ok&=dc_level_models_draw(rt,&ic,lists[i]);
+   if(lists[i]==PVR_LIST_TR_POLY)ok&=dc_level_sprites_draw(rt,&ic);
    us=(uint32_t)(timer_us_gettime64()-m0);dc_level_frame_timing.sum_us[13]+=us;
    if(us>dc_level_frame_timing.max_us[13])dc_level_frame_timing.max_us[13]=us;}
   ok&=pvr_list_finish()==0;

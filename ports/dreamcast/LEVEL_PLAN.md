@@ -1456,3 +1456,43 @@ Not yet: Daxter. His art (661,456 bytes, mostly animation) is in GAME.CGO
 like the crates', but with it the 16 MB console has no 652 KB block left for
 the instance package; the `sidekick` process stays in
 `process-drawable-art-error`, so Daxter is not drawn on Jak's shoulder.
+
+### Orbs are collected; a particle pass, off for now (Flycast, 2749 of 2749, 2026-11-14)
+
+Jak walked through two precursor orbs by the first training camera and
+`*game-info*`'s money went from 0 to 2 (`dc_level_collected`: money,
+buzzer-total and fuel each frame, for tests).
+
+Particles have no renderer, and blue eco, the eco vents' glow and the HUD are
+sprites. The pieces of one are in:
+
+- **Textures.** The decompiler exports texture pages as PNGs
+  (`save_texture_pngs`; it finds its project only when the executable sits
+  under a `jak-project` folder, so a copy runs from `jak-project/build-tex`).
+  `make_sprite_textures.py GAME.CGO <export>/jak1/textures` reads each
+  retail texture-page object for its id and texture names and packs a page's
+  textures as twiddled ARGB4444 into `SPRITES.DSK` (`effects`, page 2: 48
+  textures, 220 KB; the other 7 entries have no PNG).
+
+```text
+decompiler jak1_config.jsonc iso_data build/decomp-tex --version ntsc_v1 --config-override '{"decompile_code": false, "levels_extract": false, "save_texture_pngs": true, "process_art_groups": false, "dgo_names": ["CGO/GAME.CGO", "DGO/TRA.DGO"]}'
+python make_sprite_textures.py GAME.CGO build/decomp-tex/jak1/textures --out build/level-disc/GEYSER/SPRITES.DSK
+```
+
+- **Texture ids.** A particle's adgif gets its texture in `particle-adgif`
+  (mips2c), whose texture-page lookup finds nothing in the port.
+  `level_sprites.c` puts a native function in front of it that records the
+  texture-id per slot of `*sp-particle-system-2d*` and calls the original.
+- **Drawing.** Each valid slot whose texture is known is a camera-facing quad
+  in the translucent list: size `sx` by `sy` (corners at +-0.5, as
+  sprite.gc's `cdata`), rotation in 65,536ths of a turn, colour with 128
+  full, additive when the adgif's alpha has b = 0. Slots with a matrix
+  (screen sprites) are skipped.
+
+With the original particle update on, the shore's sparkles alone are about
+1,500 particles and game logic goes from about 55 to 115 ms a frame. Telling
+the 2d system it has 4 blocks (256 slots; launches past them are dropped)
+brings it to 76 ms, with about 230 valid and 100 drawn a frame. The blue eco
+by the third training camera did not show in a capture (it may be crowded
+out, or be 3d sprites, which are not drawn). `*particles-flag*` stays off in
+every ELF until the pass shows what play needs at a cost the frame can take.
