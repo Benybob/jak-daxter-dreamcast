@@ -11,11 +11,15 @@
 #include "scene_projection.h"
 
 enum {SLOTS=2048,MAX_TEXTURES=128,CPUINFO=144,VECDATA=48,ADGIF=80,VALID=128};
-/* Group 0 of the 2d system holds 30 blocks of 64 particles; updating that many
- * in the original code costs about 60 ms of a frame here (the shore's sparkles
- * alone are about 1,500). The system is told it has CAP_BLOCKS: launches past
- * them find no free slot and are dropped, as when the PS2's system is full. */
-enum {CAP_BLOCKS=4};
+/* Group 0 of the 2d system holds 30 blocks of 64 particles; updating them all
+ * in the original code costs about 30 ms of a frame here (the shore's sparkles
+ * alone are about 1,500). A capped system starves the effects that launch once
+ * and live on (blue eco's tracker, which its sparks and puffs bind to), so the
+ * port instead lets no launch group spawn past SPAWN_RADIUS meters from the
+ * camera's target: what is near keeps its full effect, what is far has none,
+ * as a group fades out past fade-after in the original. */
+enum {SPAWN_RADIUS=40};
+static float spawn_ref[3];static int spawn_have_ref;
 volatile dc_level_sprite_metrics_t dc_level_sprite_metrics;
 
 typedef struct {uint16_t page,index,w,h;pvr_ptr_t ptr;pvr_poly_hdr_t hdr[2] __attribute__((aligned(32)));} sprite_texture;
@@ -31,8 +35,6 @@ static int locate_system(void){
   if(adgif_base)return 1;
   sys=system_symbol?dc_goal_symbol_value(runtime,system_symbol):0;
   if(!sys || sys==runtime->s7)return 0;
-  {unsigned char *blocks=dc_goal_resolve(runtime,sys,4);int32_t b0;
-   if(blocks){memcpy(&b0,blocks,4);if(b0>CAP_BLOCKS){b0=CAP_BLOCKS;memcpy(blocks,&b0,4);}}}
   adgif_base=rd32(sys+44u);group0=rd32(sys+8u);slot_total=group0+rd32(sys+12u);
   if(slot_total>SLOTS)slot_total=SLOTS;
   return adgif_base!=0;
@@ -59,6 +61,7 @@ static uint64_t lookup_native(uint64_t id){
   ++dc_level_sprite_metrics.unknown_slot;
   return lookup_original(id);
 }
+static int install_spawn(dc_goal_runtime *rt,dc_goal_cache_sync sync);
 int dc_level_sprites_install(dc_goal_runtime *rt,dc_goal_cache_sync sync){
   static unsigned char code[12]={1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0};
   dc_goal_code_export function={"dc-native-lookup-texture-by-id",code,12,NULL,0};
@@ -73,7 +76,7 @@ int dc_level_sprites_install(dc_goal_runtime *rt,dc_goal_cache_sync sync){
   memcpy(code+8,&target,4);
   if(!dc_goal_load_module(rt,&function,1,sync,NULL,&result))return 0;
   native=dc_goal_symbol_value(rt,dc_goal_find(rt,"dc-native-lookup-texture-by-id"));
-  return native && dc_goal_set_symbol(rt,symbol,native);
+  return native && dc_goal_set_symbol(rt,symbol,native) && install_spawn(rt,sync);
 }
 
 /* additive (Cs-0)*As+Cd, or blended (Cs-Cd)*As+Cd */
@@ -125,6 +128,7 @@ int dc_level_sprites_draw(dc_goal_runtime *rt,const dc_instance_camera *cam){
   sys=dc_goal_symbol_value(rt,system_symbol);cpu=rd32(sys+36u);vec=rd32(sys+40u);adg=adgif_base;
   if(!cpu || !vec){rt->error=prior;return 1;}
   dc_instance_view(cam,b);
+  spawn_ref[0]=cam->tx;spawn_ref[1]=cam->ty;spawn_ref[2]=cam->tz;spawn_have_ref=1;
   /* view units a meter: the camera target and a point a meter beside it */
   {float w0[3]={cam->tx,cam->ty,cam->tz},w1[3]={cam->tx+1.f,cam->ty,cam->tz};
    dc_instance_to_view(b,cam,w0,c0);dc_instance_to_view(b,cam,w1,c1);
@@ -176,4 +180,30 @@ int dc_level_sprites_draw(dc_goal_runtime *rt,const dc_instance_camera *cam){
   if(drawn>dc_level_sprite_metrics.max_drawn)dc_level_sprite_metrics.max_drawn=drawn;
   rt->error=prior;
   return 1;
+}
+
+/* sparticle-launch-control method 11, spawn (this, position): the original's
+ * only when the position is within SPAWN_RADIUS of the camera's target. */
+typedef uint64_t (*two64)(uint64_t,uint64_t);
+static two64 spawn_original;
+static uint64_t spawn_near(uint64_t self,uint64_t pos){
+  const void *q=spawn_have_ref?dc_goal_resolve(runtime,(uint32_t)pos,12):NULL;
+  if(q){float p[3],d=0,e;int k;memcpy(p,q,12);
+    for(k=0;k<3;++k){e=p[k]/4096.f-spawn_ref[k];d+=e*e;}
+    if(d>(float)(SPAWN_RADIUS*SPAWN_RADIUS)){++dc_level_sprite_metrics.culled;return 0;}}
+  ++dc_level_sprite_metrics.spawned;
+  return spawn_original(self,pos);
+}
+static int install_spawn(dc_goal_runtime *rt,dc_goal_cache_sync sync){
+  static unsigned char code[12]={1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0};
+  dc_goal_code_export function={"dc-native-spawn-near",code,12,NULL,0};
+  dc_goal_module_result result;uint32_t target=(uint32_t)(uintptr_t)spawn_near,type,old,native;
+  type=dc_goal_symbol_value(rt,dc_goal_find(rt,"sparticle-launch-control"));
+  old=type?dc_goal_get_method(rt,type,11):0;
+  if(rt->error!=DC_GOAL_OK || !old)return 0;
+  spawn_original=(two64)(uintptr_t)old;
+  memcpy(code+8,&target,4);
+  if(!dc_goal_load_module(rt,&function,1,sync,NULL,&result))return 0;
+  native=dc_goal_symbol_value(rt,dc_goal_find(rt,"dc-native-spawn-near"));
+  return native && dc_goal_method_set(rt,type,11,native,1)==native && rt->error==DC_GOAL_OK;
 }

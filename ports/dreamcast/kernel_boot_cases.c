@@ -519,16 +519,12 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
        CHECK(dc_res_native_install_by_name(&rt,sync_code),1,"entity-by-name answers are remembered");
        CHECK(dc_res_native_install_bones(&rt,sync_code),1,"the PS2 renderers' bone matrices are not computed");
        CHECK(dc_res_native_install_tie_draw(&rt,sync_code),1,"tie trees are kept for collision and not drawn");
-       /* The level draw has no sprite renderer yet, so the particle system's
-        * update (process-particles, about 6% of a GOAL frame with its
-        * callbacks) is off through the original debug menu's *particles-flag*.
-        * Turn it back on with a particle renderer. */
+       /* Particles update through the original's process-particles under
+        * the debug menu's *particles-flag*; level_sprites.c draws them and
+        * lets launch groups spawn only within 40 m of the camera, which keeps
+        * the update to a few ms of a frame. */
        {uint32_t particles=dc_goal_find(&rt,"*particles-flag*");
-        CHECK(particles && dc_goal_symbol_value(&rt,particles)!=rt.s7,1,"original particle enable found, on");
-        /* level_sprites.c draws particles, but the update costs +20 ms with
-         * the 2d system capped at 256 and +60 uncapped; it stays off for now. */
-        if(particles)dc_goal_set_symbol(&rt,particles,rt.s7);
-       }
+        CHECK(particles && dc_goal_symbol_value(&rt,particles)!=rt.s7,1,"original particle enable found, on");}
        {extern int dc_level_sprites_install(dc_goal_runtime *,dc_goal_cache_sync);
         CHECK(dc_level_sprites_install(&rt,sync_code),1,"particle textures are recorded for the sprite pass");}
 #endif

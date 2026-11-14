@@ -8,8 +8,9 @@
  * original: for a texture SPRITES.DSK (make_sprite_textures.py) has, it
  * answers a stand-in texture whose tex0 base marks which, and every adgif made
  * from it, or copied from one, carries the mark to its particle's slot.
- * dc_level_sprites_draw draws each valid slot whose texture is known as a
- * camera-facing quad in the translucent list. --dump dc_level_sprite_metrics 64 */
+ * It also puts a native spawn in front of sparticle-launch-control's, which
+ * spawns only near the camera. dc_level_sprites_draw draws each valid slot
+ * whose texture is known as a camera-facing quad in the translucent list. --dump dc_level_sprite_metrics 64 */
 #ifndef DC_LEVEL_SPRITES_H
 #define DC_LEVEL_SPRITES_H
 #include <stdint.h>
@@ -19,13 +20,13 @@
 
 typedef struct {
   uint32_t textures,texture_bytes,recorded,unknown_slot,frames,drawn,valid,no_texture;
-  uint32_t screen,behind,last_drawn,max_drawn,load_failures,headers,pad[2];
+  uint32_t screen,behind,last_drawn,max_drawn,load_failures,headers,spawned,culled;
   float sample[12];uint32_t sample_texture,sample_alpha;float sample_view[3],pad2;  /* one drawn particle, for tests */
   uint16_t live[64],shown[64];  /* this frame's valid particles by texture number, and those drawn */
 } dc_level_sprite_metrics_t;
 extern volatile dc_level_sprite_metrics_t dc_level_sprite_metrics;
 
-/* Native lookup-texture-by-id in front of the original; 0 when it is not there. */
+/* Native lookup-texture-by-id and spawn in front of the originals; 0 when they are not there. */
 int dc_level_sprites_install(dc_goal_runtime *rt,dc_goal_cache_sync sync);
 /* SPRITES.DSK into VRAM; 0 on a malformed file. */
 int dc_level_sprites_open(const char *path);

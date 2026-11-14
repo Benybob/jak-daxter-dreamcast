@@ -1496,3 +1496,30 @@ brings it to 76 ms, with about 230 valid and 100 drawn a frame. The blue eco
 by the third training camera did not show in a capture (it may be crowded
 out, or be 3d sprites, which are not drawn). `*particles-flag*` stays off in
 every ELF until the pass shows what play needs at a cost the frame can take.
+
+### Blue eco glows; particles on, spawned near the camera (Flycast, 2026-11-14)
+
+Texture ids now come from a stand-in `lookup-texture-by-id`: for a texture
+`SPRITES.DSK` has it answers a texture object whose tex0 base is a marker
+(0x3000 + the texture's number), and every adgif built from it, or copied
+from one by `particle-adgif`'s cache, carries the marker to its slot. The
+draw reads the slot's tex0 instead of a per-slot record.
+
+The blue eco was missing because of the 4-block cap, not its art. A probe on
+`sparticle-launch-control` `spawn` showed `group-eco-blue` spawning every
+frame with its first launcher (part 2, the hotdot tracker, `launch-asap`)
+marked as launched, and its bound launchers (bigpuff, starflash, lightning)
+never woken: the mips2c `sp-launch-particles-var` wakes a binding only when
+the tracker gets a slot, and in a full system it gets none, never to try
+again. Without the cap the eco's hotdots, puffs, sparks and lightning are
+live and drawn (capture from (-1193, 23, 958) looking at it: a blue glow
+by the crates).
+
+The cap is gone. Instead `spawn` (method 11) has a native front that calls
+the original only when the group's position is within 40 m of the camera's
+target, as a group past fade-after spawns nothing in the original. On the
+default walk, 690 spawns ran and 8,857 were skipped, about 760 particles
+were drawn at most, and game logic was about 4.5 ms over a build whose
+particle update is off. `*particles-flag*` is now left on in every ELF.
+A group past 40 m (the second eco by the flower in the same capture) shows
+nothing until Jak comes near.
