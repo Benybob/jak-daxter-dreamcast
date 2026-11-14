@@ -179,11 +179,29 @@ static void *job_reader(void *unused){
   }
   return NULL;
 }
+/* Whole files the disc does not have. The PC port's subtitle process asks for
+ * its text file every frame while it has none; on the thread each ask was two
+ * directory lookups with the game spinning on str-load-status (14% of the
+ * play ELF's logic). A name found missing once is answered error at once. */
+enum {MISSING_NAMES=8};
+static char missing_names[MISSING_NAMES][49];
+static int known_missing(const char *name){
+  unsigned i;
+  for(i=0;i<MISSING_NAMES && missing_names[i][0];++i)if(!strcmp(missing_names[i],name))return 1;
+  return 0;
+}
+static void note_missing(const char *name){
+  unsigned i;
+  for(i=0;i<MISSING_NAMES;++i){
+    if(!missing_names[i][0]){strncpy(missing_names[i],name,48);return;}
+    if(!strcmp(missing_names[i],name))return;
+  }
+}
 static uint64_t str_busy(uint64_t port){
   uint16_t result=STR_RESULT_ERROR;
   if(port!=4 || job.state==JOB_IDLE)return 0;
   if(job.state==JOB_READING)return 1;
-  if(job.error==JOB_MISSING)++dc_level_str_evidence.missing;
+  if(job.error==JOB_MISSING){++dc_level_str_evidence.missing;if(job.chunk<0)note_missing(job.name);}
   else if(job.error){dc_level_str_evidence.last_error=(uint32_t)job.error;++dc_level_str_evidence.errors;}
   else {
     memcpy(job.msg+12,&job.size,4);
@@ -220,6 +238,7 @@ static uint64_t str_rpc(uint64_t port,uint64_t fno,uint64_t async,uint64_t send,
    tag[0]=chunk<0?' ':'#';for(j=0;j<22 && name[j];++j)tag[j+1]=name[j];tag[j+1]=0;
    for(k=0;k<8 && dc_level_str_evidence.names[k][0];++k)if(!strncmp((const char *)dc_level_str_evidence.names[k],tag,24))break;
    if(k<8 && !dc_level_str_evidence.names[k][0])for(j=0;j<24;++j)dc_level_str_evidence.names[k][j]=tag[j];}
+  if(chunk<0 && known_missing(name)){++dc_level_str_evidence.missing;goto reply;}
   if(dc_level_str_async && job.state!=JOB_IDLE){++dc_level_str_evidence.errors;goto reply;}
   if(dc_level_str_async && !(chunk>=0 && address>=PS2_SPOOL_BASE && address<PS2_SPOOL_BASE+2u*PS2_SPOOL_HEAP) &&
      (job_thread || (job_thread=thd_create(1,job_reader,NULL)))){
@@ -248,7 +267,7 @@ static uint64_t str_rpc(uint64_t port,uint64_t fno,uint64_t async,uint64_t send,
       for(j=(unsigned)at;path[j];++j)  /* the name only: the mount is /cd */if(path[j]>='a' && path[j]<='z')path[j]=(char)(path[j]-32);
       f=fopen(path,"rb");
     }
-    if(!f){++dc_level_str_evidence.missing;goto reply;}
+    if(!f){++dc_level_str_evidence.missing;note_missing(name);goto reply;}
     if(fseek(f,0,SEEK_END) || (bytes=ftell(f))<=0 || (uint32_t)bytes>maxlen || fseek(f,0,SEEK_SET) ||
        !(dest=dc_goal_resolve(runtime,address,(uint32_t)bytes)) || fread(dest,1,(size_t)bytes,f)!=(size_t)bytes){
       fclose(f);dc_level_str_evidence.last_error=1;++dc_level_str_evidence.errors;runtime->error=DC_GOAL_OK;goto reply;}

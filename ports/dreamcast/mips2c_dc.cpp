@@ -207,6 +207,18 @@ static bool typed_callee(u32 addr, const u64* args, u64* result) {
         g_callee_symbols_seen[i] = g_rt->symbol_count + 1u;
       }
       uint32_t symbol = g_callee_symbol[i];
+      /* Most calls are to some other function: the checked read below (three
+       * bounds-checked loads) ran for every unresolved callee on every jalr,
+       * about 1,600 a frame. The slot's raw word says whether this is it. */
+      if (symbol) {
+        const void* cell = dc_goal_resolve(g_rt, symbol, 4);
+        uint32_t raw = 0;
+        if (cell) memcpy(&raw, cell, 4);
+        g_rt->error = prior;
+        if (raw != addr) continue;
+      } else {
+        continue;
+      }
       uint32_t value = symbol ? dc_goal_symbol_value(g_rt, symbol) : 0;
       if (symbol && g_rt->error != DC_GOAL_OK) g_callee_symbol[i] = 0;  /* no longer a symbol */
       if (value && value == addr && dc_goal_code_entry(g_rt, value, &info) && info.symbol == symbol)

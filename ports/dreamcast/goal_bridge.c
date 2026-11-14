@@ -58,16 +58,31 @@ static int refuse_live_scope(dc_goal_runtime *rt) {
   if(rt && rt->error==DC_GOAL_OK)(DC_GOAL_NOTE_SITE(1),rt->error=DC_GOAL_BAD_ARGUMENT);
   return 1;
 }
+/* With the code cache on (the display frames), the last answer is kept with
+ * the two words it rested on: the kernel-context symbol's slot and the
+ * context's type tag. While both still hold the type, the answer stands; the
+ * full check was about 400 calls a frame of eight checked reads each. */
+static struct {dc_goal_runtime *rt;uint32_t context,type;unsigned char *fields;const unsigned char *cell,*tag;} context_memo;
 static unsigned char *context_fields(dc_goal_runtime *rt,uint32_t context) {
   uint32_t type,symbol;
-  dc_goal_type_fields *schema;
+  dc_goal_type_fields *schema;unsigned char *fields;
+  if(dc_goal_code_cache_enabled && context_memo.rt==rt && context_memo.context==context && context) {
+    uint32_t a,b;memcpy(&a,context_memo.cell,4);memcpy(&b,context_memo.tag,4);
+    if(a==context_memo.type && b==context_memo.type)return context_memo.fields;
+  }
+  context_memo.rt=NULL;
   symbol=dc_goal_find(rt,"kernel-context");
   type=symbol?dc_goal_symbol_value(rt,symbol):0;
   if(!context || !type || dc_goal_type_of(rt,type)!=rt->type_type ||
      dc_goal_type_of(rt,context)!=type) return NULL;
   schema=dc_goal_resolve(rt,type,sizeof(*schema));
   if(!schema || schema->allocated_size!=48 || !dc_goal_resolve(rt,context-4,48)) return NULL;
-  return dc_goal_resolve(rt,context,44);
+  fields=dc_goal_resolve(rt,context,44);
+  if(fields && dc_goal_code_cache_enabled) {
+    context_memo.cell=dc_goal_resolve(rt,symbol,4);context_memo.tag=dc_goal_resolve(rt,context-4,4);
+    if(context_memo.cell && context_memo.tag){context_memo.context=context;context_memo.type=type;context_memo.fields=fields;context_memo.rt=rt;}
+  }
+  return fields;
 }
 void dc_goal_clear_process_context(dc_goal_runtime *rt) {
   unsigned char *fields;

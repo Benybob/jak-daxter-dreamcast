@@ -1523,3 +1523,30 @@ were drawn at most, and game logic was about 4.5 ms over a build whose
 particle update is off. `*particles-flag*` is now left on in every ELF.
 A group past 40 m (the second eco by the flower in the same capture) shows
 nothing until Jak comes near.
+
+### The subtitle process asked for a missing file every frame (Flycast, 2749 of 2749, 2026-11-14)
+
+A sampling profile of the play ELF's logic frames (frames 150 to 400 of the
+default walk, by `*kernel-context*`'s process): target 32%, the display
+process 15%, **subtitle 14%**, the cameras 14%, the rest under 4% each. By
+function the C side holds about 70% of the samples and the profile is flat
+(the largest are read32 at 6.6% and moving-sphere-triangle-intersect at 4.2%).
+
+- **subtitle.** The PC port's subtitle process calls
+  `load-subtitle-text-info` each frame while `*subtitle-text*` is #f. The
+  disc has no subtitle file, so each call was a request to the STR thread
+  (two directory lookups) with the game spinning on `str-load-status` until
+  it answered. `level_str.c` now remembers eight whole-file names found
+  missing and answers error at once. Logic on the default walk: about 80 to
+  about 74 ms (runs differ by about 3 ms).
+- **Counted, not measurable.** `dc_mips2c_jalr` made a checked symbol read
+  for every unresolved typed callee on every call (1,630 a frame); it now
+  looks at the slot's raw word first. `context_fields` (406 calls a frame,
+  eight checked reads each) keeps its last answer while the code cache is
+  on. Neither moved the median outside the noise. Still per frame:
+  process-heap `validate` 442 calls and thread-stack `inspect` 200.
+
+A frame of the play ELF at the start is about 74 ms of logic and about 50 ms
+of draw. No single cost is left to remove; what would move it is fewer
+checked crossings between GOAL and C per process switch, or less work per
+frame in target's collision.
