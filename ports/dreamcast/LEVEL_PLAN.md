@@ -1413,3 +1413,46 @@ rock wall are drawn; 49 process-drawables with a bundled model in one frame
 against 9 before. Not yet: orb and fuel-cell glow, and the eco pickups
 (particles). Only LOD 0 is bundled; if a draw control ever asks for its
 lod1 or lod2 geometry, `dc_level_model_metrics.missing_name` will say so.
+
+### Tutorial cameras release Jak: no actor heap compaction (Flycast, 2748 of 2748, 2026-11-14)
+
+Jak put by the first training camera (`training-cam-1`, by the orbs) stayed in
+`target-grab` for good. The camera waits until no hint, talk, spool or ambient
+setting is held, and the hint held it: a `level-hint` in
+`level-hint-sidekick` playing `asstvb40`. That stream played its 5,953 ms and
+ended (`dc_level_sound_evidence`), `current-str-pos` answered -1 (checked from
+C, sign-extended), `*sound-player-enable*` was `#t`, and the frontend's IR for
+the loop was right. Markers compiled into GAME.CGO's `ambient.gc` showed the
+hint's playback loop running 19 times (frames 79 to 97, the stream at 4.1 s)
+and then never again: its process stayed `'suspended` with mask
+`heap-shrunk`.
+
+The original actor heap compaction (`actors-update` -> `compact`) had moved
+it. Compaction copies a live process lower and the original relocate fixes
+its pointers, but a suspended process's code is a native fiber stack in the
+port; it cannot move with the copy, and the bridge releases the fiber left at
+the old address, so the moved process is never resumed. With
+`*compact-actors*` `#f` the same hint ran 72 times, saw the stream end and
+exited; the camera played `orbcam` with its own hint and let Jak go after
+about 20 s (frame 230), and he walked on.
+
+`level_player.c` now sets `*compact-actors*` to `#f` after the art loads.
+Geyser Rock's actor heap is about a fifth used, so nothing needs compacting
+yet; a longer session across levels may fragment it. Making a suspended
+process movable (re-homing its fiber) is the real fix.
+
+With compaction off the level ELF's 180 frames reach more of the game: a fuel
+cell (its art is in now) plays its victory, and the spooler asks for
+`fuel-cell-victory-3` and `-7`. The disc now carries the fuel-cell victory
+STRs (`FUC*.STR`, 2.5 MB, copied from the extracted ISO beside `EIA1..4`; all
+197 retail STRs, 107 MB, do not fit the test disc's low-density area), and
+the spool heaps are 192 KiB each (128 before): `FUCV3`'s largest chunk is
+167,936 bytes and a chunk must fit the heap it starts in. All 4 chunks asked
+for are served; the check allows one still in flight rather than requiring
+it. `0subtit.TXT` is asked for 176 times and is not on the retail disc
+either.
+
+Not yet: Daxter. His art (661,456 bytes, mostly animation) is in GAME.CGO
+like the crates', but with it the 16 MB console has no 652 KB block left for
+the instance package; the `sidekick` process stays in
+`process-drawable-art-error`, so Daxter is not drawn on Jak's shoulder.

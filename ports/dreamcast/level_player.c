@@ -90,6 +90,13 @@ int dc_level_player(dc_goal_runtime *rt){
   dc_level_player_evidence.art_linked=art.linked;dc_level_player_evidence.art_relocated=art.relocated;
   if(!ok || rt->error!=DC_GOAL_OK)return stop(rt,5);
   load_common_art(rt,level);
+  /* No actor heap compaction. Original compaction (actors-update -> compact)
+   * copies a live process lower; its suspended code lives on a native fiber
+   * stack that cannot move with it, so a moved process never resumes (a
+   * training camera's hint stalled that way and held Jak). Geyser Rock's actor
+   * heap is about a fifth used. */
+  {uint32_t c=dc_goal_find(rt,"*compact-actors*");
+   if(!c || !dc_goal_set_symbol(rt,c,rt->s7))return stop(rt,12);}
   /* The original continue point, then original start with the listener caller. */
   /* Geyser Rock's new-game continue point, by the original lookup. */
   {uint32_t name=dc_goal_string(rt,"training-start");

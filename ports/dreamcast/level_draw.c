@@ -342,7 +342,7 @@ int dc_level_draw_finish(void){
  {dc_level_str_counts s;dc_level_str_summary(&s);
   CHECK(s.files>=1u && s.linked>=1u,1,"level STR server read and linked the game text");
   CHECK(s.link_errors,0,"level every streamed object linked");
-  CHECK(s.chunk_served,s.chunk_requests>0u?s.chunk_requests-1u:0u,"level every spooled chunk asked for after the spool heaps moved was served");
+  CHECK(s.chunk_served<=s.chunk_requests && s.chunk_served+1u>=s.chunk_requests,1,"level every spooled chunk asked for after the spool heaps moved was served (one may be in flight)");
   CHECK(s.chunk_requests==0u || s.active_frames>0u,1,"level a served spooled animation became active");}
  /* Dialogue: the sound loader answers version 2.0, a hint's spool- line is
   * found in VAGDIR and played from VAGWAD on the AICA, *sound-iop-info* follows

@@ -29,7 +29,7 @@ enum {STR_RESULT_DONE=0,STR_RESULT_ERROR=1,STR_CHUNKS=64,STR_SECTOR=2048};
  * both heaps to SPOOL_BYTES of KOS memory (the runtime's resident region) and is
  * answered error, which the buffer drops and asks again into its new heap. A
  * chunk that would run past the end of its heap is refused (last_error 8). */
-enum {PS2_SPOOL_BASE=0x84000,PS2_SPOOL_HEAP=247*1024,SPOOL_BYTES=128*1024};
+enum {PS2_SPOOL_BASE=0x84000,PS2_SPOOL_HEAP=247*1024,SPOOL_BYTES=192*1024};  /* the fuel-cell victory chunks reach 167,936 bytes */
 volatile struct {
   uint32_t requests,served,errors,missing,links,linked,link_errors,last_chunk;
   uint32_t last_bytes,last_dest,last_root,symbols,types,pointers,files,last_error,moved,chunk_requests,chunk_served,pad;
