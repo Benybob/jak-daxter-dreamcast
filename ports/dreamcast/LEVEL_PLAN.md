@@ -1275,7 +1275,7 @@ budget, is the limit.
 multiplied by it, and translucent batches modulate alpha too. A model's
 colours are untouched while it is all ones.
 
-**The lake itself is not yet seen.** Its model is in the bundle
+**The lake itself was not yet seen** (it is now; below). Its model is in the bundle
 (`water-anim-training-lake-lod0`: flat, 88 by 62 m about (-1240, 16, 936),
 texture alpha 4 of 15). The original `actors-update` births an actor only
 when the level's visibility data shows it from the camera, and kills it when
@@ -1346,3 +1346,39 @@ takes 63 ms of logic a frame on open ground (54 without the ties) and 85 to
 100 ms while Jak pushes into the rock (about 55 without, when he walked
 through it). It is the original's work; making it cheaper is for the
 performance pass.
+
+### Tie floors hold; a play ELF must be relinked after the mips2c library (Flycast, 2026-11-13)
+
+Steered walks toward the lake (a Lua script that reads Jak's position and the
+camera's yaw, steers the stick toward waypoints and sidesteps when it stops
+making progress) found three more falls, two of them through the top of a
+`cliffplatsmall` tie: that prototype's two collide fragments (61 and 62
+vertices, the largest on Geyser Rock) under an instance scaled 1.43 by 1.0 by
+1.22. Jak put 2 m above one went straight through it.
+
+Probes around the original code showed the instance passing every test
+(`collide-cache-using-box-test`, `drawable-sphere-box-intersect?`,
+`instance-sphere-box-intersect?` for both fragments), both fragments joining
+the collide list, and method 26 importing the platform's top triangles
+(y 17.3, facing up, pat `#x11c0`: grass, `nolineofsight`) right under Jak.
+With every method 26 call compared against the translation there were no
+mismatches in 2,269 calls, and Jak landed. With the comparison off, the probes
+removed and the level mips2c library rebuilt, he lands too (17.2 m, then
+`target-hit-ground`, `target-stance`), and the walk that had fallen through
+the second platform crosses it at 17.2 m. The falls were the play ELF of that
+afternoon, linked before `build_kernel_boot.py` last rebuilt
+`build/mips2c-level/libdcmips2c.a`; the cause inside the old library is not
+known. Rebuild the library (`build_mips2c.py --level`, or the kernel boot)
+before a play ELF that is going to be measured.
+
+One fall is still open: on the beach east of the rock wall, a sidestep put Jak
+at 4.2 m under a cliff overhang (7.8 m), where nothing is below, and he fell.
+It may be his large steps at about 11 frames a second.
+
+**The lake is drawn.** With Jak standing on the platform above it (17.2 m) and
+the draw camera put 60 m over the lake's north shore (`dc_level_draw_view`),
+the original `actors-update` births `training-water`, its model
+(`water-anim-training-lake-lod0`, model 9) is kept at (-1240, 16, 936), and
+the basin shows its tinted surface (about RGB 41, 113, 131); the lake bed
+under it is 8 to 12 m of beach and geyser terrain, so this is not the sea at
+0 m showing through.
