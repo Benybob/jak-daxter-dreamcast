@@ -1582,3 +1582,22 @@ walk: about 68 to about 66 ms.
 
 A memo for `dc_mips2c_jalr`'s stub walk was tried and measured nothing
 (about 830 calls a frame); not kept.
+
+### Link-time optimisation
+
+The recent Dreamcast ports that publish their build settings (the GTA 3
+port's SH4ZAM notes, oot-dc) call link-time optimisation the most important
+flag. The Makefile now appends `-flto -ffat-lto-objects` to KOS's flags
+(`DC_OPT`; `DC_OPT=` builds as before). The C side of a logic frame is small
+checked accessors called across a dozen files, which is what it inlines.
+Logic on the default walk: about 66 to about 62 to 63 ms.
+
+The Jak ELF links with `-fno-lto` (fat objects carry both forms): its
+GAME.CGO load is within a few KiB of the arena and failed at object 274 with
+the inlined code. `-fbuiltin` over KOS's `-fno-builtin` measured about 1 ms
+and made the same ELF fail on the objects' own growth; not kept. The
+approximate-math flags those ports use (`-ffast-math`) are not for the code
+the host oracle compares bit for bit.
+
+Play ELF at the start of the walk after this section and the two before it:
+about 63 ms of logic (from 74) and about 45 ms of draw.

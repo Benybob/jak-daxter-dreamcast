@@ -34,6 +34,18 @@ ifndef KOS_BASE
 $(error Source your KallistiOS environ.sh before building the Dreamcast target)
 endif
 include $(KOS_BASE)/Makefile.rules
+# KOS's environ.sh gives -O2 and no link-time optimisation. The GOAL runtime is
+# many small checked accessors spread over a dozen files, called across them
+# thousands of times a frame: with -flto they inline. Play ELF logic on the
+# default walk: about 66 to about 62 ms a frame. DC_OPT= builds without.
+# Fat objects, so a link can decline: the Jak ELF links with -fno-lto (its
+# GAME.CGO load is within a few KiB of the arena, and the inlined code is
+# larger). -fbuiltin was tried with it: about 1 ms, and the same Jak ELF
+# runs out of arena on the objects' own growth.
+DC_OPT ?= -flto -ffat-lto-objects
+KOS_CFLAGS += $(DC_OPT)
+KOS_LDFLAGS += $(DC_OPT) -O2
+export KOS_CFLAGS KOS_LDFLAGS
 endif
 
 CFLAGS += -std=c99 -Wall -Wextra
@@ -1013,7 +1025,7 @@ arena_jak_input.o: arena_live_input.c arena_live.h arena_live_math.h
 arena_jak_kernel_cases.o: kernel_boot_cases.c $(wildcard *.h) build/game_cgo_order.h build/vf_cases.h build/mips2c/mips2c_cases_expect.h
 	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -DDC_KERNEL_DGO $(ARENA_JAK_FLAGS) -I. -c $< -o $@
 jak-dc-arena-jak.elf: arena_jak_player_main.o arena_jak_player_kernel.o kernel_vf_fixture.o arena_jak_dgo.o goal_dgo_zst.o arena_fly_romdisk_stage.o arena_jak_player_coexist.o arena_jak_player_bridge.o arena_jak_player_pad.o arena_jak_player_live.o arena_live_math.o arena_jak_input.o arena_live_assets.o arena_jak_player_render.o arena_jak_player_probe.o arena_jak_player_art.o arena_jak_player_data.o arena_jak_player_exports.o arena_jak_player.o arena_jak_debug.o arena_slab.o $(ARENA_FLY_RENDER) render_world_view_scalar.o render_world_view_gate.o render_frustum.o instance_pass.o $(ZSTD_OBJS) build/kernel-dgo-romdisk.o build/arena-live-romdisk.o arena_jak_player_spans.o $(filter-out goal_bridge.o goal_pad.o process_spans.o,$(KERNEL_BOOT_LIBS)) build/mips2c/libdcmips2c.a
-	addr=$$(cat build/arena-live-section.txt) && kos-c++ -o $@ $^ -Wl,--section-start=.dc_stage=0x8cb00000 -Wl,--section-start=.dc_fly=$$addr -lm
+	addr=$$(cat build/arena-live-section.txt) && kos-c++ -fno-lto -o $@ $^ -Wl,--section-start=.dc_stage=0x8cb00000 -Wl,--section-start=.dc_fly=$$addr -lm
 
 
 # Complete retail art admission; separate executable, existing Jak stays at its
