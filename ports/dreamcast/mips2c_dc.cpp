@@ -10,6 +10,7 @@
  * argument in a GPR, so a float argument is stored as its bits, and a float
  * result is returned from v0's bits. */
 #include <alloca.h>
+#include <algorithm>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -93,6 +94,40 @@ static inline void clear_context(Mips2C::ExecutionContext* c) {
 #endif
 }
 
+/* moving-sphere-triangle-intersect opens with a box test: the triangle's
+ * extent against the swept sphere's, both relative to the second vertex, and
+ * a negative difference (x or y of either, z of the sphere-side one) returns the no-hit constant before the
+ * function writes anything. This is that test alone, the same operations in
+ * the same order on the same FPU (std::min/std::max as ExecutionContext's
+ * vmini/vmax, the sign bit as pcgtw 0 > x), so a triangle it rejects is one
+ * the translated code would reject. The collide cache hands every triangle
+ * near Jak to this function, about 600 a frame, and most miss the box. */
+int g_msti = -1;
+uint32_t g_msti_rejects = 0;
+static inline bool msti_rejects(const u64* args) {
+  float o[3], m[3], v[12];
+  u32 radius_bits = (u32)args[2];
+  float r;
+  __builtin_memcpy(o, (const void*)(uintptr_t)(u32)args[0], 12);
+  __builtin_memcpy(m, (const void*)(uintptr_t)(u32)args[1], 12);
+  __builtin_memcpy(v, (const void*)(uintptr_t)(u32)args[3], 48);
+  __builtin_memcpy(&r, &radius_bits, 4);
+  for (int i = 0; i < 3; ++i) {
+    float end = o[i] + m[i];
+    float a = v[i] - v[4 + i], c2 = v[8 + i] - v[4 + i];
+    float from = o[i] - v[4 + i], to = end - v[4 + i];
+    float lo = std::min(std::min(a, 0.0f), c2), hi = std::max(std::max(a, 0.0f), c2);
+    float d1 = hi - (std::min(from, to) - r), d2 = (std::max(from, to) + r) - lo;
+    u32 b1, b2;
+    __builtin_memcpy(&b1, &d1, 4);
+    __builtin_memcpy(&b2, &d2, 4);
+    /* The function ORs the two differences with a 64-bit or: x and y of both,
+     * z of the second only (the first's z never reaches the compare). */
+    if ((i < 2 ? b1 | b2 : b2) & 0x80000000u) return true;
+  }
+  return false;
+}
+
 /* One call: the desktop trampoline's ExecutionContext and translated-code stack. */
 u64 dc_run(unsigned index, const u64* args) {
   using Mips2C::ExecutionContext;
@@ -103,6 +138,10 @@ u64 dc_run(unsigned index, const u64* args) {
   }
   if (slot.skip) return 0;
   ++g_calls;
+  if ((int)index == g_msti && msti_rejects(args)) {
+    ++g_msti_rejects;
+    return 0xffffffffccbebc20ull;  /* lui v0,-13122; ori v0,v0,48160 */
+  }
   ExecutionContext c;
   clear_context(&c);
   const int positions[8] = {Mips2C::a0, Mips2C::a1, Mips2C::a2, Mips2C::a3,
@@ -131,6 +170,7 @@ void Mips2C::LinkedFunctionTable::reg(const std::string& name, u64 (*exec)(void*
     if (name == dc_entries[i].name) {
       g_slots[i].exec = exec;
       g_slots[i].stack = stack_size;
+      if (name == "moving-sphere-triangle-intersect") g_msti = (int)i;
       return;
     }
   }

@@ -1566,3 +1566,19 @@ pextuw, pceqw, pcgtw, psubw, por, pxor, pand, vpsrldq/vpslldq by 4, 8 or 12
 bytes, and vpshuflw/vpshufhw with 0x88. The others still call `dc-c-mmi`;
 `goal_mmi.c` stays the reference for all of them. GOAL code grows by about
 5 KB. Logic on the default walk: about 74 to about 68 ms.
+
+### The sphere-triangle box test runs before the translated function
+
+By process after that: target's samples were 18% in
+`moving-sphere-triangle-intersect`, with `dc_run` (a 1.2 KB context cleared
+per call) behind it. The function opens with a box test and returns the
+no-hit constant before writing anything. `mips2c_dc.cpp` now makes that test
+natively in `dc_run` (`msti_rejects`) and returns the constant without a
+context: about 580 of the function's calls a frame end there. It is the
+function's own arithmetic in the same order, including its quirk: the two
+differences are joined with a 64-bit `or`, so on z only the sphere-side one
+is tested (the collide_func case fails if both are). Logic on the default
+walk: about 68 to about 66 ms.
+
+A memo for `dc_mips2c_jalr`'s stub walk was tried and measured nothing
+(about 830 calls a frame); not kept.
