@@ -1550,3 +1550,19 @@ A frame of the play ELF at the start is about 74 ms of logic and about 50 ms
 of draw. No single cost is left to remove; what would move it is fewer
 checked crossings between GOAL and C per process switch, or less work per
 frame in target's collision.
+
+### Word-wise MMI ops are emitted inline
+
+A second profile after the subtitle fix (target 39%, the display process
+19%, the cameras 16%) had `dc_goal_mmi` and its bridge at about 7% of the
+logic samples. Counted: about 5,500 helper calls a frame. `.ppach` alone is
+six of them (the desktop expansion: vpshuflw and vpshufhw 0x88 and vpsrldq 4
+on each operand), about 550 times a frame; pcgtw, por and pand are about
+1,800 more.
+
+`lower_sh4_ir.py` now writes the kinds that are whole-word moves or
+word-wise arithmetic straight into the function (`mmi_inline`): pextlw,
+pextuw, pceqw, pcgtw, psubw, por, pxor, pand, vpsrldq/vpslldq by 4, 8 or 12
+bytes, and vpshuflw/vpshufhw with 0x88. The others still call `dc-c-mmi`;
+`goal_mmi.c` stays the reference for all of them. GOAL code grows by about
+5 KB. Logic on the default walk: about 74 to about 68 ms.

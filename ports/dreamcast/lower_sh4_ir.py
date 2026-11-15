@@ -324,6 +324,13 @@ def mmi_asm(op):
             return dict(op,kind='mmi',code=MMI2_OPS[name[1:]]|int(fields[2])<<8,dst=regs[0],srcs=regs[1:])
     return None
 
+def mmi_inline(op):
+    """Whether the emitter writes this MMI op inline (AI-assisted)."""
+    code,imm=op['code']&0xff,op['code']>>8
+    if code in (3,6,9,12,13,14,15,16): return True
+    if code in (37,38): return imm in (4,8,12)
+    return code in (39,40) and imm==0x88
+
 def vector_asm(op):
     """Structured form of a desktop vector asm IR op, or None (AI-assisted).
 
@@ -2031,6 +2038,37 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
                         e.word(0xf03d|n<<8); e.word(0x005a|(4+n)<<8)  # FTRC FRn,FPUL; STS FPUL,Rn
                         e.branch('bra',done); e.label(invalid); constant(4+n,0x80000000); e.label(done)
                     store128(op['dst'])
+            elif kind=='mmi' and mmi_inline(op):
+                # Word-wise kinds inline: a in r0-r3, b in r4-r7 (goal_mmi.c is
+                # the reference; the helper call was 5,500 a frame in a level).
+                code,imm=op['code']&0xff,op['code']>>8
+                a_slot,b_slot=op['srcs'][0],op['srcs'][-1]
+                if code in (12,9):  # pcgtw a>b signed / pceqw: T, then SUBC Rn,Rn = -T
+                    load128(b_slot); load128(a_slot,(0,1,2,3))
+                    for n in range(4):
+                        e.rr(0x3007 if code==12 else 0x3000,n,4+n); e.rr(0x300a,4+n,4+n)
+                    store128(op['dst'])
+                elif code in (14,15,16):  # por, pxor, pand
+                    load128(b_slot); load128(a_slot,(0,1,2,3))
+                    for n in range(4): e.rr({14:0x200b,15:0x200a,16:0x2009}[code],4+n,n)
+                    store128(op['dst'])
+                elif code==13:  # psubw a-b
+                    load128(b_slot); load128(a_slot,(0,1,2,3))
+                    for n in range(4): e.rr(0x3008,n,4+n)
+                    store128(op['dst'],(0,1,2,3))
+                elif code in (3,6):  # pextlw (b0,a0,b1,a1), pextuw (b2,a2,b3,a3)
+                    load128(b_slot); load128(a_slot,(0,1,2,3))
+                    store128(op['dst'],(4,0,5,1) if code==3 else (6,2,7,3))
+                elif code in (37,38):  # vpsrldq / vpslldq by whole words
+                    k=imm//4
+                    load128(a_slot); e.immediate(0,0)
+                    lanes=[4+n+k if n+k<4 else 0 for n in range(4)] if code==37 else [4+n-k if n>=k else 0 for n in range(4)]
+                    store128(op['dst'],tuple(lanes))
+                else:  # vpshuflw / vpshufhw 0x88: halfwords (0,2,0,2) of one qword
+                    lo=4 if code==39 else 6
+                    load128(a_slot)
+                    e.rr(0x600d,0,lo); e.mov(1,lo+1); e.word(0x4128); e.rr(0x200b,0,1)  # EXTU.W; SHLL16 R1; OR
+                    store128(op['dst'],(0,0,6,7) if code==39 else (4,5,0,0))
             elif kind=='mmi':
                 # dc-c-mmi(op, dst, a, b) on the 16-byte slots; it copies its inputs first.
                 for reg,index in ((5,op['dst']),(6,op['srcs'][0]),(7,op['srcs'][-1] if len(op['srcs'])>1 else None)):
