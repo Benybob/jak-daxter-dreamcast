@@ -2371,7 +2371,7 @@ static uint64_t pc_mem_move_native(uint64_t dst,uint64_t src,uint64_t size) {
   else {dc_goal_mem_move_probe[1]++;dc_goal_mem_move_probe[5]=(uint32_t)rt->error;}
   return 0;
 }
-#define DC_PC_SERVICES 57
+#define DC_PC_SERVICES 58
 /* Coexistence only stashes requests on the GOAL stack (AI-assisted), ISC. */
 #ifdef DC_ARENA_COEXIST
 uint64_t dc_arena_syncv(void);
@@ -2431,6 +2431,11 @@ int dc_goal_install_pc_services(dc_goal_runtime *rt,dc_goal_cache_sync sync,dc_g
    * retail disc kernel has nothing to load it from: #f, which original
    * texture-page-login treats as "not loaded" (0 would be relocated). */
   functions[k]=(dc_goal_code_export){"loado",code[k],12,NULL,0};targets[k++]=(uint32_t)(uintptr_t)pc_false;
+  /* Kernel unload (kscheme.cpp) only tells the listener a package went away and
+   * returns 0. Original level unload! calls it for each of the level's
+   * packages; unbound, the call stopped unload! before it reset the level heap,
+   * and the next level loaded on top of the last one's data. */
+  functions[k]=(dc_goal_code_export){"unload",code[k],12,NULL,0};targets[k++]=(uint32_t)(uintptr_t)pc_zero_native;
   for(i=0;i<sizeof void_setters/sizeof void_setters[0];++i){
     functions[k]=(dc_goal_code_export){void_setters[i],code[k],12,NULL,0};targets[k++]=(uint32_t)(uintptr_t)pc_zero_native;
     if(!strcmp(void_setters[i],"rpc-call"))targets[k-1]=(uint32_t)(uintptr_t)rpc_call_native;

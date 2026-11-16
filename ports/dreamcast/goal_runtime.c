@@ -6,6 +6,7 @@
 #include "goal_runtime.h"
 #include <limits.h>
 #include <string.h>
+#include <stdlib.h>
 
 #if defined(__BYTE_ORDER__) && __BYTE_ORDER__ != __ORDER_LITTLE_ENDIAN__
 #error The native Dreamcast runtime requires little-endian memory
@@ -76,6 +77,22 @@ uint32_t dc_goal_alloc_code(dc_goal_runtime *rt,uint32_t bytes) {
   }
   memset(span,0,size); address=rt->divert_at; rt->divert_at+=size;
   return address;
+}
+void *dc_goal_scratch(dc_goal_runtime *rt,uint32_t bytes,int zero) {
+  void *p;
+  if (rt && rt->scratch_end) {
+    uint32_t size=(bytes+31u)&~31u;
+    if (!bytes || rt->scratch_at>rt->scratch_end || size>rt->scratch_end-rt->scratch_at ||
+        !(p=dc_goal_resolve(rt,rt->scratch_at,size))) return NULL;
+    rt->scratch_at+=size;
+    if (zero) memset(p,0,size);
+    return p;
+  }
+  return zero?calloc(bytes,1):malloc(bytes);
+}
+void dc_goal_scratch_free(dc_goal_runtime *rt,void *p) {
+  /* scratch memory goes back when its owner resets the region */
+  if (p && !(rt && rt->scratch_end)) free(p);
 }
 uint32_t dc_goal_alloc_temporary(dc_goal_runtime *rt,uint32_t bytes) {
   uint32_t size;

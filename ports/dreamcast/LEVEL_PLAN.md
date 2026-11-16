@@ -1654,3 +1654,57 @@ level art group refusing to link. A list ends at `s7-10`.
 Sandover Village is converted and staged (`VILLAGE1.DGO` 3.06 MB with 12 code
 objects, a 1.1 MB instance package, 6.8 MB of terrain, 47 models); going there
 is the next step, and its heap needs about 3.1 MB.
+
+### Geyser Rock to Sandover Village: the first level change (Flycast, 2745 of 2745, 2026-11-16)
+
+`jak-dc-level-play.elf` with a test hook (`dc_level_goto`, a continue point's
+name) sends Jak the `'continue` event a warp gate sends. Original
+target-continue changes level: Geyser Rock is discarded and unloaded,
+Sandover Village's DGO loads into the same level heap (its 12 code objects
+linked and started there, 37 art groups and the logic BSP after them), its
+renderer opens, and the run goes on in Sandover to frame 551. Captures show
+Jak by the fence on the sea cliff and Sandover's windmill.
+
+What it took:
+
+- **Kernel `unload` bound** (`goal_bridge.c`, a no-op as in kscheme.cpp, which
+  only tells the listener). Original `unload!` calls it for each package of
+  the level; unbound, the missing-call guard stopped `unload!` before its last
+  step, the level heap reset, and the next level loaded on top of the last
+  one's 1.19 MB.
+- **Neighbour visibility cut** (`build_logic_bsp.py`). bsp-header vis-info
+  1..7 hold visibility from a neighbouring level's leaves: 897 KB of
+  Sandover's 911 KB (jungle 319 KB, beach 474 KB, fire canyon 90 KB, misty
+  15 KB). With one level resident no neighbour's leaves are loaded, and
+  original `init-vis` takes an empty slot as no table. Sandover's logic BSP
+  2,105,232 to 1,297,664 bytes; Geyser Rock has none.
+- **Objects bounded by the heap top** (`level_dgo_rpc.c`). A data object is
+  linked in place, not allocated: Sandover's overran its heap into the wrapper
+  code and registry records allocated after it, and a later call through them
+  hit an illegal instruction. An object past the top is now refused,
+  out of memory (`dc_level_heap_need`: most, size, refused).
+- **Loader buffers in the level heap** (`dc_goal_scratch`). A module's file
+  image, decoded tables and 128 KB symbol snapshot come from the free top of
+  the level heap while a level's code loads; the C heap had no such run once
+  the renderer held its blocks. Boot loads still use the C heap.
+- **Renderer memory** (`level_draw.c`). One 832 KiB block, reserved at boot
+  and kept, takes each level's instance package and its cell pack after it
+  when that fits (Geyser Rock 652,800 + 170,344 bytes; Sandover 722,064 bytes
+  of package, and its 388,416 bytes of cells are read from the disc). The
+  terrain window's half width is the level's own (`LEVEL.DRH` version 2:
+  Sandover 9 m, Geyser Rock 14 m); the slab is 1,024 KiB (192 KiB from the
+  level heap, now 2,944 KiB) and the cache slack 32 KiB.
+- **A reloaded startup** (`goal_module.c`): a symbol a released startup or a
+  forgotten level function left `#f` may be bound again (the warp gate's
+  `villagep-obs` is in both levels' DGOs).
+- **The Jak ELF's C heap** (`arena_jak_memory.h`): its arena and renderer
+  share 16 KiB less of 13 MiB; GAME.CGO object 285 found the C heap short by a
+  few hundred bytes after these changes.
+
+Measured in Sandover: level heap 1,993,664 of 3,014,656 bytes taken by its
+code and data; slab high water 989,536 of 1,048,576. The level ELF's arena
+ends at 12,097,232 of 12,189,632 bytes.
+
+Not yet: Jak is out of frame in the last capture and one model fails to load
+(`dc_level_model_fail_line`); walking in Sandover, its villagers and the
+other 20 levels are untried. Seven level DGOs fail `build_logic_bsp.py`.

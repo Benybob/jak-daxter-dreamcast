@@ -91,7 +91,7 @@ def main():
     else:
         report['window'] = fly.window_caps_for(a.out, rows, a.half, a.header)
     import make_level_drh  # the same numbers on the disc, read when the level's renderer opens
-    (a.out / 'LEVEL.DRH').write_bytes(make_level_drh.drh(Path(a.header).read_text()))
+    (a.out / 'LEVEL.DRH').write_bytes(make_level_drh.drh(Path(a.header).read_text(), a.half))
     report.update(at=[x, y, z], radius=r, ai_assisted=True)
     (a.out / 'FLY.json').write_text(json.dumps(report, indent=1), newline='\n')
     print(json.dumps({k: v for k, v in report.items() if not isinstance(v, list)}, indent=1))

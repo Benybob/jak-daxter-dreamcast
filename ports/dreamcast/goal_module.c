@@ -315,7 +315,7 @@ int dc_goal_load_module_temporary(dc_goal_runtime *rt,const dc_goal_code_export 
     rt->error=DC_GOAL_BAD_MODULE;return 0;
   }
   saved=*rt;
-  snapshot=malloc(DC_GOAL_SYMBOL_BYTES+data_count*4u);
+  snapshot=dc_goal_scratch(rt,DC_GOAL_SYMBOL_BYTES+data_count*4u,0);
   if (!snapshot) { rt->error=DC_GOAL_OUT_OF_MEMORY; return 0; }
   data_addresses=(uint32_t*)(snapshot+DC_GOAL_SYMBOL_BYTES);
   memcpy(snapshot,dc_goal_resolve(rt,rt->table,DC_GOAL_SYMBOL_BYTES),DC_GOAL_SYMBOL_BYTES);
@@ -324,7 +324,8 @@ int dc_goal_load_module_temporary(dc_goal_runtime *rt,const dc_goal_code_export 
     uint32_t symbol=dc_goal_intern(rt,functions[i].name),function,old;
     if (!symbol) goto rollback;
     old=dc_goal_symbol_value(rt,symbol);
-    if (old && dc_goal_type_of(rt,old)!=rt->function_type) {
+    /* #f: a startup that ran and was released, or a level's function forgotten with its heap */
+    if (old && old!=rt->s7 && dc_goal_type_of(rt,old)!=rt->function_type) {
       rt->error=DC_GOAL_BAD_MODULE; goto rollback;
     }
     if (temporary && !strcmp(functions[i].name,temporary)) {
@@ -399,14 +400,14 @@ int dc_goal_load_module_temporary(dc_goal_runtime *rt,const dc_goal_code_export 
   result->functions=count; result->code_bytes=total_code;
   result->arena_bytes=rt->used-saved.used; result->temporary_bytes=DC_GOAL_SYMBOL_BYTES+data_count*4u;
   result->data_objects=data_count; result->data_bytes=total_data;
-  free(snapshot); rt->error=DC_GOAL_OK; return 1;
+  dc_goal_scratch_free(rt,snapshot); rt->error=DC_GOAL_OK; return 1;
 rollback:
   {
     enum dc_goal_error error=rt->error==DC_GOAL_OK?DC_GOAL_BAD_MODULE:rt->error;
     memcpy(saved.memory+(saved.table-saved.base),snapshot,DC_GOAL_SYMBOL_BYTES);
     *rt=saved; rt->error=error;
   }
-  free(snapshot); return 0;
+  dc_goal_scratch_free(rt,snapshot); return 0;
 }
 
 /* Forget every registered entry whose record lies in [first, end): a level
@@ -421,6 +422,9 @@ uint32_t dc_goal_code_forget(dc_goal_runtime *rt,uint32_t first,uint32_t end) {
     if(!record)break;
     next=record->next;
     if(at>=first && at<end){
+      /* its symbol no longer names code: the heap is about to hold something else */
+      if(dc_goal_symbol_value(rt,record->symbol)==record->entry)dc_goal_set_symbol(rt,record->symbol,rt->s7);
+      rt->error=DC_GOAL_OK;
       if(previous){code_record *p=dc_goal_resolve(rt,previous,sizeof *p);if(!p)break;p->next=next;}
       else rt->code_registry_head=next;
       --rt->code_registry_count;++removed;

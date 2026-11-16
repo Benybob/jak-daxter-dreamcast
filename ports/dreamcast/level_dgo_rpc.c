@@ -64,9 +64,14 @@ static void method_set_depth(int32_t delta){
   dc_goal_set_symbol(runtime,symbol,dc_goal_symbol_value(runtime,symbol)+(uint32_t)delta);
   runtime->error=prior;
 }
+/* How much of the level heap a level's DGO takes (code and data, before
+ * login): most, the heap's size, and by how much an object did not fit.
+ * first_data and code_end are offsets from the heap base, for the last DGO.
+ * --dump dc_level_heap_need 32 */
+volatile struct {uint32_t most,size,refused,first_data,code_end,base,current_at_begin,objects;} dc_level_heap_need;
 static int code_fail(void){
   ++dc_level_code_evidence.failed;dc_level_code_evidence.error=runtime->error;
-  dc_level_code_evidence.site=dc_goal_error_site;runtime->divert_at=runtime->divert_end=0;
+  dc_level_code_evidence.site=dc_goal_error_site;runtime->divert_at=runtime->divert_end=0;runtime->scratch_at=runtime->scratch_end=0;
   dc_goal_release_temporary(runtime);
   return 0;
 }
@@ -79,6 +84,7 @@ static int load_code(uint32_t *bt){
   if(!fields)return 1;  /* no level heap named: data only, as before */
   if(dgo_next==0){
     uint32_t base=word(fields),top_base=word(fields+12);
+    dc_level_heap_need.first_data=0;dc_level_heap_need.objects=0;dc_level_heap_need.current_at_begin=word(fields+8)-base;
     dc_level_code_evidence.forgotten+=dc_goal_code_forget(runtime,base,top_base);
   }
   while(dgo_next<dgo_count){
@@ -89,10 +95,16 @@ static int load_code(uint32_t *bt){
     current=(word(fields+8)+15u)&~15u;top=word(fields+4)&~15u;
     if(current>top || fseek(dgo,(long)dgo_at+64,SEEK_SET))return code_fail();
     runtime->divert_at=current;runtime->divert_end=top;
+    /* the loader's temporary buffers from the heap's free top: the module's
+     * image, tables and a 128 KB symbol snapshot, which the C heap no longer
+     * has room for once a level's renderer holds its blocks */
+    {uint32_t need=((size+31u)&~31u)*2u+DC_GOAL_SYMBOL_BYTES+65536u;
+     if(top-current>need+size){runtime->scratch_at=(top-need)&~31u;runtime->scratch_end=top;runtime->divert_end=runtime->scratch_at;}}
     if(!dc_goal_load_native_stream_temporary(runtime,dgo,size,sync_code,NULL,&object))return code_fail();
-    current=runtime->divert_at;runtime->divert_at=runtime->divert_end=0;
+    current=runtime->divert_at;runtime->divert_at=runtime->divert_end=0;runtime->scratch_at=runtime->scratch_end=0;
     memcpy(fields+8,&current,4);
     dc_level_code_evidence.bytes+=object.module.code_bytes;dc_level_code_evidence.last_current=current;
+    dc_level_heap_need.code_end=current-word(fields);
     /* the startup's own allocations go where it asks; its types stay global */
     method_set_depth(1);
     /* On a stack of its own: this runs inside the display process's thread,
@@ -120,6 +132,19 @@ static int load_next(uint32_t bt){
   if(fseek(dgo,(long)dgo_at,SEEK_SET) || fread(header,1,64,dgo)!=64)return 0;
   size=word(header);
   if(size<64 || (size&15u))return 0;
+  /* The object must fit below the level heap's top: linked in place, it is
+   * not allocated, and past the top lies whatever the arena holds next. */
+  {uint32_t symbol=dc_goal_find(runtime,"loading-level"),heap=symbol?dc_goal_symbol_value(runtime,symbol):0;
+   unsigned char *fields=heap && heap!=runtime->s7?dc_goal_resolve(runtime,heap,16):NULL;
+   runtime->error=DC_GOAL_OK;
+   if(fields){
+     uint32_t base=word(fields),top=word(fields+4),end=bt+64u+size;
+     if(end-base>dc_level_heap_need.most)dc_level_heap_need.most=end-base;
+     if(dgo_next<=dc_level_code_evidence.objects || !dc_level_heap_need.first_data || dc_level_heap_need.base!=base){dc_level_heap_need.base=base;}
+     ++dc_level_heap_need.objects;if(!dc_level_heap_need.first_data)dc_level_heap_need.first_data=bt-base;
+     dc_level_heap_need.size=top-base;
+     if(end>top || end<bt){dc_level_heap_need.refused=end-top;runtime->error=DC_GOAL_OUT_OF_MEMORY;return 0;}
+   }}
   if(!dc_goal_link_v4_at(runtime,dgo,dgo_at+64u,size,bt+64u,&bytes))return 0;
   if(!(at=dc_goal_resolve(runtime,bt,64)))return 0;
   /* The dgo-header GOAL reads: length (the linked data) and the root name. */

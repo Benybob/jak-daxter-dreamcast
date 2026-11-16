@@ -20,7 +20,7 @@ void *sbrk(ptrdiff_t); /* hidden from unistd.h by -std=c99 */
 #include "render_frustum.h"
 #include "scene_projection.h"
 
-enum {MAX_MODELS=64,MAX_KEPT=32,MAX_JOINTS=255,MAX_BATCHES=64,MAX_TEXTURES=64,MAX_CSPACES=256,
+enum {MAX_MODELS=48,MAX_KEPT=32,MAX_JOINTS=255,MAX_BATCHES=64,MAX_TEXTURES=64,MAX_CSPACES=256,
       MAX_VERTICES=8192,MAX_TEXTURE_BYTES=1024*1024*2,WALK_NODES=1024,WALK_DEPTH=64};
 volatile dc_level_model_metrics_t dc_level_model_metrics;
 
@@ -36,7 +36,7 @@ typedef struct {
  uint32_t used[8]; /* joints the vertices name */
  int bind_checked;
  void *geometry;
- pvr_ptr_t tex[MAX_TEXTURES];uint32_t tex_count;  /* its VRAM textures, to give back (dc_level_models_close) */
+ pvr_ptr_t *tex;uint32_t tex_count;  /* its VRAM textures (allocated when it loads), to give back (dc_level_models_close) */
 } model;
 /* mult: the draw control's color-mult (r, g, b, a), 256 for 1.0; tinted when it is not all ones. */
 typedef struct {uint32_t proc;unsigned model;int target,drawn;uint16_t mult[4];int tinted;} kept;
@@ -106,6 +106,8 @@ static int pow2(uint32_t v){return v>=8u && v<=1024u && !(v&(v-1u));}
 /* Reads and validates one model; textures go to VRAM one at a time. */
 /* The line of the last model load that failed. */
 volatile uint32_t dc_level_model_fail_line;
+/* The name of the last model whose load failed. --dump dc_level_model_fail_name 64 */
+volatile char dc_level_model_fail_name[64];
 #define FAIL do{dc_level_model_fail_line=__LINE__;goto fail;}while(0)
 static int load(model *m){
  uint32_t head[12],crc=0,geometry,rest,i,texture_count,texture_bytes;
@@ -133,7 +135,7 @@ static int load(model *m){
      (b->texture!=0xffffu && b->texture>=texture_count))FAIL;}
  /* textures */
  rest=m->bytes-48u-geometry;
- if(texture_count && !(pixels=malloc(128u*128u*2u)))FAIL;
+ if(texture_count && (!(m->tex=malloc(texture_count*sizeof *m->tex)) || !(pixels=malloc(128u*128u*2u))))FAIL;
  for(i=0;i<texture_count;++i){
   uint32_t rec[3];uint16_t wh[2];
   if(rest<12u || !read_exact(rec,12,&crc))FAIL;
@@ -178,9 +180,11 @@ static int load(model *m){
  dc_level_model_metrics.heap_free_after=heap_free();
  return 1;
 fail:
+ {unsigned k;for(k=0;k<63u && m->name[k];++k)dc_level_model_fail_name[k]=m->name[k];dc_level_model_fail_name[k]=0;}
  free(pixels);free(g);m->geometry=NULL;m->state=-1;++dc_level_model_metrics.load_failures;
  free(m->headers);free(m->batch_list);m->headers=NULL;m->batch_list=NULL;
  while(m->tex_count)pvr_mem_free(m->tex[--m->tex_count]);
+ free(m->tex);m->tex=NULL;
  return 0;
 }
 /* Gives back every model's KOS heap and VRAM and closes the bundle: the level
@@ -191,6 +195,7 @@ void dc_level_models_close(void){
   model *m=&models[i];
   free(m->geometry);free(m->headers);free(m->batch_list);
   while(m->tex_count)pvr_mem_free(m->tex[--m->tex_count]);
+  free(m->tex);
   memset(m,0,sizeof *m);
  }
  model_count=0;kept_count=0;skinned=NULL;

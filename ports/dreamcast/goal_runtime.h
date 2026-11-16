@@ -71,6 +71,11 @@ typedef struct {
    * inside it (a level's code, loaded and forgotten as levels change) may sit
    * anywhere in the chain relative to the others and is exempt. */
   uint32_t code_span_first,code_span_end;
+  /* While scratch_end is nonzero, the loader's temporary buffers (a module's
+   * file image, decoded tables and symbol-table snapshot) are taken from
+   * [scratch_at, scratch_end) of the arena instead of the C heap: a level
+   * loader points it at the free top of the level heap (level_dgo_rpc.c). */
+  uint32_t scratch_at,scratch_end;
 } dc_goal_runtime;
 
 int dc_goal_init(dc_goal_runtime *rt,void *memory,uint32_t capacity,uint32_t virtual_base);
@@ -92,6 +97,9 @@ static inline void *dc_goal_resolve(dc_goal_runtime *rt,uint32_t address,uint32_
 }
 uint32_t dc_goal_alloc(dc_goal_runtime *rt,uint32_t bytes);
 uint32_t dc_goal_alloc_code(dc_goal_runtime *rt,uint32_t bytes);
+/* A temporary buffer: from the scratch region when one is set, else malloc. */
+void *dc_goal_scratch(dc_goal_runtime *rt,uint32_t bytes,int zero);
+void dc_goal_scratch_free(dc_goal_runtime *rt,void *p);
 /* Zeroed 16-byte-aligned memory below the arena's top, released all at once by
  * dc_goal_release_temporary. Ordinary allocations stop below it. */
 uint32_t dc_goal_alloc_temporary(dc_goal_runtime *rt,uint32_t bytes);

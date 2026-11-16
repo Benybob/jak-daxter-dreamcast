@@ -11,7 +11,11 @@
 #if DC_JAK_RENDER_SLAB_BYTES > 2621440u || (DC_JAK_RENDER_SLAB_BYTES & 31u)
 #error Jak renderer reserve must be 32-byte aligned and at most the old slab
 #endif
-#define DC_JAK_ARENA_BYTES (13631488u-DC_JAK_RENDER_SLAB_BYTES)
+/* The arena and the renderer share 13 MiB less 16 KiB; the 16 KiB are the C
+ * heap's (AI-assisted): GAME.CGO's module loads need it, and the arena ends the
+ * boot with about 100 KB unused. */
+#define DC_JAK_COMBINED_BYTES (13631488u-16384u)
+#define DC_JAK_ARENA_BYTES (DC_JAK_COMBINED_BYTES-DC_JAK_RENDER_SLAB_BYTES)
 #include <stdint.h>
 typedef struct {uint32_t borrowed,load_capacity,boot_offset;} dc_jak_memory_layout;
 static inline int dc_jak_memory_plan(uint32_t boot_bytes,dc_jak_memory_layout *p){

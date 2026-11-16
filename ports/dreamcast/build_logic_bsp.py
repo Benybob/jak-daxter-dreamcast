@@ -22,6 +22,11 @@ links and logs them in as on PS2. Texture pages stay out. --strip-merc cuts
 the merc geometry from each (strip_art.py): the Dreamcast draws models from
 converted bundles.
 
+Neighbour visibility: vis-info 1..7 of the bsp-header hold visibility from a
+neighbouring level's leaves (Sandover: 897 KB for jungle, beach, misty and fire
+canyon, against 13.6 KB of its own). With one level resident they are never
+used, so they are cut; --neighbour-vis keeps them.
+
 The output stays under build/ (git-ignored); it is derived from user data.
 """
 import argparse
@@ -124,12 +129,20 @@ def tie_cuts(g):
     return cut & set(g.pointers)
 
 
-def build(obj, tie_collision=True):
+VIS_INFO = 80  # bsp-header vis-info[0] (slot 0 is the level's own)
+
+
+def build(obj, tie_collision=True, neighbour_vis=False):
     g = BspGraph(obj)
     data = bytearray(g.data)
     array, trees = g.trees()
     render = RENDER_TREES - {TIE_TREE} if tie_collision else RENDER_TREES
     cut = tie_cuts(g) if tie_collision else set()
+    if not neighbour_vis:
+        # vis-info 1..7: visibility from a neighbouring level's leaves. One level is
+        # resident (level_player.c), so no neighbour's leaves are ever loaded to look
+        # them up; original init-vis takes an empty slot as no table.
+        cut |= {at for at in range(VIS_INFO + 4, VIS_INFO + 32, 4) if at in g.pointers}
     if cut:
         g.edges.clear()
         for at in g.pointers:
@@ -204,6 +217,8 @@ def main():
     parser.add_argument('--art', action='store_true', help='art groups first, as <LEVEL>-LEVEL.DGO')
     parser.add_argument('--strip-merc', action='store_true',
                         help='with --art: cut the PS2 merc geometry from each art group (strip_art.py)')
+    parser.add_argument('--neighbour-vis', action='store_true',
+                        help="keep the visibility tables for neighbouring levels' leaves (vis-info 1..7)")
     parser.add_argument('--no-tie-collision', action='store_true', help='drop the instance-tie trees and their collision')
     args = parser.parse_args()
     out_dir = args.output.resolve()
@@ -214,7 +229,7 @@ def main():
     if len(bsps) != 1:
         raise SystemExit(f'expected one BSP object, found {len(bsps)}')
     name, obj = bsps[0]
-    out, report = build(obj, tie_collision=not args.no_tie_collision)
+    out, report = build(obj, tie_collision=not args.no_tie_collision, neighbour_vis=args.neighbour_vis)
     out_dir.mkdir(parents=True, exist_ok=True)
     stem = args.dgo.stem.upper()
     art = [(n, o) for _, n, o in archive_objects(args.dgo)

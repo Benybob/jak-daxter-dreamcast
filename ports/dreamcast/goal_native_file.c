@@ -49,7 +49,7 @@ static int load_native(dc_goal_runtime *rt,const void *source,uint32_t bytes,dc_
     if (!initializer || strlen(initializer)>=sizeof(result->initializer)) return 0;
   }
   metadata_bytes=count*sizeof(*functions)+data_count*sizeof(*data)+reloc_count*sizeof(*decoded);
-  storage=calloc(metadata_bytes,1);
+  storage=dc_goal_scratch(rt,metadata_bytes,1);
   if (!storage) { rt->error=DC_GOAL_OUT_OF_MEMORY; return 0; }
   functions=(dc_goal_code_export*)storage;
   data=(dc_goal_data_export*)(storage+count*sizeof(*functions));
@@ -84,13 +84,13 @@ static int load_native(dc_goal_runtime *rt,const void *source,uint32_t bytes,dc_
   if (next!=reloc_count || (init_kind && !init_found)) goto invalid;
   if (!dc_goal_load_module_temporary(rt,functions,count,data,data_count,temporary?initializer:NULL,
                                      sync,context,&linked)) {
-    free(storage); return 0;
+    dc_goal_scratch_free(rt,storage); return 0;
   }
   result->module=linked; result->decoder_bytes=metadata_bytes; result->initializer_kind=init_kind;
   if (initializer) memcpy(result->initializer,initializer,strlen(initializer)+1);
-  free(storage); return 1;
+  dc_goal_scratch_free(rt,storage); return 1;
 invalid:
-  free(storage); rt->error=DC_GOAL_BAD_MODULE; return 0;
+  dc_goal_scratch_free(rt,storage); rt->error=DC_GOAL_BAD_MODULE; return 0;
 }
 int dc_goal_load_native_module(dc_goal_runtime *rt,const void *source,uint32_t bytes,
                                 dc_goal_cache_sync sync,void *context,dc_native_file_result *result) {
@@ -103,11 +103,11 @@ static int load_stream(dc_goal_runtime *rt,FILE *file,uint32_t bytes,dc_goal_cac
   if (!rt || !file || !result) { if (rt) rt->error=DC_GOAL_BAD_ARGUMENT; return 0; }
   rt->error=DC_GOAL_BAD_MODULE;
   if (bytes<64 || bytes>8u*1024u*1024u) return 0;
-  source=malloc(bytes);
+  source=dc_goal_scratch(rt,bytes,0);
   if (!source) { rt->error=DC_GOAL_OUT_OF_MEMORY; return 0; }
-  if (fread(source,1,bytes,file)!=bytes) { free(source); return 0; }
+  if (fread(source,1,bytes,file)!=bytes) { dc_goal_scratch_free(rt,source); return 0; }
   loaded=load_native(rt,source,bytes,sync,context,result,temporary);
-  free(source); return loaded;
+  dc_goal_scratch_free(rt,source); return loaded;
 }
 int dc_goal_load_native_stream(dc_goal_runtime *rt,FILE *file,uint32_t bytes,
                               dc_goal_cache_sync sync,void *context,dc_native_file_result *result) {

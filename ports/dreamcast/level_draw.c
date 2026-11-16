@@ -32,7 +32,7 @@
  * make_level_render_assets.py --area) are already the level's maxima on an 8 m
  * grid, and the slab has no room for both. */
 #define FACE_SLACK (head.swept?512u:2048u)
-#define CACHE_SLACK (head.swept?131072u:262144u)
+#define CACHE_SLACK (head.swept?32768u:262144u)
 #include <inttypes.h>
 /* The level's render header, LEVEL.DRH beside its render data
  * (make_level_drh.py): what make_level_render_assets.py measured. Read when
@@ -45,6 +45,7 @@ static struct {
 typedef char level_head_bytes[sizeof head==104?1:-1];
 enum {MATERIAL_SLOTS_MAX=512};
 static uint16_t material_map[MATERIAL_SLOTS_MAX];
+static uint32_t window_half=14u;
 static int head_loaded;
 /* Where the resident level's render data is on the disc. */
 static char root[40]="/cd/GEYSER";
@@ -61,7 +62,9 @@ static char root[40]="/cd/GEYSER";
 /* Scenery: 45 m instead of TIE's 60, and the LOD planes halved (LOD_BIAS), so
  * the lowest LOD, about a quarter of the triangles, starts at 30 m instead of
  * never (its plane was the draw distance). Draw 47.6 to 32.3 ms in Flycast. */
-enum {TARGET_DISTANCE_M=12,DRAW_DISTANCE_M=45,WINDOW_HALF_M=14,WINDOW_MARGIN_M=4,WINDOW_AHEAD_M=10};
+enum {TARGET_DISTANCE_M=12,DRAW_DISTANCE_M=45,WINDOW_MARGIN_M=4,WINDOW_AHEAD_M=10};
+/* The terrain window's half width: the level's own (LEVEL.DRH version 2), 14 m before. */
+#define WINDOW_HALF_M ((double)window_half)
 #define LOD_BIAS 2.f
 int dc_level_draw_check(uint64_t,uint64_t,const char *);
 int dc_level_draw_release_boot(uint32_t *vram_available);
@@ -113,6 +116,15 @@ static int ready;
 /* The package's KOS block, taken at boot while the heap is still one piece
  * (dc_level_draw_reserve); later, freed temporaries can leave no 652 KB run. */
 static unsigned char *package_memory;
+/* One block, reserved at boot while the heap is one piece and kept for every
+ * level: a level's instance package goes in it when it fits (Geyser Rock
+ * 652,800 bytes, Sandover 722,064; after a level change the heap has no run
+ * that long), and its cell pack after it when that fits too (Geyser Rock's
+ * 170,344 bytes do, so its KOS heap use is what it was with a block of its own;
+ * Sandover's 388,416 do not, and its cells are read from the disc). 1,152 KiB
+ * here made the boot's own module links fail: each takes a 128 KB
+ * symbol-table snapshot, and the heap left had no such run. */
+enum {PACKAGE_RESERVE=832u*1024u};
 /* The KOS heap blocks the open level holds: its instance package and cell pack. */
 static unsigned char *package_data,*cells_pack;
 static int boot_released,sprites_opened;
@@ -129,15 +141,19 @@ static int load_head(void){
  if(head_loaded)return 1;
  snprintf(path,sizeof path,"%s/LEVEL.DRH",root);
  if((fd=fs_open(path,O_RDONLY))<0)return 0;
- ok=fs_read(fd,magic,4)==4 && !memcmp(magic,"DRH1",4) && fs_read(fd,&head,sizeof head)==(ssize_t)sizeof head &&
+ ok=fs_read(fd,magic,4)==4 && (!memcmp(magic,"DRH1",4) || !memcmp(magic,"DRH2",4)) && fs_read(fd,&head,sizeof head)==(ssize_t)sizeof head &&
     head.material_slots && head.material_slots<=MATERIAL_SLOTS_MAX && !head.source_sha[64] &&
     fs_read(fd,material_map,head.material_slots*sizeof *material_map)==(ssize_t)(head.material_slots*sizeof *material_map);
+ window_half=14u;
+ /* version 2: the window half width (meters) after the material map, at a 4-byte boundary */
+ if(ok && magic[3]=='2'){uint32_t pad=(head.material_slots&1u)*2u,h=0;unsigned char z[2];
+   ok=(!pad || fs_read(fd,z,pad)==(ssize_t)pad) && fs_read(fd,&h,4)==4 && h>=6u && h<=32u;window_half=h;}
  fs_close(fd);
  return head_loaded=ok;
 }
 void dc_level_draw_reserve(void){
  if(package_memory || !load_head())return;
- package_memory=dc_level_heap_alloc(FLY_PACKAGE_BYTES);
+ package_memory=dc_level_heap_alloc(FLY_PACKAGE_BYTES>PACKAGE_RESERVE?FLY_PACKAGE_BYTES:PACKAGE_RESERVE);
  dc_level_reserve_probe[0]=dc_level_heap_free();dc_level_reserve_probe[3]=package_memory!=NULL;
  {extern void *sbrk(int);dc_level_reserve_probe[2]=(uint32_t)(uintptr_t)sbrk(0);}
  if(!package_memory){uint32_t size=FLY_PACKAGE_BYTES;void *p;
@@ -150,6 +166,7 @@ static uint32_t named(dc_goal_runtime *rt,const char *name){
  enum dc_goal_error prior=rt->error;uint32_t s=dc_goal_find(rt,name),v=s?dc_goal_symbol_value(rt,s):0;
  rt->error=prior;return v;
 }
+volatile uint32_t dc_level_draw_metrics_cells_on_disc;  /* 1: the level's cells are read from the disc */
 static int initialize(void){
  FILE *file;const char *error;unsigned char *data;uint32_t slot,needed=0;int mapped=1,read,textures=1;
  static const uint32_t events[]={ASIC_EVT_PVR_ISP_OUTOFMEM,ASIC_EVT_PVR_STRIP_HALT,
@@ -181,7 +198,7 @@ static int initialize(void){
  CHECK(error==NULL,1,error);
  /* The package is read once and kept: the KOS heap holds it, leaving the slab
   * to the block cache, which reads terrain as the camera moves. */
- data=package_memory?package_memory:dc_level_heap_alloc(FLY_PACKAGE_BYTES);package_memory=NULL;
+ data=package_memory && FLY_PACKAGE_BYTES<=PACKAGE_RESERVE?package_memory:dc_level_heap_alloc(FLY_PACKAGE_BYTES);
  CHECK(data!=NULL,1,"level draw package KOS heap allocation");package_data=data;
  file=open_level("PACKAGE.DCI");CHECK(file!=NULL,1,"level draw package opens from the disc");
  read=fread(data,1,FLY_PACKAGE_BYTES,file)==FLY_PACKAGE_BYTES&&fgetc(file)==EOF&&!ferror(file);
@@ -191,14 +208,19 @@ static int initialize(void){
  error=dc_instance_cells_make(&cells,root,16.0,FLY_INSTANCE_RECORDS+128u);CHECK(error==NULL,1,error);
  /* Every instance cell, read once and kept on the KOS heap (cells.pak, 170 KB):
   * walking opened a cell file or two most frames, 17-51 ms each. */
- {long bytes=0;unsigned char *pack;
+ /* The pack goes in the package's reserved block when the package leaves room
+  * for it, else the KOS heap; with neither (Sandover: 722 KB of package and
+  * 388 KB of cells) cells are read from the disc as the camera reaches them. */
+ {long bytes=0;unsigned char *pack=NULL;uint32_t used=(FLY_PACKAGE_BYTES+31u)&~31u;
   file=open_level("CELLS.PAK");CHECK(file!=NULL,1,"level draw cell pack opens from the disc");
   read=!fseek(file,0,SEEK_END)&&(bytes=ftell(file))>8&&bytes<1048576&&!fseek(file,0,SEEK_SET);
-  pack=read?dc_level_heap_alloc((size_t)bytes):NULL;
-  cells_pack=pack;
+  if(read && data==package_memory && used+(uint32_t)bytes<=PACKAGE_RESERVE)pack=package_memory+used;
+  else if(read){pack=dc_level_heap_alloc((size_t)bytes);cells_pack=pack;}
   read=pack&&fread(pack,1,(size_t)bytes,file)==(size_t)bytes;
-  read=fclose(file)==0&&read;CHECK(read,1,"level draw cell pack read into the KOS heap");
-  error=dc_instance_cells_use_pack(&cells,pack,(size_t)bytes);CHECK(error==NULL,1,error);}
+  fclose(file);
+  dc_level_draw_metrics_cells_on_disc=!read;
+  if(read){error=dc_instance_cells_use_pack(&cells,pack,(size_t)bytes);CHECK(error==NULL,1,error);}
+  else {dc_level_heap_release(cells_pack);cells_pack=NULL;}}
  view=memalign(32,(size_t)pkg.max_proto_verts*sizeof *view);CHECK(view!=NULL,1,"level draw view slab allocation");
  bounds=memalign(32,(size_t)pkg.proto_count*sizeof *bounds);CHECK(bounds!=NULL,1,"level draw bounds slab allocation");
  dc_instance_bounds(&pkg,bounds);pkg.bounds=(const float (*)[4])bounds;
@@ -231,8 +253,9 @@ void dc_level_draw_open(const char *directory){
  if(ready || head_loaded){
   dc_level_models_close();
   dc_render_gpu_free(&gpu);
-  dc_level_heap_release(package_data);dc_level_heap_release(cells_pack);dc_level_heap_release(package_memory);
-  package_data=cells_pack=package_memory=NULL;
+  if(package_data!=package_memory)dc_level_heap_release(package_data);  /* the reserved block stays */
+  dc_level_heap_release(cells_pack);
+  package_data=cells_pack=NULL;
   if(boot_released)dc_level_draw_slab_reset();
   memset(&catalog,0,sizeof catalog);memset(&bank,0,sizeof bank);memset(&cache,0,sizeof cache);
   memset(&window,0,sizeof window);memset(&pkg,0,sizeof pkg);memset(&cells,0,sizeof cells);

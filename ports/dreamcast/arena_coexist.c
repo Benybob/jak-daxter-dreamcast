@@ -38,7 +38,7 @@ enum {SLAB_BYTES=DC_JAK_RENDER_SLAB_BYTES,ARENA_BYTES=DC_JAK_ARENA_BYTES,DMA_BYT
  * blocks if the slab fills). The 655,424 bytes between stay in the KOS heap,
  * which holds that package, the models, the spool heaps and the sound stream.
  * 256 KiB of that went back to the arena for Geyser Rock's tie collision. */
-enum {SLAB_BYTES=851968,ARENA_BYTES=13u*1024u*1024u-1507392+262144,DMA_BYTES=3506176,
+enum {SLAB_BYTES=851968+196608,ARENA_BYTES=13u*1024u*1024u-1507392+262144-196608,DMA_BYTES=3506176,
 #else
 enum {SLAB_BYTES=2621440,ARENA_BYTES=11010048,DMA_BYTES=3506176,
 #endif
@@ -217,7 +217,7 @@ int dc_arena_stage(void){
 #endif
   CHECK(slab!=NULL,1,"arena renderer slab allocated before GOAL arena");
 #ifdef DC_ARENA_JAK_PLAYER
-  CHECK(combined && SLAB_BYTES+ARENA_BYTES==13u*1024u*1024u &&
+  CHECK(combined && SLAB_BYTES+ARENA_BYTES==DC_JAK_COMBINED_BYTES &&
         dc_jak_memory_plan((uint32_t)romdisk_size,&plan),1,
         "jak arena and slab share the original combined RAM budget");
 #else
