@@ -1733,3 +1733,34 @@ frames, other actors in 277; 3 models unloaded. Jak walks on the hut's cliff
 (34 m), walks off it along the test route and swims in the sea under the
 rock arch. Not yet: `assistant-lod0` (Keira's model) still fails at times for
 want of KOS heap; VRAM had 1.57 MB free when it did.
+
+### Sentinel Beach staged by one script; Jak on the sand (Flycast, 2745 of 2745, 2026-11-16)
+
+`stage_level.py <NICK>` stages a level for the play disc in one run: its code
+(`build_level_code.py`, villagep-obs first where the level uses it), logic BSP
+and stripped art, the DGO load-begin asks for (the level's name cut to 8
+characters, e.g. `BEACH.DGO`), its `.VIS`, the TIE package, terrain sectors
+and cells over the rectangle holding 99.6% of its tfrag vertices, and its model
+bundle, into `build/level-disc/<NAME>`. All 23 level DGOs now convert (the
+seven that failed did so on the binding sort fixed with the merc stripper).
+
+Sentinel Beach: `BEACH.DGO` 2,293,696 bytes with 18 code objects, 8.6 MB of
+render data; package 359,944 and cell pack 193,172 bytes, both in the reserved
+block. `beach-obs` needed one reviewed partial return (the flutflutegg
+`:trans` lambda's `cond` sets nothing where `play-ambient` answers `#f`).
+
+Sent there from Geyser Rock, the level loads (1,989,776 bytes of level heap),
+and moved onto the sand at (-200, 6, -250) Jak stands at 2.8 m, is drawn
+(about 210 frames after the trip) and the sand, sea and sparkles draw. A
+model's 32 KB texture staging buffer now comes from the renderer slab: on the
+beach the KOS heap had about 110 KB left, in pieces.
+
+Not yet:
+
+- **Seams.** `beach-start` lies on the seam with Sandover, off the beach's own
+  geometry; the original keeps both levels resident there. With one level, Jak
+  arriving there falls, dies and is put back there. Every continue point and
+  load boundary on a seam needs both levels' collision; that is the next
+  memory question.
+- Two models (the last a fuel cell) fail for want of KOS heap on the beach.
+- The other 19 levels are not staged.

@@ -110,6 +110,18 @@ int dc_level_models_open(const char *path){
  return 1;
 }
 
+/* A texture's staging buffer: from the renderer slab first (it has room once
+ * a level's renderer is open), the KOS heap only if the slab has none; on
+ * Sentinel Beach the KOS heap had 110 KB left in pieces too small for 32 KB. */
+void *dc_arena_memalign(size_t,size_t);void dc_arena_free(void *);
+extern volatile uint32_t dc_arena_slab_failures;
+static void *staging_take(uint32_t bytes,int *from_slab){
+ uint32_t before=dc_arena_slab_failures;void *p=dc_arena_memalign(32,bytes);
+ if(p){*from_slab=1;return p;}
+ dc_arena_slab_failures=before;  /* a miss here is not the renderer's */
+ *from_slab=0;return malloc(bytes);
+}
+static void staging_give(void *p,int from_slab){if(from_slab)dc_arena_free(p);else free(p);}
 static int pow2(uint32_t v){return v>=8u && v<=1024u && !(v&(v-1u));}
 /* Reads and validates one model; textures go to VRAM one at a time. */
 /* The line of the last model load that failed. */
@@ -117,10 +129,11 @@ volatile uint32_t dc_level_model_fail_line;
 /* The name of the last model whose load failed. --dump dc_level_model_fail_name 64 */
 volatile char dc_level_model_fail_name[64];
 volatile uint32_t dc_level_model_fail_vram;  /* VRAM free when it failed */
+volatile uint32_t dc_level_model_fail_heap;  /* KOS heap free (all runs) when it failed */
 #define FAIL do{dc_level_model_fail_line=__LINE__;goto fail;}while(0)
 static int load(model *m){
  uint32_t head[12],crc=0,geometry,rest,i,texture_count,texture_bytes;
- unsigned char *g=NULL,*pixels=NULL;pvr_ptr_t slots[MAX_TEXTURES];uint32_t sizes[MAX_TEXTURES][3];
+ unsigned char *g=NULL,*pixels=NULL;int pixels_slab=0;pvr_ptr_t slots[MAX_TEXTURES];uint32_t sizes[MAX_TEXTURES][3];
  if(fseek(bundle,(long)m->offset,SEEK_SET) || !read_exact(head,48,&crc) || memcmp(head,"DSK1",4) || head[1]!=1u)FAIL;
  m->joints=head[2];m->verts=head[3];m->indices=head[4];m->batch_count=head[5];texture_count=head[6];texture_bytes=head[7];
  memcpy(m->centre,&head[8],12);memcpy(&m->scale,&head[11],4);
@@ -148,13 +161,13 @@ static int load(model *m){
      (b->texture!=0xffffu && b->texture>=texture_count))FAIL;}
  /* textures */
  rest=m->bytes-48u-geometry;
- if(texture_count && (!(m->tex=malloc(texture_count*sizeof *m->tex)) || !(pixels=malloc(128u*128u*2u))))FAIL;
+ if(texture_count && (!(m->tex=malloc(texture_count*sizeof *m->tex)) || !(pixels=staging_take(128u*128u*2u,&pixels_slab))))FAIL;
  for(i=0;i<texture_count;++i){
   uint32_t rec[3];uint16_t wh[2];
   if(rest<12u || !read_exact(rec,12,&crc))FAIL;
   memcpy(wh,rec,4);rest-=12u;
   if(!pow2(wh[0]) || !pow2(wh[1]) || (rec[1]!=1u && rec[1]!=3u) || rec[2]!=(uint32_t)wh[0]*wh[1]*2u || rec[2]>rest)FAIL;
-  if(rec[2]>128u*128u*2u){free(pixels);if(!(pixels=malloc(rec[2])))FAIL;}
+  if(rec[2]>128u*128u*2u){staging_give(pixels,pixels_slab);if(!(pixels=staging_take(rec[2],&pixels_slab)))FAIL;}
   if(!read_exact(pixels,rec[2],&crc))FAIL;
   rest-=rec[2];
   {uint32_t pad=(4u-(rec[2]&3u))&3u;unsigned char z[4];if(pad){if(rest<pad||!read_exact(z,pad,&crc))FAIL;rest-=pad;}}
@@ -164,7 +177,7 @@ static int load(model *m){
   sizes[i][0]=wh[0];sizes[i][1]=wh[1];sizes[i][2]=rec[1];
   dc_level_model_metrics.texture_bytes+=rec[2];
  }
- free(pixels);pixels=NULL;
+ staging_give(pixels,pixels_slab);pixels=NULL;
  if(rest || crc!=m->crc)FAIL;
  if(!(m->headers=memalign(32,m->batch_count*sizeof *m->headers)) || !(m->batch_list=malloc(m->batch_count*sizeof(int))))FAIL;
  for(i=0;i<m->batch_count;++i){
@@ -195,9 +208,11 @@ static int load(model *m){
 fail:
  {unsigned k;for(k=0;k<63u && m->name[k];++k)dc_level_model_fail_name[k]=m->name[k];dc_level_model_fail_name[k]=0;}
  dc_level_model_fail_vram=pvr_mem_available();
+ dc_level_model_fail_heap=heap_free();
  /* Jak's block goes back to be kept, not to the heap */
  if(g && !strcmp(m->name,KEPT_MODEL) && !kept_geometry){kept_geometry=g;kept_bytes=geometry;g=NULL;}
- free(pixels);free(g);m->geometry=NULL;m->state=-1;++dc_level_model_metrics.load_failures;
+ if(pixels)staging_give(pixels,pixels_slab);
+ free(g);m->geometry=NULL;m->state=-1;++dc_level_model_metrics.load_failures;
  free(m->headers);free(m->batch_list);m->headers=NULL;m->batch_list=NULL;
  while(m->tex_count)pvr_mem_free(m->tex[--m->tex_count]);
  free(m->tex);m->tex=NULL;

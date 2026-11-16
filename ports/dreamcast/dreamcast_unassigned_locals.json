@@ -42,5 +42,9 @@
   "draw-subtitle": {
     "partial_return": true,
     "reason": "subtitle.gc: the (when ...) body ends in (#when PC_SUBTITLE_DEBUG ...), which compiles to nothing, so the true path never sets the returned value; desktop returns whatever rax held. Both callers discard it. Dreamcast: the value starts as #f, the false path's value."
+  },
+  "beach-obs:anon-function-16": {
+    "partial_return": true,
+    "reason": "beach-obs.gc flutflutegg :trans: the cond's (if (play-ambient ...) (logior! ...)) branches set nothing when play-ambient answers #f, so the returned value is unset on those paths; a :trans behavior's value is never used. Starts as #f (AI-assisted)."
   }
 }
