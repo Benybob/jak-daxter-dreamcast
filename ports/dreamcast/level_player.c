@@ -56,6 +56,42 @@ static int relocate_art(dc_goal_runtime *rt,uint32_t art,void *context){
   {enum dc_goal_error error=rt->error;memcpy(dc_goal_resolve(rt,levels+8,4),&old,4);rt->error=error;}
   return rt->error==DC_GOAL_OK;
 }
+/* One level resident at a time. A 16 MB console cannot hold two: Sandover
+ * alone is 2.1 MB of logic BSP beside its art and code, and every retail
+ * continue point wants its level and a neighbour (lev0, lev1). Each continue
+ * point of *level-load-list* is rewritten to want its own level only, shown,
+ * with that level's visibility; original target-continue then loads it and
+ * waits for nothing else. Layout (retail): level-load-info nickname +8,
+ * continues +52; continue-point level +4, vis-nick +100, lev0, disp0, lev1,
+ * disp1. --dump dc_level_single 12 */
+volatile struct {uint32_t levels,continues,changed;} dc_level_single;
+static void single_level_continues(dc_goal_runtime *rt){
+  uint32_t list=named(rt,"*level-load-list*"),display=dc_goal_intern(rt,"display"),n=0;
+  enum dc_goal_error prior=rt->error;
+  const uint32_t empty=rt->s7-10u;  /* '(): a pair-tagged pointer whose car and cdr are itself */
+  while((list&7u)==2u && list!=empty && n++<64u){
+    uint32_t symbol=word(rt,list-2u),info=symbol?dc_goal_symbol_value(rt,symbol):0;
+    uint32_t c=info && info!=rt->s7?word(rt,info+52u):0,m=0;
+    ++dc_level_single.levels;
+    while((c&7u)==2u && c!=empty && m++<32u){
+      uint32_t cp=word(rt,c-2u),want[5];
+      unsigned char *f=(cp&15u)==4u && word(rt,cp-4u)==named(rt,"continue-point")?dc_goal_resolve(rt,cp+100u,20):NULL;
+      if(f){
+        uint32_t level=word(rt,cp+4u);
+        memcpy(want,f,20);++dc_level_single.continues;
+        if(want[1]!=level || want[3]!=rt->s7){
+          uint32_t shown=want[3]==level?want[4]:want[2];
+          want[1]=level;want[2]=shown!=rt->s7?shown:display;want[3]=rt->s7;want[4]=rt->s7;
+          if(want[0]!=rt->s7)want[0]=word(rt,info+8u);
+          memcpy(f,want,20);++dc_level_single.changed;
+        }
+      }
+      c=word(rt,c+2u);
+    }
+    list=word(rt,list+2u);
+  }
+  rt->error=prior;
+}
 /* GAME.CGO art groups the level's actors look up in the default level
  * (stage_common_art.py): loaded and relocated like eichar. A file the disc
  * lacks is skipped; loaded counts the ones in. */
@@ -97,15 +133,16 @@ int dc_level_player(dc_goal_runtime *rt){
    * heap is about a fifth used. */
   {uint32_t c=dc_goal_find(rt,"*compact-actors*");
    if(!c || !dc_goal_set_symbol(rt,c,rt->s7))return stop(rt,12);}
+  single_level_continues(rt);
   /* The original continue point, then original start with the listener caller. */
   /* Geyser Rock's new-game continue point, by the original lookup. */
   {uint32_t name=dc_goal_string(rt,"training-start");
    cp=name?(uint32_t)((two_fn)(uintptr_t)named(rt,"(method get-continue-by-name game-info)"))(named(rt,"*game-info*"),name):0;}
   dc_level_player_evidence.continue_point=cp;
   if(rt->error!=DC_GOAL_OK || !cp || cp==rt->s7)return stop(rt,6);
-  /* Every Geyser Rock continue point also wants village1 displayed (lev1, +112
-   * retail layout); target-continue loads it beside Geyser Rock. */
-  if(word(rt,cp+112u)!=dc_goal_find(rt,"village1"))return stop(rt,11);
+  /* The retail continue point also displays village1 (lev1, +112); with one
+   * level resident it is alone. */
+  if(word(rt,cp+104u)!=dc_goal_find(rt,"training") || word(rt,cp+112u)!=rt->s7)return stop(rt,11);
   listener=named(rt,"*listener-process*");bytes=word(rt,listener+80)-(listener-4u);
   start=named(rt,"start");
   if(!start || !dc_goal_note_process_span(rt,listener,bytes,NULL) || !dc_goal_bind_process_context(rt,listener,bytes))
@@ -149,6 +186,31 @@ volatile struct {
 void dc_level_cache_sample(dc_goal_runtime *rt,uint32_t frame);
 /* A test's way to put Jak somewhere: set [1..3] (meters), then [0]; cleared when done. */
 volatile float dc_level_warp[4];
+/* A test's way to another level: a continue point's name (as "village1-hut").
+ * Jak gets the 'continue event the warp gates and a death send, so original
+ * target-continue changes level; the name is cleared when the event is sent.
+ * result: 1 sent, 2 no such continue point, 3 the event faulted. */
+volatile char dc_level_goto[32];
+volatile uint32_t dc_level_goto_result[4];  /* result, continue point, event answer, runtime error */
+static void goto_continue(dc_goal_runtime *rt,uint32_t target){
+  typedef uint64_t (*two_fn)(uint64_t,uint64_t);
+  static uint32_t block;char name[32];uint32_t text,cp,send=named(rt,"send-event-function"),words[4];
+  unsigned char *b;uint64_t param=0;
+  memcpy(name,(const char *)dc_level_goto,sizeof name);name[31]=0;dc_level_goto[0]=0;
+  rt->error=DC_GOAL_OK;
+  text=dc_goal_string(rt,name);
+  cp=text?(uint32_t)((two_fn)(uintptr_t)named(rt,"(method get-continue-by-name game-info)"))(named(rt,"*game-info*"),text):0;
+  dc_level_goto_result[1]=cp;
+  if(rt->error!=DC_GOAL_OK || !cp || cp==rt->s7 || !send){dc_level_goto_result[0]=2;dc_level_goto_result[3]=rt->error;return;}
+  /* event-message-block: to, from, num-params, message, param[7] (uint64) */
+  if(!block)block=dc_goal_alloc(rt,80);
+  if(!block || !(b=dc_goal_resolve(rt,block,80))){dc_level_goto_result[0]=3;return;}
+  memset(b,0,80);
+  words[0]=target;words[1]=target;words[2]=1;words[3]=dc_goal_intern(rt,"continue");
+  memcpy(b,words,16);param=cp;memcpy(b+16,&param,8);
+  dc_level_goto_result[2]=(uint32_t)((two_fn)(uintptr_t)send)(target,block);
+  dc_level_goto_result[3]=rt->error;dc_level_goto_result[0]=rt->error==DC_GOAL_OK?1u:3u;
+}
 /* *game-info* money, buzzer-total and fuel (+16, +88, +92) each frame, for
  * tests that collect them. */
 volatile float dc_level_collected[3];
@@ -158,6 +220,7 @@ void dc_level_player_sample(dc_goal_runtime *rt){
   if(!target || target==rt->s7 || (target&3u))goto done;
   root=word(rt,target+108u);
   if(!root || root==rt->s7 || (root&3u) || !(t=dc_goal_resolve(rt,root+12u,12)))goto done;
+  if(dc_level_goto[0]){goto_continue(rt,target);prior=rt->error==DC_GOAL_OK?prior:rt->error;goto done;}
   if(dc_level_warp[0]!=0){float *to=dc_goal_resolve(rt,root+12u,12);
    for(i=0;i<3u;++i)to[i]=4096.f*dc_level_warp[i+1u];
    dc_level_warp[0]=0;}

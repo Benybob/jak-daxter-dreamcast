@@ -33,9 +33,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('level', help='level DGO name without .DGO, e.g. TRA')
     parser.add_argument('--frontend', type=Path, default=work / 'og-host/bin/goalc-dreamcast-ir.exe')
+    parser.add_argument('--with', dest='shared', nargs='*', default=[], metavar='OBJECT',
+                        help="objects of the level's shared packages, loaded first (Geyser Rock: villagep-obs)")
     args = parser.parse_args()
     graph = gp_deps.load(root)
-    code = level_code(root, args.level)
+    code = [n for n in args.shared] + [n for n in level_code(root, args.level) if n not in args.shared]
     order, sources = game.compile_order(graph, game.game_order(root) + code)
     missing = [name for name in code if name not in sources]
     if missing:

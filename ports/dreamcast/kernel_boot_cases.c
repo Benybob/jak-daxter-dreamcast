@@ -473,24 +473,9 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
        dc_goal_set_symbol(&rt,dc_goal_find(&rt,"*run*"),dc_goal_find(&rt,"#t"));
        dc_goal_set_symbol(&rt,dc_goal_find(&rt,"*dproc*"),dproc);
 #ifdef DC_LEVEL_LOGIC
-  /* Geyser Rock's code (build_level_code.py: training-obs, training-part) and
-   * village1's, which its continue point also displays, link and run their
-   * startups first, so their deftypes are real before the BSPs bind them; as on
-   * PS2 a level's code objects precede its data in its DGO. */
-  {static const struct {const char *path;uint32_t objects;} codes[]={{"/cd/TRA-CODE.DGO",2},{"/cd/VI1-CODE.DGO",12}};
-   unsigned k;
-   for(k=0;k<2;++k){
-     static dc_goal_dgo_result level_code;FILE *file=fopen(codes[k].path,"rb");int loaded=0;
-     CHECK(file!=NULL,1,"level code opens from /cd");
-     if(file){
-       method_set_depth(&rt,1);
-       loaded=dc_goal_load_dgo(&rt,file,sync_code,NULL,&level_code);fclose(file);
-       method_set_depth(&rt,-1);
-     }
-     CHECK(loaded?1:100+rt.error,1,"level code links and runs each original startup");
-     CHECK(level_code.objects,codes[k].objects,"level code holds every object of its level's DGO");
-     CHECK(level_code.initializers,codes[k].objects,"every level code file runs its top-level startup");
-   }}
+  /* Geyser Rock's code is in its level DGO, ahead of its data as on PS2
+   * (make_level_dgo.py: villagep-obs, training-obs, training-part); the DGO
+   * server links it in the level heap and runs each startup (level_dgo_rpc.c). */
        /* Then the original load-state wants Geyser Rock displayed; display-loop's
         * level-update loads it through RPC-DGO (level_dgo_rpc.c), logs it in,
         * births it and makes it active. */
@@ -582,6 +567,10 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
        CHECK(rt.error,DC_GOAL_OK,"display-loop frames leave no runtime fault");
 #ifdef DC_LEVEL_LOGIC
        CHECK(dc_level_check(&rt),1,"original level loading makes Geyser Rock active with its bsp attached");
+       {extern volatile struct {uint32_t objects,bytes,initializers,forgotten,failed,error,site,last_current;} dc_level_code_evidence;
+        CHECK(dc_level_code_evidence.failed,0,"no level code object fails to link or start");
+        CHECK(dc_level_code_evidence.objects,3,"the level DGO's code objects are linked in the level heap");
+        CHECK(dc_level_code_evidence.initializers,3,"every level code file runs its top-level startup");}
        CHECK(dc_res_native.checked>=1000u,1,"native res lookups were compared with the GOAL method");
        CHECK(dc_res_native.mismatches,0,"native res lookups match the GOAL method");
        CHECK(dc_res_native.by_name_checked>=32u,1,"remembered entity-by-name answers were compared with GOAL");

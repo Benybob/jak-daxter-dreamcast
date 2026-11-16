@@ -25,7 +25,7 @@ extern int dc_render_test_ferror(FILE *);
 
 typedef char render_float_width[(sizeof(float)==4 && sizeof(uint32_t)==4 && FLT_MANT_DIG==24 && FLT_MAX_EXP==128)?1:-1];
 enum { HEADER=256, SOURCE_MAX=1000000, SECTORS_MAX=8192, REPLICAS_MAX=2000000,
-       MATERIAL_MAX=256,TEXTURE_MAX=256,TEXTURE_BYTE_MAX=2097152,PACKAGE_MAX=8388608,
+       MATERIAL_MAX=256,TEXTURE_MAX=256,TEXTURE_BYTE_MAX=2097152,PACKAGE_MAX=67108864,PACKAGE_MAX_SMALL=8388608,
        RAW_MAX=475136,COMPRESSED_MAX=476160,WRAP_FLAGS=188,BASE_FLAGS=511 };
 static uint32_t u32(const unsigned char *p) {
  return (uint32_t)p[0]|(uint32_t)p[1]<<8|(uint32_t)p[2]<<16|(uint32_t)p[3]<<24;
@@ -79,10 +79,13 @@ static int texture_role(const dc_render_catalog *c,uint32_t slot,uint32_t format
 static const char *header_check(const unsigned char *p,dc_render_catalog *c) {
  static const uint32_t limits[][2]={{56,4096},{60,4096},{64,8192},{68,36},{72,SOURCE_MAX},
  {76,SECTORS_MAX},{80,REPLICAS_MAX},{84,MATERIAL_MAX},{88,TEXTURE_MAX},{92,TEXTURE_BYTE_MAX},
- {96,PACKAGE_MAX},{100,116},{104,36},{208,64},{212,1}};
+ {100,116},{104,36},{208,64},{212,1}};
  uint32_t i,blob,tables,local;
  if(memcmp(p,"DRM2",4)||u32(p+4)!=2u||u32(p+8)!=HEADER||u32(p+12)!=1u||f32(p+52)!=64.f)return "render manifest contract";
  for(i=0;i<sizeof(limits)/sizeof(limits[0]);++i)if(u32(p+limits[i][0])!=limits[i][1])return "render manifest limits";
+ /* the package cap its builder used: 8 MiB, or 64 for a whole large level staged on the disc
+  * (make_level_render_assets.py; sectors are read from the disc, never resident together) */
+ if(u32(p+96)!=PACKAGE_MAX_SMALL && u32(p+96)!=PACKAGE_MAX)return "render manifest limits";
  for(i=216;i<HEADER;i+=4)if(u32(p+i))return "render manifest reserved";
  c->source_count=u32(p+16);c->sector_count=u32(p+20);c->replica_count=u32(p+24);c->global_count=u32(p+28);
  c->material_count=u32(p+32);c->texture_count=u32(p+36);c->texture_bytes=u32(p+40);c->package_bytes=u32(p+44);c->cell_size=f32(p+48);

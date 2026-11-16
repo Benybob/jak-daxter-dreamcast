@@ -7,16 +7,19 @@
  * linked in place there as it is read. link-begin then does what the C linker
  * does after that: advance the heap past the object and, with execute-login,
  * call the object's original relocate method (bsp-header relocate attaches it
- * to the loading level). Code objects are not served yet: a level's code is
- * loaded at boot (build_level_code.py). --dump dc_level_dgo_evidence 88 */
+ * to the loading level). A level's code objects are linked by the server
+ * itself (load_code). --dump dc_level_dgo_evidence 88 */
 #include "level_dgo_rpc.h"
 #include "goal_art.h"
 #include "goal_bridge.h"
+#include "goal_native_file.h"
+#include "goal_stack_call.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 #include <malloc.h>
 #include <kos.h>
+#include <arch/cache.h>
 
 enum { RPC_DGO=3, LOAD_BEGIN=0, LOAD_NEXT=1, LOAD_CANCEL=2 };
 enum { RESULT_DONE=0, RESULT_ERROR=1, RESULT_MORE=2, RESULT_ABORTED=3 };
@@ -30,6 +33,7 @@ volatile struct {
 } dc_level_dgo_evidence={.version=2};
 typedef char dc_level_dgo_evidence_bytes[sizeof dc_level_dgo_evidence==88?1:-1];
 
+void dc_level_draw_open(const char *directory) __attribute__((weak));
 static dc_goal_runtime *runtime;
 static FILE *dgo;
 static uint32_t dgo_count,dgo_next,dgo_at;
@@ -38,6 +42,78 @@ static uint32_t word(const unsigned char *p){
   return p[0]|(uint32_t)p[1]<<8|(uint32_t)p[2]<<16|(uint32_t)p[3]<<24;
 }
 static void close_dgo(void){if(dgo)fclose(dgo);dgo=NULL;dgo_count=dgo_next=dgo_at=0;}
+/* A level's code (AI-assisted). As in a retail level DGO, its code objects come
+ * before its data (make_level_dgo.py); here they are native DCSH modules. The
+ * server links each one at the level heap's current (the kheap loading-level
+ * names: base, top, current, top-base), runs its top-level startup as the
+ * original linker does, and moves current past it, so the code lives in its
+ * level's heap and is gone when the heap is reused. GOAL never sees these
+ * objects: the reply carries the first data object after them, at the heap's
+ * new current. At the first object of a DGO every code entry registered
+ * inside the heap (its last level's) is forgotten.
+ * --dump dc_level_code_evidence 32 */
+volatile struct {uint32_t objects,bytes,initializers,forgotten,failed,error,site,last_current;} dc_level_code_evidence;
+typedef char dc_level_code_evidence_bytes[sizeof dc_level_code_evidence==32?1:-1];
+enum {CODE_STACK_BYTES=64*1024};
+static uint32_t code_stack;  /* arena memory, taken once at install */
+static void sync_code(uint32_t allocation,uint32_t bytes,void *context){
+  (void)context;dcache_flush_range(allocation,bytes);icache_flush_range(allocation,bytes);
+}
+static void method_set_depth(int32_t delta){
+  enum dc_goal_error prior=runtime->error;uint32_t symbol=dc_goal_intern(runtime,"*enable-method-set*");
+  dc_goal_set_symbol(runtime,symbol,dc_goal_symbol_value(runtime,symbol)+(uint32_t)delta);
+  runtime->error=prior;
+}
+static int code_fail(void){
+  ++dc_level_code_evidence.failed;dc_level_code_evidence.error=runtime->error;
+  dc_level_code_evidence.site=dc_goal_error_site;runtime->divert_at=runtime->divert_end=0;
+  dc_goal_release_temporary(runtime);
+  return 0;
+}
+/* Loads the code objects at the DGO's position; *bt becomes the place for the
+ * data object after them. 0 on a fault. */
+static int load_code(uint32_t *bt){
+  uint32_t symbol=dc_goal_find(runtime,"loading-level"),heap=symbol?dc_goal_symbol_value(runtime,symbol):0;
+  unsigned char *fields=heap && heap!=runtime->s7?dc_goal_resolve(runtime,heap,16):NULL;
+  runtime->error=DC_GOAL_OK;
+  if(!fields)return 1;  /* no level heap named: data only, as before */
+  if(dgo_next==0){
+    uint32_t base=word(fields),top_base=word(fields+12);
+    dc_level_code_evidence.forgotten+=dc_goal_code_forget(runtime,base,top_base);
+  }
+  while(dgo_next<dgo_count){
+    unsigned char header[64],magic[4];uint32_t size,current,top;dc_native_file_result object;uint64_t value;
+    if(fseek(dgo,(long)dgo_at,SEEK_SET) || fread(header,1,64,dgo)!=64 || fread(magic,1,4,dgo)!=4)return code_fail();
+    if(memcmp(magic,"DCSH",4))break;
+    size=word(header);
+    current=(word(fields+8)+15u)&~15u;top=word(fields+4)&~15u;
+    if(current>top || fseek(dgo,(long)dgo_at+64,SEEK_SET))return code_fail();
+    runtime->divert_at=current;runtime->divert_end=top;
+    if(!dc_goal_load_native_stream_temporary(runtime,dgo,size,sync_code,NULL,&object))return code_fail();
+    current=runtime->divert_at;runtime->divert_at=runtime->divert_end=0;
+    memcpy(fields+8,&current,4);
+    dc_level_code_evidence.bytes+=object.module.code_bytes;dc_level_code_evidence.last_current=current;
+    /* the startup's own allocations go where it asks; its types stay global */
+    method_set_depth(1);
+    /* On a stack of its own: this runs inside the display process's thread,
+     * whose 14 KiB stack a file's top level (deftypes, static data, the
+     * bridges under them) overruns into whatever the arena holds below it. */
+    if(object.initializer_kind!=DC_NATIVE_NO_INITIALIZER){
+      uint32_t symbol=dc_goal_find(runtime,object.initializer),entry=symbol?dc_goal_symbol_value(runtime,symbol):0;
+      if(!entry || !code_stack || !dc_goal_call_on_stack(runtime,entry,code_stack,CODE_STACK_BYTES,&value)){
+        method_set_depth(-1);return code_fail();}
+      ++dc_level_code_evidence.initializers;
+    }
+    method_set_depth(-1);
+    dc_goal_release_temporary(runtime);
+    if(runtime->error!=DC_GOAL_OK)return code_fail();
+    ++dc_level_code_evidence.objects;
+    ++dgo_next;dgo_at+=64u+((size+15u)&~15u);
+    /* GOAL computed bt before these objects took the heap */
+    *bt=(word(fields+8)+63u)&~63u;
+  }
+  return 1;
+}
 static int load_next(uint32_t bt){
   unsigned char header[64];unsigned char *at;uint32_t size,bytes=0;
   if(!dgo || dgo_next>=dgo_count || (bt&63u))return 0;
@@ -128,6 +204,13 @@ static uint64_t dgo_rpc(uint64_t port,uint64_t fno,uint64_t async,uint64_t send,
       dc_level_dgo_evidence.name[i]=path[n-1];
     }
     path[n]=0;
+    {/* the renderer follows the level being loaded: its render folder on the disc */
+     static const char *const folders[][2]={{"TRAINING","GEYSER"}};
+     char stem[20];const char *folder=stem;unsigned k;
+     for(k=0;k<sizeof stem-1 && path[4+k] && path[4+k]!='.';++k)stem[k]=path[4+k];
+     stem[k]=0;
+     for(k=0;k<sizeof folders/sizeof folders[0];++k)if(!strcmp(stem,folders[k][0]))folder=folders[k][1];
+     if(dc_level_draw_open)dc_level_draw_open(folder);}
     if((dgo=fopen(path,"rb"))){
       unsigned char header[64];
       dc_level_dgo_evidence.opened=1;
@@ -137,10 +220,11 @@ static uint64_t dgo_rpc(uint64_t port,uint64_t fno,uint64_t async,uint64_t send,
   } else if(fno==LOAD_NEXT) ++dc_level_dgo_evidence.nexts;
   else if(fno==LOAD_CANCEL){close_dgo();result=RESULT_ABORTED;}
   if(fno!=LOAD_CANCEL){
-    if(load_next(bt)){b1=bt;result=dgo_next==dgo_count?RESULT_DONE:RESULT_MORE;if(result==RESULT_DONE)close_dgo();}
+    if(dgo && load_code(&bt) && load_next(bt)){b1=bt;result=dgo_next==dgo_count?RESULT_DONE:RESULT_MORE;if(result==RESULT_DONE)close_dgo();}
     else {++dc_level_dgo_evidence.errors;dc_level_dgo_evidence.error=runtime->error;
           dc_level_dgo_evidence.site=dc_goal_error_site;runtime->error=DC_GOAL_OK;close_dgo();}
   }
+  
   dc_level_dgo_evidence.last_result=result;
   reply[2]=(unsigned char)result;reply[3]=(unsigned char)(result>>8);
   memcpy(reply+4,&b1,4);
@@ -165,4 +249,5 @@ static uint64_t dgo_link_begin(uint64_t data,uint64_t name,uint64_t length,uint6
 }
 void dc_level_dgo_install(dc_goal_runtime *rt){
   runtime=rt;dc_goal_rpc_handler=dgo_rpc;dc_goal_link_begin_handler=dgo_link_begin;
+  if(!code_stack){enum dc_goal_error prior=rt->error;code_stack=dc_goal_alloc(rt,CODE_STACK_BYTES);rt->error=prior;}
 }

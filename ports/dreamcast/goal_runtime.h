@@ -61,6 +61,16 @@ typedef struct {
    * byte access and native code reads work. */
   unsigned char *resident_memory;
   uint32_t resident_base,resident_capacity,resident_used;
+  /* While divert_end is nonzero, dc_goal_alloc_code takes [divert_at,
+   * divert_end) instead of the arena's top (AI-assisted): a span of already
+   * allocated arena memory, a level heap, so a level's code is linked inside
+   * the heap of its level and goes when the heap is reused (level_dgo_rpc.c). */
+  uint32_t divert_at,divert_end;
+  /* The level heaps' span (AI-assisted). Registry records outside it are in
+   * allocation order, newest first, and the chain walk checks that; a record
+   * inside it (a level's code, loaded and forgotten as levels change) may sit
+   * anywhere in the chain relative to the others and is exempt. */
+  uint32_t code_span_first,code_span_end;
 } dc_goal_runtime;
 
 int dc_goal_init(dc_goal_runtime *rt,void *memory,uint32_t capacity,uint32_t virtual_base);
@@ -81,6 +91,7 @@ static inline void *dc_goal_resolve(dc_goal_runtime *rt,uint32_t address,uint32_
   return dc_goal_resolve_other(rt,address,size);
 }
 uint32_t dc_goal_alloc(dc_goal_runtime *rt,uint32_t bytes);
+uint32_t dc_goal_alloc_code(dc_goal_runtime *rt,uint32_t bytes);
 /* Zeroed 16-byte-aligned memory below the arena's top, released all at once by
  * dc_goal_release_temporary. Ordinary allocations stop below it. */
 uint32_t dc_goal_alloc_temporary(dc_goal_runtime *rt,uint32_t bytes);

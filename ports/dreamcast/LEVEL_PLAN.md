@@ -1601,3 +1601,56 @@ the host oracle compares bit for bit.
 
 Play ELF at the start of the walk after this section and the two before it:
 about 63 ms of logic (from 74) and about 45 ms of draw.
+
+### One level resident; its code and art in its own heap (Flycast, 2746 of 2746, 2026-11-16)
+
+Toward a game that can be finished: every level, and the way from one to the
+next. Until now an ELF was tied to Geyser Rock: its code was loaded at boot
+into the arena for good, Sandover Village's logic BSP and code sat beside it
+because every retail continue point wants a second level, and the renderer's
+numbers were a compiled header.
+
+**What a level needs** (`build_logic_bsp.py --art --strip-merc` on all 23
+level DGOs; it failed on seven, a sort of bindings that compared `None` with a
+method count): logic BSP plus art is 0.1 MB (intro) to 2.7 MB (snow), Sandover
+2.5 MB, before code. Two hub neighbours (Sandover and Sentinel Beach, 4.1 MB)
+do not fit a 16 MB console beside the engine; any one level does.
+
+- **Art without merc geometry** (`strip_art.py`). A level's art groups are
+  mostly VU1 fragment data the Dreamcast never reads: each merc-ctrl keeps its
+  header and one zeroed effect with effect-count 0, and every 16-byte piece
+  nothing reaches any more is dropped. Geyser Rock 570,800 to 153,680 bytes,
+  Sandover 1,606,592 to 361,040.
+- **One level resident** (`level_player.c`, `level_logic.c`). Every continue
+  point of `*level-load-list*` is rewritten at boot to want its own level
+  alone, and a front on load-state `update!` shows it one of two wanted
+  levels (the one whose nickname is the vis-nick, else the resident one) and
+  puts the wants back afterwards. Level 0's heap is 2,816 KiB and level 1's a
+  4 KiB stub.
+- **Code in the level DGO** (`make_level_dgo.py`, `level_dgo_rpc.c`). As on
+  PS2 a level's code objects come first in its DGO (`build_level_code.py TRA
+  --with villagep-obs`). The server links each DCSH module at the level heap's
+  current (`dc_goal_alloc_code`, a divert of the loader's code allocations),
+  runs its startup on a 64 KiB stack of its own, and hands GOAL the first data
+  object after them. When a heap is loaded again the entries registered inside
+  it are forgotten (`dc_goal_code_forget`); the registry walk exempts records
+  inside the level heaps from its allocation-order check.
+- **The renderer opens a level** (`level_draw.c`). `LEVEL.DRH` beside a
+  level's render data carries what the header did (`make_level_drh.py`), and
+  `dc_level_draw_open`, called when a level DGO starts loading, gives back the
+  last level's models, textures, package and slab. Model bundles take 64-byte
+  names (version 2) and 64 models; a staged terrain package may be 64 MiB.
+
+After 184 frames of Geyser Rock alone the arena ends at 11,966,128 of
+12,386,240 bytes: 420 KB free with the level heap already taken (106 KB
+before, with 1 MiB less of level heap).
+
+A fault worth remembering: the continue-point rewrite walked GOAL lists until
+the pointer was not pair-tagged. The empty list is pair-tagged and its car and
+cdr are itself, so the walk "patched" `'()` and wrote `#f` over the fixed
+symbols 100 bytes above it (`int8`'s tag), which surfaced much later as a
+level art group refusing to link. A list ends at `s7-10`.
+
+Sandover Village is converted and staged (`VILLAGE1.DGO` 3.06 MB with 12 code
+objects, a 1.1 MB instance package, 6.8 MB of terrain, 47 models); going there
+is the next step, and its heap needs about 3.1 MB.

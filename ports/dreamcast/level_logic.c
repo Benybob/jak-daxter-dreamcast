@@ -5,7 +5,7 @@
  * RPC-DGO request (served by level_dgo_rpc.c from /cd/TRA.DGO, the logic BSP),
  * load-continue links it (bsp-header relocate attaches it to the loading level),
  * login-begin and level-update-after-load log it in, and a later frame births it
- * and makes it active. The level's code (TRA-CODE.DGO) is loaded at boot first.
+ * and makes it active. The level's code comes first in the same DGO.
  * --dump dc_level_logic_evidence 128 */
 #include "level_logic.h"
 #include "goal_module.h"
@@ -93,7 +93,7 @@ volatile struct { uint32_t count; struct { char type[24]; char state[24]; uint32
  * are recorded by the DGO boot. dc_level_check confirms which level is where. */
 /* level0 holds Geyser Rock: 955,584 bytes, and 151,312 more with its tie
  * collision (build_logic_bsp.py) */
-enum {LEVEL0_HEAP_BYTES=1152u*1024u,LEVEL1_HEAP_BYTES=1664u*1024u};
+enum {LEVEL0_HEAP_BYTES=2816u*1024u,LEVEL1_HEAP_BYTES=4u*1024u};
 static int alloc_level_heaps(dc_goal_runtime *rt){
   static const uint32_t slot[2]={96u,2704u},bytes[2]={LEVEL0_HEAP_BYTES,LEVEL1_HEAP_BYTES};  /* level-group level0/1 */
   uint32_t group=named(rt,"*level*"),i;
@@ -102,6 +102,9 @@ static int alloc_level_heaps(dc_goal_runtime *rt){
     if(!base || !group || !(fields=dc_goal_resolve(rt,group+slot[i]+28u,16)))return 0;  /* level heap, kheap at +28 */
     heap[0]=base;heap[1]=base+bytes[i];heap[2]=base;heap[3]=base+bytes[i];  /* base top current top-base */
     memcpy(fields,heap,16);
+    /* a level's code is registered inside its heap (goal_module.c's chain walk) */
+    if(!rt->code_span_end || base<rt->code_span_first)rt->code_span_first=base;
+    if(base+bytes[i]>rt->code_span_end)rt->code_span_end=base+bytes[i];
   }
   return 1;
 }
@@ -154,13 +157,90 @@ static void wrap_birth(dc_goal_runtime *rt){
     dc_goal_set_method(rt,type,18,named(rt,"dc-level-birth-wrapper"));
   rt->error=DC_GOAL_OK;
 }
+/* One level resident (AI-assisted). The game keeps two: a load boundary asks
+ * for the level Jak is in and the one he is walking toward. Two do not fit a
+ * 16 MB console (LEVEL_PLAN.md), so load-state update! sees one: of the two
+ * wanted, the level whose nickname is the load-state's vis-nick (the level
+ * whose visibility the camera is using, which a boundary changes at the seam),
+ * else the one already resident, else the first. The wants themselves are put
+ * back after the call, so the boundaries' own bookkeeping is unchanged. The
+ * default continue point (a copy of the load-state made when Jak touches
+ * ground) gets the same cut, or a respawn would wait for its second level.
+ * Layout: load-state want[2] +0 (name, display?, force-vis?, force-inside?),
+ * vis-nick +32; level-load-info nickname +8; level name +0, status +16.
+ * --dump dc_level_want_filter 16 */
+volatile struct {uint32_t calls,cut,kept_name,dropped_name;} dc_level_want_filter;
+static uint32_t update_original;
+static dc_goal_runtime *want_runtime;
+static uint32_t nickname_of(dc_goal_runtime *rt,uint32_t name){
+  uint32_t info=name && name!=rt->s7?dc_goal_symbol_value(rt,name):0;
+  return info && info!=rt->s7?word(rt,info+8u):0;
+}
+static int resident(dc_goal_runtime *rt,uint32_t name){
+  uint32_t group=named(rt,"*level*"),inactive=dc_goal_find(rt,"inactive");unsigned i;
+  static const uint32_t slot[2]={96u,2704u};
+  for(i=0;i<2u;++i)if(word(rt,group+slot[i])==name && word(rt,group+slot[i]+16u)!=inactive)return 1;
+  return 0;
+}
+static uint64_t update_front(uint64_t state){
+  typedef uint64_t (*one_fn)(uint64_t);
+  dc_goal_runtime *rt=want_runtime;uint32_t raw[9],cut[9],keep=0;unsigned char *w;uint64_t out;
+  enum dc_goal_error prior=rt->error;
+  ++dc_level_want_filter.calls;
+  w=state<=UINT32_MAX?dc_goal_resolve(rt,(uint32_t)state,36):NULL;
+  if(!w){rt->error=prior;return ((one_fn)(uintptr_t)update_original)(state);}
+  memcpy(raw,w,36);
+  if(raw[0]!=rt->s7 && raw[4]!=rt->s7 && raw[0] && raw[4]){
+    uint32_t vis=raw[8];
+    if(vis && vis!=rt->s7 && nickname_of(rt,raw[4])==vis && nickname_of(rt,raw[0])!=vis)keep=1;
+    else if(vis && vis!=rt->s7 && nickname_of(rt,raw[0])==vis)keep=0;
+    else if(resident(rt,raw[4]) && !resident(rt,raw[0]))keep=1;
+    memcpy(cut,raw,36);
+    {unsigned drop=keep?0u:4u,k;for(k=0;k<4u;++k)cut[drop+k]=rt->s7;}
+    memcpy(w,cut,36);++dc_level_want_filter.cut;
+    dc_level_want_filter.kept_name=raw[keep*4u];dc_level_want_filter.dropped_name=raw[(1u-keep)*4u];
+  }
+  {uint32_t cp=named(rt,"*default-continue*");unsigned char *f=cp && cp!=rt->s7?dc_goal_resolve(rt,cp+100u,20):NULL;
+   if(f){uint32_t v[5],level=word(rt,cp+4u);
+     memcpy(v,f,20);
+     if(v[1]!=rt->s7 && v[3]!=rt->s7){
+       if(v[3]==level || (v[0]!=rt->s7 && nickname_of(rt,v[3])==v[0] && nickname_of(rt,v[1])!=v[0])){v[1]=v[3];v[2]=v[4];}
+       v[3]=v[4]=rt->s7;memcpy(f,v,20);}}}
+  rt->error=prior;
+  out=((one_fn)(uintptr_t)update_original)(state);
+  if((w=dc_goal_resolve(rt,(uint32_t)state,36))){
+    /* the wants as the game left them, with whatever update! itself changed in the kept slot */
+    uint32_t now[9];memcpy(now,w,36);
+    if(raw[0]!=rt->s7 && raw[4]!=rt->s7 && raw[0] && raw[4]){
+      unsigned drop=keep?0u:4u,k;for(k=0;k<4u;++k)now[drop+k]=raw[drop+k];
+      memcpy(w,now,36);}
+  }
+  return out;
+}
+static void wrap_update(dc_goal_runtime *rt){
+  static unsigned char code[12]={1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0};
+  dc_goal_code_export fn={"dc-level-update-front",code,12,NULL,0};dc_goal_module_result loaded;
+  uint32_t type=named(rt,"load-state"),want=dc_goal_find(rt,"(method update! load-state)"),i,slot=0;
+  uint32_t target=(uint32_t)(uintptr_t)update_front;
+  want_runtime=rt;
+  for(i=9;i<21 && !slot;++i){
+    dc_goal_code_entry_info info;uint32_t m=dc_goal_get_method(rt,type,(uint16_t)i);
+    if(m && dc_goal_code_entry(rt,m,&info) && info.symbol==want){slot=i;update_original=m;}
+    rt->error=DC_GOAL_OK;
+  }
+  if(!slot)return;
+  memcpy(code+8,&target,4);
+  if(dc_goal_load_module(rt,&fn,1,sync_code,NULL,&loaded))
+    dc_goal_set_method(rt,type,(uint16_t)slot,named(rt,"dc-level-update-front"));
+  rt->error=DC_GOAL_OK;
+}
 int dc_level_want(dc_goal_runtime *rt){
   typedef uint64_t (*three_fn)(uint64_t,uint64_t,uint64_t);
   uint32_t state=named(rt,"*load-state*"),want=named(rt,"(method want-levels load-state)");
   uint32_t display=named(rt,"(method want-display-level load-state)"),training=dc_goal_intern(rt,"training");
   if(!rt || rt->error!=DC_GOAL_OK || !state || !want || !display || !training)return stop(rt,1);
   if(!alloc_level_heaps(rt))return stop(rt,14);
-  wrap_birth(rt);wrap_actors_update(rt);
+  wrap_birth(rt);wrap_actors_update(rt);wrap_update(rt);
   dc_level_logic_evidence.want_result=(uint32_t)((three_fn)(uintptr_t)want)(state,training,rt->s7);
   ((three_fn)(uintptr_t)display)(state,training,dc_goal_intern(rt,"display"));
   if(rt->error!=DC_GOAL_OK)return stop(rt,2);
@@ -186,14 +266,13 @@ int dc_level_check(dc_goal_runtime *rt){
    if(pool && used)dc_level_spawn_probe.actor_heap_used=(uint32_t)((one_fn)(uintptr_t)used)(pool);
    if(pool && total)dc_level_spawn_probe.actor_heap_total=(uint32_t)((one_fn)(uintptr_t)total)(pool);
    rt->error=DC_GOAL_OK;}
-  /* village1, wanted by Jak's continue point, loads beside it. */
-  {uint32_t village1=dc_goal_find(rt,"village1"),other;
+  /* One level is resident at a time: village1, which the retail continue
+   * point also displays, is not loaded (level_player.c's continue points). */
+  {uint32_t village1=dc_goal_find(rt,"village1");
    if(!village1)return stop(rt,9);
    dc_level_logic_evidence.village1_status=(uint32_t)((two_fn)(uintptr_t)status)(group,village1);
-   other=(uint32_t)((two_fn)(uintptr_t)get)(group,village1);
-   if(other && other!=rt->s7)dc_level_logic_evidence.village1_heap_used=heap_used(rt,other);
    rt->error=DC_GOAL_OK;
-   if(dc_level_logic_evidence.village1_status!=dc_goal_find(rt,"active"))return stop(rt,10);}
+   if(dc_level_logic_evidence.village1_status==dc_goal_find(rt,"active"))return stop(rt,10);}
   /* Geyser Rock's art groups, linked ahead of its BSP from TRAINING.DGO: original
    * art-group relocate adds each to the loading level's load-dir (level art-group,
    * +48; its art-group-array, +8), which level login then logs in. */

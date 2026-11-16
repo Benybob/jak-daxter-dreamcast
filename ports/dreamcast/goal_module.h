@@ -61,6 +61,7 @@ int dc_goal_load_module(dc_goal_runtime *rt,const dc_goal_code_export *functions
 int dc_goal_load_module_data(dc_goal_runtime *rt,const dc_goal_code_export *functions,uint32_t count,
                               const dc_goal_data_export *data,uint32_t data_count,
                               dc_goal_cache_sync sync,void *context,dc_goal_module_result *result);
+uint32_t dc_goal_code_forget(dc_goal_runtime *rt,uint32_t first,uint32_t end);
 /* Explicit startup after linking/cache synchronization. The named function must
  * use the zero-argument scalar ABI. Startup effects are not rolled back.
  * Host builds validate the entry but refuse SH-4 execution. */

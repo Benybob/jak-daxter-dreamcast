@@ -43,6 +43,7 @@ def main():
     ap.add_argument('--frames', type=int, default=16)
     ap.add_argument('--header', default='build/level_render_fixture.h')
     ap.add_argument('--area', help='X0,Z0,X1,Z1 in meters: stage this rectangle; caps from a sweep of it')
+    ap.add_argument('--large', action='store_true', help='allow a staged package of up to 64 MiB (render_package.c accepts both caps)')
     ap.add_argument('--window-margin', type=float, default=4.0, help="level_draw.c's WINDOW_MARGIN_M (with --area)")
     a = ap.parse_args()
     x, y, z = (float(v) for v in a.at.split(','))
@@ -55,6 +56,10 @@ def main():
         ax0, az0, ax1, az1 = (float(v) for v in a.area.split(','))
         assert ax0 < ax1 and az0 < az1
         corners = [[ax0, y, az0], [ax1, y, az1]]
+    if a.large:
+        # A whole large level on the disc: sectors are read as the window moves, never resident
+        # together, so the 8 MiB package cap (a RAM budget of the first design) does not apply.
+        fly.rs.MAX_PACKAGE_BYTES = 64 * 1024 * 1024
     report, rows = fly.make(a.glb, a.package, a.out, a.frames, 0.0, a.half, a.header, instance_cells=True,
                             recorded_targets=ring, coverage_targets=corners)
     report['draw_file_bytes'] = indexed_sectors.write_draw_files(a.out, remove_sectors=True)
@@ -85,6 +90,8 @@ def main():
         report['area'] = [ax0, az0, ax1, az1]
     else:
         report['window'] = fly.window_caps_for(a.out, rows, a.half, a.header)
+    import make_level_drh  # the same numbers on the disc, read when the level's renderer opens
+    (a.out / 'LEVEL.DRH').write_bytes(make_level_drh.drh(Path(a.header).read_text()))
     report.update(at=[x, y, z], radius=r, ai_assisted=True)
     (a.out / 'FLY.json').write_text(json.dumps(report, indent=1), newline='\n')
     print(json.dumps({k: v for k, v in report.items() if not isinstance(v, list)}, indent=1))

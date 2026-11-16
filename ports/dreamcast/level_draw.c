@@ -31,15 +31,33 @@
  * wide allowance; caps swept over the whole staged rectangle (FLY_SWEPT, from
  * make_level_render_assets.py --area) are already the level's maxima on an 8 m
  * grid, and the slab has no room for both. */
-#ifdef FLY_SWEPT
-enum {FACE_SLACK=512,CACHE_SLACK=131072};
-#else
-enum {FACE_SLACK=2048,CACHE_SLACK=262144};
-#endif
+#define FACE_SLACK (head.swept?512u:2048u)
+#define CACHE_SLACK (head.swept?131072u:262144u)
 #include <inttypes.h>
-#include "build/level_render_fixture.h"
-
-#define LEVEL_DRAW_ROOT "/cd/GEYSER"
+/* The level's render header, LEVEL.DRH beside its render data
+ * (make_level_drh.py): what make_level_render_assets.py measured. Read when
+ * the level's renderer opens, so one ELF draws any staged level. */
+static struct {
+ uint32_t package_bytes,package_crc,instance_records,material_slots;
+ uint32_t window_faces,window_vertices,window_remap,cache_budget,swept;
+ char source_sha[68];
+} head;
+typedef char level_head_bytes[sizeof head==104?1:-1];
+enum {MATERIAL_SLOTS_MAX=512};
+static uint16_t material_map[MATERIAL_SLOTS_MAX];
+static int head_loaded;
+/* Where the resident level's render data is on the disc. */
+static char root[40]="/cd/GEYSER";
+#define FLY_PACKAGE_BYTES head.package_bytes
+#define FLY_PACKAGE_CRC head.package_crc
+#define FLY_INSTANCE_RECORDS head.instance_records
+#define FLY_MATERIAL_SLOTS head.material_slots
+#define FLY_WINDOW_FACES head.window_faces
+#define FLY_WINDOW_VERTICES head.window_vertices
+#define FLY_WINDOW_REMAP head.window_remap
+#define FLY_CACHE_BUDGET head.cache_budget
+#define fly_source_sha head.source_sha
+#define fly_material_map material_map
 /* Scenery: 45 m instead of TIE's 60, and the LOD planes halved (LOD_BIAS), so
  * the lowest LOD, about a quarter of the triangles, starts at 30 m instead of
  * never (its plane was the draw distance). Draw 47.6 to 32.3 ms in Flycast. */
@@ -89,17 +107,36 @@ static dc_render_block_cache cache;
 static dc_render_draw_window window;
 static dc_instance_package pkg;
 static dc_instance_cells cells;
-static dc_instance_material materials[FLY_MATERIAL_SLOTS];
+static dc_instance_material *materials;
 static float (*view)[3],(*bounds)[4];
 static int ready;
 /* The package's KOS block, taken at boot while the heap is still one piece
  * (dc_level_draw_reserve); later, freed temporaries can leave no 652 KB run. */
 static unsigned char *package_memory;
+/* The KOS heap blocks the open level holds: its instance package and cell pack. */
+static unsigned char *package_data,*cells_pack;
+static int boot_released,sprites_opened;
 /* A test's way to look from somewhere: eye [1..3] (meters), yaw [4], pitch [5], then [0] nonzero. */
 volatile float dc_level_draw_view[6];
 volatile uint32_t dc_level_reserve_probe[4];  /* free KOS heap, largest block found, sbrk top, reserved */
+static FILE *open_level(const char *name){
+ char path[64];snprintf(path,sizeof path,"%s/%s",root,name);return fopen(path,"rb");
+}
+/* Read with KOS's own file calls: the boot reserves the package's block
+ * before the slab (and its file tokens) exists. */
+static int load_head(void){
+ char path[64];file_t fd;unsigned char magic[4];int ok;
+ if(head_loaded)return 1;
+ snprintf(path,sizeof path,"%s/LEVEL.DRH",root);
+ if((fd=fs_open(path,O_RDONLY))<0)return 0;
+ ok=fs_read(fd,magic,4)==4 && !memcmp(magic,"DRH1",4) && fs_read(fd,&head,sizeof head)==(ssize_t)sizeof head &&
+    head.material_slots && head.material_slots<=MATERIAL_SLOTS_MAX && !head.source_sha[64] &&
+    fs_read(fd,material_map,head.material_slots*sizeof *material_map)==(ssize_t)(head.material_slots*sizeof *material_map);
+ fs_close(fd);
+ return head_loaded=ok;
+}
 void dc_level_draw_reserve(void){
- if(package_memory)return;
+ if(package_memory || !load_head())return;
  package_memory=dc_level_heap_alloc(FLY_PACKAGE_BYTES);
  dc_level_reserve_probe[0]=dc_level_heap_free();dc_level_reserve_probe[3]=package_memory!=NULL;
  {extern void *sbrk(int);dc_level_reserve_probe[2]=(uint32_t)(uintptr_t)sbrk(0);}
@@ -117,14 +154,13 @@ static int initialize(void){
  FILE *file;const char *error;unsigned char *data;uint32_t slot,needed=0;int mapped=1,read,textures=1;
  static const uint32_t events[]={ASIC_EVT_PVR_ISP_OUTOFMEM,ASIC_EVT_PVR_STRIP_HALT,
   ASIC_EVT_PVR_PARAM_OUTOFMEM,ASIC_EVT_PVR_OPB_OUTOFMEM,ASIC_EVT_PVR_TA_INPUT_ERR,ASIC_EVT_PVR_TA_INPUT_OVERFLOW};
- /* The staged path and orbit of the fixture are for make_flythrough_fixture's own
-  * checks; this renderer follows the game camera. */
- (void)fly_frames;(void)fly_yaw;(void)fly_pitch;(void)fly_distance;(void)fly_draw_distance;
- if(!dc_level_draw_release_boot(NULL))return 0;
+ if(!boot_released && !dc_level_draw_release_boot(NULL))return 0;
+ boot_released=1;
  for(slot=0;slot<sizeof events/sizeof events[0];++slot){
   asic_evt_set_handler(events[slot],pvr_fault,NULL);asic_evt_enable(events[slot],ASIC_IRQ_DEFAULT);
  }
- file=fopen(LEVEL_DRAW_ROOT "/MANIFEST.DRM","rb");
+ CHECK(load_head(),1,"level draw header LEVEL.DRH reads from the disc");
+ file=open_level("MANIFEST.DRM");
  CHECK(file!=NULL,1,"level draw manifest opens from the disc");
  error=dc_render_catalog_load(file,&catalog);read=fclose(file);
  CHECK(error==NULL && read==0,1,error?error:"level draw manifest closes");
@@ -139,41 +175,74 @@ static int initialize(void){
  dc_level_draw_metrics.texture_bytes=gpu.bytes;dc_level_draw_metrics.vram_after_textures=pvr_mem_available();
  error=dc_render_base_bank_make(&catalog,&gpu,&bank);CHECK(error==NULL,1,error);
  error=dc_render_catalog_drop_pixels(&catalog);CHECK(error==NULL,1,error);
- error=dc_render_block_cache_make_draw(&catalog,LEVEL_DRAW_ROOT,fly_source_sha,FLY_CACHE_BUDGET+CACHE_SLACK,&cache);
+ error=dc_render_block_cache_make_draw(&catalog,root,fly_source_sha,FLY_CACHE_BUDGET+CACHE_SLACK,&cache);
  CHECK(error==NULL,1,error);
  error=dc_render_draw_window_make(&window,FLY_WINDOW_FACES+FACE_SLACK,FLY_WINDOW_VERTICES+FACE_SLACK,FLY_WINDOW_REMAP+2u*FACE_SLACK);
  CHECK(error==NULL,1,error);
  /* The package is read once and kept: the KOS heap holds it, leaving the slab
   * to the block cache, which reads terrain as the camera moves. */
  data=package_memory?package_memory:dc_level_heap_alloc(FLY_PACKAGE_BYTES);package_memory=NULL;
- CHECK(data!=NULL,1,"level draw package KOS heap allocation");
- file=fopen(LEVEL_DRAW_ROOT "/PACKAGE.DCI","rb");CHECK(file!=NULL,1,"level draw package opens from the disc");
+ CHECK(data!=NULL,1,"level draw package KOS heap allocation");package_data=data;
+ file=open_level("PACKAGE.DCI");CHECK(file!=NULL,1,"level draw package opens from the disc");
  read=fread(data,1,FLY_PACKAGE_BYTES,file)==FLY_PACKAGE_BYTES&&fgetc(file)==EOF&&!ferror(file);
  read=fclose(file)==0&&read;CHECK(read,1,"level draw package size");
  CHECK(crc32(0,data,FLY_PACKAGE_BYTES),FLY_PACKAGE_CRC,"level draw package CRC");
  error=dc_instance_package_open(data,FLY_PACKAGE_BYTES,&pkg);CHECK(error==NULL,1,error);
- error=dc_instance_cells_make(&cells,LEVEL_DRAW_ROOT,16.0,FLY_INSTANCE_RECORDS+128u);CHECK(error==NULL,1,error);
+ error=dc_instance_cells_make(&cells,root,16.0,FLY_INSTANCE_RECORDS+128u);CHECK(error==NULL,1,error);
  /* Every instance cell, read once and kept on the KOS heap (cells.pak, 170 KB):
   * walking opened a cell file or two most frames, 17-51 ms each. */
  {long bytes=0;unsigned char *pack;
-  file=fopen(LEVEL_DRAW_ROOT "/CELLS.PAK","rb");CHECK(file!=NULL,1,"level draw cell pack opens from the disc");
+  file=open_level("CELLS.PAK");CHECK(file!=NULL,1,"level draw cell pack opens from the disc");
   read=!fseek(file,0,SEEK_END)&&(bytes=ftell(file))>8&&bytes<1048576&&!fseek(file,0,SEEK_SET);
   pack=read?dc_level_heap_alloc((size_t)bytes):NULL;
+  cells_pack=pack;
   read=pack&&fread(pack,1,(size_t)bytes,file)==(size_t)bytes;
   read=fclose(file)==0&&read;CHECK(read,1,"level draw cell pack read into the KOS heap");
   error=dc_instance_cells_use_pack(&cells,pack,(size_t)bytes);CHECK(error==NULL,1,error);}
  view=memalign(32,(size_t)pkg.max_proto_verts*sizeof *view);CHECK(view!=NULL,1,"level draw view slab allocation");
  bounds=memalign(32,(size_t)pkg.proto_count*sizeof *bounds);CHECK(bounds!=NULL,1,"level draw bounds slab allocation");
  dc_instance_bounds(&pkg,bounds);pkg.bounds=(const float (*)[4])bounds;
+ materials=calloc(FLY_MATERIAL_SLOTS,sizeof *materials);CHECK(materials!=NULL,1,"level draw material slab allocation");
  for(slot=0;slot<FLY_MATERIAL_SLOTS;++slot){
   uint16_t c=fly_material_map[slot];if(c==0xffffu)continue;
   if(c>=bank.count){mapped=0;break;}
   materials[slot]=(dc_instance_material){&bank.headers[c],bank.materials[c].list,!(bank.materials[c].flags&64u)};
  }
  CHECK(mapped,1,"level draw material map inside catalog");
- CHECK(dc_level_models_open(LEVEL_DRAW_ROOT "/MODELS.DSK"),1,"level draw model bundle opens from the disc");
- dc_level_sprites_open(LEVEL_DRAW_ROOT "/SPRITES.DSK");  /* particles; a disc without it draws none */
+ {char path[64];
+  snprintf(path,sizeof path,"%s/MODELS.DSK",root);
+  CHECK(dc_level_models_open(path),1,"level draw model bundle opens from the disc");
+  /* particle textures are the game's, not a level's: opened once */
+  if(!sprites_opened){snprintf(path,sizeof path,"%s/SPRITES.DSK",root);dc_level_sprites_open(path);sprites_opened=1;}}  /* particles; a disc without it draws none */
  ready=1;return 1;
+}
+/* The resident level is going (level_dgo_rpc.c names the next one): its
+ * models, textures, instance package and cell pack are given back, and the
+ * slab, which holds everything else of the renderer, starts empty. The next
+ * frame opens the level `directory` names (a folder of /cd). */
+void dc_arena_slab_init(void *,uint32_t);
+void dc_level_draw_slab_reset(void);
+volatile struct {uint32_t opens,closes,vram_before,vram_after,heap_before,heap_after;char directory[24];} dc_level_draw_switch;
+void dc_level_draw_open(const char *directory){
+ char next[40];
+ snprintf(next,sizeof next,"/cd/%s",directory);
+ if(!strcmp(next,root))return;  /* already the open (or pending) level: a reload keeps its renderer */
+ dc_level_draw_switch.vram_before=pvr_mem_available();dc_level_draw_switch.heap_before=dc_level_heap_free();
+ if(ready || head_loaded){
+  dc_level_models_close();
+  dc_render_gpu_free(&gpu);
+  dc_level_heap_release(package_data);dc_level_heap_release(cells_pack);dc_level_heap_release(package_memory);
+  package_data=cells_pack=package_memory=NULL;
+  if(boot_released)dc_level_draw_slab_reset();
+  memset(&catalog,0,sizeof catalog);memset(&bank,0,sizeof bank);memset(&cache,0,sizeof cache);
+  memset(&window,0,sizeof window);memset(&pkg,0,sizeof pkg);memset(&cells,0,sizeof cells);
+  view=NULL;bounds=NULL;materials=NULL;ready=0;head_loaded=0;
+  ++dc_level_draw_switch.closes;
+ }
+ memcpy(root,next,sizeof root);
+ snprintf((char *)dc_level_draw_switch.directory,sizeof dc_level_draw_switch.directory,"%s",directory);
+ ++dc_level_draw_switch.opens;
+ dc_level_draw_switch.vram_after=pvr_mem_available();dc_level_draw_switch.heap_after=dc_level_heap_free();
 }
 /* A clear scene while the game camera is not yet valid (boot, early frames). */
 static int clear(void){
@@ -257,7 +326,7 @@ int dc_level_draw_frame(dc_goal_runtime *rt){
     if(!dc_render_entry_get(&catalog,k,&e))break;
     x0=(double)e.ix*cell;z0=(double)e.iz*cell;
     if(x0>far.x1||x0+cell<far.x0||z0>far.z1||z0+cell<far.z0||dc_render_block_cache_holds(&cache,&e))continue;
-    snprintf(path,sizeof path,LEVEL_DRAW_ROOT "/sectors/%" PRId32 "_%" PRId32 ".drx",e.ix,e.iz);
+    snprintf(path,sizeof path,"%s/sectors/%" PRId32 "_%" PRId32 ".drx",root,e.ix,e.iz);
     dc_level_prefetch_request(path);++n;}
   }}
  time_stage(2);

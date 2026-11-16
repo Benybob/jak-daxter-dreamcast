@@ -61,6 +61,22 @@ uint32_t dc_goal_alloc(dc_goal_runtime *rt,uint32_t bytes) {
   memset(rt->memory+rt->used,0,size); rt->used+=size;
   return address;
 }
+/* Code, its private data and its registry records: the arena, or the span a
+ * level's loader named (divert_at, divert_end), which is arena memory already
+ * allocated. Symbols, strings and types a load makes stay in the arena. */
+uint32_t dc_goal_alloc_code(dc_goal_runtime *rt,uint32_t bytes) {
+  uint32_t size,address;void *span;
+  if (!rt || !rt->divert_end) return dc_goal_alloc(rt,bytes);
+  if (!bytes || bytes>UINT32_MAX-15u) return (DC_GOAL_NOTE_SITE(2),fail(rt,DC_GOAL_BAD_ARGUMENT));
+  size=(bytes+15u)&~15u;
+  if ((rt->divert_at&15u) || rt->divert_at>rt->divert_end || size>rt->divert_end-rt->divert_at ||
+      !(span=dc_goal_resolve(rt,rt->divert_at,size))) {
+    dc_goal_last_failed_alloc=size;
+    return fail(rt,DC_GOAL_OUT_OF_MEMORY);
+  }
+  memset(span,0,size); address=rt->divert_at; rt->divert_at+=size;
+  return address;
+}
 uint32_t dc_goal_alloc_temporary(dc_goal_runtime *rt,uint32_t bytes) {
   uint32_t size;
   if (!rt || !rt->memory || !bytes || bytes>UINT32_MAX-15u || (rt->capacity&15u))

@@ -42,6 +42,8 @@ int dc_level_models_draw(dc_goal_runtime *rt,const dc_instance_camera *cam,int l
 /* After the scene: counts the frame toward jak_frames and actor_frames. */
 void dc_level_models_end_frame(void);
 /* A 32-byte aligned block of the KOS heap (not the slab), never freed. */
+void dc_level_models_close(void);
 void *dc_level_heap_alloc(size_t bytes);
 uint32_t dc_level_heap_free(void);
+void dc_level_heap_release(void *p);
 #endif

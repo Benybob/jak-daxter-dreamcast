@@ -131,10 +131,19 @@ int dc_goal_code_entry_diagnose(dc_goal_runtime *rt,uint32_t entry,dc_goal_code_
     memcpy(&record,p,sizeof record);
     if(diagnostic){diagnostic->entry=record.entry;diagnostic->bytes=record.bytes;
       diagnostic->symbol=record.symbol;diagnostic->next=record.next;}
-    if(record.entry<4u || (record.entry&3u) || record.bytes<2u ||
-       (record.bytes&1u) || record.bytes>UINT32_MAX-4u || record.entry>=previous_entry || record.entry>at ||
-       record.bytes>at-record.entry || (record.next && record.next>=at))
-      REFUSE(DC_GOAL_BAD_MODULE,DC_CODE_RECORD_FIELDS);
+    {int spanned=at>=rt->code_span_first && at<rt->code_span_end;
+     int next_spanned=record.next>=rt->code_span_first && record.next<rt->code_span_end;
+     if(record.entry<4u || (record.entry&3u) || record.bytes<2u ||
+        (record.bytes&1u) || record.bytes>UINT32_MAX-4u || (!spanned && record.entry>=previous_entry) || record.entry>at ||
+        record.bytes>at-record.entry || (record.next && !spanned && !next_spanned && record.next>=at))
+       REFUSE(DC_GOAL_BAD_MODULE,DC_CODE_RECORD_FIELDS);
+     if(spanned){
+       if(!dc_goal_resolve(rt,record.entry-4u,record.bytes+4u))REFUSE(DC_GOAL_BAD_MODULE,DC_CODE_RECORD_SPAN);
+       if(dc_goal_type_of(rt,record.symbol)!=rt->symbol_type)REFUSE(DC_GOAL_BAD_MODULE,DC_CODE_RECORD_SYMBOL);
+       if(record.entry==entry){found=record;found_at=at;if(diagnostic){matched=*diagnostic;matched_saved=1;}}
+       if(indexing)index_add(record.entry,at);
+       at=record.next;continue;  /* outside records keep their own order */
+     }}
     if(!dc_goal_resolve(rt,record.entry-4u,record.bytes+4u))
       REFUSE(DC_GOAL_BAD_MODULE,DC_CODE_RECORD_SPAN);
     if(dc_goal_type_of(rt,record.symbol)!=rt->symbol_type)
@@ -327,13 +336,18 @@ int dc_goal_load_module_temporary(dc_goal_runtime *rt,const dc_goal_code_export 
       memcpy(dc_goal_resolve(rt,allocation,4),&type,4);
       function=allocation+4u;
       rt->temporary_entry=function;rt->temporary_bytes=functions[i].bytes;rt->temporary_symbol=symbol;
-    } else function=dc_goal_new_basic(rt,rt->function_type,functions[i].bytes+4u);
+    } else {
+      /* a boxed function: the arena, or the level heap a loader diverted code to */
+      uint32_t allocation=dc_goal_alloc_code(rt,functions[i].bytes+4u),type=rt->function_type;
+      if (allocation) memcpy(dc_goal_resolve(rt,allocation,4),&type,4);
+      function=allocation?allocation+4u:0;
+    }
     if (!function || !dc_goal_set_symbol(rt,symbol,function)) goto rollback;
     memcpy(dc_goal_resolve(rt,function,functions[i].bytes),functions[i].code,functions[i].bytes);
     total_code+=functions[i].bytes;
   }
   for (i=0;i<data_count;++i) {
-    uint32_t allocation=dc_goal_alloc(rt,data[i].bytes);
+    uint32_t allocation=dc_goal_alloc_code(rt,data[i].bytes);
     if (!allocation) goto rollback;
     data_addresses[i]=allocation+data[i].address_offset;
     memcpy(dc_goal_resolve(rt,allocation,data[i].bytes),data[i].data,data[i].bytes);
@@ -374,7 +388,7 @@ int dc_goal_load_module_temporary(dc_goal_runtime *rt,const dc_goal_code_export 
     code_record record;
     uint32_t allocation;
     if(temporary && !strcmp(functions[i].name,temporary)) continue;  /* rt->temporary_* */
-    allocation=dc_goal_alloc(rt,sizeof record);
+    allocation=dc_goal_alloc_code(rt,sizeof record);
     if(!allocation) goto rollback;
     record.symbol=dc_goal_find(rt,functions[i].name);
     record.entry=dc_goal_symbol_value(rt,record.symbol);
@@ -395,6 +409,28 @@ rollback:
   free(snapshot); return 0;
 }
 
+/* Forget every registered entry whose record lies in [first, end): a level
+ * heap about to be reused. The chain is relinked around them; the lookup
+ * caches key on head and count, which change. Returns the records removed. */
+uint32_t dc_goal_code_forget(dc_goal_runtime *rt,uint32_t first,uint32_t end) {
+  uint32_t at,previous=0,removed=0,walked=0,total;
+  if(!rt || first>=end)return 0;
+  total=rt->code_registry_count;
+  for(at=rt->code_registry_head;at && walked<total;++walked){
+    code_record *record=dc_goal_resolve(rt,at,sizeof *record);uint32_t next;
+    if(!record)break;
+    next=record->next;
+    if(at>=first && at<end){
+      if(previous){code_record *p=dc_goal_resolve(rt,previous,sizeof *p);if(!p)break;p->next=next;}
+      else rt->code_registry_head=next;
+      --rt->code_registry_count;++removed;
+    } else previous=at;
+    at=next;
+  }
+  /* the same head and count can come back with other records behind them */
+  if(removed){code_index.complete=0;memset(code_cache,0,sizeof code_cache);}
+  return removed;
+}
 int dc_goal_load_module(dc_goal_runtime *rt,const dc_goal_code_export *functions,uint32_t count,
                          dc_goal_cache_sync sync,void *context,dc_goal_module_result *result) {
   return dc_goal_load_module_data(rt,functions,count,NULL,0,sync,context,result);

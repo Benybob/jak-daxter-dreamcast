@@ -872,7 +872,7 @@ level_coexist.o: arena_coexist.c goal_runtime.h goal_fiber.h goal_kos_stack.h
 	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -DDC_ARENA_COEXIST -DDC_LEVEL_DRAW -DDC_LEVEL_DISPATCHES=184 -I. -c $< -o $@
 # Geyser Rock drawn from the game camera (level_draw.c): render data staged by
 # make_level_render_assets.py in build/level-disc/GEYSER, read from /cd.
-level_draw.o: level_draw.c $(wildcard *.h) build/level_render_fixture.h
+level_draw.o: level_draw.c $(wildcard *.h)
 	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -DDC_LEVEL_DRAW $(ARENA_FLY_ALLOC) -I. -c $< -o $@
 # The level ELF's controller: a scripted stick (dc_level_pad_state).
 level_goal_pad.o: goal_pad.c $(wildcard *.h)
@@ -881,8 +881,6 @@ level_goal_pad.o: goal_pad.c $(wildcard *.h)
 # in the KOS heap and VRAM, not the renderer slab, so no slab redirect.
 level_models.o: level_models.c $(wildcard *.h)
 	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -DDC_LEVEL_DRAW -I. -c $< -o $@
-build/level_render_fixture.h:
-	@echo 'run make_level_render_assets.py on training-background.glb (see LEVEL_PLAN.md) first' && false
 level_romdisk_stage.o: romdisk_stage.c
 	$(KOS_CC) $(KOS_CFLAGS) $(CFLAGS) -DDC_ARENA_COEXIST -c $< -o $@
 level_process_spans.o: process_spans.c $(wildcard *.h)

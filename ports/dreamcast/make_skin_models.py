@@ -215,18 +215,19 @@ def bundle(paths):
     report = {}
     for path in paths:
         name = path.stem
-        if len(name.encode()) >= 32:
-            raise ValueError(f'{name}: name longer than 31 bytes')
+        if len(name.encode()) >= 64:
+            raise ValueError(f'{name}: name longer than 63 bytes')
         blob, info = model(path)
         blobs.append((name, blob))
         report[name] = info
-    header = bytearray(struct.pack('<4s3I', b'DSKB', 1, len(blobs), 0))
-    offset = len(header)+48*len(blobs)
+    # version 2: 64-byte names (water-anim-village1-rice-paddy-mid-lod0); version 1 had 32
+    header = bytearray(struct.pack('<4s3I', b'DSKB', 2, len(blobs), 0))
+    offset = len(header)+80*len(blobs)
     offset = (offset+31) & ~31
     entries = bytearray()
     body = bytearray()
     for name, blob in blobs:
-        entries += struct.pack('<32s4I', name.encode(), offset+len(body), len(blob), zlib.crc32(blob), 0)
+        entries += struct.pack('<64s4I', name.encode(), offset+len(body), len(blob), zlib.crc32(blob), 0)
         body += blob
         body += b'\0'*((-len(body)) % 32)
     data = header+entries

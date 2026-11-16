@@ -20,14 +20,14 @@ void *sbrk(ptrdiff_t); /* hidden from unistd.h by -std=c99 */
 #include "render_frustum.h"
 #include "scene_projection.h"
 
-enum {MAX_MODELS=32,MAX_KEPT=32,MAX_JOINTS=255,MAX_BATCHES=64,MAX_TEXTURES=64,MAX_CSPACES=256,
+enum {MAX_MODELS=64,MAX_KEPT=32,MAX_JOINTS=255,MAX_BATCHES=64,MAX_TEXTURES=64,MAX_CSPACES=256,
       MAX_VERTICES=8192,MAX_TEXTURE_BYTES=1024*1024*2,WALK_NODES=1024,WALK_DEPTH=64};
 volatile dc_level_model_metrics_t dc_level_model_metrics;
 
 typedef struct {int16_t x,y,z,u,v;uint8_t joint[3],weight[2],pad;uint32_t argb;} dsk_vertex;
 typedef struct {uint32_t first,count;uint16_t texture,flags;} dsk_batch;
 typedef struct {
- char name[32];uint32_t offset,bytes,crc;
+ char name[64];uint32_t offset,bytes,crc;
  int state; /* 0 not loaded, 1 loaded, -1 failed */
  uint32_t joints,verts,indices,batch_count,lists; /* lists: bit per list index 0 op, 1 pt, 2 tr */
  float centre[3],scale,radius;
@@ -36,6 +36,7 @@ typedef struct {
  uint32_t used[8]; /* joints the vertices name */
  int bind_checked;
  void *geometry;
+ pvr_ptr_t tex[MAX_TEXTURES];uint32_t tex_count;  /* its VRAM textures, to give back (dc_level_models_close) */
 } model;
 /* mult: the draw control's color-mult (r, g, b, a), 256 for 1.0; tinted when it is not all ones. */
 typedef struct {uint32_t proc;unsigned model;int target,drawn;uint16_t mult[4];int tinted;} kept;
@@ -74,20 +75,22 @@ static int read_exact(void *to,uint32_t bytes,uint32_t *crc){
 }
 
 int dc_level_models_open(const char *path){
- unsigned char head[16];uint32_t count,i;
+ unsigned char head[16];uint32_t count,i,version,name_bytes;
  static const int lists[3]={PVR_LIST_OP_POLY,PVR_LIST_PT_POLY,PVR_LIST_TR_POLY};
  dc_level_model_metrics.heap_free_before=heap_free();
  if(!(bundle=fopen(path,"rb")))return 0;
  if(fread(head,1,16,bundle)!=16 || memcmp(head,"DSKB",4))return 0;
  memcpy(&count,head+8,4);
- {uint32_t version;memcpy(&version,head+4,4);if(!count || count>MAX_MODELS || version!=1u)return 0;}
+ /* version 1: 32-byte names; version 2: 64 (make_skin_models.py) */
+ memcpy(&version,head+4,4);if(!count || count>MAX_MODELS || (version!=1u && version!=2u))return 0;
+ name_bytes=version==1u?32u:64u;
  for(i=0;i<count;++i){
-  unsigned char e[48];
-  if(fread(e,1,48,bundle)!=48)return 0;
+  unsigned char e[80];
+  if(fread(e,1,name_bytes+16u,bundle)!=name_bytes+16u)return 0;
   memset(&models[i],0,sizeof models[i]);
-  memcpy(models[i].name,e,32);models[i].name[31]=0;
-  memcpy(&models[i].offset,e+32,4);memcpy(&models[i].bytes,e+36,4);memcpy(&models[i].crc,e+40,4);
-  if(models[i].offset<16u+48u*count || models[i].bytes<48u)return 0;
+  memcpy(models[i].name,e,name_bytes);models[i].name[name_bytes-1u]=0;
+  memcpy(&models[i].offset,e+name_bytes,4);memcpy(&models[i].bytes,e+name_bytes+4u,4);memcpy(&models[i].crc,e+name_bytes+8u,4);
+  if(models[i].offset<16u+(name_bytes+16u)*count || models[i].bytes<48u)return 0;
  }
  model_count=count;
  for(i=0;i<3;++i){
@@ -141,6 +144,7 @@ static int load(model *m){
   rest-=rec[2];
   {uint32_t pad=(4u-(rec[2]&3u))&3u;unsigned char z[4];if(pad){if(rest<pad||!read_exact(z,pad,&crc))FAIL;rest-=pad;}}
   if(!(slots[i]=pvr_mem_malloc(rec[2])))FAIL;
+  m->tex[m->tex_count++]=slots[i];
   pvr_txr_load(pixels,slots[i],rec[2]);
   sizes[i][0]=wh[0];sizes[i][1]=wh[1];sizes[i][2]=rec[1];
   dc_level_model_metrics.texture_bytes+=rec[2];
@@ -175,7 +179,23 @@ static int load(model *m){
  return 1;
 fail:
  free(pixels);free(g);m->geometry=NULL;m->state=-1;++dc_level_model_metrics.load_failures;
+ free(m->headers);free(m->batch_list);m->headers=NULL;m->batch_list=NULL;
+ while(m->tex_count)pvr_mem_free(m->tex[--m->tex_count]);
  return 0;
+}
+/* Gives back every model's KOS heap and VRAM and closes the bundle: the level
+ * they belong to is going. dc_level_models_open then takes the next bundle. */
+void dc_level_models_close(void){
+ unsigned i;
+ for(i=0;i<model_count;++i){
+  model *m=&models[i];
+  free(m->geometry);free(m->headers);free(m->batch_list);
+  while(m->tex_count)pvr_mem_free(m->tex[--m->tex_count]);
+  memset(m,0,sizeof *m);
+ }
+ model_count=0;kept_count=0;skinned=NULL;
+ if(bundle)fclose(bundle);
+ bundle=NULL;
 }
 
 /* GOAL memory reads: 0 for anything that does not resolve. */
@@ -196,7 +216,7 @@ static int find_model(dc_goal_runtime *rt,uint32_t mgeo){
  uint32_t name=rd(rt,mgeo+4u),length;const char *chars;unsigned i;
  if(!ptr(rt,name))return -1;
  length=rd(rt,name);
- if(!length || length>31u || !(chars=dc_goal_resolve(rt,name+4u,length)))return -1;
+ if(!length || length>63u || !(chars=dc_goal_resolve(rt,name+4u,length)))return -1;
  for(i=0;i<model_count;++i)if(!strncmp(models[i].name,chars,length) && !models[i].name[length])return (int)i;
  ++dc_level_model_metrics.last_missing;
  if(!dc_level_model_metrics.missing_name[0]){unsigned k;for(k=0;k<length&&k<31u;++k)dc_level_model_metrics.missing_name[k]=chars[k];}
@@ -403,6 +423,7 @@ int dc_level_models_draw(dc_goal_runtime *rt,const dc_instance_camera *cam,int l
 
 void *dc_level_heap_alloc(size_t bytes){void *p=memalign(32,bytes);if(!p)dc_level_model_metrics.heap_free_before=heap_free();return p;}
 uint32_t dc_level_heap_free(void){return heap_free();}
+void dc_level_heap_release(void *p){free(p);}
 /* Called once per frame after the last list: per-frame counters. */
 void dc_level_models_end_frame(void){
  if(frame_jak)++dc_level_model_metrics.jak_frames;

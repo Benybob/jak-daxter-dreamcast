@@ -83,8 +83,8 @@ class SkinModelTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             data, report = msm.bundle([self.write(folder, "quad-lod0", skinned())])
         magic, version, count, _ = struct.unpack_from("<4s3I", data, 0)
-        self.assertEqual((magic, version, count), (b"DSKB", 1, 1))
-        name, offset, size, crc, _ = struct.unpack_from("<32s4I", data, 16)
+        self.assertEqual((magic, version, count), (b"DSKB", 2, 1))
+        name, offset, size, crc, _ = struct.unpack_from("<64s4I", data, 16)
         self.assertEqual(name.rstrip(b"\0"), b"quad-lod0")
         self.assertEqual(offset % 32, 0)
         blob = data[offset:offset+size]

@@ -121,6 +121,8 @@ int dc_level_draw_release_boot(uint32_t *available){
  if(available)*available=pvr_mem_available();
  return 1;
 }
+/* A level's renderer is closed: every slab allocation was its own. */
+void dc_level_draw_slab_reset(void){dc_arena_slab_init(slab,SLAB_BYTES);}
 #endif
 #ifdef DC_ARENA_FLY
 int dc_arena_fly_check(uint64_t actual,uint64_t expected,const char *name){return check(actual,expected,name);}
