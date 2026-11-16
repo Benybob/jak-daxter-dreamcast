@@ -97,7 +97,7 @@ static void put(unsigned char *data,uint32_t at,uint32_t value){memcpy(data+at,&
 static int links(dc_goal_runtime *rt,FILE *f,const art_row *row,unsigned char *data,
                  uint32_t base,dc_goal_art_result *result,const char *root_type,int forward,
                  const unsigned char *source){
-  unsigned char *table=malloc(row->length);
+  unsigned char *table=dc_goal_scratch(rt,row->length,0);
   uint32_t p=12,at=0,value,count,fixing=0,root=0;
   int ok=0;
   if(!table)return fail(rt,DC_GOAL_OUT_OF_MEMORY);
@@ -173,7 +173,7 @@ static int links(dc_goal_runtime *rt,FILE *f,const art_row *row,unsigned char *d
   while(p<row->length)if(table[p++])goto done;
   ok=1;
 done:
-  free(table);
+  dc_goal_scratch_free(rt,table);
   return ok?1:fail(rt,DC_GOAL_BAD_MODULE);
 }
 /* One v4 data object of a DGO, linked in place at a guest address (the level

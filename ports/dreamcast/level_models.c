@@ -37,12 +37,20 @@ typedef struct {
  int bind_checked;
  void *geometry;
  pvr_ptr_t *tex;uint32_t tex_count;  /* its VRAM textures (allocated when it loads), to give back (dc_level_models_close) */
+ uint32_t last_used; /* the model pass frame it was last within the draw distance */
+ uint32_t geometry_bytes;
 } model;
 /* mult: the draw control's color-mult (r, g, b, a), 256 for 1.0; tinted when it is not all ones. */
 typedef struct {uint32_t proc;unsigned model;int target,drawn;uint16_t mult[4];int tinted;} kept;
 
 static FILE *bundle;
 static model models[MAX_MODELS];
+/* Jak's model is in every level's bundle: its geometry block (127 KB of KOS
+ * heap) is kept across a level change and reused when the next level's bundle
+ * loads him, so he never needs a run the next level's models have already
+ * split. His textures are freed with the rest (VRAM holds the next level's). */
+#define KEPT_MODEL "eichar-lod0"
+static void *kept_geometry;static uint32_t kept_bytes;
 static unsigned model_count;
 static kept frame_kept[MAX_KEPT];
 static unsigned kept_count;
@@ -108,6 +116,7 @@ static int pow2(uint32_t v){return v>=8u && v<=1024u && !(v&(v-1u));}
 volatile uint32_t dc_level_model_fail_line;
 /* The name of the last model whose load failed. --dump dc_level_model_fail_name 64 */
 volatile char dc_level_model_fail_name[64];
+volatile uint32_t dc_level_model_fail_vram;  /* VRAM free when it failed */
 #define FAIL do{dc_level_model_fail_line=__LINE__;goto fail;}while(0)
 static int load(model *m){
  uint32_t head[12],crc=0,geometry,rest,i,texture_count,texture_bytes;
@@ -120,7 +129,11 @@ static int load(model *m){
     texture_bytes>MAX_TEXTURE_BYTES || !(m->scale>0) || !isfinite(m->scale))FAIL;
  for(i=0;i<3;++i)if(!isfinite(m->centre[i]))FAIL;
  geometry=m->joints*48u+m->verts*20u+((m->indices*2u+3u)&~3u)+m->batch_count*12u;
- if(48u+geometry>m->bytes || !(g=malloc(geometry)) || !read_exact(g,geometry,&crc))FAIL;
+ if(48u+geometry>m->bytes)FAIL;
+ if(kept_geometry && kept_bytes>=geometry && !strcmp(m->name,KEPT_MODEL)){g=kept_geometry;kept_geometry=NULL;}
+ else if(!(g=malloc(geometry)))FAIL;
+ if(!read_exact(g,geometry,&crc))FAIL;
+ m->geometry_bytes=geometry;
  m->ibm=(const float *)(void *)g;m->v=(const dsk_vertex *)(void *)(g+m->joints*48u);
  m->ix=(const uint16_t *)(void *)(g+m->joints*48u+m->verts*20u);
  m->batches=(const dsk_batch *)(void *)(g+m->joints*48u+m->verts*20u+((m->indices*2u+3u)&~3u));
@@ -181,11 +194,40 @@ static int load(model *m){
  return 1;
 fail:
  {unsigned k;for(k=0;k<63u && m->name[k];++k)dc_level_model_fail_name[k]=m->name[k];dc_level_model_fail_name[k]=0;}
+ dc_level_model_fail_vram=pvr_mem_available();
+ /* Jak's block goes back to be kept, not to the heap */
+ if(g && !strcmp(m->name,KEPT_MODEL) && !kept_geometry){kept_geometry=g;kept_bytes=geometry;g=NULL;}
  free(pixels);free(g);m->geometry=NULL;m->state=-1;++dc_level_model_metrics.load_failures;
  free(m->headers);free(m->batch_list);m->headers=NULL;m->batch_list=NULL;
  while(m->tex_count)pvr_mem_free(m->tex[--m->tex_count]);
  free(m->tex);m->tex=NULL;
  return 0;
+}
+/* A loaded model's KOS heap and VRAM given back; it loads again when shown. */
+static void unload_model(model *m){
+ free(m->geometry);free(m->headers);free(m->batch_list);
+ while(m->tex_count)pvr_mem_free(m->tex[--m->tex_count]);
+ free(m->tex);
+ m->geometry=NULL;m->headers=NULL;m->batch_list=NULL;m->tex=NULL;m->state=0;m->lists=0;
+ m->bind_checked=0;memset(m->used,0,sizeof m->used);
+}
+/* Room for a model that did not fit: every other loaded model not within the
+ * draw distance for EVICT_FRAMES is unloaded, and models that failed for want
+ * of room may try again. Sandover shows far more models than the KOS heap
+ * holds at once (47 in its bundle, villagers up to 260 KB each). */
+enum {EVICT_FRAMES=30};
+volatile uint32_t dc_level_model_evictions;
+static int evict_idle(const model *keep){
+ unsigned i;int freed=0;uint32_t now=dc_level_model_metrics.frames;
+ /* Jak must show: for him every model not drawn this frame goes */
+ uint32_t idle=!strcmp(keep->name,KEPT_MODEL)?0u:(uint32_t)EVICT_FRAMES;
+ for(i=0;i<model_count;++i){
+  model *m=&models[i];
+  if(m==keep)continue;
+  if(m->state==1 && m->last_used+idle<now){unload_model(m);++freed;++dc_level_model_evictions;}
+  else if(m->state<0)m->state=0;
+ }
+ return freed;
 }
 /* Gives back every model's KOS heap and VRAM and closes the bundle: the level
  * they belong to is going. dc_level_models_open then takes the next bundle. */
@@ -193,6 +235,7 @@ void dc_level_models_close(void){
  unsigned i;
  for(i=0;i<model_count;++i){
   model *m=&models[i];
+  if(m->state==1 && !strcmp(m->name,KEPT_MODEL) && !kept_geometry){kept_geometry=m->geometry;kept_bytes=m->geometry_bytes;m->geometry=NULL;}
   free(m->geometry);free(m->headers);free(m->batch_list);
   while(m->tex_count)pvr_mem_free(m->tex[--m->tex_count]);
   free(m->tex);
@@ -267,7 +310,9 @@ int dc_level_models_frame(dc_goal_runtime *rt,const dc_instance_camera *cam){
    if(!o || !isfinite(o[0]) || !isfinite(o[1]) || !isfinite(o[2]))continue;
    w[0]=o[0]/4096.f;w[1]=o[1]/4096.f;w[2]=o[2]/4096.f;dx=w[0]-cam->tx;dz=w[2]-cam->tz;
    if(dx*dx+dz*dz>cam->draw_distance*cam->draw_distance){++dc_level_model_metrics.culled;fate(row,index,3,o);continue;}
-   if((!m->state && !load(m)) || m->state<0){fate(row,index,5,o);continue;}
+   m->last_used=dc_level_model_metrics.frames;
+   if(!m->state && !load(m) && evict_idle(m)){m->state=0;load(m);}
+   if(m->state<=0){fate(row,index,5,o);continue;}
    dc_instance_to_view(b,cam,w,c);
    /* the origin is the skeleton's, not the bind-space centre: twice the radius */
    if(dc_instance_sphere_outside(c,2.f*m->radius*0.25f)){

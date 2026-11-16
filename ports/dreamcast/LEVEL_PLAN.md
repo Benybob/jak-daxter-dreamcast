@@ -1708,3 +1708,28 @@ ends at 12,097,232 of 12,189,632 bytes.
 Not yet: Jak is out of frame in the last capture and one model fails to load
 (`dc_level_model_fail_line`); walking in Sandover, its villagers and the
 other 20 levels are untried. Seven level DGOs fail `build_logic_bsp.py`.
+
+### Jak and the villagers in Sandover (Flycast, 2745 of 2745, 2026-11-16)
+
+With the trip working, Jak was out of frame in Sandover and models failed to
+load. Sandover shows far more character models than Geyser Rock (47 in its
+bundle; villagers up to 260 KB of geometry) and the KOS heap holds only some:
+
+- **Idle models unloaded** (`level_models.c`). When a model does not fit,
+  every other loaded model not within the draw distance for 30 model frames
+  gives back its geometry, headers and VRAM textures, and the load is tried
+  again (for Jak: every model not drawn this frame).
+- **Jak's geometry kept.** `eichar-lod0`'s 127 KB geometry block survives a
+  level change and is reused when the next bundle loads him, so he never
+  needs a run the next level's models have split. His textures are freed
+  with the rest: kept, they left VRAM short of Sandover's terrain textures.
+- **Link tables in the level heap.** A data object's link table comes from
+  the free heap above it, not the C heap (`goal_art.c` through
+  `dc_goal_scratch`); with Jak's block held, Sandover's logic BSP's table no
+  longer fitted.
+
+Measured over the trip and a walk (Flycast): Jak drawn in 581 of 590 model
+frames, other actors in 277; 3 models unloaded. Jak walks on the hut's cliff
+(34 m), walks off it along the test route and swims in the sea under the
+rock arch. Not yet: `assistant-lod0` (Keira's model) still fails at times for
+want of KOS heap; VRAM had 1.57 MB free when it did.

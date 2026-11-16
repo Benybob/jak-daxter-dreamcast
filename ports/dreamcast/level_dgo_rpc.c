@@ -145,7 +145,14 @@ static int load_next(uint32_t bt){
      dc_level_heap_need.size=top-base;
      if(end>top || end<bt){dc_level_heap_need.refused=end-top;runtime->error=DC_GOAL_OUT_OF_MEMORY;return 0;}
    }}
-  if(!dc_goal_link_v4_at(runtime,dgo,dgo_at+64u,size,bt+64u,&bytes))return 0;
+  /* its link table from the free heap above it, not the C heap */
+  {uint32_t symbol=dc_goal_find(runtime,"loading-level"),heap=symbol?dc_goal_symbol_value(runtime,symbol):0;
+   unsigned char *fields=heap && heap!=runtime->s7?dc_goal_resolve(runtime,heap,16):NULL;uint32_t end=bt+64u+size,top;
+   runtime->error=DC_GOAL_OK;
+   if(fields && (top=word(fields+4)&~31u)>end+65536u){runtime->scratch_at=(end+31u)&~31u;runtime->scratch_end=top;}}
+  {int linked=dc_goal_link_v4_at(runtime,dgo,dgo_at+64u,size,bt+64u,&bytes);
+   runtime->scratch_at=runtime->scratch_end=0;
+   if(!linked)return 0;}
   if(!(at=dc_goal_resolve(runtime,bt,64)))return 0;
   /* The dgo-header GOAL reads: length (the linked data) and the root name. */
   memcpy(at+4,header+4,60);memcpy(at,&bytes,4);
