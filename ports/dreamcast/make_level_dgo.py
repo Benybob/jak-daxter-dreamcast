@@ -9,6 +9,9 @@ texture pages, then its BSP. The Dreamcast one has the same order:
      (build_logic_bsp.py --art --strip-merc), which original level loading
      links and logs in.
 
+With --art-out the art groups go to their own files instead, one each, which
+level_logic.c loads when an actor first asks for one (art on demand).
+
 The file is named as original load-begin asks for it, e.g. TRAINING.DGO for
 TRA. Everything read and written is under build/ (git-ignored): the code is
 built from source, the data from the owner's disc.
@@ -50,6 +53,8 @@ def main():
     parser.add_argument('--code', type=Path, help='default build/level-code/<LEVEL>-CODE.DGO')
     parser.add_argument('--data', type=Path, help='default build/logic-bsp/<LEVEL>-LEVEL.DGO')
     parser.add_argument('--output', type=Path, default=PORT / 'build/level-disc')
+    parser.add_argument('--art-out', type=Path,
+                        help='write each art group as <DIR>/<NAME>.DGO, loaded on demand, not in the level DGO')
     args = parser.parse_args()
     level = args.level.upper()
     code = objects(args.code or PORT / f'build/level-code/{level}-CODE.DGO')
@@ -59,6 +64,23 @@ def main():
     if any(payload[:4] != b'\xff\xff\xff\xff' or len(payload) % 16 for _, payload in data):
         raise SystemExit('a data object is not aligned retail v4 data')
     name = f'{args.name.upper()}.DGO'
+    art = []
+    if args.art_out:
+        # art on demand (level_logic.c): every object but the BSP (the last) as a
+        # one-object DGO named after its art group, which original
+        # load-to-heap-by-name asks for when an actor's skeleton is set up
+        art_dir = args.art_out.resolve()
+        if not art_dir.is_relative_to((PORT / 'build').resolve()):
+            raise SystemExit('art output must be under ports/dreamcast/build/')
+        art_dir.mkdir(parents=True, exist_ok=True)
+        for old in art_dir.glob('*.DGO'):
+            old.unlink()
+        art, data = data[:-1], data[-1:]
+        for object_name, payload in art:
+            file = f'{object_name.upper()}.DGO'
+            one = HEADER.pack(1, file.encode('ascii').ljust(60, b'\0'))
+            one += HEADER.pack(len(payload), object_name.encode('ascii').ljust(60, b'\0')) + payload
+            (art_dir / file).write_bytes(one + bytes((-len(payload)) % 16))
     out = bytearray(HEADER.pack(len(code) + len(data), name.encode('ascii').ljust(60, b'\0')))
     for object_name, payload in code + data:
         out += HEADER.pack(len(payload), object_name.encode('ascii').ljust(60, b'\0')) + payload
@@ -70,7 +92,8 @@ def main():
     (out_dir / name).write_bytes(out)
     print(json.dumps(dict(dgo=str(out_dir / name), bytes=len(out), code=[n for n, _ in code],
                           code_bytes=sum(len(p) for _, p in code), data=[n for n, _ in data],
-                          data_bytes=sum(len(p) for _, p in data), ai_assisted=True), indent=2))
+                          data_bytes=sum(len(p) for _, p in data), art_files=len(art),
+                          art_bytes=sum(len(p) for _, p in art), ai_assisted=True), indent=2))
 
 
 if __name__ == '__main__':

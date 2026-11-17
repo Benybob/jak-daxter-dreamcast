@@ -8,7 +8,9 @@ For level BEA (Sentinel Beach) this:
   2. builds its logic BSP and art without merc geometry
      (build_logic_bsp.py --art --strip-merc);
   3. packs both as the DGO original load-begin asks for, e.g. BEACH.DGO
-     (make_level_dgo.py), and copies <LEVEL>.VIS beside it;
+     (make_level_dgo.py), its art groups apart, one file each, which
+     level_logic.c loads on demand (copied to <FOLDER>/ART in step 7), and
+     copies <LEVEL>.VIS beside it;
   4. builds its TIE instance package (tie_lods.py --textured --compact);
   5. stages its terrain sectors, cells and LEVEL.DRH over the area its tfrag
      covers (make_level_render_assets.py --large);
@@ -114,7 +116,7 @@ def main():
             code[1:1] = ['--frontend', a.frontend]
         run(code)
     run(['build_logic_bsp.py', '--art', '--strip-merc', dgo])
-    print(run(['make_level_dgo.py', nick, stem])[-300:])
+    print(run(['make_level_dgo.py', nick, stem, '--art-out', work / 'ART'])[-300:])  # art on demand
     shutil.copy(a.iso / 'VIS' / f'{nick}.VIS', disc / f'{nick}.VIS')
 
     glb = levels / f'{folder_name}-background.glb'
@@ -135,6 +137,7 @@ def main():
         shutil.rmtree(folder)
     shutil.copytree(work / 'assets', folder, ignore=shutil.ignore_patterns('*.json'))
     shutil.copy(work / 'MODELS.DSK', folder / 'MODELS.DSK')
+    shutil.copytree(work / 'ART', folder / 'ART')
     # 8. the seams with neighbours already staged (Geyser Rock's with Sandover is
     # not walked across: the warp gate takes Jak between them)
     seams = []

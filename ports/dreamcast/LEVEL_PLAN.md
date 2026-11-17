@@ -1884,3 +1884,36 @@ last element; `tie_cuts` cuts each instance's colour pointer over the whole
 array.
 
 The beach to Sandover and back walk runs as before (five loads, no fall).
+
+### Art on demand (Flycast, 2745 of 2745, 2026-11-17)
+
+A level staged with `make_level_dgo.py --art-out` (`stage_level.py` does) has
+no art groups in its DGO; each is `<FOLDER>/ART/<NAME>.DGO`, a one-object DGO
+(Sandover 37 files, 361,040 bytes; Sentinel Beach 27, 472,672). Original
+initialize-skeleton asks its level's load-dir for the actor's art group by
+name (`load-to-heap-by-name`), which loads a missing one from disc only with a
+debug segment. `level_logic.c` wraps that method of `load-dir-art-group`: when
+the original answers #f for level0's or level1's directory, it links the file
+in place in the art pool (`dc_goal_link_v4_at`), runs original art-group login
+and adds it to the directory as the original does. A file the disc lacks
+answers #f as before. Geyser Rock keeps its art in TRAINING.DGO (the level
+suite counts its 11 art groups at boot).
+
+The art pool is 512 KiB of the arena, taken from level0's heap (now 2,432 KiB;
+Sentinel Beach with its art took 1,989,776 bytes). It is first-fit; when an art
+group does not fit, every art group no live process points into (the words of
+each process's own memory, from `*active-pool*` down: draw-control art group,
+joint geometry, animation channels' frame groups) is taken out of the level
+directories and freed, and the load is tried again.
+
+Measured in Flycast at `village1-hut`: 25 of Sandover's 37 art groups loaded
+(317,056 bytes), villagers drawn (116 actor model frames); with the pool cut to
+192 KiB for a test, 27 art groups were evicted over 28 sweeps, 28 loads were
+refused (those actors go to original process-drawable-art-error) and the run
+went on without a fault.
+
+Not yet: the saving is small where most of a level's actors are in birth range
+at once (Sandover from the hut: 44 KB); each load is a synchronous disc read in
+the frame an actor is born, which on a real drive is a seek of about 100 ms
+(not measurable in Flycast). A walk from the hut toward (-60, 100) ends at about
+frame 810 with or without art on demand; not yet looked into.

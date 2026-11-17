@@ -9,6 +9,7 @@
  * --dump dc_level_logic_evidence 128 */
 #include "level_logic.h"
 #include "goal_module.h"
+#include "goal_art.h"
 #include <arch/cache.h>
 #include <stdio.h>
 #include <string.h>
@@ -97,7 +98,9 @@ volatile struct { uint32_t count; struct { char type[24]; char state[24]; uint32
 /* level1 holds a seam (slice_level.py): 285 KB of DGO for Sentinel Beach's and
  * Sandover's ground by the line between them, 64 KB above it for its link
  * table while it links, and its login's few allocations */
-enum {LEVEL0_HEAP_BYTES=2944u*1024u,LEVEL1_HEAP_BYTES=384u*1024u};
+/* level0 gives 512 KiB of what it had to the art pool (art on demand, below):
+ * Sentinel Beach, the largest level staged, took 1,989,776 bytes with its art */
+enum {LEVEL0_HEAP_BYTES=2432u*1024u,LEVEL1_HEAP_BYTES=384u*1024u};
 static int alloc_level_heaps(dc_goal_runtime *rt){
   static const uint32_t slot[2]={96u,2704u},bytes[2]={LEVEL0_HEAP_BYTES,LEVEL1_HEAP_BYTES};  /* level-group level0/1 */
   uint32_t group=named(rt,"*level*"),i;
@@ -354,6 +357,187 @@ static void wrap_update(dc_goal_runtime *rt){
     dc_goal_set_method(rt,type,(uint16_t)slot,named(rt,"dc-level-update-front"));
   rt->error=DC_GOAL_OK;
 }
+/* Art on demand (AI-assisted). A level staged with make_level_dgo.py
+ * --art-out has no art groups in its DGO; each is <FOLDER>/ART/<NAME>.DGO, a
+ * one-object DGO. Original initialize-skeleton asks the level's load-dir for
+ * its art group by name (load-to-heap-by-name); finding none, the original
+ * loads <name>-ag.go only with a debug segment. The wrapper here, when the
+ * original answers #f for level0's or level1's directory, links the file in
+ * the art pool, logs it in (original art-group login) and adds it to the
+ * directory as the original does, so a level holds only the art of the actors
+ * that have come near. A file the disc lacks answers #f, as before.
+ *
+ * The pool (ART_POOL_BYTES, from the arena) is first-fit. When an art group
+ * does not fit, every art group in the pool that no live process points into
+ * (a process's own memory, from *active-pool* down: a draw-control's art
+ * group, its joint geometry, its animation channels' frame groups) is taken
+ * out of the level directories and freed, and the load is tried again.
+ * Layout: load-dir lev +0, string-array +4, art-group-array +8; array length
+ * +0, allocated-length +4, data +12; level name +0, art-group +48; process
+ * child +16, brother +12 (ppointers), heap-top +80.
+ * slot: the method slot wrapped (0: not), pool: its address, calls: wrapper calls.
+ * hits: answered by the original; last_path: the last file asked for.
+ * dir_level: calls per directory (level0, level1, level-default, other);
+ * names: the first eight art names asked for that the original did not have.
+ * --dump dc_level_art 248 */
+volatile struct {uint32_t loads,missing,failed,evicted,sweeps,pool_used,pool_high,last_bytes,refused,blocks,slot,pool,calls,hits;char last_path[48];uint32_t dir_level[4];char names[8][16];} dc_level_art;
+enum {ART_POOL_BYTES=512u*1024u,ART_BLOCKS=128u};
+static uint32_t art_pool,art_load_original;
+static const uint32_t level_slot_any[3]={96u,2704u,5312u};  /* level-group level0, level1, level-default */
+static struct {uint32_t at,bytes,group;} art_block[ART_BLOCKS];
+static unsigned art_blocks;
+static dc_goal_runtime *art_runtime;
+/* First fit, 64-byte aligned; 0 when nothing fits. Blocks stay sorted by address. */
+static uint32_t art_alloc(uint32_t bytes){
+  uint32_t at=art_pool;unsigned i,k;
+  bytes=(bytes+63u)&~63u;
+  if(!art_pool || art_blocks>=ART_BLOCKS)return 0;
+  for(i=0;i<=art_blocks;++i){
+    uint32_t next=i<art_blocks?art_block[i].at:art_pool+ART_POOL_BYTES;
+    if(next-at>=bytes){
+      for(k=art_blocks;k>i;--k)art_block[k]=art_block[k-1];
+      art_block[i].at=at;art_block[i].bytes=bytes;art_block[i].group=0;++art_blocks;
+      dc_level_art.pool_used+=bytes;dc_level_art.blocks=art_blocks;
+      if(dc_level_art.pool_used>dc_level_art.pool_high)dc_level_art.pool_high=dc_level_art.pool_used;
+      return at;
+    }
+    if(i<art_blocks)at=art_block[i].at+art_block[i].bytes;
+  }
+  return 0;
+}
+static void art_free(unsigned i){
+  dc_level_art.pool_used-=art_block[i].bytes;
+  for(;i+1u<art_blocks;++i)art_block[i]=art_block[i+1u];
+  --art_blocks;dc_level_art.blocks=art_blocks;
+}
+/* Marks the blocks a process's memory points into; then the tree below it. */
+static void art_mark(dc_goal_runtime *rt,uint32_t pp,unsigned char *used,unsigned depth){
+  unsigned n=0;
+  while(pp && pp!=rt->s7 && n++<1024u && depth<16u){
+    uint32_t proc=word(rt,pp),top,at;
+    if(!proc || proc==rt->s7)break;
+    top=word(rt,proc+80u);
+    if(top>proc && top-proc<=256u*1024u){
+      const uint32_t *p=dc_goal_resolve(rt,proc-4u,top-(proc-4u));
+      if(p)for(at=0;at<(top-(proc-4u))/4u;++at){
+        uint32_t v=p[at];
+        if(v>=art_pool && v<art_pool+ART_POOL_BYTES){
+          unsigned lo=0,hi=art_blocks;
+          while(lo<hi){unsigned mid=(lo+hi)/2u;if(art_block[mid].at+art_block[mid].bytes<=v)lo=mid+1u;else hi=mid;}
+          if(lo<art_blocks && v>=art_block[lo].at)used[lo]=1;
+        }
+      }
+    }
+    art_mark(rt,word(rt,proc+16u),used,depth+1u);
+    pp=word(rt,proc+12u);
+  }
+  rt->error=DC_GOAL_OK;
+}
+/* Takes an art group out of a level's directory (later entries move down). */
+static void art_unlist(dc_goal_runtime *rt,uint32_t dir,uint32_t group){
+  uint32_t names=word(rt,dir+4u),groups=word(rt,dir+8u),n=word(rt,groups),i;
+  unsigned char *ga=dc_goal_resolve(rt,groups+12u,4u*n),*na=dc_goal_resolve(rt,names+12u,4u*n);
+  if(!ga || !na || n>256u)return;
+  for(i=0;i<n;++i){
+    uint32_t v;memcpy(&v,ga+4u*i,4);
+    if(v==group){
+      memmove(ga+4u*i,ga+4u*i+4u,4u*(n-i-1u));memmove(na+4u*i,na+4u*i+4u,4u*(n-i-1u));
+      --n;memcpy(dc_goal_resolve(rt,groups,4),&n,4);memcpy(dc_goal_resolve(rt,names,4),&n,4);
+      return;
+    }
+  }
+}
+/* Frees every art group no live process points into. */
+static void art_sweep(dc_goal_runtime *rt){
+  unsigned char used[ART_BLOCKS]={0};unsigned i;
+  uint32_t pool=named(rt,"*active-pool*"),group=named(rt,"*level*");
+  ++dc_level_art.sweeps;
+  if(pool && pool!=rt->s7)art_mark(rt,word(rt,pool+16u),used,0);
+  for(i=art_blocks;i-- >0;){
+    if(used[i])continue;
+    {unsigned k;for(k=0;k<3u;++k){uint32_t dir=word(rt,group+level_slot_any[k]+48u);if(dir && dir!=rt->s7)art_unlist(rt,dir,art_block[i].group);}}
+    art_free(i);++dc_level_art.evicted;
+  }
+  rt->error=DC_GOAL_OK;
+}
+static uint32_t art_load(dc_goal_runtime *rt,uint32_t dir,uint32_t name){
+  typedef uint64_t (*one_fn)(uint64_t);
+  uint32_t lev=word(rt,dir),group=named(rt,"*level*"),length,size,dest=0,bytes=0,root,names,groups,n;
+  const char *level_name,*text;char path[64];unsigned k,m;FILE *f;unsigned char head[64];
+  if(lev!=group+level_slot_any[0] && lev!=group+level_slot_any[1])return rt->s7;
+  level_name=dc_goal_symbol_name(rt,word(rt,lev));
+  length=word(rt,name);text=dc_goal_resolve(rt,name+4u,length+1u);
+  if(!level_name || !text || length>40u)return rt->s7;
+  m=(unsigned)snprintf(path,sizeof path,"/cd/%.8s/ART/",strcmp(level_name,"training")?level_name:"geyser");
+  for(k=0;k<length && m+5u<sizeof path;++k)path[m++]=text[k];
+  memcpy(path+m,".DGO",5);
+  for(k=4;path[k];++k)if(path[k]>='a' && path[k]<='z')path[k]=(char)(path[k]-32);
+  {char t[48]={0};strncpy(t,path,47);memcpy((char *)dc_level_art.last_path,t,48);}
+  if(!(f=fopen(path,"rb"))){++dc_level_art.missing;return rt->s7;}
+  if(fseek(f,64,SEEK_SET) || fread(head,1,64,f)!=64){fclose(f);++dc_level_art.failed;return rt->s7;}
+  memcpy(&size,head,4);
+  if(!(dest=art_alloc(size))){art_sweep(rt);dest=art_alloc(size);}
+  if(!dest){fclose(f);++dc_level_art.refused;return rt->s7;}
+  if(!dc_goal_link_v4_at(rt,f,128u,size,dest,&bytes)){
+    fclose(f);for(k=0;k<art_blocks;++k)if(art_block[k].at==dest)art_free(k);
+    ++dc_level_art.failed;rt->error=DC_GOAL_OK;return rt->s7;}
+  fclose(f);
+  root=dest+4u;
+  if(dc_goal_type_of(rt,root)!=named(rt,"art-group")){
+    for(k=0;k<art_blocks;++k)if(art_block[k].at==dest)art_free(k);
+    ++dc_level_art.failed;rt->error=DC_GOAL_OK;return rt->s7;}
+  ((one_fn)(uintptr_t)named(rt,"(method login art-group)"))(root);
+  for(k=0;k<art_blocks;++k)if(art_block[k].at==dest)art_block[k].group=root;
+  /* as original load-to-heap-by-name adds what it loads */
+  names=word(rt,dir+4u);groups=word(rt,dir+8u);n=word(rt,names);
+  if(n<word(rt,names+4u) && n<word(rt,groups+4u)){
+    unsigned char *a=dc_goal_resolve(rt,names+12u+4u*n,4),*b=dc_goal_resolve(rt,groups+12u+4u*n,4);
+    if(a && b){memcpy(a,&name,4);memcpy(b,&root,4);++n;
+      memcpy(dc_goal_resolve(rt,names,4),&n,4);memcpy(dc_goal_resolve(rt,groups,4),&n,4);}
+  }
+  ++dc_level_art.loads;dc_level_art.last_bytes=bytes;
+  return rt->error==DC_GOAL_OK?root:rt->s7;
+}
+static uint64_t art_wrapper(uint64_t dir,uint64_t name,uint64_t reload,uint64_t heap,uint64_t version){
+  typedef uint64_t (*five_fn)(uint64_t,uint64_t,uint64_t,uint64_t,uint64_t);
+  dc_goal_runtime *rt=art_runtime;
+  uint64_t out;
+  ++dc_level_art.calls;
+  out=((five_fn)(uintptr_t)art_load_original)(dir,name,reload,heap,version);
+  {uint32_t group=named(rt,"*level*"),d=dir<=UINT32_MAX?(uint32_t)dir:0;unsigned k=3;
+   for(unsigned j=0;j<3u;++j)if(d && word(rt,group+level_slot_any[j]+48u)==d)k=j;
+   ++dc_level_art.dir_level[k];rt->error=DC_GOAL_OK;}
+  if(out && out!=rt->s7){++dc_level_art.hits;return out;}
+  {unsigned j=dc_level_art.calls-dc_level_art.hits-1u;
+   if(j<8u && name<=UINT32_MAX){const char *t=dc_goal_resolve(rt,(uint32_t)name+4u,15);char c[16]={0};
+     if(t){memcpy(c,t,15);}
+     memcpy((char *)dc_level_art.names[j],c,16);rt->error=DC_GOAL_OK;}}
+  {enum dc_goal_error prior=rt->error;uint32_t v;
+   rt->error=DC_GOAL_OK;
+   v=dir<=UINT32_MAX && name<=UINT32_MAX?art_load(rt,(uint32_t)dir,(uint32_t)name):rt->s7;
+   if(rt->error!=DC_GOAL_OK){v=rt->s7;++dc_level_art.failed;}
+   rt->error=prior;
+   return v;}
+}
+static void wrap_art(dc_goal_runtime *rt){
+  static unsigned char code[12]={1,0xd0,0x2b,0x40,9,0,9,0,0,0,0,0};
+  dc_goal_code_export fn={"dc-level-art-wrapper",code,12,NULL,0};dc_goal_module_result loaded;
+  uint32_t type=named(rt,"load-dir-art-group"),want=dc_goal_find(rt,"(method load-to-heap-by-name load-dir-art-group)"),i,slot=0;
+  uint32_t target=(uint32_t)(uintptr_t)art_wrapper;
+  art_runtime=rt;
+  if(!art_pool){art_pool=dc_goal_alloc(rt,ART_POOL_BYTES);rt->error=DC_GOAL_OK;}
+  for(i=9;i<16 && !slot;++i){
+    dc_goal_code_entry_info info;uint32_t m=dc_goal_get_method(rt,type,(uint16_t)i);
+    if(m && dc_goal_code_entry(rt,m,&info) && info.symbol==want){slot=i;art_load_original=m;}
+    rt->error=DC_GOAL_OK;
+  }
+  dc_level_art.slot=slot;dc_level_art.pool=art_pool;
+  if(!slot || !art_pool)return;
+  memcpy(code+8,&target,4);
+  if(dc_goal_load_module(rt,&fn,1,sync_code,NULL,&loaded))
+    dc_goal_set_method(rt,type,(uint16_t)slot,named(rt,"dc-level-art-wrapper"));
+  rt->error=DC_GOAL_OK;
+}
 int dc_level_want(dc_goal_runtime *rt){
   typedef uint64_t (*three_fn)(uint64_t,uint64_t,uint64_t);
   uint32_t state=named(rt,"*load-state*"),want=named(rt,"(method want-levels load-state)");
@@ -369,7 +553,7 @@ int dc_level_want(dc_goal_runtime *rt){
   {uint32_t group=named(rt,"*level*"),t=dc_goal_find(rt,"#t");unsigned char *f=group?dc_goal_resolve(rt,group+36u,4):NULL;
    if(!f || !t)return stop(rt,16);
    memcpy(f,&t,4);}
-  wrap_birth(rt);wrap_actors_update(rt);wrap_update(rt);
+  wrap_birth(rt);wrap_actors_update(rt);wrap_update(rt);wrap_art(rt);
   dc_level_logic_evidence.want_result=(uint32_t)((three_fn)(uintptr_t)want)(state,training,rt->s7);
   ((three_fn)(uintptr_t)display)(state,training,dc_goal_intern(rt,"display"));
   if(rt->error!=DC_GOAL_OK)return stop(rt,2);
