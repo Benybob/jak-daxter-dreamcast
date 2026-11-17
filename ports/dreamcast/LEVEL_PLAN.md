@@ -1862,3 +1862,25 @@ Not yet: the seam's ground is not drawn (the renderer draws level0's package,
 so at beach-start Jak stands on undrawn ground over the sea); only the beach
 and Sandover seam is staged; whole levels still carry tie instances that never
 collide (Sandover: 489 KB of them).
+
+### Tie instances that never collide are cut; inline arrays stay whole (Flycast, 2745 of 2745, 2026-11-17)
+
+A tie instance collides only through its prototype's collide meshes; grass,
+plants and lamps have none. `build_logic_bsp.py` now keeps only instances whose
+prototype has them and rebuilds each tie tree over them with two levels
+(`slice_level.py`'s rebuild in whole mode: everything else in the BSP stays as
+it was); `--all-ties` keeps them all. Logic BSP bytes, before and after:
+Geyser Rock 546,928 to 530,272 (1,273 of 1,472 instances collide), Sandover
+1,089,552 to 745,440 (1,302 of 3,853), Sentinel Beach 1,194,064 to 1,095,216
+(1,102 of 1,421). BEACH.DGO is 2,194,928 bytes (2,293,696 before).
+
+It found an older fault. `bsp_graph.py` split an object only where a pointer
+lands, and a draw-node's child points into an inline array of instances: the
+array's last eight-element piece became its own region, and Geyser Rock's
+first tie array lost its last element (1,440 long, the tree after it linked in
+the last element's place). An inline array of drawables (nodes, collide
+fragments, tie instances, actors, ambients) is now one region ending with its
+last element; `tie_cuts` cuts each instance's colour pointer over the whole
+array.
+
+The beach to Sandover and back walk runs as before (five loads, no fall).

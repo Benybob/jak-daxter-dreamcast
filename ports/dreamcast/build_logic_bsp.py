@@ -15,6 +15,10 @@ so the original collide-cache finds the walls and nothing the PS2 tie
 renderer needs is kept (151,312 bytes more on Geyser Rock, not 718,784). The
 port does not run that renderer: res_native.c makes the tree's draw a no-op.
 --no-tie-collision drops the trees as before.
+Only instances whose prototype has collide meshes are kept (grass, plants
+and lamps never collide: Sandover kept 3,853 instances, 489 KB, for collision);
+the tie trees are rebuilt over them with two levels (slice_level.py, whole
+mode) and unused prototypes' slots name a kept one. --all-ties keeps them all.
 
 With --art, the level's art groups (every other v4 object but texture pages)
 come first, in retail DGO order, as <LEVEL>-LEVEL.DGO: original level loading
@@ -122,8 +126,9 @@ def tie_cuts(g):
         name = g.name(r)
         if name == 'prototype-bucket-tie':
             cut.update(start + o for o in PROTOTYPE_CUTS)
-        elif name == 'instance-tie':
-            cut.update(range(start + INSTANCE_CUT, g.ends[r], INSTANCE_BYTES))
+        elif name == 'drawable-inline-array-instance-tie':  # one piece (bsp_graph.py)
+            n = struct.unpack_from('<h', g.data, start + GROUP_LENGTH)[0]
+            cut.update(range(start + 32 + INSTANCE_CUT, start + 32 + INSTANCE_BYTES * n, INSTANCE_BYTES))
         elif name == 'proxy-prototype-array-tie':
             cut.add(start + PROXY_CUT)
     return cut & set(g.pointers)
@@ -220,6 +225,8 @@ def main():
     parser.add_argument('--neighbour-vis', action='store_true',
                         help="keep the visibility tables for neighbouring levels' leaves (vis-info 1..7)")
     parser.add_argument('--no-tie-collision', action='store_true', help='drop the instance-tie trees and their collision')
+    parser.add_argument('--all-ties', action='store_true',
+                        help='keep tie instances whose prototype has no collide mesh (they never collide)')
     args = parser.parse_args()
     out_dir = args.output.resolve()
     if not out_dir.is_relative_to((PORT / 'build').resolve()):
@@ -230,6 +237,14 @@ def main():
         raise SystemExit(f'expected one BSP object, found {len(bsps)}')
     name, obj = bsps[0]
     out, report = build(obj, tie_collision=not args.no_tie_collision, neighbour_vis=args.neighbour_vis)
+    if not args.no_tie_collision and not args.all_ties:
+        import slice_level
+        before = len(out)
+        trimmed = slice_level.build(out, lambda sphere: True, None, whole=True)
+        out = slice_level.encode(*trimmed[:3])
+        report.update(solid_ties=dict(bytes_before=before, bytes_after=len(out),
+                                      instances=trimmed[3].get('instance-ties', 0),
+                                      kept=trimmed[3].get('instance-ties kept', 0)))
     out_dir.mkdir(parents=True, exist_ok=True)
     stem = args.dgo.stem.upper()
     art = [(n, o) for _, n, o in archive_objects(args.dgo)

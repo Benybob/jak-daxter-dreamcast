@@ -74,13 +74,6 @@ class SliceGraph(BspGraph):
         # and ids), which follow the visibility data with no tag of their own
         extra |= {u32(self.data, at) & ~15 for at in (32, 44, 52, 60) if at in self.pointers}
         starts = set(self.starts) | {at for at in extra if at % 16 == 0 and 0 < at < len(self.data)}
-        # an inline array the slice compacts stays one piece: its elements carry
-        # tags, and a node's child pointer into it would otherwise split it
-        for at, name in self.tags.items():
-            size = LEAF_BYTES.get(name, 32 if name == 'drawable-inline-array-node' else 0)
-            if size:
-                end = at + 32 + size * struct.unpack_from('<h', self.data, at + GROUP_LENGTH)[0]
-                starts -= {s for s in starts if at < s < end}
         starts = sorted(starts)
         self.starts, self.ends = starts, starts[1:] + [len(self.data)]
 
@@ -202,7 +195,9 @@ def enclose(spheres):
     return (*c, r)
 
 
-def build(obj, near, name):
+def build(obj, near, name, whole=False):
+    """A slice of obj (a BSP object) for name; with whole, the level itself with
+    only its tie trees rebuilt, of the instances that collide (build_logic_bsp.py)."""
     g = SliceGraph(obj)
     data = bytearray(g.data)
     pointers = set(g.pointers)
@@ -220,7 +215,7 @@ def build(obj, near, name):
         struct.pack_into('<I', data, site, 0)
         pointers.discard(site)
 
-    for at in [VIS_INFO + 4 * i for i in range(8)] + [ACTORS, CAMERAS, NODES, AMBIENTS, BIRTH_ORDER]:
+    for at in [] if whole else [VIS_INFO + 4 * i for i in range(8)] + [ACTORS, CAMERAS, NODES, AMBIENTS, BIRTH_ORDER]:
         if at in pointers:
             clear(at)
 
@@ -296,6 +291,9 @@ def build(obj, near, name):
     kept, used = [], collections.defaultdict(set)
     for slot, at, kind in trees:
         clear(slot)
+        if whole and kind != 'drawable-tree-instance-tie':
+            kept.append(at)
+            continue
         if kind in DROP_TREES:
             report['trees dropped'] += 1
             continue
@@ -330,10 +328,11 @@ def build(obj, near, name):
     # the slice's own name and nickname
     bindings = []
     for sym, methods, sites in g.bindings:
-        rest = [s for s in sites if methods is not None or s not in (NAME, NICKNAME)]
+        rest = [s for s in sites if whole or methods is not None or s not in (NAME, NICKNAME)]
         if rest:
             bindings.append((sym, methods, rest))
-    bindings.append((name, None, [NAME, NICKNAME]))
+    if not whole:
+        bindings.append((name, None, [NAME, NICKNAME]))
 
     # what stays: everything still reachable from the header
     # (a pointer's value: a basic's is its tag + 4, plain data's its address)

@@ -14,6 +14,10 @@ from stage_jak_art import decode_v4, u32
 TREES_OFFSET = 40       # bsp-header drawable-trees (retail, from the tag)
 GROUP_LENGTH = 6        # drawable-group length, int16
 GROUP_DATA = 32         # drawable-group data[0]
+# element bytes of the inline arrays of drawables a BSP holds
+INLINE_ELEMENT_BYTES = {'drawable-inline-array-node': 32, 'drawable-inline-array-collide-fragment': 32,
+                        'drawable-inline-array-instance-tie': 64, 'drawable-inline-array-actor': 32,
+                        'drawable-inline-array-ambient': 32}
 
 
 class BspGraph:
@@ -32,6 +36,19 @@ class BspGraph:
             k = bisect.bisect_left(targets, at)
             if k < len(targets) and targets[k] < end:
                 starts.append(at)
+        # An inline array is one piece, ending with its last element: its
+        # elements carry tags, and a pointer to an element (a draw-node's child)
+        # would otherwise split it, so that an element nothing else reaches
+        # could be dropped from inside it; and what follows it is not its own.
+        ends = set()
+        for at, name in self.tags.items():
+            size = INLINE_ELEMENT_BYTES.get(name)
+            if size and at in starts:
+                end = at + 32 + size * struct.unpack_from('<h', data, at + GROUP_LENGTH)[0]
+                starts = [s for s in starts if not at < s < end]
+                if end < len(data):
+                    ends.add(end)
+        starts = sorted(set(starts) | ends)
         self.starts = starts
         self.ends = starts[1:] + [len(data)]
         self.edges = collections.defaultdict(set)
