@@ -1917,3 +1917,42 @@ at once (Sandover from the hut: 44 KB); each load is a synchronous disc read in
 the frame an actor is born, which on a real drive is a seek of about 100 ms
 (not measurable in Flycast). A walk from the hut toward (-60, 100) ends at about
 frame 810 with or without art on demand; not yet looked into.
+
+### Forbidden Jungle, Misty Island and Fire Canyon staged; actors born by distance (Flycast, 2745 of 2745, 2026-11-17)
+
+`stage_level.py` staged JUN, MIS and FIC, each with its seam with Sandover
+(JUNVI1 383,920 bytes, MISVI1 288,000, FICVI1 297,344; level DGOs JUNGLE
+1,431,920, MISTY 1,811,728, FIRECANY 656,896, art apart). Sent there from
+Geyser Rock in Flycast: `jungle-start` 203 of 248 actors born, 25 art groups
+loaded; `misty-start` 163 actors, 17 art groups (349 KB); `firecanyon-start`
+the level and its seam active, Jak walking at 31 m.
+
+What it took:
+
+- **Actors born by distance.** Original actors-update, with `*vis-actors*`,
+  births an actor only when the level's visibility bits from the camera's leaf
+  say it is visible. Those bits are unpacked (decompression type 1, original
+  unpack-vis) against the BSP's drawable trees in order, tfrag first, and the
+  logic BSP has never carried the tfrag trees (nor, since the tie trim, the
+  retail tie trees' shape): every actor bit came from the wrong place. On
+  Geyser Rock and in Sandover that read as visible, in Forbidden Jungle as
+  none (0 of 248). `dc_level_want` sets `*vis-actors*` #f: the original's own
+  other mode, an actor born within `*ACTOR-bank*` birth-dist of the camera and
+  killed beyond it.
+- **A seam has no level boxes** (`slice_level.py`). With its first level's
+  boxes the seam counted as a level Jak was inside, and original level-update
+  then never marked the whole level's own visibility as the only one, so its
+  all-visible? stayed 'loading.
+- **VIS files in VIS/.** Original vis-load asks the ramdisk for VIS/<NICK>.VIS;
+  `stage_level.py` had copied them beside the DGOs.
+- **Art file names** are letters, digits, `-` and `_` (`eichar-fish+0` is
+  `EICHAR-FISH_0.DGO`), as the disc builder accepts; `level_logic.c` maps the
+  same.
+- **Model bundles hold up to 64 models** (Misty's has 53; `level_models.c`).
+- **The second level heap is 480 KiB** for the jungle's seam.
+- Two more reviewed unassigned locals (`dreamcast_unassigned_locals.json`):
+  the fisher's fish death `:code` (a case branch returns nothing) and Misty's
+  boat paddle, which reads last frame's value on its first pass.
+
+Not yet: the other 15 levels; the tests only send Jak to a continue point and
+walk a few meters; Fire Canyon's zoomer is not tried.

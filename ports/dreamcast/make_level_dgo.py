@@ -22,6 +22,7 @@ built from source, the data from the owner's disc.
 """
 import argparse
 import json
+import re
 from pathlib import Path
 import struct
 
@@ -77,7 +78,8 @@ def main():
             old.unlink()
         art, data = data[:-1], data[-1:]
         for object_name, payload in art:
-            file = f'{object_name.upper()}.DGO'
+            # the disc's names: letters, digits, '-' and '_', at most 29 (level_logic.c maps the same)
+            file = re.sub(r'[^A-Z0-9_-]', '_', object_name.upper())[:25] + '.DGO'
             one = HEADER.pack(1, file.encode('ascii').ljust(60, b'\0'))
             one += HEADER.pack(len(payload), object_name.encode('ascii').ljust(60, b'\0')) + payload
             (art_dir / file).write_bytes(one + bytes((-len(payload)) % 16))

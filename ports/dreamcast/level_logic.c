@@ -95,12 +95,10 @@ volatile struct { uint32_t count; struct { char type[24]; char state[24]; uint32
  * are recorded by the DGO boot. dc_level_check confirms which level is where. */
 /* level0 holds Geyser Rock: 955,584 bytes, and 151,312 more with its tie
  * collision (build_logic_bsp.py) */
-/* level1 holds a seam (slice_level.py): 285 KB of DGO for Sentinel Beach's and
- * Sandover's ground by the line between them, 64 KB above it for its link
- * table while it links, and its login's few allocations */
-/* level0 gives 512 KiB of what it had to the art pool (art on demand, below):
- * Sentinel Beach, the largest level staged, took 1,989,776 bytes with its art */
-enum {LEVEL0_HEAP_BYTES=2432u*1024u,LEVEL1_HEAP_BYTES=384u*1024u};
+/* level1 holds a seam (slice_level.py): up to 391 KB of DGO (Forbidden
+ * Jungle's with Sandover), 64 KB above it for its link table while it links,
+ * and its login's few allocations */
+enum {LEVEL0_HEAP_BYTES=2432u*1024u,LEVEL1_HEAP_BYTES=480u*1024u};
 static int alloc_level_heaps(dc_goal_runtime *rt){
   static const uint32_t slot[2]={96u,2704u},bytes[2]={LEVEL0_HEAP_BYTES,LEVEL1_HEAP_BYTES};  /* level-group level0/1 */
   uint32_t group=named(rt,"*level*"),i;
@@ -180,8 +178,10 @@ static void wrap_birth(dc_goal_runtime *rt){
  * slot0_text and slot1_text: each slot's level and status, vis_text the
  * load-state's vis-nick and vis_changes how often it changed, at the last
  * load-state update; border and play: the level-group's; boundaries: the load
- * boundaries original load-boundary-data linked. --dump dc_level_slices 112 */
-volatile struct {uint32_t registered,missing,failed,presented,held,wait_was,last_presented,last_full,slot1_name,slot1_status;char slot1_text[24],vis_text[8];uint32_t vis_changes,border,play,boundaries;char slot0_text[24];} dc_level_slices;
+ * boundaries original load-boundary-data linked; entities: *entity-pool*'s
+ * children now, and the most; links: level0's entity links, born: those with an
+ * actor now, and the most. --dump dc_level_slices 132 */
+volatile struct {uint32_t registered,missing,failed,presented,held,wait_was,last_presented,last_full,slot1_name,slot1_status;char slot1_text[24],vis_text[8];uint32_t vis_changes,border,play,boundaries;char slot0_text[24];uint32_t entities,entities_max,links,born,born_max;} dc_level_slices;
 static const char *const seams[][2]={
   {"beach","village1"},{"citadel","finalboss"},{"citadel","lavatube"},{"darkcave","maincave"},
   {"firecanyon","village1"},{"firecanyon","village2"},{"jungle","jungleb"},{"jungle","village1"},
@@ -309,6 +309,14 @@ static uint64_t update_front(uint64_t state){
    dc_level_slices.border=word(rt,group+16u)!=rt->s7;dc_level_slices.play=word(rt,group+36u)!=rt->s7;
    while(lb && lb!=rt->s7 && n<1000u){++n;lb=word(rt,lb+16u);}  /* load-boundary next +16 */
    dc_level_slices.boundaries=n;rt->error=prior;}
+  {uint32_t pool=named(rt,"*entity-pool*"),pp=pool?word(rt,pool+16u):0,n=0;  /* actors born, for the probe */
+   while(pp && pp!=rt->s7 && n<1024u){uint32_t proc=word(rt,pp);if(!proc || proc==rt->s7)break;++n;pp=word(rt,proc+12u);}
+   dc_level_slices.entities=n;if(n>dc_level_slices.entities_max)dc_level_slices.entities_max=n;rt->error=prior;}
+  {/* level0's entity links (entity-links: process +12; 64 bytes, from +12): how many have an actor */
+   uint32_t group=named(rt,"*level*"),links=word(rt,group+level_slot[0]+280u),n,i,p=0;
+   n=links && links!=rt->s7?word(rt,links):0;if(n>1024u)n=0;
+   for(i=0;i<n;++i){uint32_t proc=word(rt,links+12u+64u*i+12u);if(proc && proc!=rt->s7)++p;}
+   dc_level_slices.links=n;dc_level_slices.born=p;if(p>dc_level_slices.born_max)dc_level_slices.born_max=p;rt->error=prior;}
   {static uint32_t last_vis;
    if(raw[8]!=last_vis){const char *v=dc_goal_symbol_name(rt,raw[8]);char t[8]={0};
      last_vis=raw[8];++dc_level_slices.vis_changes;
@@ -469,7 +477,9 @@ static uint32_t art_load(dc_goal_runtime *rt,uint32_t dir,uint32_t name){
   length=word(rt,name);text=dc_goal_resolve(rt,name+4u,length+1u);
   if(!level_name || !text || length>40u)return rt->s7;
   m=(unsigned)snprintf(path,sizeof path,"/cd/%.8s/ART/",strcmp(level_name,"training")?level_name:"geyser");
-  for(k=0;k<length && m+5u<sizeof path;++k)path[m++]=text[k];
+  /* make_level_dgo.py's names: other characters as '_', at most 25 before .DGO */
+  for(k=0;k<length && k<25u && m+5u<sizeof path;++k){
+    char c=text[k];path[m++]=(char)((c>='a' && c<='z') || (c>='A' && c<='Z') || (c>='0' && c<='9') || c=='-'?c:'_');}
   memcpy(path+m,".DGO",5);
   for(k=4;path[k];++k)if(path[k]>='a' && path[k]<='z')path[k]=(char)(path[k]-32);
   {char t[48]={0};strncpy(t,path,47);memcpy((char *)dc_level_art.last_path,t,48);}
@@ -553,6 +563,15 @@ int dc_level_want(dc_goal_runtime *rt){
   {uint32_t group=named(rt,"*level*"),t=dc_goal_find(rt,"#t");unsigned char *f=group?dc_goal_resolve(rt,group+36u,4):NULL;
    if(!f || !t)return stop(rt,16);
    memcpy(f,&t,4);}
+  /* Actors are born by distance (original actors-update with *vis-actors* #f:
+   * within *ACTOR-bank* birth-dist of the camera, killed beyond it), not by the
+   * level's visibility. Original unpack-vis decodes a leaf's visibility string
+   * against the BSP's drawable trees in order, tfrag first, which the logic
+   * BSP does not carry (build_logic_bsp.py); the actors' bits then came from
+   * the wrong place: Sandover's all visible, Forbidden Jungle's none. */
+  {uint32_t vis=dc_goal_find(rt,"*vis-actors*");
+   if(!vis)return stop(rt,17);
+   dc_goal_set_symbol(rt,vis,rt->s7);}
   wrap_birth(rt);wrap_actors_update(rt);wrap_update(rt);wrap_art(rt);
   dc_level_logic_evidence.want_result=(uint32_t)((three_fn)(uintptr_t)want)(state,training,rt->s7);
   ((three_fn)(uintptr_t)display)(state,training,dc_goal_intern(rt,"display"));

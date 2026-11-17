@@ -19,7 +19,10 @@ changes the vis-nick, which makes level_logic.c load the other level whole;
 Jak stands on the slice until it has. Each collision tree is rebuilt with two levels: one row of
 draw-nodes, flags 0, over the kept leaves, at most eight a node, as the last
 level of a retail tree is. Dropped: actors, ambients, cameras, every
-visibility table and the visibility BSP (nodes: with none, the original
+visibility table, the level boxes (a seam is never a level Jak is inside:
+original level-update uses a level's own visibility only while no other level
+counts Jak inside it, and actors are born only once it has) and the visibility
+BSP (nodes: with none, the original
 camera code takes every drawable as visible), the drawable trees only the PS2
 renderers read, and every tie prototype no kept instance uses (its slot names
 a kept one, which original login reads only for render fields, cut). The bsp-header's name and
@@ -52,6 +55,7 @@ NAMES = {'TRA': 'training', 'VI1': 'village1', 'BEA': 'beach', 'JUN': 'jungle', 
          'FIN': 'finalboss'}
 # bsp-header fields (offsets from the type tag)
 VIS_INFO, ACTORS, CAMERAS, NODES, AMBIENTS, BIRTH_ORDER, NAME, NICKNAME = 80, 112, 116, 120, 156, 172, 72, 76
+BOXES, SPLIT_BOXES = 148, 176  # bsp-header boxes, split-box-indices
 TREES, GROUP_LENGTH, GROUP_DATA = 40, 6, 32
 DROP_TREES = RENDER_TREES - {'drawable-tree-instance-tie'} | {'drawable-tree-actor', 'drawable-tree-ambient'}
 LEAF_BYTES = {'drawable-inline-array-collide-fragment': 32, 'drawable-inline-array-instance-tie': 64}
@@ -215,7 +219,7 @@ def build(obj, near, name, whole=False):
         struct.pack_into('<I', data, site, 0)
         pointers.discard(site)
 
-    for at in [] if whole else [VIS_INFO + 4 * i for i in range(8)] + [ACTORS, CAMERAS, NODES, AMBIENTS, BIRTH_ORDER]:
+    for at in [] if whole else [VIS_INFO + 4 * i for i in range(8)] + [ACTORS, CAMERAS, NODES, AMBIENTS, BIRTH_ORDER, BOXES, SPLIT_BOXES]:
         if at in pointers:
             clear(at)
 

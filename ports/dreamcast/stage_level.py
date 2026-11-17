@@ -10,7 +10,7 @@ For level BEA (Sentinel Beach) this:
   3. packs both as the DGO original load-begin asks for, e.g. BEACH.DGO
      (make_level_dgo.py), its art groups apart, one file each, which
      level_logic.c loads on demand (copied to <FOLDER>/ART in step 7), and
-     copies <LEVEL>.VIS beside it;
+     copies <LEVEL>.VIS to VIS/;
   4. builds its TIE instance package (tie_lods.py --textured --compact);
   5. stages its terrain sectors, cells and LEVEL.DRH over the area its tfrag
      covers (make_level_render_assets.py --large);
@@ -117,7 +117,9 @@ def main():
         run(code)
     run(['build_logic_bsp.py', '--art', '--strip-merc', dgo])
     print(run(['make_level_dgo.py', nick, stem, '--art-out', work / 'ART'])[-300:])  # art on demand
-    shutil.copy(a.iso / 'VIS' / f'{nick}.VIS', disc / f'{nick}.VIS')
+    # original vis-load asks the ramdisk for VIS/<NICK>.VIS (level_dgo_rpc.c)
+    (disc / 'VIS').mkdir(exist_ok=True)
+    shutil.copy(a.iso / 'VIS' / f'{nick}.VIS', disc / 'VIS' / f'{nick}.VIS')
 
     glb = levels / f'{folder_name}-background.glb'
     package = work / 'package.dci3'

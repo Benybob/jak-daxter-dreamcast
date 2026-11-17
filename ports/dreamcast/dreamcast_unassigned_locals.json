@@ -46,5 +46,16 @@
   "beach-obs:anon-function-16": {
     "partial_return": true,
     "reason": "beach-obs.gc flutflutegg :trans: the cond's (if (play-ambient ...) (logior! ...)) branches set nothing when play-ambient answers #f, so the returned value is unset on those paths; a :trans behavior's value is never used. Starts as #f (AI-assisted)."
+  },
+  "fisher:anon-function-2": {
+    "partial_return": true,
+    "reason": "fisher.gc fisher-fish-die :code: the case's ('deadly 'bad) branch does nothing, so the returned value is unset on that path; a state's :code value is never used. Starts as #f (AI-assisted)."
+  },
+  "misty-obs:anon-function-0": {
+    "locals": [
+      "s4-0"
+    ],
+    "assigned_elsewhere": true,
+    "reason": "misty-obs.gc boatpaddle-idle :code: (the float s4-0) reads last frame's value, set later in the loop; on the first pass the original reads whatever the register held. It only offsets part 943's initial value. Dreamcast reads 0 (AI-assisted)."
   }
 }
