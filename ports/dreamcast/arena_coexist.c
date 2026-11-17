@@ -28,7 +28,7 @@ int dc_stage_romdisk_at(void *);
 #ifdef DC_ARENA_JAK_PLAYER
 #include "arena_jak_memory.h"
 #include <string.h>
-enum {SLAB_BYTES=DC_JAK_RENDER_SLAB_BYTES,ARENA_BYTES=DC_JAK_ARENA_BYTES,DMA_BYTES=786432,
+enum {SLAB_BYTES=DC_JAK_RENDER_SLAB_BYTES,ARENA_BYTES=DC_JAK_ARENA_BYTES,DMA_BYTES=786432,ART_VRAM_BYTES=0,
 #elif defined(DC_LEVEL_DRAW)
 /* The level ELF: the GOAL arena keeps 13 MiB less the Jak ELF's measured slab
  * (high water 1,441,856 plus a 65,536 margin). The renderer slab itself is
@@ -38,12 +38,14 @@ enum {SLAB_BYTES=DC_JAK_RENDER_SLAB_BYTES,ARENA_BYTES=DC_JAK_ARENA_BYTES,DMA_BYT
  * blocks if the slab fills). The 655,424 bytes between stay in the KOS heap,
  * which holds that package, the models, the spool heaps and the sound stream.
  * 256 KiB of that went back to the arena for Geyser Rock's tie collision. */
-enum {SLAB_BYTES=851968+196608,ARENA_BYTES=13u*1024u*1024u-1507392+262144-196608,DMA_BYTES=786432,
+/* ART_VRAM_BYTES: Jak's art (1,258,592 bytes with the merc model, goal_art.c
+ * dc_goal_art_to_extension) after the DMA buffers in the VRAM loan. */
+enum {SLAB_BYTES=851968+196608,ARENA_BYTES=13u*1024u*1024u-1507392+262144-196608,DMA_BYTES=786432,ART_VRAM_BYTES=1344u*1024u,
 #else
-enum {SLAB_BYTES=2621440,ARENA_BYTES=11010048,DMA_BYTES=786432,
+enum {SLAB_BYTES=2621440,ARENA_BYTES=11010048,DMA_BYTES=786432,ART_VRAM_BYTES=0,
 #endif
       /* dma-buffer new adds its type's size minus 4, rounded to 16. */
-      EXTENSION_BYTES=DMA_BYTES+64};
+      EXTENSION_BYTES=DMA_BYTES+64+ART_VRAM_BYTES};
 static void *extension,*boot_romdisk,*slab,*root_stack;
 static uint32_t root_owner,root_stack_bytes,scenes;
 #ifdef DC_ARENA_JAK_PLAYER

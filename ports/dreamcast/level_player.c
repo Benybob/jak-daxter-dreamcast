@@ -121,8 +121,12 @@ int dc_level_player(dc_goal_runtime *rt){
   dc_level_player_evidence.dir=named(rt,"*texture-page-dir*");
   if(!ok || rt->error!=DC_GOAL_OK)return stop(rt,3);
   levels=named(rt,"*level*");level=levels+5312u;  /* level-group level-default, original IR */
+  /* Jak's art goes to VRAM (the extension), leaving 1.3 MB of the arena for a
+   * second level; it is read-only after login. */
+  {extern int dc_goal_art_to_extension;dc_goal_art_to_extension=1;}
   if(!(f=fopen("/cd/EICHAR.DGO","rb")))return stop(rt,4);
   ok=dc_goal_load_art_dgo(rt,f,DC_JAK_EICHAR_BYTES,relocate_art,&level,&art);fclose(f);
+  {extern int dc_goal_art_to_extension;dc_goal_art_to_extension=0;}
   dc_level_player_evidence.art_linked=art.linked;dc_level_player_evidence.art_relocated=art.relocated;
   if(!ok || rt->error!=DC_GOAL_OK)return stop(rt,5);
   load_common_art(rt,level);

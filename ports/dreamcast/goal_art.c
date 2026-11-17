@@ -85,7 +85,27 @@ static int site(FILE *f,const art_row *row,const unsigned char *data,uint32_t at
   else {if(!read_at(f,row->data+at,b,4))return 0;*value=word(b);}
   return 1;
 }
-static void put(unsigned char *data,uint32_t at,uint32_t value){memcpy(data+at,&value,4);}
+/* A word store: data may be VRAM (the extension), which takes no byte writes;
+ * sites are 4-aligned (site()). */
+static void put(unsigned char *data,uint32_t at,uint32_t value){*(volatile uint32_t *)(void *)(data+at)=value;}
+/* Reads bytes of the file at offset at into out with 32-bit stores only, through
+ * a stack buffer: out may be VRAM. bytes is a multiple of 4. */
+static int read_words(FILE *f,uint32_t at,unsigned char *out,uint32_t bytes){
+  uint32_t buffer[512],done=0;
+  if(((uintptr_t)out&3u) || (bytes&3u) || fseek(f,(long)at,SEEK_SET))return 0;
+  while(done<bytes){
+    uint32_t n=bytes-done>sizeof buffer?(uint32_t)sizeof buffer:bytes-done,k;
+    if(fread(buffer,1,n,f)!=n)return 0;
+    for(k=0;k<n/4u;++k)((volatile uint32_t *)(void *)(out+done))[k]=buffer[k];
+    done+=n;
+  }
+  return 1;
+}
+/* Art objects of a DGO that go to the VRAM extension when it has room (a level
+ * ELF sets this for Jak's art: 1.3 MB of RAM for a second level, VRAM 4.4 MB
+ * free once the PS2 DMA buffers shrank). Read-only after login. */
+int dc_goal_art_to_extension;
+volatile uint32_t dc_goal_art_extension_bytes;
 /* Validation pass uses source words through FILE; the apply pass uses the
  * arena payload. The compact original link table is the only malloc buffer.
  * All types must already be defined by native GAME.CGO. New resource symbols
@@ -238,7 +258,7 @@ int dc_goal_load_art_dgo(dc_goal_runtime *rt,FILE *f,uint32_t expected_payload,d
   unsigned char h[64],v4[16];art_row rows[2];
   uint32_t i,at=64,total=0,base;
 #ifdef DC_ARENA_JAK_PLAYER
-  uint32_t count,resident=0;unsigned char placed[2]={0,0};
+  uint32_t count,resident=0,extension=0;unsigned char placed[2]={0,0};
 #endif
   dc_goal_art_result admitted;
   if(result)memset(result,0,sizeof *result);
@@ -274,11 +294,13 @@ int dc_goal_load_art_dgo(dc_goal_runtime *rt,FILE *f,uint32_t expected_payload,d
   /* Objects that do not fit the arena, in order, go to the resident main-RAM
    * region when one is registered. Each object relocates against its own base.
    * Admit every placement before reading link tables or modifying symbols. */
-  {uint32_t arena_total=0,resident_total=0,available;
+  {uint32_t arena_total=0,resident_total=0,extension_total=0,available;
    if(rt->temporary>rt->capacity || rt->used>rt->capacity-rt->temporary)return fail(rt,DC_GOAL_BAD_ARGUMENT);
    available=rt->capacity-rt->temporary-rt->used;
    for(i=0;i<count;++i){
-     if(!resident_total && rows[i].size<=available-arena_total){placed[i]=0;arena_total+=rows[i].size;}
+     if(dc_goal_art_to_extension && rt->extension_memory && rt->extension_used<=rt->extension_capacity &&
+        rows[i].size<=rt->extension_capacity-rt->extension_used-extension_total){placed[i]=2;extension_total+=rows[i].size;}
+     else if(!resident_total && rows[i].size<=available-arena_total){placed[i]=0;arena_total+=rows[i].size;}
      else {placed[i]=1;resident_total+=rows[i].size;}
    }
    if(resident_total && (!rt->resident_memory || rt->resident_used>rt->resident_capacity ||
@@ -294,13 +316,16 @@ int dc_goal_load_art_dgo(dc_goal_runtime *rt,FILE *f,uint32_t expected_payload,d
    ART_PROBE(2);
    base=arena_total?dc_goal_alloc(rt,arena_total):0;
    resident=resident_total?dc_goal_alloc_resident(rt,resident_total):0;
-   if((arena_total && !base) || (resident_total && !resident))return 0;
+   extension=extension_total?dc_goal_alloc_extension(rt,extension_total):0;
+   if((arena_total && !base) || (resident_total && !resident) || (extension_total && !extension))return 0;
+   dc_goal_art_extension_bytes+=extension_total;
   }
   ART_PROBE(3);
   for(i=0;i<count;++i){
-    uint32_t *at_base=placed[i]?&resident:&base;
+    uint32_t *at_base=placed[i]==2?&extension:placed[i]?&resident:&base;
     unsigned char *data=dc_goal_resolve(rt,*at_base,rows[i].size);
-    if(!data || !read_at(f,rows[i].data,data,rows[i].size) || !links(rt,f,&rows[i],data,*at_base,result,"art-group",0,NULL))
+    if(!data || !(placed[i]==2?read_words(f,rows[i].data,data,rows[i].size):read_at(f,rows[i].data,data,rows[i].size)) ||
+       !links(rt,f,&rows[i],data,*at_base,result,"art-group",0,NULL))
       return fail(rt,DC_GOAL_BAD_MODULE);
     result->art[i]=*at_base+4;++result->linked;*at_base+=rows[i].size;
   }

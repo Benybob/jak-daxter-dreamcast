@@ -1788,3 +1788,19 @@ triangle the clipper refuses is skipped instead of failing the frame.
 Sandover over the trip and walk: 591 frames, Jak drawn in 583, other actors
 in 219, 7 models evicted, no bad bind poses. On Geyser Rock the floor defers a
 load about 1.6 times a frame, so one or two models there may not show.
+
+### Jak's art in VRAM: 1.3 MB of the arena back (Flycast, 2745 of 2745, 2026-11-16)
+
+`dc_goal_load_art_dgo` can place an art object in the VRAM extension
+(`dc_goal_art_to_extension`, set by `level_player.c` for `EICHAR.DGO`). VRAM
+takes no byte writes, so the object is read through a stack buffer and stored
+in words (`read_words`), and the linker's pointer fixups are word stores
+(`put`). The level ELFs' VRAM loan grows by 1,344 KiB (`ART_VRAM_BYTES`).
+
+1,318,288 bytes of Jak's art now live in VRAM; the level ELF's arena ends the
+boot at 10,778,944 of 12,189,632 bytes, 1.41 MB free (92 KB before). Sandover
+keeps 3.05 MB of VRAM free after its textures. Jak loads, animates and draws in
+Geyser Rock and Sandover (591 frames, drawn in 583). The cost is the CPU's
+uncached reads of VRAM: game logic on Geyser Rock about 75.7 ms a frame against
+68.7. Not testable in Flycast: a byte store into the art after login would be
+lost on hardware; nothing seen so far writes it.
