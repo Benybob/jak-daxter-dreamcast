@@ -6,6 +6,7 @@
  * caller, and import the target's armed main thread on *dram-stack* as a
  * native fiber so the display frames run it. --dump dc_level_player_evidence 64 */
 #include "level_player.h"
+#include "level_logic.h"
 #include "goal_art.h"
 #include "goal_bridge.h"
 #include "goal_fiber.h"
@@ -59,9 +60,10 @@ static int relocate_art(dc_goal_runtime *rt,uint32_t art,void *context){
 /* One level resident at a time. A 16 MB console cannot hold two: Sandover
  * alone is 2.1 MB of logic BSP beside its art and code, and every retail
  * continue point wants its level and a neighbour (lev0, lev1). Each continue
- * point of *level-load-list* is rewritten to want its own level only, shown,
- * with that level's visibility; original target-continue then loads it and
- * waits for nothing else. Layout (retail): level-load-info nickname +8,
+ * point of *level-load-list* is rewritten to want its own level, shown, with
+ * that level's visibility, and as lev1 its seam with the neighbour where
+ * the disc has one (level_logic.c), shown, else nothing; original
+ * target-continue then loads them and waits for nothing else. Layout (retail): level-load-info nickname +8,
  * continues +52; continue-point level +4, vis-nick +100, lev0, disp0, lev1,
  * disp1. --dump dc_level_single 12 */
 volatile struct {uint32_t levels,continues,changed;} dc_level_single;
@@ -79,9 +81,11 @@ static void single_level_continues(dc_goal_runtime *rt){
       if(f){
         uint32_t level=word(rt,cp+4u);
         memcpy(want,f,20);++dc_level_single.continues;
-        if(want[1]!=level || want[3]!=rt->s7){
-          uint32_t shown=want[3]==level?want[4]:want[2];
-          want[1]=level;want[2]=shown!=rt->s7?shown:display;want[3]=rt->s7;want[4]=rt->s7;
+        if(want[1]!=level || (want[3]!=rt->s7 && !dc_level_is_slice(rt,want[3]))){
+          uint32_t shown=want[3]==level?want[4]:want[2],other=want[3]==level?want[1]:want[3];
+          uint32_t slice=other!=rt->s7?dc_level_slice_for(rt,other,level):0;
+          want[1]=level;want[2]=shown!=rt->s7?shown:display;
+          want[3]=slice?slice:rt->s7;want[4]=slice?display:rt->s7;
           if(want[0]!=rt->s7)want[0]=word(rt,info+8u);
           memcpy(f,want,20);++dc_level_single.changed;
         }
@@ -146,7 +150,8 @@ int dc_level_player(dc_goal_runtime *rt){
   if(rt->error!=DC_GOAL_OK || !cp || cp==rt->s7)return stop(rt,6);
   /* The retail continue point also displays village1 (lev1, +112); with one
    * level resident it is alone. */
-  if(word(rt,cp+104u)!=dc_goal_find(rt,"training") || word(rt,cp+112u)!=rt->s7)return stop(rt,11);
+  if(word(rt,cp+104u)!=dc_goal_find(rt,"training") ||
+     (word(rt,cp+112u)!=rt->s7 && !dc_level_is_slice(rt,word(rt,cp+112u))))return stop(rt,11);
   listener=named(rt,"*listener-process*");bytes=word(rt,listener+80)-(listener-4u);
   start=named(rt,"start");
   if(!start || !dc_goal_note_process_span(rt,listener,bytes,NULL) || !dc_goal_bind_process_context(rt,listener,bytes))

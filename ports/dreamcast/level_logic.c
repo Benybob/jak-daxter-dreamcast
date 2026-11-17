@@ -10,6 +10,7 @@
 #include "level_logic.h"
 #include "goal_module.h"
 #include <arch/cache.h>
+#include <stdio.h>
 #include <string.h>
 
 volatile struct {
@@ -93,7 +94,10 @@ volatile struct { uint32_t count; struct { char type[24]; char state[24]; uint32
  * are recorded by the DGO boot. dc_level_check confirms which level is where. */
 /* level0 holds Geyser Rock: 955,584 bytes, and 151,312 more with its tie
  * collision (build_logic_bsp.py) */
-enum {LEVEL0_HEAP_BYTES=2944u*1024u,LEVEL1_HEAP_BYTES=4u*1024u};
+/* level1 holds a seam (slice_level.py): 285 KB of DGO for Sentinel Beach's and
+ * Sandover's ground by the line between them, 64 KB above it for its link
+ * table while it links, and its login's few allocations */
+enum {LEVEL0_HEAP_BYTES=2944u*1024u,LEVEL1_HEAP_BYTES=384u*1024u};
 static int alloc_level_heaps(dc_goal_runtime *rt){
   static const uint32_t slot[2]={96u,2704u},bytes[2]={LEVEL0_HEAP_BYTES,LEVEL1_HEAP_BYTES};  /* level-group level0/1 */
   uint32_t group=named(rt,"*level*"),i;
@@ -157,17 +161,107 @@ static void wrap_birth(dc_goal_runtime *rt){
     dc_goal_set_method(rt,type,18,named(rt,"dc-level-birth-wrapper"));
   rt->error=DC_GOAL_OK;
 }
-/* One level resident (AI-assisted). The game keeps two: a load boundary asks
- * for the level Jak is in and the one he is walking toward. Two do not fit a
- * 16 MB console (LEVEL_PLAN.md), so load-state update! sees one: of the two
- * wanted, the level whose nickname is the load-state's vis-nick (the level
- * whose visibility the camera is using, which a boundary changes at the seam),
- * else the one already resident, else the first. The wants themselves are put
- * back after the call, so the boundaries' own bookkeeping is unchanged. The
- * default continue point (a copy of the load-state made when Jak touches
- * ground) gets the same cut, or a respawn would wait for its second level.
- * Layout: load-state want[2] +0 (name, display?, force-vis?, force-inside?),
- * vis-nick +32; level-load-info nickname +8; level name +0, status +16.
+/* Seams (AI-assisted). Where two levels meet, the original keeps both
+ * resident; here the second slot holds their seam instead: both levels'
+ * collision near the line between them (slice_level.py), a level of its own
+ * named by the two nicknames in seams[] order, e.g. beavi1 is Sentinel Beach's
+ * ground by Sandover and Sandover's by the beach. A seam found on the disc gets
+ * a level-load-info: a copy of its first level's, with the seam's name,
+ * visname and nickname (so load-begin asks for BEAVI1.DGO and no vis-nick ever
+ * names it), no packages, sound banks, ambient sounds, continue points, tasks
+ * or load commands, and wait-for-load #f; it joins *level-load-list*, which
+ * original lookup-level-info walks. Layout (level-load-info, from the
+ * object): name +0, visname +4, nickname +8, packages +16, sound-banks +20,
+ * ambient-sounds +28, continues +52, tasks +56, load-commands +64,
+ * alt-load-commands +68, wait-for-load +108.
+ * slot0_text and slot1_text: each slot's level and status, vis_text the
+ * load-state's vis-nick and vis_changes how often it changed, at the last
+ * load-state update; border and play: the level-group's; boundaries: the load
+ * boundaries original load-boundary-data linked. --dump dc_level_slices 112 */
+volatile struct {uint32_t registered,missing,failed,presented,held,wait_was,last_presented,last_full,slot1_name,slot1_status;char slot1_text[24],vis_text[8];uint32_t vis_changes,border,play,boundaries;char slot0_text[24];} dc_level_slices;
+static const char *const seams[][2]={
+  {"beach","village1"},{"citadel","finalboss"},{"citadel","lavatube"},{"darkcave","maincave"},
+  {"firecanyon","village1"},{"firecanyon","village2"},{"jungle","jungleb"},{"jungle","village1"},
+  {"lavatube","village3"},{"maincave","robocave"},{"maincave","village3"},{"misty","village1"},
+  {"ogre","village2"},{"ogre","village3"},{"rolling","village2"},{"snow","village3"},
+  {"sunken","sunkenb"},{"sunken","village2"},{"swamp","village2"},{"training","village1"}};
+enum {MAX_SLICES=sizeof seams/sizeof seams[0]};
+static uint32_t seam_a[MAX_SLICES],seam_b[MAX_SLICES],slice_name[MAX_SLICES];
+static unsigned slices;
+static void register_slice(dc_goal_runtime *rt,const char *level,const char *near){
+  uint32_t n=dc_goal_find(rt,level),f=dc_goal_find(rt,near),ni,fi,list,sym,info,empty=rt->s7-10u;
+  const char *a,*b;char name[24],path[40];unsigned k;FILE *probe;unsigned char *to;const unsigned char *from;
+  if(!n || !f || slices>=MAX_SLICES)return;
+  ni=dc_goal_symbol_value(rt,n);fi=dc_goal_symbol_value(rt,f);
+  if(!ni || ni==rt->s7 || !fi || fi==rt->s7)return;
+  a=dc_goal_symbol_name(rt,word(rt,ni+8u));b=dc_goal_symbol_name(rt,word(rt,fi+8u));
+  if(!a || !b || strlen(a)+strlen(b)>=sizeof name)return;
+  snprintf(name,sizeof name,"%s%s",a,b);
+  snprintf(path,sizeof path,"/cd/%s.DGO",name);
+  for(k=4;path[k];++k)if(path[k]>='a' && path[k]<='z')path[k]=(char)(path[k]-32);
+  if(!(probe=fopen(path,"rb"))){++dc_level_slices.missing;return;}
+  fclose(probe);
+  sym=dc_goal_intern(rt,name);
+  info=sym?dc_goal_new_basic(rt,named(rt,"level-load-info"),128u):0;
+  list=named(rt,"*level-load-list*");
+  if(!info || !(to=dc_goal_resolve(rt,info,112)) || !(from=dc_goal_resolve(rt,ni,112)) || !list){
+    ++dc_level_slices.failed;rt->error=DC_GOAL_OK;return;}
+  memcpy(to,from,112);
+  dc_level_slices.wait_was=word(rt,ni+108u);  /* the level's own wait-for-load: #t for these */
+  {static const uint32_t names[]={0,4,8},lists[]={16,20,28,52,56,64,68};
+   for(k=0;k<3u;++k)memcpy(to+names[k],&sym,4);
+   for(k=0;k<sizeof lists/sizeof lists[0];++k)memcpy(to+lists[k],&empty,4);
+   memcpy(to+108,&rt->s7,4);}
+  dc_goal_set_symbol(rt,sym,info);
+  {uint32_t pair=dc_goal_new_pair(rt,sym,list);
+   if(!pair){++dc_level_slices.failed;rt->error=DC_GOAL_OK;return;}
+   dc_goal_set_symbol(rt,dc_goal_find(rt,"*level-load-list*"),pair);}
+  seam_a[slices]=n;seam_b[slices]=f;slice_name[slices]=sym;++slices;
+  ++dc_level_slices.registered;
+}
+static void register_slices(dc_goal_runtime *rt){
+  unsigned i;
+  for(i=0;i<sizeof seams/sizeof seams[0];++i)register_slice(rt,seams[i][0],seams[i][1]);
+  rt->error=DC_GOAL_OK;
+}
+uint32_t dc_level_slice_for(dc_goal_runtime *rt,uint32_t level,uint32_t near){
+  unsigned i;(void)rt;
+  for(i=0;i<slices;++i)
+    if((seam_a[i]==level && seam_b[i]==near) || (seam_a[i]==near && seam_b[i]==level))return slice_name[i];
+  return 0;
+}
+int dc_level_is_slice(dc_goal_runtime *rt,uint32_t name){
+  unsigned i;(void)rt;
+  for(i=0;i<slices;++i)if(slice_name[i]==name)return 1;
+  return 0;
+}
+/* The level a wanted seam stands for: of its two, the one that is not
+ * beside (the other want); a name that is not a seam stands for itself. */
+static uint32_t seam_level(uint32_t name,uint32_t beside){
+  unsigned i;
+  for(i=0;i<slices;++i)if(slice_name[i]==name)return seam_a[i]==beside?seam_b[i]:seam_a[i];
+  return name;
+}
+/* One level resident (AI-assisted), with a seam beside it. The game wants
+ * two: a load boundary asks for the level Jak is in and the one he is walking
+ * toward. Two do not fit a 16 MB console (LEVEL_PLAN.md), so load-state
+ * update! sees the whole of one, in want 0: of the two wanted (a seam stands
+ * for its level other than the other want), the one whose nickname is the
+ * load-state's vis-nick (the level whose visibility the camera is using, which
+ * a boundary changes at the line between them), else the one already
+ * resident, else the first. Want 1 becomes the two levels' seam, shown (a
+ * level is collided with only while active), or nothing where the disc has
+ * none. The seam holds the ground on both sides of the line, so when Jak
+ * crosses it and the other level becomes the whole one, update! discards the
+ * level he left, the other loads into the slot that frees (level0, the large
+ * heap; a seam only ever loads with level0 taken, so it lands in level1), and
+ * Jak waits on the seam: original target-load-wait, as for any level wanted
+ * shown that is still loading. The wants themselves are put back after the
+ * call, so the boundaries' own bookkeeping is unchanged. The default continue
+ * point (a copy of the load-state made when Jak touches ground) gets the same
+ * cut, or a respawn would wait for a level that never loads. Layout:
+ * load-state want[2] +0 (name, display?, force-vis?, force-inside?), vis-nick
+ * +32; level-load-info nickname +8; level name +0, status +16.
  * --dump dc_level_want_filter 16 */
 volatile struct {uint32_t calls,cut,kept_name,dropped_name;} dc_level_want_filter;
 static uint32_t update_original;
@@ -176,45 +270,71 @@ static uint32_t nickname_of(dc_goal_runtime *rt,uint32_t name){
   uint32_t info=name && name!=rt->s7?dc_goal_symbol_value(rt,name):0;
   return info && info!=rt->s7?word(rt,info+8u):0;
 }
-static int resident(dc_goal_runtime *rt,uint32_t name){
+static const uint32_t level_slot[2]={96u,2704u};  /* level-group level0/1 */
+static uint32_t status_of(dc_goal_runtime *rt,uint32_t name){
   uint32_t group=named(rt,"*level*"),inactive=dc_goal_find(rt,"inactive");unsigned i;
-  static const uint32_t slot[2]={96u,2704u};
-  for(i=0;i<2u;++i)if(word(rt,group+slot[i])==name && word(rt,group+slot[i]+16u)!=inactive)return 1;
+  for(i=0;i<2u;++i)if(word(rt,group+level_slot[i])==name && word(rt,group+level_slot[i]+16u)!=inactive)
+    return word(rt,group+level_slot[i]+16u);
   return 0;
+}
+static int resident(dc_goal_runtime *rt,uint32_t name){return status_of(rt,name)!=0;}
+/* Which of two wanted levels is to be whole (0 or 1); a slice stands for
+ * its level, so a seam crossed toward it (the vis-nick its level's) makes that
+ * level whole. */
+static unsigned whole_of(dc_goal_runtime *rt,uint32_t a,uint32_t b,uint32_t vis){
+  if(!b || b==rt->s7)return 0;
+  if(!a || a==rt->s7)return 1;
+  if(vis && vis!=rt->s7 && nickname_of(rt,b)==vis && nickname_of(rt,a)!=vis)return 1;
+  if(vis && vis!=rt->s7 && nickname_of(rt,a)==vis)return 0;
+  return resident(rt,b) && !resident(rt,a)?1u:0u;
 }
 static uint64_t update_front(uint64_t state){
   typedef uint64_t (*one_fn)(uint64_t);
-  dc_goal_runtime *rt=want_runtime;uint32_t raw[9],cut[9],keep=0;unsigned char *w;uint64_t out;
+  dc_goal_runtime *rt=want_runtime;uint32_t raw[9],cut[9];unsigned char *w;uint64_t out;
   enum dc_goal_error prior=rt->error;
   ++dc_level_want_filter.calls;
+  {uint32_t group=named(rt,"*level*");dc_level_slices.slot1_name=word(rt,group+level_slot[1]);dc_level_slices.slot1_status=word(rt,group+level_slot[1]+16u);
+   {const char *a=dc_goal_symbol_name(rt,dc_level_slices.slot1_name),*b=dc_goal_symbol_name(rt,dc_level_slices.slot1_status);char t[24];
+    snprintf(t,sizeof t,"%.11s %.11s",a?a:"?",b?b:"?");memcpy((char *)dc_level_slices.slot1_text,t,sizeof t);
+    a=dc_goal_symbol_name(rt,word(rt,group+level_slot[0]));b=dc_goal_symbol_name(rt,word(rt,group+level_slot[0]+16u));
+    snprintf(t,sizeof t,"%.11s %.11s",a?a:"?",b?b:"?");memcpy((char *)dc_level_slices.slot0_text,t,sizeof t);}
+   rt->error=prior;}
   w=state<=UINT32_MAX?dc_goal_resolve(rt,(uint32_t)state,36):NULL;
   if(!w){rt->error=prior;return ((one_fn)(uintptr_t)update_original)(state);}
   memcpy(raw,w,36);
-  if(raw[0]!=rt->s7 && raw[4]!=rt->s7 && raw[0] && raw[4]){
-    uint32_t vis=raw[8];
-    if(vis && vis!=rt->s7 && nickname_of(rt,raw[4])==vis && nickname_of(rt,raw[0])!=vis)keep=1;
-    else if(vis && vis!=rt->s7 && nickname_of(rt,raw[0])==vis)keep=0;
-    else if(resident(rt,raw[4]) && !resident(rt,raw[0]))keep=1;
-    memcpy(cut,raw,36);
-    {unsigned drop=keep?0u:4u,k;for(k=0;k<4u;++k)cut[drop+k]=rt->s7;}
-    memcpy(w,cut,36);++dc_level_want_filter.cut;
-    dc_level_want_filter.kept_name=raw[keep*4u];dc_level_want_filter.dropped_name=raw[(1u-keep)*4u];
+  {uint32_t group=named(rt,"*level*"),lb=named(rt,"*load-boundary-list*"),n=0;
+   dc_level_slices.border=word(rt,group+16u)!=rt->s7;dc_level_slices.play=word(rt,group+36u)!=rt->s7;
+   while(lb && lb!=rt->s7 && n<1000u){++n;lb=word(rt,lb+16u);}  /* load-boundary next +16 */
+   dc_level_slices.boundaries=n;rt->error=prior;}
+  {static uint32_t last_vis;
+   if(raw[8]!=last_vis){const char *v=dc_goal_symbol_name(rt,raw[8]);char t[8]={0};
+     last_vis=raw[8];++dc_level_slices.vis_changes;
+     if(v){strncpy(t,v,7);}
+     memcpy((char *)dc_level_slices.vis_text,t,8);}}
+  if((raw[0] && raw[0]!=rt->s7) || (raw[4] && raw[4]!=rt->s7)){
+    uint32_t level[2]={raw[0],raw[4]};unsigned keep,k;
+    level[0]=seam_level(raw[0],raw[4]);level[1]=seam_level(raw[4],raw[0]);
+    keep=whole_of(rt,level[0],level[1],raw[8]);
+    {uint32_t whole=level[keep],other=level[1u-keep],slice=other!=rt->s7?dc_level_slice_for(rt,other,whole):0;
+    for(k=0;k<4u;++k)cut[k]=raw[keep*4u+k];
+    cut[0]=whole;if(cut[1]==rt->s7)cut[1]=dc_goal_find(rt,"display");  /* a seam's level, shown */
+    cut[4]=slice?slice:rt->s7;cut[5]=slice?dc_goal_find(rt,"display"):rt->s7;cut[6]=cut[7]=rt->s7;cut[8]=raw[8];
+    if(memcmp(cut,raw,36)){memcpy(w,cut,36);++dc_level_want_filter.cut;}
+    if(slice){++dc_level_slices.presented;dc_level_slices.last_presented=slice;dc_level_slices.last_full=whole;}
+    dc_level_want_filter.kept_name=whole;dc_level_want_filter.dropped_name=other;}
   }
   {uint32_t cp=named(rt,"*default-continue*");unsigned char *f=cp && cp!=rt->s7?dc_goal_resolve(rt,cp+100u,20):NULL;
-   if(f){uint32_t v[5],level=word(rt,cp+4u);
+   if(f){uint32_t v[5],display=dc_goal_find(rt,"display");
      memcpy(v,f,20);
      if(v[1]!=rt->s7 && v[3]!=rt->s7){
-       if(v[3]==level || (v[0]!=rt->s7 && nickname_of(rt,v[3])==v[0] && nickname_of(rt,v[1])!=v[0])){v[1]=v[3];v[2]=v[4];}
-       v[3]=v[4]=rt->s7;memcpy(f,v,20);}}}
+       uint32_t l0=seam_level(v[1],v[3]),l1=seam_level(v[3],v[1]);
+       unsigned keep=whole_of(rt,l0,l1,v[0]);
+       uint32_t whole=keep?l1:l0,other=keep?l0:l1,sl=dc_level_slice_for(rt,other,whole);
+       uint32_t n[5]={v[0],whole,display,sl?sl:rt->s7,sl?display:rt->s7};
+       if(memcmp(n,v,20))memcpy(f,n,20);}}}
   rt->error=prior;
   out=((one_fn)(uintptr_t)update_original)(state);
-  if((w=dc_goal_resolve(rt,(uint32_t)state,36))){
-    /* the wants as the game left them, with whatever update! itself changed in the kept slot */
-    uint32_t now[9];memcpy(now,w,36);
-    if(raw[0]!=rt->s7 && raw[4]!=rt->s7 && raw[0] && raw[4]){
-      unsigned drop=keep?0u:4u,k;for(k=0;k<4u;++k)now[drop+k]=raw[drop+k];
-      memcpy(w,now,36);}
-  }
+  if((w=dc_goal_resolve(rt,(uint32_t)state,36)))memcpy(w,raw,36);  /* the wants as the game left them */
   return out;
 }
 static void wrap_update(dc_goal_runtime *rt){
@@ -240,6 +360,15 @@ int dc_level_want(dc_goal_runtime *rt){
   uint32_t display=named(rt,"(method want-display-level load-state)"),training=dc_goal_intern(rt,"training");
   if(!rt || rt->error!=DC_GOAL_OK || !state || !want || !display || !training)return stop(rt,1);
   if(!alloc_level_heaps(rt))return stop(rt,14);
+  register_slices(rt);
+  /* What original play sets before the game starts (this boot calls start
+   * directly): the level-group's play? (+36). target-continue's exit copies it
+   * to border? and the default border-mode, and while border? is set the
+   * drawing frame checks the load boundaries (render-boundaries), which change
+   * the wanted levels and the vis-nick as Jak walks between levels. */
+  {uint32_t group=named(rt,"*level*"),t=dc_goal_find(rt,"#t");unsigned char *f=group?dc_goal_resolve(rt,group+36u,4):NULL;
+   if(!f || !t)return stop(rt,16);
+   memcpy(f,&t,4);}
   wrap_birth(rt);wrap_actors_update(rt);wrap_update(rt);
   dc_level_logic_evidence.want_result=(uint32_t)((three_fn)(uintptr_t)want)(state,training,rt->s7);
   ((three_fn)(uintptr_t)display)(state,training,dc_goal_intern(rt,"display"));

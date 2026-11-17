@@ -31,6 +31,8 @@ volatile struct {
   char name[16];
   uint32_t prior_error,prior_site,opened,count;
 } dc_level_dgo_evidence={.version=2};
+/* DGO loads that opened a render folder (level0 only). --dump dc_level_render_opens 4 */
+volatile uint32_t dc_level_render_opens;
 typedef char dc_level_dgo_evidence_bytes[sizeof dc_level_dgo_evidence==88?1:-1];
 
 void dc_level_draw_open(const char *directory) __attribute__((weak));
@@ -242,7 +244,13 @@ static uint64_t dgo_rpc(uint64_t port,uint64_t fno,uint64_t async,uint64_t send,
      for(k=0;k<sizeof stem-1 && path[4+k] && path[4+k]!='.';++k)stem[k]=path[4+k];
      stem[k]=0;
      for(k=0;k<sizeof folders/sizeof folders[0];++k)if(!strcmp(stem,folders[k][0]))folder=folders[k][1];
-     if(dc_level_draw_open)dc_level_draw_open(folder);}
+     /* only for level0 (the whole level): a seam slice in level1 has no render data */
+     {uint32_t loading=dc_goal_find(runtime,"loading-level"),group=dc_goal_find(runtime,"*level*");
+      uint32_t heap=loading?dc_goal_symbol_value(runtime,loading):0,levels=group?dc_goal_symbol_value(runtime,group):0;
+      runtime->error=DC_GOAL_OK;
+      if(levels && heap!=levels+96u+28u)folder=NULL;}
+     if(folder)++dc_level_render_opens;
+     if(folder && dc_level_draw_open)dc_level_draw_open(folder);}
     if((dgo=fopen(path,"rb"))){
       unsigned char header[64];
       dc_level_dgo_evidence.opened=1;

@@ -14,7 +14,8 @@ For level BEA (Sentinel Beach) this:
      covers (make_level_render_assets.py --large);
   6. bundles its skinned models with Jak's and the common pickups
      (make_skin_models.py);
-  7. copies the render data to build/level-disc/<FOLDER>.
+  7. copies the render data to build/level-disc/<FOLDER>;
+  8. builds its seams (slice_level.py) with the neighbours already staged.
 
 Everything it reads is the owner's disc and its decompiler export; everything it
 writes is under build/ (git-ignored). The DGO's name is the level's name cut to
@@ -43,6 +44,12 @@ LEVELS = {
     'FIN': ('finalboss', 'finalboss', False), 'TIT': ('title', 'title', False), 'INT': ('intro', 'intro', False),
 }
 COMMON = ['crate-wood', 'crate-steel', 'crate-iron', 'money', 'fuel-cell', 'buzzer']
+# The game's seams, in level_logic.c's seams[] order: the seam of (a, b) is
+# <A><B>.DGO by their nicknames (slice_level.py A B).
+SEAMS = [('BEA', 'VI1'), ('CIT', 'FIN'), ('CIT', 'LAV'), ('DAR', 'MAI'), ('FIC', 'VI1'), ('FIC', 'VI2'),
+         ('JUN', 'JUB'), ('JUN', 'VI1'), ('LAV', 'VI3'), ('MAI', 'ROB'), ('MAI', 'VI3'), ('MIS', 'VI1'),
+         ('OGR', 'VI2'), ('OGR', 'VI3'), ('ROL', 'VI2'), ('SNO', 'VI3'), ('SUN', 'SUB'), ('SUN', 'VI2'),
+         ('SWA', 'VI2'), ('TRA', 'VI1')]
 
 
 def run(args, python=sys.executable):
@@ -128,10 +135,19 @@ def main():
         shutil.rmtree(folder)
     shutil.copytree(work / 'assets', folder, ignore=shutil.ignore_patterns('*.json'))
     shutil.copy(work / 'MODELS.DSK', folder / 'MODELS.DSK')
+    # 8. the seams with neighbours already staged (Geyser Rock's with Sandover is
+    # not walked across: the warp gate takes Jak between them)
+    seams = []
+    for pair in SEAMS:
+        if nick in pair and 'TRA' not in pair:
+            other = pair[1] if pair[0] == nick else pair[0]
+            if (disc / f'{LEVELS[other][0][:8].upper()}.DGO').exists():
+                out = run(['slice_level.py', *pair, '--iso', a.iso])
+                seams.append(json.loads(out)['dgo'])
     tail = json.loads(report[report.index('{'):])
     print(json.dumps(dict(level=nick, dgo=f'{stem}.DGO', folder=folder.name, area=[x0, z0, x1, z1],
                           window=tail.get('window'), records=tail.get('instance_records'),
-                          disc_bytes=sum(p.stat().st_size for p in folder.rglob('*') if p.is_file()),
+                          disc_bytes=sum(p.stat().st_size for p in folder.rglob('*') if p.is_file()), seams=seams,
                           ai_assisted=True), indent=1))
 
 

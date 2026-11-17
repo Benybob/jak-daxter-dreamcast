@@ -1804,3 +1804,61 @@ Geyser Rock and Sandover (591 frames, drawn in 583). The cost is the CPU's
 uncached reads of VRAM: game logic on Geyser Rock about 75.7 ms a frame against
 68.7. Not testable in Flycast: a byte store into the art after login would be
 lost on hardware; nothing seen so far writes it.
+
+### Seams: Sentinel Beach and Sandover walked across (Flycast, 2745 of 2745, 2026-11-17)
+
+Where two levels meet, the original keeps both resident; a 16 MB console holds
+one whole level. The second level slot now holds the two levels' **seam**: a
+level of its own with both levels' collision near the line between them.
+
+- **`slice_level.py BEA VI1`** writes `build/level-disc/BEAVI1.DGO`. For each
+  of the two levels it keeps the collide fragments and the tie instances whose
+  bounding spheres lie within 20 m of the other level's collide fragments or
+  continue points, or, across the ground, within 40 m of a vis boundary
+  between the two (`load-boundary-data.gc`: a vis command naming either level
+  and no third). A tie instance is kept only if its prototype has collide
+  meshes (grass and lamps never collide). Each collision tree is rebuilt with
+  two levels, a row of draw-nodes (flags 0) over the kept leaves; actors,
+  ambients, cameras, visibility tables and the visibility BSP are dropped,
+  and unused tie prototypes' slots name a kept one (prototype login reads only
+  the render fields, cut). The second level's slice is appended to the first
+  and its trees join the first's tree array. The tool splits the BSP at what a
+  collide mesh points to (its packed vertices carry no tag), keeps each
+  inline array it compacts in one piece, remaps a pointer by its value (a
+  basic's is its tag + 4, plain data's its address), and checks that every
+  kept pointer stays inside what is kept; the kept meshes' packed data match
+  the retail bytes. BEAVI1.DGO: 285,264 bytes (beach 72,864, Sandover 207,328).
+- **Registered at boot** (`level_logic.c`): for each seam of the game's 20
+  pairs found on the disc, a level-load-info copied from its first level's,
+  with the seam's name as name, visname and nickname (load-begin then asks for
+  BEAVI1.DGO; no vis-nick names it), no packages, sound banks, continue points,
+  tasks or load commands, wait-for-load #f, added to `*level-load-list*`.
+- **The want filter** gives load-state update! the whole level the vis-nick
+  names (a seam want stands for its level other than the other want) and the
+  pair's seam beside it, shown (only active levels are collided with). The
+  seam holds the ground on both sides, so when Jak crosses a vis line the level
+  he left is discarded, the other loads into level0, and Jak waits on the seam
+  in original target-load-wait. A slot-ordering scheme that swapped two
+  one-sided slices failed both ways: crossing into Sandover Jak stood on its
+  slice, crossing back on Sandover itself.
+- **Continue points** on a seam (`beach-start`) want their level and the seam
+  (`level_player.c`); the default continue point gets the same cut.
+- **Load boundaries run.** This boot calls start directly, not original play,
+  which sets the level-group's `play?`; without it target-continue's exit left
+  `border?` off and render-boundaries never checked a boundary (168 linked).
+  `dc_level_want` now sets `play?`.
+- A seam loads into level1 (384 KiB heap; the level ELF's arena ends the boot
+  at 11,168,224 of 12,189,632 bytes, 1.02 MB free) without opening a render folder:
+  `level_dgo_rpc.c` opens one only for level0's heap.
+
+Measured in Flycast from `beach-start` (sent from Geyser Rock): Jak stands
+where he fell before (on Sandover's ground, from the seam), walks north over
+the vis line into Sandover (the beach is discarded, Sandover loads and draws),
+and back south onto the beach (Sandover discarded, the beach reloads) without
+falling: TRAINING, BEACH, BEAVI1, VILLAGE1, BEACH loaded, slots ending beach
+and beavi1 active.
+
+Not yet: the seam's ground is not drawn (the renderer draws level0's package,
+so at beach-start Jak stands on undrawn ground over the sea); only the beach
+and Sandover seam is staged; whole levels still carry tie instances that never
+collide (Sandover: 489 KB of them).
