@@ -1956,3 +1956,42 @@ What it took:
 
 Not yet: the other 15 levels; the tests only send Jak to a continue point and
 walk a few meters; Fire Canyon's zoomer is not tried.
+
+### Rock Village, Lost Precursor City, Boggy Swamp, Precursor Basin and Mountain Pass staged; files in the high-density area (Flycast, 2745 of 2745, 2026-11-17)
+
+`stage_level.py` staged VI2, SUN, SUB, SWA, ROL and OGR with their seams
+(FICVI2, SUNVI2, SUNSUB, SWAVI2, ROLVI2, OGRVI2). Sent there from Geyser Rock
+in Flycast, each level loads with its seam and its actors are born:
+`village2-start` 128 actors, 19 art groups; `sunken-start` 190, 17;
+`sunkenb-start` 157, 8; `swamp-start` (on Rock Village's side: Rock Village
+whole, swamp seam) 112, 26 art loads and the first evictions; `rolling-start`
+81; `ogre-start` 56, 6.
+
+What it took:
+
+- **Files in the high-density area.** The staged disc is 132 MB, past the
+  GD-ROM's low-density area. `make_boot_gdi.py --high-density` puts the files
+  in track 3 beside the boot image; KOS's ISO reader asks only for the
+  low-density table of contents, so the level ELFs link with
+  `--wrap=cdrom_read_toc` (`level_dgo_rpc.c`): a low-density request takes the
+  high-density table when it has a data track, else the low one (a CD-R).
+  `dc_level_disc_area` reads 2 in Flycast.
+- **The instance package reserve is 896 KiB** (Precursor Basin's package is
+  887,288 bytes).
+- **Lowering** (`lower_sh4_ir.py`): a fieldless static basic (its 4-byte tag
+  alone) is padded to 16 bytes so its address lies inside its data, as the
+  module loader requires (target-tube); a quadword already narrowed to a
+  64-bit register passes as an integer argument, its low 64 bits as a PS2
+  callee reads it (double-lurker's `go` with a quadword argument its state
+  never reads); a reviewed partial return may be copied into the returned
+  register before the return (billy); and a reviewed `"call_args"` function's
+  never-written `(local-vars (x none))` argument starts as 0
+  (swamp-rat-nest-spawn-rat: spawned rats are then never actor-paused).
+- Three more reviewed partial returns: target-tube's slide-control, the race
+  ring's and billy's `:trans` (`dreamcast_unassigned_locals.json`).
+- **Art across a seam.** An art group a level's folder lacks is looked for in
+  the folder of the level across the resident seam (the original keeps both);
+  not yet exercised: the lower city's 40 misses are names neither city has.
+
+Not yet: Snowy Mountain, Spider Cave, Volcanic Crater, Lava Tube, Gol and
+Maia's Citadel and the final boss; the tests only send Jak to a continue point.

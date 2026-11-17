@@ -36,6 +36,23 @@ volatile uint32_t dc_level_render_opens;
 typedef char dc_level_dgo_evidence_bytes[sizeof dc_level_dgo_evidence==88?1:-1];
 
 void dc_level_draw_open(const char *directory) __attribute__((weak));
+/* The disc's files (AI-assisted). A level disc outgrows the GD-ROM's low-density
+ * area (make_boot_gdi.py --high-density puts them in track 3, beside the boot
+ * image); KOS's ISO reader asks only for the low-density table of contents.
+ * These ELFs link with --wrap=cdrom_read_toc: a low-density request first takes
+ * the high-density table when it has a data track (a GD-ROM's), else the low
+ * one (a CD-R has only that). --dump dc_level_disc_area 4 */
+#include <dc/cdrom.h>
+volatile uint32_t dc_level_disc_area;  /* 1 low density, 2 high density */
+int __real_cdrom_read_toc(CDROM_TOC *toc,bool high_density);
+int __wrap_cdrom_read_toc(CDROM_TOC *toc,bool high_density){
+  if(!high_density){
+    CDROM_TOC high;
+    if(__real_cdrom_read_toc(&high,true)==0 && cdrom_locate_data_track(&high)){*toc=high;dc_level_disc_area=2;return 0;}
+    dc_level_disc_area=1;
+  }
+  return __real_cdrom_read_toc(toc,high_density);
+}
 static dc_goal_runtime *runtime;
 static FILE *dgo;
 static uint32_t dgo_count,dgo_next,dgo_at;

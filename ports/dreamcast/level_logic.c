@@ -387,8 +387,9 @@ static void wrap_update(dc_goal_runtime *rt){
  * hits: answered by the original; last_path: the last file asked for.
  * dir_level: calls per directory (level0, level1, level-default, other);
  * names: the first eight art names asked for that the original did not have.
- * --dump dc_level_art 248 */
-volatile struct {uint32_t loads,missing,failed,evicted,sweeps,pool_used,pool_high,last_bytes,refused,blocks,slot,pool,calls,hits;char last_path[48];uint32_t dir_level[4];char names[8][16];} dc_level_art;
+ * from_neighbour: art groups found in the folder of the level across the seam.
+ * --dump dc_level_art 252 */
+volatile struct {uint32_t loads,missing,failed,evicted,sweeps,pool_used,pool_high,last_bytes,refused,blocks,slot,pool,calls,hits;char last_path[48];uint32_t dir_level[4];char names[8][16];uint32_t from_neighbour;} dc_level_art;
 enum {ART_POOL_BYTES=512u*1024u,ART_BLOCKS=128u};
 static uint32_t art_pool,art_load_original;
 static const uint32_t level_slot_any[3]={96u,2704u,5312u};  /* level-group level0, level1, level-default */
@@ -476,14 +477,24 @@ static uint32_t art_load(dc_goal_runtime *rt,uint32_t dir,uint32_t name){
   level_name=dc_goal_symbol_name(rt,word(rt,lev));
   length=word(rt,name);text=dc_goal_resolve(rt,name+4u,length+1u);
   if(!level_name || !text || length>40u)return rt->s7;
-  m=(unsigned)snprintf(path,sizeof path,"/cd/%.8s/ART/",strcmp(level_name,"training")?level_name:"geyser");
-  /* make_level_dgo.py's names: other characters as '_', at most 25 before .DGO */
-  for(k=0;k<length && k<25u && m+5u<sizeof path;++k){
-    char c=text[k];path[m++]=(char)((c>='a' && c<='z') || (c>='A' && c<='Z') || (c>='0' && c<='9') || c=='-'?c:'_');}
-  memcpy(path+m,".DGO",5);
-  for(k=4;path[k];++k)if(path[k]>='a' && path[k]<='z')path[k]=(char)(path[k]-32);
-  {char t[48]={0};strncpy(t,path,47);memcpy((char *)dc_level_art.last_path,t,48);}
-  if(!(f=fopen(path,"rb"))){++dc_level_art.missing;return rt->s7;}
+  /* the level's own folder, then the folder of the level across the resident
+   * seam: the original keeps both resident, and one's actors may use the
+   * other's art (Lost Precursor City's lower part, sunkenb, uses sunken's) */
+  {const char *folders[2]={level_name,NULL};unsigned which;
+   uint32_t seam=word(rt,group+level_slot_any[1]);
+   if(lev==group+level_slot_any[0] && dc_level_is_slice(rt,seam))
+     folders[1]=dc_goal_symbol_name(rt,seam_level(seam,word(rt,lev)));
+   for(which=0,f=NULL;which<2u && !f && folders[which];++which){
+     m=(unsigned)snprintf(path,sizeof path,"/cd/%.8s/ART/",strcmp(folders[which],"training")?folders[which]:"geyser");
+     /* make_level_dgo.py's names: other characters as '_', at most 25 before .DGO */
+     for(k=0;k<length && k<25u && m+5u<sizeof path;++k){
+       char c=text[k];path[m++]=(char)((c>='a' && c<='z') || (c>='A' && c<='Z') || (c>='0' && c<='9') || c=='-'?c:'_');}
+     memcpy(path+m,".DGO",5);
+     for(k=4;path[k];++k)if(path[k]>='a' && path[k]<='z')path[k]=(char)(path[k]-32);
+     {char t[48]={0};strncpy(t,path,47);memcpy((char *)dc_level_art.last_path,t,48);}
+     f=fopen(path,"rb");
+     if(f && which)++dc_level_art.from_neighbour;}}
+  if(!f){++dc_level_art.missing;return rt->s7;}
   if(fseek(f,64,SEEK_SET) || fread(head,1,64,f)!=64){fclose(f);++dc_level_art.failed;return rt->s7;}
   memcpy(&size,head,4);
   if(!(dest=art_alloc(size))){art_sweep(rt);dest=art_alloc(size);}

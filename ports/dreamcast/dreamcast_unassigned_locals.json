@@ -1,5 +1,5 @@
 {
-  "_comment": "Reviewed original local-vars that no op assigns on the PC port, zero-filled at entry on Dreamcast (AI-assisted). Each entry names the function, its locals and why; \"assigned_elsewhere\": true marks locals the original sets on other paths but reads stale on one. Anything not listed still refuses as an uninitialized read. lower_sh4_ir.py --unassigned-locals checks every listed local exists and is never assigned; build_game_cgo.py reports entries no file used. \"false_locals\" lists locals that start as #f instead of 0 (a stale value only ever tested for truth).",
+  "_comment": "Reviewed original local-vars that no op assigns on the PC port, zero-filled at entry on Dreamcast (AI-assisted). Each entry names the function, its locals and why; \"assigned_elsewhere\": true marks locals the original sets on other paths but reads stale on one. Anything not listed still refuses as an uninitialized read. lower_sh4_ir.py --unassigned-locals checks every listed local exists and is never assigned; build_game_cgo.py reports entries no file used. \"false_locals\" lists locals that start as #f instead of 0 (a stale value only ever tested for truth). \"call_args\": true marks a function that passes a never-assigned (local-vars (x none)) as a call argument, which the frontend gives a register of its own; that register starts as 0.",
   "process-particles": {
     "locals": [
       "v1-29",
@@ -57,5 +57,21 @@
     ],
     "assigned_elsewhere": true,
     "reason": "misty-obs.gc boatpaddle-idle :code: (the float s4-0) reads last frame's value, set later in the loop; on the first pass the original reads whatever the register held. It only offsets part 943's initial value. Dreamcast reads 0 (AI-assisted)."
+  },
+  "target-tube:anon-function-18": {
+    "partial_return": true,
+    "reason": "target-tube.gc slide-control-ride :trans: the cond's first clause has no body, so the returned value is unset when its test fails over to nothing; a :trans behavior's value is never used. Starts as #f (AI-assisted)."
+  },
+  "rolling-race-ring:anon-function-1": {
+    "partial_return": true,
+    "reason": "rolling-race-ring.gc race-ring :trans: the cond's first clause ((not (last-ring? self))) has no body, so the returned value is unset on that path; a :trans behavior's value is never used. Starts as #f (AI-assisted)."
+  },
+  "swamp-rat-nest-spawn-rat": {
+    "call_args": true,
+    "reason": "swamp-rat-nest.gc: (local-vars (t2-0 none)), never assigned, is passed as swamp-rat-init-by-other's fifth argument (arg4: when true the rat is not actor-paused); the original passes whatever register t2 held. Dreamcast passes 0, which GOAL reads as true: spawned rats are never actor-paused (AI-assisted)."
+  },
+  "billy:anon-function-23": {
+    "partial_return": true,
+    "reason": "billy.gc enter-playing :trans: the cond's (else) has no body, so the returned value is unset on that path; a :trans behavior's value is never used. Starts as #f (AI-assisted)."
   }
 }

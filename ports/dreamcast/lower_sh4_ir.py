@@ -1069,11 +1069,21 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
             # Only a value stored to memory: returns, branches and arithmetic
             # on an unassigned register stay refusals (they flag lowering bugs).
             offender=function['instructions'][error.node]
+            # A reviewed call argument (dreamcast_unassigned_locals.json "call_args"):
+            # a (local-vars (x none)) passed as an argument, never written, which the
+            # frontend gives a register of its own. It starts as 0.
+            if (function.get('zero_call_args') and offender['kind']=='call' and not error.missing&assigned and
+                error.missing<=set(offender['reads']) and all(registers[i]['class']=='gpr64' for i in error.missing)):
+                zero_entry|=error.missing; continue
             stored=(offender['kind']=='store_memory' and len(error.missing)==1 and
                     offender['reads'][:1]==list(error.missing) and offender['reads'].count(offender['reads'][0])==1)
             # A reviewed partial return (dreamcast_unassigned_locals.json): a value
-            # set on other paths and returned unset on one starts as #f.
-            returned=(function.get('partial_return') and offender['kind']=='return' and
+            # set on other paths and returned unset on one starts as #f: read by the
+            # return, or copied into the register a return reads.
+            returned_registers={r for o in function['instructions'] if o['kind']=='return' for r in o['reads']}
+            returned=(function.get('partial_return') and
+                      (offender['kind']=='return' or
+                       (offender['kind']=='move' and set(offender['writes'])<=returned_registers)) and
                       len(error.missing)==1 and registers[next(iter(error.missing))]['class']=='gpr64')
             partial=error.missing&assigned-arguments
             if not (stored or returned) or partial!=error.missing or partial&zero_entry or \
@@ -1950,7 +1960,13 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
                         else:
                             load64(argument); e.word(0x405a); e.word(0xf00d|(native<<8))
                     else:
-                        if scalar_kind(parameter['type'],runtime) not in value_types or scalar_kind(registers[argument]['type'],runtime) not in value_types:
+                        # a quadword already narrowed to a 64-bit register passes its low 64 bits,
+                        # as a PS2 callee reads a 128-bit argument register
+                        narrowed=registers[argument]['class']=='gpr64' and registers[argument]['type'] in ('uint128','int128')
+                        # (a call site's own signature may name the parameter uint128 too)
+                        if (scalar_kind(parameter['type'],runtime) not in value_types and
+                                not (narrowed and parameter['type'] in ('uint128','int128'))) or (
+                                scalar_kind(registers[argument]['type'],runtime) not in value_types and not narrowed):
                             raise ValueError('unsupported integer call argument')
                         if integer_index<2: load64(argument,4+integer_index*2,5+integer_index*2)
                         else:
@@ -2338,7 +2354,8 @@ def structured_static_data(item):
     payload=item.get('data_bytes'); offset=item.get('address_offset'); relocations=item.get('relocations')
     if not isinstance(payload,list) or not payload or len(payload)>1048576 or any(type(b) is not int or not 0<=b<=255 for b in payload):
         raise ValueError('invalid structured static bytes')
-    if type(offset) is not int or offset not in (0,4) or offset>=len(payload):
+    # (a basic with no fields is its 4-byte type tag alone; its address is just past it)
+    if type(offset) is not int or offset not in (0,4) or offset>len(payload) or (offset==len(payload) and offset!=4):
         raise ValueError('unsupported structured static address offset')
     if not isinstance(relocations,list): raise ValueError('missing structured static relocations')
     seen=set()
@@ -2353,6 +2370,9 @@ def structured_static_data(item):
         kind,name=symbol.split(':',1)
         if kind not in ('type','pointer','function','data') or not name:
             raise ValueError('unsupported structured static import')
+    # a fieldless basic's address lies past its 4-byte tag: padded to 16 bytes, its
+    # address is inside its data, as the module loader requires
+    if offset==len(payload): payload=payload+[0]*12
     return bytes(payload),offset,relocations
 
 DEBUG_SEGMENT=1  # common/link_types.h
@@ -2558,6 +2578,8 @@ if __name__=='__main__':
                     entry=reviewed[f['name']]
                     if entry.get('partial_return') is True and entry.get('reason') and not entry.get('locals'):
                         f['partial_return']=True; continue
+                    if entry.get('call_args') is True and entry.get('reason') and not entry.get('locals'):
+                        f['zero_call_args']=True; continue
                     if not entry.get('reason') or not entry.get('locals'): raise ValueError('reviewed zero local entry needs locals and a reason')
                     f['zero_locals']=list(entry['locals'])
                     if entry.get('false_locals'): f['false_locals']=list(entry['false_locals'])

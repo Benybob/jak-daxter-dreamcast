@@ -1,7 +1,9 @@
 """Build a two-session boot GDI without external writers (AI-assisted), ISC.
 
 Track 1 holds the staged /cd files for KOS's low-density TOC reader. Track 3
-holds IP.BIN and an UNSCRAMBLED flat SH-4 image for GD-ROM boot at LBA 45000.
+holds IP.BIN and an UNSCRAMBLED flat SH-4 image for GD-ROM boot at LBA 45000;
+with --high-density it holds the staged files too (for an ELF that reads the
+high-density table of contents, as the level ELFs do).
 This is an emulator GDI, not a burnable CD-R or a GD-ROM streaming benchmark.
 """
 import argparse
@@ -201,7 +203,7 @@ def disc_identity(path):
     return result
 
 
-def build(elf, template, roots, out, required=('EICHAR.DGO', 'JAKART.DGO')):
+def build(elf, template, roots, out, required=('EICHAR.DGO', 'JAKART.DGO'), high_density=False):
     out = out.resolve()
     if not out.is_relative_to((PORT / 'build').resolve()):
         raise ValueError('disc output (including private retail data) must stay under build/')
@@ -220,12 +222,18 @@ def build(elf, template, roots, out, required=('EICHAR.DGO', 'JAKART.DGO')):
             raise ValueError('missing staged ' + name)
     elf_data = elf.read_bytes()
     raw, ip = elf_binary(elf_data), ip_binary(template.read_bytes())
-    low = iso_image(files)
+    # --high-density: the staged files go in track 3 beside the boot image, the
+    # GD-ROM's 1 GB area; track 1 keeps only a marker. The ELF must read the
+    # high-density table of contents (level_dgo_rpc.c, --wrap=cdrom_read_toc).
+    low = iso_image({'LOWDENS.TXT': b'level files are in the high-density area\n'} if high_density else files)
     # Minimum Red Book audio track: 300 sectors, preceded by a 150-sector gap.
     audio_lba = len(low) // SECTOR + 150
     if audio_lba + 300 + 150 > HIGH_LBA:
         raise ValueError('staged files exceed low-density area')
-    high = iso_image({'1ST_READ.BIN': raw, 'IP.BIN': ip}, HIGH_LBA, ip)
+    boot = {'1ST_READ.BIN': raw, 'IP.BIN': ip}
+    if high_density and set(boot) & set(files):
+        raise ValueError('staged files may not be named 1ST_READ.BIN or IP.BIN')
+    high = iso_image(dict(files, **boot) if high_density else boot, HIGH_LBA, ip)
     out.mkdir(parents=True, exist_ok=True)
     for name, data in (('track01.iso', low), ('track02.raw', bytes(300 * 2352)), ('track03.iso', high)):
         (out / name).write_bytes(data)
@@ -249,10 +257,12 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--require', action='append',
                         help='staged file the disc must contain (repeatable; default EICHAR.DGO and JAKART.DGO)')
+    parser.add_argument('--high-density', action='store_true',
+                        help='staged files in track 3 (the ELF reads the high-density TOC: --wrap=cdrom_read_toc)')
     args = parser.parse_args()
     try:
         result = build(args.elf, args.ip_template, args.staged, args.output,
-                       tuple(args.require) if args.require else ('EICHAR.DGO', 'JAKART.DGO'))
+                       tuple(args.require) if args.require else ('EICHAR.DGO', 'JAKART.DGO'), args.high_density)
     except (OSError, ValueError) as error:
         parser.error(str(error))
     print(json.dumps({k: result[k] for k in ('elf_sha256', 'boot_bytes', 'boot_sha256', 'disc')}, indent=2))

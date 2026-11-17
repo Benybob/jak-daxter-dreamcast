@@ -123,8 +123,9 @@ static unsigned char *package_memory;
  * 170,344 bytes do, so its KOS heap use is what it was with a block of its own;
  * Sandover's 388,416 do not, and its cells are read from the disc). 1,152 KiB
  * here made the boot's own module links fail: each takes a 128 KB
- * symbol-table snapshot, and the heap left had no such run. */
-enum {PACKAGE_RESERVE=832u*1024u};
+ * symbol-table snapshot, and the heap left had no such run. Precursor Basin's
+ * package is 887,288 bytes. */
+enum {PACKAGE_RESERVE=896u*1024u};
 /* The KOS heap blocks the open level holds: its instance package and cell pack. */
 static unsigned char *package_data,*cells_pack;
 static int boot_released,sprites_opened;
