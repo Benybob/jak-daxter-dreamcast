@@ -35,6 +35,7 @@ typedef struct {
  pvr_poly_hdr_t *headers;int *batch_list;
  uint32_t used[8]; /* joints the vertices name */
  int bind_checked;
+ int bad_bind; /* its skeleton's bind pose is not the bundle's: never drawn */
  void *geometry;
  pvr_ptr_t *tex;uint32_t tex_count;  /* its VRAM textures (allocated when it loads), to give back (dc_level_models_close) */
  uint32_t last_used; /* the model pass frame it was last within the draw distance */
@@ -110,24 +111,29 @@ int dc_level_models_open(const char *path){
  return 1;
 }
 
-/* A texture's staging buffer: from the renderer slab first (it has room once
- * a level's renderer is open), the KOS heap only if the slab has none; on
- * Sentinel Beach the KOS heap had 110 KB left in pieces too small for 32 KB. */
-void *dc_arena_memalign(size_t,size_t);void dc_arena_free(void *);
-extern volatile uint32_t dc_arena_slab_failures;
-static void *staging_take(uint32_t bytes,int *from_slab){
- uint32_t before=dc_arena_slab_failures;void *p=dc_arena_memalign(32,bytes);
- if(p){*from_slab=1;return p;}
- dc_arena_slab_failures=before;  /* a miss here is not the renderer's */
- *from_slab=0;return malloc(bytes);
+/* A texture's staging buffer: a fixed 32 KB block for every texture up to
+ * 128x128 (nearly all), the KOS heap only for larger ones. On Sentinel Beach the
+ * KOS heap had 110 KB left in pieces too small for 32 KB; taking it from the
+ * renderer slab instead starved Sandover's slab (998 KB of 1 MB) and the model
+ * pass drew garbage. */
+enum {STAGING_BYTES=128u*128u*2u};
+static unsigned char staging[STAGING_BYTES] __attribute__((aligned(32)));
+static void *staging_take(uint32_t bytes,int *fixed){
+ if(bytes<=STAGING_BYTES){*fixed=1;return staging;}
+ *fixed=0;return malloc(bytes);
 }
-static void staging_give(void *p,int from_slab){if(from_slab)dc_arena_free(p);else free(p);}
+static void staging_give(void *p,int fixed){if(!fixed)free(p);}
 static int pow2(uint32_t v){return v>=8u && v<=1024u && !(v&(v-1u));}
 /* Reads and validates one model; textures go to VRAM one at a time. */
 /* The line of the last model load that failed. */
 volatile uint32_t dc_level_model_fail_line;
 /* The name of the last model whose load failed. --dump dc_level_model_fail_name 64 */
+enum {MODEL_HEAP_FLOOR=160u*1024u};
+volatile uint32_t dc_level_model_floor_refusals;  /* loads refused to keep the KOS heap floor */
 volatile char dc_level_model_fail_name[64];
+volatile uint32_t dc_level_model_bad_binds;  /* models refused for a bind pose far from the bundle's */
+/* The model whose triangle the clipper refused (non-finite or out of range). --dump dc_level_model_invalid_name 64 */
+volatile char dc_level_model_invalid_name[64];volatile uint32_t dc_level_model_invalid_at[3];
 volatile uint32_t dc_level_model_fail_vram;  /* VRAM free when it failed */
 volatile uint32_t dc_level_model_fail_heap;  /* KOS heap free (all runs) when it failed */
 #define FAIL do{dc_level_model_fail_line=__LINE__;goto fail;}while(0)
@@ -143,6 +149,11 @@ static int load(model *m){
  for(i=0;i<3;++i)if(!isfinite(m->centre[i]))FAIL;
  geometry=m->joints*48u+m->verts*20u+((m->indices*2u+3u)&~3u)+m->batch_count*12u;
  if(48u+geometry>m->bytes)FAIL;
+ /* Room for the rest of the system: models only load while the KOS heap keeps
+  * MODEL_HEAP_FLOOR free (the disc, STR and sound threads allocate from it).
+  * Loading every model Sandover shows emptied it and corrupted the run. */
+ if(!(kept_geometry && kept_bytes>=geometry && !strcmp(m->name,KEPT_MODEL)) &&
+    heap_free()<geometry+MODEL_HEAP_FLOOR){dc_level_model_floor_refusals++;return 0;}  /* deferred, not failed: state stays 0 */
  if(kept_geometry && kept_bytes>=geometry && !strcmp(m->name,KEPT_MODEL)){g=kept_geometry;kept_geometry=NULL;}
  else if(!(g=malloc(geometry)))FAIL;
  if(!read_exact(g,geometry,&crc))FAIL;
@@ -369,6 +380,9 @@ static int joints(dc_goal_runtime *rt,model *m,uint32_t proc,const float b[10],c
    for(r=0;r<3;++r)for(c=0;c<3;++c){float d=fabsf(bind[4*r+c]-f[3*r+c]);if(d>e)e=d;}
    for(c=0;c<3;++c){float d=fabsf(bind[12+c]/4096.f-f[9+c]);if(d>e)e=d;}
    if(e*1e6f>(float)dc_level_model_metrics.bind_error_ppm)dc_level_model_metrics.bind_error_ppm=e*1e6f>4e9f?4000000000u:(uint32_t)(e*1e6f);
+   /* far off (Sandover's sagesail: 371 in bind units) the skin is garbage, and
+    * its huge triangles swamped the PVR: the model is refused */
+   if(!(e<1.f)){m->bad_bind=1;++dc_level_model_bad_binds;}
   }
   {float t[3]={S[3][0]/4096.f-cam->tx,S[3][1]/4096.f-cam->ty,S[3][2]/4096.f-cam->tz};
    for(r=0;r<3;++r){
@@ -378,6 +392,7 @@ static int joints(dc_goal_runtime *rt,model *m,uint32_t proc,const float b[10],c
   have[n>>5]|=1u<<(n&31u);
  }
  if(!m->bind_checked){m->bind_checked=1;++dc_level_model_metrics.bind_checked;}
+ if(m->bad_bind)return 0;
  for(i=0;i<8;++i)if(m->used[i]&~have[i])return 0;
  return 1;
 }
@@ -469,7 +484,10 @@ int dc_level_models_draw(dc_goal_runtime *rt,const dc_instance_camera *cam,int l
      skin(m,ix[j],s);
      input[j]=(dc_clip_vertex){s[0],s[1],s[2],textured?v->u*(1.f/1024.f):0.f,textured?v->v*(1.f/1024.f):0.f,kp->tinted?tint(v->argb,kp->mult):v->argb};}
     n=dc_render_clip_viewport(input,poly);
-    if(n<0){++dc_level_model_metrics.invalid;rt->error=prior;return 0;}
+    if(n<0){++dc_level_model_metrics.invalid;
+      {unsigned q;for(q=0;q<63u && m->name[q];++q)dc_level_model_invalid_name[q]=m->name[q];dc_level_model_invalid_name[q]=0;
+       dc_level_model_invalid_at[0]=(uint32_t)(m-models);dc_level_model_invalid_at[1]=kp->proc;dc_level_model_invalid_at[2]=(uint32_t)kp->target;}
+      continue;}  /* one model's bad joints skip its triangle, not the frame */
     if(n<3)continue;
     for(j=0;j<(unsigned)n;++j){float inv=1.f/poly[j].z;px[j]=320.f+390.f*poly[j].x*inv;py[j]=260.f-390.f*poly[j].y*inv;pz[j]=inv;}
     for(fan=1;fan<n-1;++fan){

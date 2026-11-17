@@ -1764,3 +1764,27 @@ Not yet:
   memory question.
 - Two models (the last a fuel cell) fail for want of KOS heap on the beach.
 - The other 19 levels are not staged.
+
+### Smaller PS2 DMA buffers give VRAM back; a KOS heap floor for models (Flycast, 2745 of 2745, 2026-11-16)
+
+Toward a second resident level, VRAM can take what RAM cannot. The two global
+PS2 DMA buffers (`display.gc`, 1,712 KiB each) are placed in VRAM and their
+`base` reaches their end every frame, but the PowerVR renderer reads none of
+them: a marker fill showed 99.5 KB really written per frame on Geyser Rock and
+135 KB in Sandover, the rest only reserved. `DMA_BUFFER_GLOBAL_SIZE` is now
+384 KiB (`dreamcast_memory_budget.gc`), the VRAM loan in every ELF 786,432
+bytes, and dma-buffers from 256 KiB up are still placed in VRAM. Sandover
+has 4,423,976 bytes of VRAM free after its textures (about 1.6 MB before).
+
+Model loading had a hidden throttle. A texture's 32 KB staging buffer now lives
+in a fixed block (so Jak loads on Sentinel Beach), and with that Sandover
+loaded every model it showed until the KOS heap was empty; the run then drew
+skins with garbage bind poses and hung in malloc. Models now load only while
+the KOS heap keeps 160 KB free (`MODEL_HEAP_FLOOR`; Jak's kept geometry is
+exempt); a refused load is deferred, not failed, and idle models are evicted
+first. A model whose bind pose is far from the bundle's is refused, and a
+triangle the clipper refuses is skipped instead of failing the frame.
+
+Sandover over the trip and walk: 591 frames, Jak drawn in 583, other actors
+in 219, 7 models evicted, no bad bind poses. On Geyser Rock the floor defers a
+load about 1.6 times a frame, so one or two models there may not show.

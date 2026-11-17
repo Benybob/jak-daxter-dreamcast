@@ -83,7 +83,7 @@ static int initialize(void){
  static const uint32_t events[]={ASIC_EVT_PVR_ISP_OUTOFMEM,ASIC_EVT_PVR_STRIP_HALT,
   ASIC_EVT_PVR_PARAM_OUTOFMEM,ASIC_EVT_PVR_OPB_OUTOFMEM,ASIC_EVT_PVR_TA_INPUT_ERR,ASIC_EVT_PVR_TA_INPUT_OVERFLOW};
  dc_arena_live_render_metrics.boot_bytes=(uint32_t)romdisk_size;
- /* EXTENSION_BYTES in arena_coexist.c: DMA payload 3506176 plus the 64-byte type pad. */
+ /* EXTENSION_BYTES in arena_coexist.c: DMA payload 786432 plus the 64-byte type pad. */
  dc_arena_live_render_metrics.dma_bytes=3506240u;
  if(!dc_arena_fly_release_boot((uint32_t *)&dc_arena_live_render_metrics.vram_after_boot))return 0;
  for(slot=0;slot<sizeof events/sizeof events[0];++slot){

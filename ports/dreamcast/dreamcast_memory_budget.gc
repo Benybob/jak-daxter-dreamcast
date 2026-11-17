@@ -8,9 +8,11 @@
 ;; as stale. Reasons and measurements are in MEMORY_BUDGET.md.
 
 ;; display.gc: two per-frame PS2 DMA buffers. PC 2,664 KiB, PS2 1,712 KiB.
-;; The original PS2 value, the size the original renderers fit a frame into.
-;; To be revisited with the PowerVR renderer, which decides what they hold.
-(defconstant DMA_BUFFER_GLOBAL_SIZE (* 1712 1024))
+;; The PowerVR renderer reads none of what they hold (the PS2 renderers are off);
+;; a marker fill measured 99.5 KB really written per frame on Geyser Rock, the
+;; rest only reserved. 384 KiB each leaves about four times that and gives
+;; 2.6 MB of VRAM back (they are placed in VRAM, kernel_boot_cases.c).
+(defconstant DMA_BUFFER_GLOBAL_SIZE (* 384 1024))
 
 ;; level.gc: each of the two level heaps alloc-levels! takes from the global
 ;; heap. PS2 10,416 KiB (debug 11,000 / 25,600 KiB). On Dreamcast a level keeps

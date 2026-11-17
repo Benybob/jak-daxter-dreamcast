@@ -256,7 +256,7 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
     CHECK(dc_goal_register_extension(&rt,(void *)0xa5100000u,0xa5100000u,5u*1024u*1024u),1,
           "idle VRAM registered as the GOAL extension region");
 #endif
-    CHECK(dc_goal_place_in_extension(&rt,"dma-buffer",512u*1024u),1,"large dma-buffers placed in VRAM");
+    CHECK(dc_goal_place_in_extension(&rt,"dma-buffer",256u*1024u),1,"large dma-buffers placed in VRAM");
     if(file){
       method_set_depth(&rt,1);
       loaded=dc_goal_load_dgo(&rt,file,sync_code,NULL,&game);fclose(file);
@@ -323,7 +323,7 @@ uint32_t dc_kernel_boot_cases(void *memory,uint32_t capacity,dc_runtime_check ch
 #endif
       {uint32_t placed_bytes,placed=dc_goal_extension_placed(&placed_bytes);
        CHECK(placed,2,"display's two global DMA buffers live in VRAM");
-       CHECK(placed_bytes>=2u*1712u*1024u && rt.extension_used>=placed_bytes,1,"they take their 1,712 KiB each there");}
+       CHECK(placed_bytes>=2u*384u*1024u && rt.extension_used>=placed_bytes,1,"they take their 384 KiB each there (dreamcast_memory_budget.gc)");}
       for(i=0;i<DC_GAME_PREFIX;++i)CHECK(strcmp(game.object_names[i],dc_game_order[i]),0,"engine objects in original GAME.CGO order");
       CHECK(entry(&rt,"rand-vu-init")!=0 && entry(&rt,"truncate")!=0,1,"original math functions are installed");
       code_bytes+=game.code_bytes;rt.error=DC_GOAL_OK;
