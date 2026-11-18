@@ -1,5 +1,29 @@
 # Contributor task board
 
+## Open tasks (2026-11-18, AI-assisted)
+
+The game boots, levels load, and Jak walks in Flycast. The current open tasks,
+with what done looks like for each, are in the
+[front page's help wanted table](../../README.md#help-wanted):
+
+- booting on a real Dreamcast
+- frame speed (SH-4 lowering)
+- Spider Cave's renderer slab
+- drawing seam ground
+- sound effects and music
+- float arguments into spawned code
+- HUD, menus and saves
+- playing a level through
+- review of the AI-written code
+
+Each section of [LEVEL_PLAN.md](LEVEL_PLAN.md) ends with what it leaves
+undone, so it's the detailed source for these.
+
+The board below is from October. It is kept for the compiler and kernel tasks
+it records, and many of them are now complete.
+
+## Earlier board (2026-10-21)
+
 2026-10-21. (AI-assisted). These tasks are open invitations, not assigned work.
 Start a discussion on this fork or submit a focused human-reviewed change.
 Most compiler/runtime work uses synthetic fixtures and needs no original assets.

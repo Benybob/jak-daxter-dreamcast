@@ -1,9 +1,9 @@
 # Contributing to the Dreamcast workbench
 
-2026-10-21. (AI-assisted). This independent fork needs compiler/ABI, GOAL,
-KallistiOS, PowerVR and hardware-testing help. It is research toward a playable
-adaptation, not a playable release. Please start with one bounded task from
-[HELP_WANTED.md](ports/dreamcast/HELP_WANTED.md).
+2026-11-18. (AI-assisted). This independent fork needs compiler/ABI, GOAL,
+KallistiOS, PowerVR, sound and hardware-testing help. The game boots and its
+levels load in Flycast, but it is not a playable release. Please start with one
+task from the [help wanted table](README.md#help-wanted).
 
 1. Read [BUILDING.md](ports/dreamcast/BUILDING.md), reproduce the relevant check,
    and explain the proposed approach before undertaking a large subsystem.
