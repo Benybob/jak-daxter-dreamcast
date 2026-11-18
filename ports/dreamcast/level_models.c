@@ -21,7 +21,7 @@ void *sbrk(ptrdiff_t); /* hidden from unistd.h by -std=c99 */
 #include "scene_projection.h"
 
 enum {MAX_MODELS=64,MAX_KEPT=32,MAX_JOINTS=255,MAX_BATCHES=64,MAX_TEXTURES=64,MAX_CSPACES=256,
-      MAX_VERTICES=8192,MAX_TEXTURE_BYTES=1024*1024*2,WALK_NODES=1024,WALK_DEPTH=64};
+      MAX_VERTICES=32768,MAX_TEXTURE_BYTES=1024*1024*2,WALK_NODES=1024,WALK_DEPTH=64};
 volatile dc_level_model_metrics_t dc_level_model_metrics;
 
 typedef struct {int16_t x,y,z,u,v;uint8_t joint[3],weight[2],pad;uint32_t argb;} dsk_vertex;

@@ -81,7 +81,9 @@ static const char *header_check(const unsigned char *p,dc_render_catalog *c) {
  {76,SECTORS_MAX},{80,REPLICAS_MAX},{84,MATERIAL_MAX},{88,TEXTURE_MAX},{92,TEXTURE_BYTE_MAX},
  {100,116},{104,36},{208,64},{212,1}};
  uint32_t i,blob,tables,local;
- if(memcmp(p,"DRM2",4)||u32(p+4)!=2u||u32(p+8)!=HEADER||u32(p+12)!=1u||f32(p+52)!=64.f)return "render manifest contract";
+ /* the widest face a sector keeps: 64 m, or two cells past 32 m cells
+  * (prepare_render_sectors.py's axis_span_limit) */
+ if(memcmp(p,"DRM2",4)||u32(p+4)!=2u||u32(p+8)!=HEADER||u32(p+12)!=1u||f32(p+52)!=(f32(p+48)>32.f?2.f*f32(p+48):64.f))return "render manifest contract";
  for(i=0;i<sizeof(limits)/sizeof(limits[0]);++i)if(u32(p+limits[i][0])!=limits[i][1])return "render manifest limits";
  /* the package cap its builder used: 8 MiB, or 64 for a whole large level staged on the disc
   * (make_level_render_assets.py; sectors are read from the disc, never resident together) */

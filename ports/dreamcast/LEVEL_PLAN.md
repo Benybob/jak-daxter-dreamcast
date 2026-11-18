@@ -1995,3 +1995,55 @@ What it took:
 
 Not yet: Snowy Mountain, Spider Cave, Volcanic Crater, Lava Tube, Gol and
 Maia's Citadel and the final boss; the tests only send Jak to a continue point.
+
+### The last eight levels staged; seven reach their continue points in Flycast (2026-11-18)
+
+`stage_level.py` staged VI3, SNO, MAI, DAR, ROB, LAV, CIT and FIN with their
+seams. Sent there from Geyser Rock in Flycast, seven pass every check with
+their seams resident and their actors born: `village3-start` 153 actors,
+`snow-start` 193, `darkcave-start` 145, `robocave-start` 265,
+`lavatube-start` 145, `citadel-start` 191, `finalboss-start` 224 (its
+continue point's level is Citadel, as in the original).
+
+What it took:
+
+- **Floats into a new process.** `run-function-in-process` (`process-spawn`)
+  calls an init with six uint64 arguments, a float as its bit pattern in an
+  integer position, as desktop GOAL passes every argument; the lowering gave
+  every typed function the GCC float ABI, so an init's float parameters came
+  from FR5.. and the integers after them one position early. The snowball
+  roller (entity, snow-ball, float, int, pointer) read its path index from
+  the float's bits, its curve's key frame missed, and `curve-length` searched
+  a zero-knot curve forever. A function named `*-init-by-other` now takes its
+  float parameters in integer positions, and the five direct calls to one
+  pass them the same way (`lower_sh4_ir.py`). Fifteen inits take floats,
+  the launcher's among them.
+- **Code a neighbour's DGO carries.** Dark cave's `darkcave-obs` drives Spider
+  Cave's crystal lights and the robot cave's trap spawns Spider Cave's baby
+  spiders; the original keeps Spider Cave resident beside both, here it is a
+  seam, so `BORROWED` in `stage_level.py` compiles those objects into the
+  level that uses them.
+- **Sector sizes per level.** 16 m sectors past the runtime's 4096 faces
+  (Spider Cave's scaffolding: 8,702 in one) step to 8 m, then 4 m; past 8192
+  sectors or the 4096-face global list (the final boss: 38,473 sectors,
+  11,435 faces wider than 64 m) they step to 32 m, then 64 m, where a face up
+  to two cells wide stays in its sectors (`axis_span_limit`;
+  `render_package.c` accepts the same rule). A large staged level's sweep
+  takes the block cache's window cap (65535), not the older render cache's
+  8192, which `LEVEL.DRH` sizes.
+- **Memory.** The renderer slab, which holds the draw window and its block
+  cache, is 1,540,096 bytes (was 1 MiB: Village3 needs about 1.42 MB); the
+  package reserve is 1,184 KiB (Citadel's package is 1,182,752 bytes), taken
+  at boot while a block that large is free. Both came from the GOAL arena,
+  which ends the boot 921,632 bytes short of full and grows 34 KB in play.
+  Terrain windows are narrower where they are dense (`HALF`): Village3 7 m,
+  dark cave 8 m, robot cave 5 m, Spider Cave 4 m (`level_draw.c` reads 4..32).
+- **The final boss's model** has 17,020 vertices at every distance; a model
+  may now have 32,768 (`make_skin_models.py`, `level_models.c`).
+- Three more reviewed partial returns (assistant-citadel, robotboss-misc,
+  sage-finalboss: an empty `when` or `cond` clause in a `:trans` or `:enter`).
+
+Not yet: Spider Cave stops on a failed slab request at 1.42 MB of its 1.54 MB
+(the first-fit slab fragments around its 4 m sectors); the original's 100 m
+scaffolding shaft is the densest terrain in the game. The tests only send Jak
+to a continue point; seam ground is still not drawn.

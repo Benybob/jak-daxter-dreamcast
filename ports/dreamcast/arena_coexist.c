@@ -37,10 +37,17 @@ enum {SLAB_BYTES=DC_JAK_RENDER_SLAB_BYTES,ARENA_BYTES=DC_JAK_ARENA_BYTES,DMA_BYT
  * water is 784,608 bytes at the lake (the block cache gives up its oldest
  * blocks if the slab fills). The 655,424 bytes between stay in the KOS heap,
  * which holds that package, the models, the spool heaps and the sound stream.
- * 256 KiB of that went back to the arena for Geyser Rock's tie collision. */
+ * 256 KiB of that went back to the arena for Geyser Rock's tie collision.
+ * 640 KiB more left the arena, which ends the boot 921,632 bytes short of full
+ * and grows 34 KB in play, art pool included (Snowy Mountain: 11,302,496 of
+ * 12,189,632). 352 KiB of it went to the slab, which holds the draw window and
+ * its block cache (Village3's need is about 1.42 MB, past 1 MiB), and 288 KiB to
+ * level_draw.c's package reserve (Citadel's package is 1,182,752 bytes): when
+ * the reserve is taken, the KOS heap is as it was. 128 KiB more of the arena
+ * went to the slab for Spider Cave (a 4 m window, its peak at the 1,409 KB cap). */
 /* ART_VRAM_BYTES: Jak's art (1,258,592 bytes with the merc model, goal_art.c
  * dc_goal_art_to_extension) after the DMA buffers in the VRAM loan. */
-enum {SLAB_BYTES=851968+196608,ARENA_BYTES=13u*1024u*1024u-1507392+262144-196608,DMA_BYTES=786432,ART_VRAM_BYTES=1344u*1024u,
+enum {SLAB_BYTES=851968+196608+360448+131072,ARENA_BYTES=13u*1024u*1024u-1507392+262144-196608-655360-131072,DMA_BYTES=786432,ART_VRAM_BYTES=1344u*1024u,
 #else
 enum {SLAB_BYTES=2621440,ARENA_BYTES=11010048,DMA_BYTES=786432,ART_VRAM_BYTES=0,
 #endif

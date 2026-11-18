@@ -116,6 +116,7 @@ static int ready;
 /* The package's KOS block, taken at boot while the heap is still one piece
  * (dc_level_draw_reserve); later, freed temporaries can leave no 652 KB run. */
 static unsigned char *package_memory;
+static uint32_t reserve_bytes;  /* package_memory's size: PACKAGE_RESERVE, or a larger package's */
 /* One block, reserved at boot while the heap is one piece and kept for every
  * level: a level's instance package goes in it when it fits (Geyser Rock
  * 652,800 bytes, Sandover 722,064; after a level change the heap has no run
@@ -125,7 +126,7 @@ static unsigned char *package_memory;
  * here made the boot's own module links fail: each takes a 128 KB
  * symbol-table snapshot, and the heap left had no such run. Precursor Basin's
  * package is 887,288 bytes. */
-enum {PACKAGE_RESERVE=896u*1024u};
+enum {PACKAGE_RESERVE=1184u*1024u};  /* Citadel's package is 1,182,752 bytes; reserved at boot, while one block that large is still free */
 /* The KOS heap blocks the open level holds: its instance package and cell pack. */
 static unsigned char *package_data,*cells_pack;
 static int boot_released,sprites_opened;
@@ -148,13 +149,15 @@ static int load_head(void){
  window_half=14u;
  /* version 2: the window half width (meters) after the material map, at a 4-byte boundary */
  if(ok && magic[3]=='2'){uint32_t pad=(head.material_slots&1u)*2u,h=0;unsigned char z[2];
-   ok=(!pad || fs_read(fd,z,pad)==(ssize_t)pad) && fs_read(fd,&h,4)==4 && h>=6u && h<=32u;window_half=h;}
+   ok=(!pad || fs_read(fd,z,pad)==(ssize_t)pad) && fs_read(fd,&h,4)==4 && h>=4u && h<=32u;window_half=h;}
  fs_close(fd);
  return head_loaded=ok;
 }
 void dc_level_draw_reserve(void){
  if(package_memory || !load_head())return;
- package_memory=dc_level_heap_alloc(FLY_PACKAGE_BYTES>PACKAGE_RESERVE?FLY_PACKAGE_BYTES:PACKAGE_RESERVE);
+ reserve_bytes=FLY_PACKAGE_BYTES>PACKAGE_RESERVE?FLY_PACKAGE_BYTES:PACKAGE_RESERVE;
+ package_memory=dc_level_heap_alloc(reserve_bytes);
+ if(!package_memory)reserve_bytes=0;
  dc_level_reserve_probe[0]=dc_level_heap_free();dc_level_reserve_probe[3]=package_memory!=NULL;
  {extern void *sbrk(int);dc_level_reserve_probe[2]=(uint32_t)(uintptr_t)sbrk(0);}
  if(!package_memory){uint32_t size=FLY_PACKAGE_BYTES;void *p;
@@ -199,7 +202,14 @@ static int initialize(void){
  CHECK(error==NULL,1,error);
  /* The package is read once and kept: the KOS heap holds it, leaving the slab
   * to the block cache, which reads terrain as the camera moves. */
- data=package_memory && FLY_PACKAGE_BYTES<=PACKAGE_RESERVE?package_memory:dc_level_heap_alloc(FLY_PACKAGE_BYTES);
+ /* A package past the reserve (Citadel: 1,182,752 bytes) trades the reserve for
+  * a block its size: freed, the reserve's block joins the free space beside it,
+  * where the larger one may fit when no fresh block that large is left. */
+ if(package_memory && FLY_PACKAGE_BYTES>reserve_bytes){unsigned char *grown;
+  dc_level_heap_release(package_memory);
+  if((grown=dc_level_heap_alloc(FLY_PACKAGE_BYTES))){package_memory=grown;reserve_bytes=FLY_PACKAGE_BYTES;}
+  else if(!(package_memory=dc_level_heap_alloc(reserve_bytes)))reserve_bytes=0;}
+ data=package_memory && FLY_PACKAGE_BYTES<=reserve_bytes?package_memory:dc_level_heap_alloc(FLY_PACKAGE_BYTES);
  CHECK(data!=NULL,1,"level draw package KOS heap allocation");package_data=data;
  file=open_level("PACKAGE.DCI");CHECK(file!=NULL,1,"level draw package opens from the disc");
  read=fread(data,1,FLY_PACKAGE_BYTES,file)==FLY_PACKAGE_BYTES&&fgetc(file)==EOF&&!ferror(file);
@@ -215,7 +225,7 @@ static int initialize(void){
  {long bytes=0;unsigned char *pack=NULL;uint32_t used=(FLY_PACKAGE_BYTES+31u)&~31u;
   file=open_level("CELLS.PAK");CHECK(file!=NULL,1,"level draw cell pack opens from the disc");
   read=!fseek(file,0,SEEK_END)&&(bytes=ftell(file))>8&&bytes<1048576&&!fseek(file,0,SEEK_SET);
-  if(read && data==package_memory && used+(uint32_t)bytes<=PACKAGE_RESERVE)pack=package_memory+used;
+  if(read && data==package_memory && used+(uint32_t)bytes<=reserve_bytes)pack=package_memory+used;
   else if(read){pack=dc_level_heap_alloc((size_t)bytes);cells_pack=pack;}
   read=pack&&fread(pack,1,(size_t)bytes,file)==(size_t)bytes;
   fclose(file);

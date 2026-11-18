@@ -75,6 +75,10 @@ PER_SECTOR_CAP = 4096
 ZLIB_LEVEL = 9
 GLOBAL_CAP = 4096
 WINDOW_UNIQUE_CAP = 8192
+# assemble_window's own cap: the manifest's 8192 (render_cache.c's window), or,
+# for a whole level staged on the disc, the block cache's draw window, which
+# LEVEL.DRH sizes from the sweep (render_draw_window.c: at most 65535 faces)
+ORACLE_WINDOW_CAP = WINDOW_UNIQUE_CAP
 MAX_REPLICAS_PER_TRIANGLE = 36
 MAX_SOURCE = 1_000_000
 MAX_SECTORS = 8192
@@ -275,11 +279,18 @@ def f32(value):
         raise RenderSectorError("float32 value out of range") from error
 
 
-def contract_constants():
+def axis_span_limit(cell_size=None):
+    """The widest face a sector keeps: 64 m, or two cells for cells past 32 m
+    (the final boss's 64-128 m faces stay local instead of past the global cap).
+    render_package.c accepts the same rule."""
+    return max(MAX_AXIS_SPAN_M, 2.0 * float(cell_size)) if cell_size is not None else MAX_AXIS_SPAN_M
+
+
+def contract_constants(cell_size=None):
     """Live caps recorded in every manifest and checked again by the reader."""
     return {
         "flags": MANIFEST_FLAG_ABSOLUTE,
-        "max_axis_span": f32(MAX_AXIS_SPAN_M),
+        "max_axis_span": f32(axis_span_limit(cell_size)),
         "per_sector_cap": PER_SECTOR_CAP,
         "global_cap": GLOBAL_CAP,
         "window_unique_cap": WINDOW_UNIQUE_CAP,
@@ -706,12 +717,12 @@ def _axis_span(values):
 def classify_triangle(xs, ys, zs, cell_size):
     """Return local cell keys, or None when the face belongs in the global bucket.
 
-    Any axis span above 64 m, more than 36 overlapping cells, or no overlapping
-    cell keeps the face whole in the global bucket once. Span equal to 64 m can
-    stay local. Y span counts. The XZ SAT does not look at Y.
+    Any axis span above axis_span_limit (64 m, or two cells past 32 m cells),
+    more than 36 overlapping cells, or no overlapping cell keeps the face whole
+    in the global bucket once. Span equal to the limit can stay local. Y span counts. The XZ SAT does not look at Y.
     """
     span = max(_axis_span(xs), _axis_span(ys), _axis_span(zs))
-    if not math.isfinite(span) or span > f32(MAX_AXIS_SPAN_M):
+    if not math.isfinite(span) or span > f32(axis_span_limit(cell_size)):
         return None
     cells = overlapping_cells(xs, zs, cell_size)
     if not cells or len(cells) > MAX_REPLICAS_PER_TRIANGLE:
@@ -1100,13 +1111,13 @@ def parse_manifest(blob):
     for name, _kind in HEADER_FIELDS:
         if name.startswith("reserved_") and header[name] != 0:
             raise RenderSectorError("malformed manifest")
-    constants = contract_constants()
-    for key, expected in constants.items():
-        if header[key] != expected:
-            raise RenderSectorError("manifest contract mismatch")
     cell = quantize_cell_size(header["cell_size"])
     if header["cell_size"] != cell:
         raise RenderSectorError("manifest contract mismatch")
+    constants = contract_constants(cell)
+    for key, expected in constants.items():
+        if header[key] != expected:
+            raise RenderSectorError("manifest contract mismatch")
     counts = {
         "source_count": MAX_SOURCE,
         "local_sector_count": MAX_SECTORS,
@@ -1450,7 +1461,7 @@ def link_package(parts, sectors, global_sector):
         "tables_bytes": len(tables),
         "observed_max_sector_records": observed,
     }
-    values.update(contract_constants())
+    values.update(contract_constants(values["cell_size"]))
     body = _pack_header(values) + tables
     manifest = body + struct.pack("<I", crc32(body))
     parsed = parse_manifest(manifest)
@@ -2075,7 +2086,7 @@ def _dedup_faces(records, bounds=None):
             raise RenderSectorError("source id out of range")
         previous = found.get(source_id)
         if previous is None:
-            if bounds is None and len(found) >= WINDOW_UNIQUE_CAP:
+            if bounds is None and len(found) >= ORACLE_WINDOW_CAP:
                 raise RenderSectorError("unique faces exceed window cap")
             found[source_id] = face["raw"]
         elif previous != face["raw"]:
@@ -2083,7 +2094,7 @@ def _dedup_faces(records, bounds=None):
     result = [unpack_face(found[source_id]) for source_id in sorted(found)]
     if bounds is not None:
         result = [face for face in result if _face_overlaps_xz(face, bounds)]
-    if len(result) > WINDOW_UNIQUE_CAP:
+    if len(result) > ORACLE_WINDOW_CAP:
         raise RenderSectorError("unique faces exceed window cap")
     return result
 

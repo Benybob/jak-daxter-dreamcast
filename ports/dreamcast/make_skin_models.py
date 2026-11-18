@@ -45,7 +45,7 @@ from convert_textured import twiddle
 
 WIDTHS['MAT4'] = 16
 TEXTURE_CAP = 128
-MAX_VERTICES = 8192
+MAX_VERTICES = 32768  # the final boss: one 17,020-vertex model at every distance (16-bit indices)
 MAX_JOINTS = 255
 
 

@@ -17,6 +17,7 @@ from division_sh4 import emit_div32
 
 # GCC -m4-single -ml places singles in swapped pairs (verified with GCC).
 FLOAT_ARGUMENT_REGISTERS=(5,4,7,6,9,8,11,10)
+INIT_ENTRY_SUFFIX='init-by-other'  # entered by run-function-in-process: floats in integer positions
 # Symbols that only ever hold a function (build_game_cgo.py known_functions): calls
 # through them skip the call guard. Empty unless --known-functions names a list.
 KNOWN_FUNCTIONS=set()
@@ -1117,6 +1118,13 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
             if source['kind']!='move': return False
             index=source['reads'][0]
         return False
+    def init_call(index,seen=None):
+        seen=set() if seen is None else seen
+        if index in seen or len(writers.get(index,()))!=1: return False
+        seen.add(index); source=writers[index][0]
+        if source['kind'] in ('symbol_value','function_address'):
+            return str(source.get('symbol',source.get('function',''))).endswith(INIT_ENTRY_SUFFIX)
+        return source['kind']=='move' and init_call(source['reads'][0],seen)
     def function_origin(index,seen=None):
         seen=set() if seen is None else seen
         if index in seen or len(writers[index])!=1:
@@ -1676,9 +1684,25 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
         else: constant(9,offset); e.add(8,9)
         e.load(a,8); e.add_immediate(8,4); e.load(b,8)
     gpr_args=float_args=0
+    # run-function-in-process (process-spawn) calls an init with six uint64
+    # arguments, floats among them as their bit patterns in integer positions,
+    # as desktop GOAL passes every argument; so an init-by-other takes its
+    # float parameters there, not in the GCC float registers, and a direct call
+    # to one passes them the same way (INIT_ENTRY_SUFFIX).
+    integer_floats=function['name'].endswith(INIT_ENTRY_SUFFIX)
     for parameter in function['parameters']:
         index=parameter['register']
-        if parameter['type']=='float':
+        if parameter['type']=='float' and integer_floats:
+            if gpr_args<2: e.mov(0,4+gpr_args*2)
+            else: stack_argument(frame+saved+(gpr_args-2)*8,0,1)
+            if registers[index]['class']=='float':
+                e.word(0x405a); e.word(0xf00d)  # LDS R0,FPUL; FSTS FPUL,FR0
+                store_float(index,0)
+            else:
+                if index not in low_word: sign_extend()
+                store64(index)
+            gpr_args+=1
+        elif parameter['type']=='float':
             if float_args>=8: raise ValueError('stack-passed float arguments not implemented')
             native=FLOAT_ARGUMENT_REGISTERS[float_args]
             if registers[index]['class']=='float': store_float(index,native)
@@ -1931,6 +1955,8 @@ def lower_function(function,module,runtime,optimize,statics,excluded,wide_values
                 variadic=runtime and '_varargs_' in op.get('function_type','')
                 if variadic:
                     parameters=[{'type':'variadic'} for _ in parameters]
+                elif init_call(reads[0]):
+                    parameters=[{'type':'variadic'} if p['type']=='float' else p for p in parameters]
                     if any(argument in wide for argument in args):
                         raise ValueError('128-bit variadic argument unsupported')
                 integer_count=sum(2 if argument in wide else 1 for argument,p in zip(args,parameters) if p['type']!='float')

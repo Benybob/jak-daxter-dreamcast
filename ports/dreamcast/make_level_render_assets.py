@@ -44,6 +44,7 @@ def main():
     ap.add_argument('--header', default='build/level_render_fixture.h')
     ap.add_argument('--area', help='X0,Z0,X1,Z1 in meters: stage this rectangle; caps from a sweep of it')
     ap.add_argument('--large', action='store_true', help='allow a staged package of up to 64 MiB (render_package.c accepts both caps)')
+    ap.add_argument('--cell', type=float, default=16.0, help='terrain sector size in meters (8 for a level whose 16 m sectors pass 4096 faces)')
     ap.add_argument('--window-margin', type=float, default=4.0, help="level_draw.c's WINDOW_MARGIN_M (with --area)")
     a = ap.parse_args()
     x, y, z = (float(v) for v in a.at.split(','))
@@ -60,7 +61,10 @@ def main():
         # A whole large level on the disc: sectors are read as the window moves, never resident
         # together, so the 8 MiB package cap (a RAM budget of the first design) does not apply.
         fly.rs.MAX_PACKAGE_BYTES = 64 * 1024 * 1024
-    report, rows = fly.make(a.glb, a.package, a.out, a.frames, 0.0, a.half, a.header, instance_cells=True,
+        # and its windows are drawn through the block cache, whose capacities LEVEL.DRH
+        # takes from this sweep: Spider Cave's scaffolding passes 8192 faces in one
+        fly.rs.ORACLE_WINDOW_CAP = 65535
+    report, rows = fly.make(a.glb, a.package, a.out, a.frames, 0.0, a.half, a.header, instance_cells=True, cell=a.cell,
                             recorded_targets=ring, coverage_targets=corners)
     report['draw_file_bytes'] = indexed_sectors.write_draw_files(a.out, remove_sectors=True)
     import instance_cells  # every cell in one resident blob: no cell opens while walking

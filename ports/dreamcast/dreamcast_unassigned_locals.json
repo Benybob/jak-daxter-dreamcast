@@ -73,5 +73,17 @@
   "billy:anon-function-23": {
     "partial_return": true,
     "reason": "billy.gc enter-playing :trans: the cond's (else) has no body, so the returned value is unset on that path; a :trans behavior's value is never used. Starts as #f (AI-assisted)."
+  },
+  "assistant-citadel:anon-function-0": {
+    "partial_return": true,
+    "reason": "assistant-citadel.gc assistant-lavatube-end hidden :trans: the closing (when (and ...)) has no body, so the returned value is unset when the test fails; a :trans behavior's value is never used. Starts as #f (AI-assisted)."
+  },
+  "robotboss-misc:anon-function-2": {
+    "partial_return": true,
+    "reason": "robotboss-misc.gc cam-robotboss :enter: the cond's first clause ((-> self enter-has-run)) has no body, so the returned value is unset on that path; an :enter behavior's value is never used. Starts as #f (AI-assisted)."
+  },
+  "sage-finalboss:anon-function-2": {
+    "partial_return": true,
+    "reason": "sage-finalboss.gc plat-eco-finalboss plat-path-active :enter: the cond's first clause ((arg0)) has no body, so the returned value is unset on that path; an :enter behavior's value is never used. Starts as #f (AI-assisted)."
   }
 }

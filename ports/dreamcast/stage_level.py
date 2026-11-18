@@ -53,6 +53,19 @@ SEAMS = [('BEA', 'VI1'), ('CIT', 'FIN'), ('CIT', 'LAV'), ('DAR', 'MAI'), ('FIC',
          ('OGR', 'VI2'), ('OGR', 'VI3'), ('ROL', 'VI2'), ('SNO', 'VI3'), ('SUN', 'SUB'), ('SUN', 'VI2'),
          ('SWA', 'VI2'), ('TRA', 'VI1')]
 
+# Code a level uses that the original keeps in a neighbour's DGO, resident
+# beside it there; here the neighbour is only a seam, so the level carries it.
+BORROWED = {
+    'DAR': ['cavecrystal-light'],  # darkcave-obs drives Spider Cave's crystal lights
+    'ROB': ['baby-spider', 'mother-spider-h', 'mother-spider-egg'],  # cave-trap spawns baby spiders; spider-egg's particles
+}
+
+# Terrain window half widths (m) past the 9 m default's memory: Spider Cave's
+# scaffolding shaft puts 16,841 faces in a 9 m window, more than the heap
+# holds beside its cache; level_draw.c reads 4..32 from LEVEL.DRH. The draw window and
+# its block cache live in the renderer slab (1.5 MiB); these keep each level under it.
+HALF = {'MAI': 4.0, 'ROB': 5.0, 'VI3': 7.0, 'DAR': 8.0}
+
 
 def run(args, python=sys.executable):
     print('>', ' '.join(str(a) for a in args[:4]), '...', flush=True)
@@ -111,7 +124,8 @@ def main():
     levels = a.export / 'levels' / folder_name
 
     if not a.skip_code:
-        code = ['build_level_code.py', nick] + (['--with', 'villagep-obs'] if villagep else [])
+        shared = (['villagep-obs'] if villagep else []) + BORROWED.get(nick, [])
+        code = ['build_level_code.py', nick] + (['--with', *shared] if shared else [])
         if a.frontend:
             code[1:1] = ['--frontend', a.frontend]
         run(code)
@@ -126,10 +140,27 @@ def main():
     run(['tie_lods.py', '--textured', '--compact', glb, dgo, a.export.parent.parent / 'debug_out',
          '--out', package, '--json', work / 'tie3.json'])
     x0, z0, x1, z1, y = tfrag_area(glb)
-    report = run(['make_level_render_assets.py', glb, package, work / 'assets',
-                  f'--at={(x0 + x1) / 2:.1f},{y:.1f},{(z0 + z1) / 2:.1f}',
-                  f'--area={x0:.0f},{z0:.0f},{x1:.0f},{z1:.0f}', '--large', '--half', str(a.half),
-                  '--header', work / 'fixture.h'])
+    render = ['make_level_render_assets.py', glb, package, work / 'assets',
+              f'--at={(x0 + x1) / 2:.1f},{y:.1f},{(z0 + z1) / 2:.1f}',
+              f'--area={x0:.0f},{z0:.0f},{x1:.0f},{z1:.0f}', '--large', '--half', str(HALF.get(nick, a.half)),
+              '--header', work / 'fixture.h']
+    # 16 m sectors, else the runtime's catalog limits pick the size (level_draw.c
+    # reads it from the catalog): a dense level (Spider Cave's scaffolding) has
+    # sectors past 4096 faces, so smaller ones; a sprawling one (the final boss)
+    # has more than 8192 sectors, so larger ones
+    # (and with them, faces up to two cells wide, short of the 4096-face global cap)
+    retry = {'sector face cap exceeded': ['8', '4'], 'sector cap exceeded': ['32', '64'],
+             'global cap exceeded': ['32', '64']}
+    cells, report = [], None
+    while report is None:
+        try:
+            report = run([*render, *(['--cell', cells[0]] if cells else [])])
+        except SystemExit as e:
+            reason = next((r for r in retry if f'RenderSectorError: {r}' in str(e)), None)
+            if reason is None or (cells and cells[0] == retry[reason][-1]):
+                raise
+            cells = retry[reason][retry[reason].index(cells[0]) + 1:] if cells and cells[0] in retry[reason] else retry[reason]
+            print(f'{reason}: {cells[0]} m sectors', flush=True)
     models = [a.export / 'levels/common/eichar-lod0.glb', *sorted(levels.glob('*-lod0.glb')),
               *sorted(levels.glob('*-geo.glb')), *(a.export / 'levels/common' / f'{c}-lod0.glb' for c in COMMON)]
     run(['make_skin_models.py', *models, '--out', work / 'MODELS.DSK'], python=a.models_python)
